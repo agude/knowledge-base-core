@@ -11,19 +11,20 @@
 #
 # Options:
 #   --file FILE      Markdown file to read (required)
-#   --number N       H2 section number (from toc output)
+#   --number N       H2 section number, or N.M for H3 under H2 N (from toc output)
 #   --heading TEXT   Heading text to match (case-insensitive substring)
 #   --exact          Require exact heading match instead of substring
 #
 # Examples:
 #   section --file knowledge/networking.md --number 1     # 1st H2 section
 #   section --file knowledge/networking.md --number 2     # 2nd H2 section
+#   section --file knowledge/networking.md --number 2.1   # 1st H3 under 2nd H2
 #   section --file knowledge/networking.md --heading 'DNS'  # any heading level
 #
 # Notes:
-#   --number targets H2s only. --heading matches any heading level (H2, H3,
-#   etc.), returning content up to the next heading at the same or higher level.
-#   Use --heading to extract H3 subsections.
+#   --number N targets H2s. --number N.M targets the Mth H3 under the Nth H2.
+#   --heading matches any heading level (H2, H3, etc.), returning content up
+#   to the next heading at the same or higher level.
 
 set -euo pipefail
 
@@ -70,6 +71,19 @@ fi
 found=false
 match_level=0
 h2_count=0
+h3_count=0
+
+# Parse dot notation: "2.3" means H2 #2, H3 #3 under it
+TARGET_H2=""
+TARGET_H3=""
+if [[ -n "$NUMBER" ]]; then
+    if [[ "$NUMBER" == *.* ]]; then
+        TARGET_H2="${NUMBER%%.*}"
+        TARGET_H3="${NUMBER#*.}"
+    else
+        TARGET_H2="$NUMBER"
+    fi
+fi
 
 # For heading matching, lowercase the query
 if [[ -n "$HEADING" ]]; then
@@ -91,17 +105,28 @@ while IFS= read -r line; do
             continue
         fi
 
-        # Count H2s for --number matching
+        # Count H2s and H3s for --number matching
         if (( level == 2 )); then
             h2_count=$((h2_count + 1))
+            h3_count=0
+        elif (( level == 3 )); then
+            h3_count=$((h3_count + 1))
         fi
 
         # Check for match
         matched=false
 
-        if [[ -n "$NUMBER" ]]; then
-            if (( level == 2 )) && (( h2_count == NUMBER )); then
-                matched=true
+        if [[ -n "$TARGET_H2" ]]; then
+            if [[ -n "$TARGET_H3" ]]; then
+                # Dot notation: match H3 under specific H2
+                if (( level == 3 )) && (( h2_count == TARGET_H2 )) && (( h3_count == TARGET_H3 )); then
+                    matched=true
+                fi
+            else
+                # Plain number: match H2
+                if (( level == 2 )) && (( h2_count == TARGET_H2 )); then
+                    matched=true
+                fi
             fi
         elif [[ -n "$HEADING" ]]; then
             title_lower="$(echo "$title" | tr '[:upper:]' '[:lower:]')"
@@ -125,7 +150,7 @@ while IFS= read -r line; do
 done < "$FILE"
 
 if [[ "$found" == false ]]; then
-    if [[ -n "$NUMBER" ]]; then
+    if [[ -n "$TARGET_H2" ]]; then
         echo "Section #${NUMBER} not found (file has ${h2_count} H2 sections)" >&2
     else
         echo "Heading not found: '$HEADING'" >&2

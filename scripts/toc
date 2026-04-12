@@ -26,6 +26,8 @@
 #   Networking
 #     1. DNS Resolution
 #     2. TCP Handshake
+#        2.1. Client Hello
+#        2.2. Server Hello
 #     3. TLS
 #
 # Output format (--dirs):
@@ -107,6 +109,7 @@ fi
 for file in "${FILES[@]}"; do
     relative="${file#"$CONTENT_DIR"/}"
     h2_count=0
+    h3_count=0
 
     if [[ "$FLAT" == false ]]; then
         echo ""
@@ -129,9 +132,14 @@ for file in "${FILES[@]}"; do
             elif (( level == 2 )); then
                 # H2: numbered content section
                 h2_count=$((h2_count + 1))
+                h3_count=0
                 printf "  %d. %s\n" "$h2_count" "$title"
+            elif (( level == 3 )); then
+                # H3: dot-numbered under parent H2
+                h3_count=$((h3_count + 1))
+                printf "     %d.%d. %s\n" "$h2_count" "$h3_count" "$title"
             else
-                # H3+: indented under parent, not numbered
+                # H4+: indented under parent, not numbered
                 indent=$(( (level - 2) * 2 + 5 ))
                 printf "%*s- %s\n" "$indent" "" "$title"
             fi
