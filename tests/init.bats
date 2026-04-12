@@ -21,6 +21,7 @@
     rm -rf "$TARGET"
 
     run "$BATS_TEST_DIRNAME/../scripts/init" --path "$TARGET"
+    [[ "$status" -eq 0 ]]
     [[ -d "$TARGET/.git" ]]
     # Should have an initial commit
     count="$(git -C "$TARGET" rev-list --count HEAD)"

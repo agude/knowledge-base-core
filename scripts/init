@@ -65,6 +65,12 @@ else
     git -C "$TARGET" init -q
     echo "  git: initialized"
 
+    # Set default identity if not configured (CI runners, fresh machines)
+    if ! git -C "$TARGET" config user.name > /dev/null 2>&1; then
+        git -C "$TARGET" config user.name "Knowledge Base"
+        git -C "$TARGET" config user.email "kb@localhost"
+    fi
+
     # Create .gitkeep files so empty dirs are tracked
     for dir in "${DIRS[@]}"; do
         if [[ ! -f "$TARGET/$dir/.gitkeep" ]]; then
