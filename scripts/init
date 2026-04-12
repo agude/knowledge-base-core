@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+#
+# init - Initialize an empty content repository.
+#
+# Creates the content directory structure and initializes a git repo.
+# Safe to run if content/ already exists — skips what's already there.
+#
+# Usage:
+#   init [--path DIR]
+#
+# Options:
+#   --path DIR   Where to create the content repo (default: ./content)
+#
+# Examples:
+#   init                          # creates ./content/
+#   init --path ~/my-kb-content   # creates at custom path
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+
+TARGET=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --path) need_arg "$1" $#; TARGET="$2"; shift 2 ;;
+        -h|--help)
+            sed -n '2,/^$/{ s/^# //; p }' "$0"
+            exit 0
+            ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [[ -z "$TARGET" ]]; then
+    TARGET="$CONTENT_DIR"
+fi
+
+DIRS=(
+    "knowledge"
+    "observations/pending"
+    "observations/archived"
+    "questions/open"
+    "questions/resolved"
+    "sources"
+)
+
+echo "Initializing content directory: $TARGET"
+
+for dir in "${DIRS[@]}"; do
+    if [[ -d "$TARGET/$dir" ]]; then
+        echo "  exists: $dir/"
+    else
+        mkdir -p "$TARGET/$dir"
+        echo "  created: $dir/"
+    fi
+done
+
+# Initialize git repo if not already one
+if [[ -d "$TARGET/.git" ]]; then
+    echo "  git: already initialized"
+else
+    git -C "$TARGET" init -q
+    echo "  git: initialized"
+
+    # Create .gitkeep files so empty dirs are tracked
+    for dir in "${DIRS[@]}"; do
+        if [[ ! -f "$TARGET/$dir/.gitkeep" ]]; then
+            touch "$TARGET/$dir/.gitkeep"
+        fi
+    done
+
+    git -C "$TARGET" add .
+    git -C "$TARGET" commit -q -m "Init content repo"
+    echo "  git: initial commit"
+fi
+
+echo "Done."

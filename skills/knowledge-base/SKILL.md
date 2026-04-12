@@ -111,5 +111,8 @@ with skepticism and verify against live sources before acting on them.
 | `ask --title "..." [--context FILE] [--body "..."]` | Record a question |
 | `questions [--path DIR] [--file F] [--full] [--all]` | List open questions |
 | `resolve --file F [--answer "..."]` | Resolve a question |
+| `archive FILENAME [--all]` | Move observations to archived |
+| `stale [--days N] [--path DIR]` | List articles needing re-verification |
+| `init [--path DIR]` | Initialize an empty content repo |
 | `status` | Summary stats |
 | `context` | Compact summary for session injection |

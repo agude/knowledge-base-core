@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+#
+# stale - List knowledge articles past their freshness threshold.
+#
+# Reads the `verified` date from each article's frontmatter and compares
+# it against today. Articles are grouped by staleness severity.
+#
+# Usage:
+#   stale [--days N] [--path DIR]
+#
+# Options:
+#   --days N     Override threshold: flag anything older than N days
+#   --path DIR   Scope to a subdirectory of knowledge/
+#
+# Examples:
+#   stale                        # use default thresholds
+#   stale --days 30              # flag anything not verified in 30 days
+#   stale --path knowledge/deploys/
+#
+# Default thresholds (when --days is not set):
+#   14 days  — articles mentioning people, roles, org, or status
+#   60 days  — general articles
+#   180 days — domain rules and system behavior
+#
+# Since content type can't be reliably auto-detected, the default
+# threshold is 60 days. Use --days to override for specific reviews.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+
+CUSTOM_DAYS=""
+TARGET=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --days) need_arg "$1" $#; CUSTOM_DAYS="$2"; shift 2 ;;
+        --path) need_arg "$1" $#; TARGET="$2"; shift 2 ;;
+        -h|--help)
+            sed -n '2,/^$/{ s/^# //; p }' "$0"
+            exit 0
+            ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [[ -z "$TARGET" ]]; then
+    TARGET="$CONTENT_DIR/knowledge"
+else
+    resolved="$(resolve_path "$TARGET")" && TARGET="$CONTENT_DIR/$resolved"
+fi
+
+if [[ ! -d "$TARGET" ]]; then
+    echo "Not found: $TARGET" >&2
+    exit 1
+fi
+
+DEFAULT_DAYS=60
+
+# Get today as seconds since epoch (portable across GNU and BSD date)
+today_epoch="$(date -u +%s)"
+
+# date_to_epoch - Convert YYYY-MM-DD to seconds since epoch.
+# Works with both GNU date (-d) and BSD date (-j -f).
+date_to_epoch() {
+    local d="$1"
+    # Try GNU date first
+    date -u -d "$d" +%s 2>/dev/null && return
+    # Fall back to BSD date
+    date -u -j -f "%Y-%m-%d" "$d" +%s 2>/dev/null && return
+    echo ""
+}
+
+stale_count=0
+no_date_count=0
+
+while IFS= read -r -d '' file; do
+    relpath="${file#"$CONTENT_DIR/"}"
+
+    verified="$(frontmatter_field "verified" "$file" 2>/dev/null || echo "")"
+
+    if [[ -z "$verified" ]]; then
+        no_date_count=$((no_date_count + 1))
+        echo "  [no date]  $relpath"
+        continue
+    fi
+
+    # Parse the verified date (handle YYYY-MM-DD, strip any time component)
+    verified_date="${verified%T*}"
+    verified_epoch="$(date_to_epoch "$verified_date")"
+
+    if [[ -z "$verified_epoch" ]]; then
+        no_date_count=$((no_date_count + 1))
+        echo "  [bad date] $relpath  (verified: $verified)"
+        continue
+    fi
+
+    threshold_days="${CUSTOM_DAYS:-$DEFAULT_DAYS}"
+    threshold_secs=$((threshold_days * 86400))
+    age_secs=$((today_epoch - verified_epoch))
+    age_days=$((age_secs / 86400))
+
+    if (( age_secs > threshold_secs )); then
+        stale_count=$((stale_count + 1))
+        printf "  %4d days  %s  (verified: %s)\n" "$age_days" "$relpath" "$verified_date"
+    fi
+
+done < <(find "$TARGET" -name '*.md' -type f -print0 | sort -z)
+
+total=$((stale_count + no_date_count))
+
+if (( total == 0 )); then
+    echo "No stale articles."
+else
+    echo ""
+    echo "$stale_count stale, $no_date_count missing date."
+fi

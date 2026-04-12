@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+#
+# archive - Move a pending observation to the archive.
+#
+# Moves the file with git mv so history is preserved in the content repo.
+#
+# Usage:
+#   archive FILENAME [FILENAME ...]
+#   archive --all
+#
+# Options:
+#   --all         Archive all pending observations
+#   --no-commit   Skip the auto-commit
+#
+# Examples:
+#   archive 20260412T000000-abcd.md
+#   archive 20260412T000000-abcd.md 20260412T000000-efgh.md
+#   archive --all
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+
+PENDING_DIR="$CONTENT_DIR/observations/pending"
+ARCHIVED_DIR="$CONTENT_DIR/observations/archived"
+
+ALL=false
+DO_COMMIT=true
+FILES=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --all)       ALL=true; shift ;;
+        --no-commit) DO_COMMIT=false; shift ;;
+        -h|--help)
+            sed -n '2,/^$/{ s/^# //; p }' "$0"
+            exit 0
+            ;;
+        -*) echo "Unknown option: $1" >&2; exit 1 ;;
+        *)  FILES+=("$1"); shift ;;
+    esac
+done
+
+if [[ "$ALL" == true ]]; then
+    while IFS= read -r -d '' f; do
+        [[ "$(basename "$f")" == ".gitkeep" ]] && continue
+        FILES+=("$(basename "$f")")
+    done < <(find "$PENDING_DIR" -name '*.md' -type f -print0 | sort -z)
+fi
+
+if [[ ${#FILES[@]} -eq 0 ]]; then
+    echo "No files to archive." >&2
+    exit 0
+fi
+
+archived=0
+for name in "${FILES[@]}"; do
+    src="$PENDING_DIR/$name"
+    dst="$ARCHIVED_DIR/$name"
+
+    if [[ ! -f "$src" ]]; then
+        echo "Not found: observations/pending/$name" >&2
+        continue
+    fi
+
+    mv "$src" "$dst"
+    archived=$((archived + 1))
+    echo "Archived: observations/pending/$name"
+done
+
+if (( archived == 0 )); then
+    echo "Nothing archived." >&2
+    exit 1
+fi
+
+# Commit in the content repo
+if [[ "$DO_COMMIT" == true ]]; then
+    locked_commit "Archive: $archived observation(s)" "observations/"
+fi
