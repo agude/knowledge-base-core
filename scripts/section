@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+#
+# section - Extract a section from a markdown file.
+#
+# Retrieves a section by H2 number (from `toc` output) or by heading text.
+# Returns everything from the matched heading up to the next heading at the
+# same or higher level.
+#
+# Usage:
+#   section --file FILE (--number N | --heading TEXT) [--exact]
+#
+# Options:
+#   --file FILE      Markdown file to read (required)
+#   --number N       H2 section number (from toc output)
+#   --heading TEXT   Heading text to match (case-insensitive substring)
+#   --exact          Require exact heading match instead of substring
+#
+# Examples:
+#   section --file knowledge/networking.md --number 1     # 1st H2 section
+#   section --file knowledge/networking.md --number 2     # 2nd H2 section
+#   section --file knowledge/networking.md --heading 'DNS'  # any heading level
+#
+# Notes:
+#   --number targets H2s only. --heading matches any heading level (H2, H3,
+#   etc.), returning content up to the next heading at the same or higher level.
+#   Use --heading to extract H3 subsections.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+
+FILE=""
+NUMBER=""
+HEADING=""
+EXACT=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --file)    need_arg "$1" $#; FILE="$2"; shift 2 ;;
+        --number)  need_arg "$1" $#; NUMBER="$2"; shift 2 ;;
+        --heading) need_arg "$1" $#; HEADING="$2"; shift 2 ;;
+        --exact)   EXACT=true; shift ;;
+        -h|--help)
+            sed -n '2,/^$/{ s/^# //; p }' "$0"
+            exit 0
+            ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [[ -z "$FILE" ]]; then
+    echo "Error: --file is required" >&2
+    exit 1
+fi
+
+if [[ -z "$NUMBER" ]] && [[ -z "$HEADING" ]]; then
+    echo "Error: provide --number N or --heading TEXT" >&2
+    exit 1
+fi
+
+resolved="$(resolve_path "$FILE")" && FILE="$CONTENT_DIR/$resolved"
+
+if [[ ! -f "$FILE" ]]; then
+    echo "File not found: $FILE" >&2
+    exit 1
+fi
+
+found=false
+match_level=0
+h2_count=0
+
+# For heading matching, lowercase the query
+if [[ -n "$HEADING" ]]; then
+    heading_lower="$(echo "$HEADING" | tr '[:upper:]' '[:lower:]')"
+fi
+
+while IFS= read -r line; do
+    if [[ "$line" =~ ^(#{1,6})[[:space:]]+(.*) ]]; then
+        hashes="${BASH_REMATCH[1]}"
+        title="${BASH_REMATCH[2]}"
+        level=${#hashes}
+
+        if [[ "$found" == true ]]; then
+            # Inside matched section. Stop at same or higher level heading.
+            if (( level <= match_level )); then
+                break
+            fi
+            echo "$line"
+            continue
+        fi
+
+        # Count H2s for --number matching
+        if (( level == 2 )); then
+            h2_count=$((h2_count + 1))
+        fi
+
+        # Check for match
+        matched=false
+
+        if [[ -n "$NUMBER" ]]; then
+            if (( level == 2 )) && (( h2_count == NUMBER )); then
+                matched=true
+            fi
+        elif [[ -n "$HEADING" ]]; then
+            title_lower="$(echo "$title" | tr '[:upper:]' '[:lower:]')"
+            if [[ "$EXACT" == true ]]; then
+                [[ "$title_lower" == "$heading_lower" ]] && matched=true
+            else
+                [[ "$title_lower" == *"$heading_lower"* ]] && matched=true
+            fi
+        fi
+
+        if [[ "$matched" == true ]]; then
+            found=true
+            match_level=$level
+            echo "$line"
+        fi
+    else
+        if [[ "$found" == true ]]; then
+            echo "$line"
+        fi
+    fi
+done < "$FILE"
+
+if [[ "$found" == false ]]; then
+    if [[ -n "$NUMBER" ]]; then
+        echo "Section #${NUMBER} not found (file has ${h2_count} H2 sections)" >&2
+    else
+        echo "Heading not found: '$HEADING'" >&2
+    fi
+    exit 1
+fi

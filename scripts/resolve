@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+#
+# resolve - Mark an open question as resolved.
+#
+# Moves a question from questions/open/ to questions/resolved/. The answer
+# is appended to the file for provenance. The curator should also write the
+# answer into the relevant knowledge article.
+#
+# Usage:
+#   resolve --file FILENAME [--answer "..."]
+#   resolve --file FILENAME --answer - < answer.txt
+#
+# Options:
+#   --file FILENAME   Filename in questions/open/ (required)
+#   --answer TEXT     Answer text appended to the file. Use "-" to read stdin.
+#   --no-commit       Skip the auto-commit
+#
+# Examples:
+#   resolve --file 20260324T220000-abcd.md --answer "See knowledge/ach/taxonomy-tool.md § Matching Rules."
+#   resolve --file 20260324T220000-abcd.md --answer "No longer relevant — system decommissioned."
+#   echo "Long answer..." | resolve --file 20260324T220000-abcd.md --answer -
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+OPEN_DIR="$CONTENT_DIR/questions/open"
+RESOLVED_DIR="$CONTENT_DIR/questions/resolved"
+
+FILENAME=""
+ANSWER=""
+DO_COMMIT=true
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --file)      need_arg "$1" $#; FILENAME="$2"; shift 2 ;;
+        --answer)    need_arg "$1" $#; ANSWER="$2"; shift 2 ;;
+        --no-commit) DO_COMMIT=false; shift ;;
+        -h|--help)
+            sed -n '2,/^$/{ s/^# //; p }' "$0"
+            exit 0
+            ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [[ -z "$FILENAME" ]]; then
+    echo "Error: --file is required" >&2
+    exit 1
+fi
+
+src="$OPEN_DIR/$FILENAME"
+dst="$RESOLVED_DIR/$FILENAME"
+
+if [[ ! -f "$src" ]]; then
+    echo "Not found: questions/open/$FILENAME" >&2
+    exit 1
+fi
+
+# Read answer from stdin if --answer -
+if [[ "$ANSWER" == "-" ]]; then
+    ANSWER="$(cat)"
+elif [[ -z "$ANSWER" ]] && [[ ! -t 0 ]]; then
+    ANSWER="$(cat)"
+fi
+
+# Append answer if provided
+if [[ -n "$ANSWER" ]]; then
+    {
+        echo ""
+        echo "## Resolution ($(date -u +%Y-%m-%d))"
+        echo ""
+        echo "$ANSWER"
+    } >> "$src"
+fi
+
+mv "$src" "$dst"
+echo "Resolved: questions/open/$FILENAME -> questions/resolved/$FILENAME"
+
+# Auto-commit
+if [[ "$DO_COMMIT" == true ]]; then
+    q_title="$(frontmatter_field "title" "$dst" || echo "$FILENAME")"
+    locked_commit "Resolve: $q_title" "questions/"
+fi

@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+#
+# context - Output a brief knowledge base summary for session injection.
+#
+# Called by the SessionStart hook. Prints a compact summary to stdout
+# that gets injected into Claude's context.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+KNOWLEDGE_DIR="$CONTENT_DIR/knowledge"
+PENDING_DIR="$CONTENT_DIR/observations/pending"
+
+echo "=== Knowledge Base ($REPO_ROOT) ==="
+echo ""
+
+# Topic list
+if [[ -d "$KNOWLEDGE_DIR" ]] && compgen -G "$KNOWLEDGE_DIR/*.md" > /dev/null 2>&1; then
+    count=$(find "$KNOWLEDGE_DIR" -name '*.md' -type f | wc -l | tr -d ' ')
+    echo "Topics ($count files):"
+    "$SCRIPT_DIR/toc" --depth 1 --flat | sed 's/^/  /'
+else
+    echo "Topics: (none yet)"
+fi
+
+echo ""
+
+# Source documents
+SOURCES_DIR="$CONTENT_DIR/sources"
+if [[ -d "$SOURCES_DIR" ]]; then
+    src_count=$(find "$SOURCES_DIR" -name '*.md' -type f | wc -l | tr -d ' ')
+    echo "Source documents: $src_count"
+else
+    echo "Source documents: 0"
+fi
+
+echo ""
+
+# Pending observations
+if [[ -d "$PENDING_DIR" ]] && compgen -G "$PENDING_DIR/*.md" > /dev/null 2>&1; then
+    pending=$(find "$PENDING_DIR" -name '*.md' -type f | wc -l | tr -d ' ')
+    echo "Pending observations: $pending"
+else
+    echo "Pending observations: 0"
+fi
+
+echo ""
+script_list="$(ls "$SCRIPT_DIR" | grep -v '^_' | grep -v '^session-' | paste -sd',' - | sed 's/,/, /g')"
+echo "Scripts: $script_list"
+echo "Usage: \$KNOWLEDGE_BASE/scripts/<script> [args]"

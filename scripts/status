@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+#
+# status - Summary stats for the knowledge base.
+#
+# Usage:
+#   status
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+KNOWLEDGE_DIR="$CONTENT_DIR/knowledge"
+PENDING_DIR="$CONTENT_DIR/observations/pending"
+ARCHIVED_DIR="$CONTENT_DIR/observations/archived"
+
+count_md() {
+    local dir="$1"
+    if [[ -d "$dir" ]]; then
+        find "$dir" -name '*.md' -type f | wc -l | tr -d ' '
+    else
+        echo "0"
+    fi
+}
+
+knowledge_count="$(count_md "$KNOWLEDGE_DIR")"
+pending_count="$(count_md "$PENDING_DIR")"
+archived_count="$(count_md "$ARCHIVED_DIR")"
+
+# Last curation: most recent commit that touched knowledge/
+last_curation=""
+if [[ -d "$CONTENT_DIR/.git" ]]; then
+    last_curation="$(cd "$CONTENT_DIR" && git log -1 --format='%ai' -- knowledge/ 2>/dev/null || echo "never")"
+fi
+if [[ -z "$last_curation" ]]; then
+    last_curation="never"
+fi
+
+# Last observation: most recent file in pending or archived
+last_observe=""
+if [[ -d "$CONTENT_DIR/.git" ]]; then
+    last_observe="$(cd "$CONTENT_DIR" && git log -1 --format='%ai' -- observations/ 2>/dev/null || echo "never")"
+fi
+if [[ -z "$last_observe" ]]; then
+    last_observe="never"
+fi
+
+echo "Knowledge Base: $REPO_ROOT"
+echo "Content: $CONTENT_DIR"
+echo ""
+echo "  Knowledge articles:    $knowledge_count"
+echo "  Pending observations:  $pending_count"
+echo "  Archived observations: $archived_count"
+echo ""
+echo "  Last knowledge update: $last_curation"
+echo "  Last observation:      $last_observe"

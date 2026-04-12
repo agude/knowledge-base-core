@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+#
+# toc - Generate a table of contents from markdown files.
+#
+# Scans markdown files and extracts headings. H1 is the file title.
+# H2s are numbered per file (these are the content units). H3+ are
+# shown indented under their parent H2 when --depth allows.
+#
+# Usage:
+#   toc [--depth N] [--path DIR_OR_FILE] [--flat]
+#
+# Options:
+#   --depth N    Maximum heading level to include (default: 2, i.e., H1 + H2)
+#   --path PATH  Directory to scan or single file (default: knowledge/)
+#   --flat       Omit filename grouping, just list headings
+#
+# Examples:
+#   toc                          # H1+H2 from knowledge/
+#   toc --depth 3                # H1+H2+H3
+#   toc --path knowledge/topic.md
+#   toc --depth 1 --flat         # Just topic names, no file headers
+#   toc --dirs                   # Just show directory/file tree
+#
+# Output format (default):
+#   [knowledge/networking.md]
+#   Networking
+#     1. DNS Resolution
+#     2. TCP Handshake
+#     3. TLS
+#
+# Output format (--dirs):
+#   knowledge/
+#     ach/
+#       fraud/
+#         credits.md
+#         debits.md
+#     git.md
+#     networking.md
+#
+# Use the section numbers with the `section` script:
+#   section --file knowledge/networking.md --number 2
+
+set -euo pipefail
+
+DEPTH=2
+TARGET=""
+FLAT=false
+DIRS=false
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --depth) need_arg "$1" $#; DEPTH="$2"; shift 2 ;;
+        --path)  need_arg "$1" $#; TARGET="$2"; shift 2 ;;
+        --flat)  FLAT=true; shift ;;
+        --dirs)  DIRS=true; shift ;;
+        -h|--help)
+            sed -n '2,/^$/{ s/^# //; p }' "$0"
+            exit 0
+            ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [[ -z "$TARGET" ]]; then
+    TARGET="$CONTENT_DIR/knowledge"
+else
+    resolved="$(resolve_path "$TARGET")" && TARGET="$CONTENT_DIR/$resolved"
+fi
+
+# --dirs mode: just show the directory/file tree
+if [[ "$DIRS" == true ]]; then
+    if command -v tree > /dev/null 2>&1; then
+        tree "$TARGET" --noreport -I '__pycache__'
+    else
+        find "$TARGET" \( -name '*.md' -o -type d \) | sort | while IFS= read -r path; do
+            relative="${path#"$TARGET"}"
+            if [[ -z "$relative" ]]; then
+                echo "$(basename "$TARGET")/"
+            else
+                depth=$(echo "$relative" | tr -cd '/' | wc -c)
+                indent=$((depth * 2))
+                name="$(basename "$path")"
+                [[ -d "$path" ]] && name="$name/"
+                printf "%*s%s\n" "$indent" "" "$name"
+            fi
+        done
+    fi
+    exit 0
+fi
+
+# Collect files
+if [[ -d "$TARGET" ]]; then
+    FILES=()
+    while IFS= read -r -d '' f; do
+        FILES+=("$f")
+    done < <(find "$TARGET" -name '*.md' -type f -print0 | sort -z)
+elif [[ -f "$TARGET" ]]; then
+    FILES=("$TARGET")
+else
+    echo "Not found: $TARGET" >&2
+    exit 1
+fi
+
+for file in "${FILES[@]}"; do
+    relative="${file#"$CONTENT_DIR"/}"
+    h2_count=0
+
+    if [[ "$FLAT" == false ]]; then
+        echo ""
+        echo "[$relative]"
+    fi
+
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^(#{1,6})[[:space:]]+(.*) ]]; then
+            hashes="${BASH_REMATCH[1]}"
+            title="${BASH_REMATCH[2]}"
+            level=${#hashes}
+
+            if (( level > DEPTH )); then
+                continue
+            fi
+
+            if (( level == 1 )); then
+                # H1: file title, no number
+                echo "$title"
+            elif (( level == 2 )); then
+                # H2: numbered content section
+                h2_count=$((h2_count + 1))
+                printf "  %d. %s\n" "$h2_count" "$title"
+            else
+                # H3+: indented under parent, not numbered
+                indent=$(( (level - 2) * 2 + 5 ))
+                printf "%*s- %s\n" "$indent" "" "$title"
+            fi
+        fi
+    done < "$file"
+done

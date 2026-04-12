@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+#
+# search - Search knowledge and pending observations.
+#
+# Usage: search <query>
+#
+# Output format:
+#   <relative-path> | <section heading or "top"> | <matched line trimmed>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+
+QUERY="${1:-}"
+
+if [[ -z "$QUERY" ]]; then
+    echo "Usage: search <query>" >&2
+    exit 1
+fi
+
+SEARCH_DIRS=()
+for d in "$CONTENT_DIR/knowledge" "$CONTENT_DIR/sources" "$CONTENT_DIR/observations/pending"; do
+    [[ -d "$d" ]] && SEARCH_DIRS+=("$d")
+done
+
+if [[ ${#SEARCH_DIRS[@]} -eq 0 ]]; then
+    echo "No content directories found." >&2
+    exit 0
+fi
+
+find "${SEARCH_DIRS[@]}" \
+    -name '*.md' -type f 2>/dev/null | while read -r file; do
+    relpath="${file#"$CONTENT_DIR/"}"
+    grep -n -i -F "$QUERY" "$file" 2>/dev/null | while IFS=: read -r lineno line; do
+        section=$(head -n "$lineno" "$file" | grep '^## ' | tail -1 | sed 's/^## //')
+        section="${section:-top}"
+        trimmed=$(echo "$line" | sed 's/^[[:space:]]*//' | cut -c1-120)
+        echo "$relpath | $section | $trimmed"
+    done
+done

@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+#
+# ask - Record an open question in the knowledge base.
+#
+# Creates a timestamped markdown file in questions/open/. Questions
+# represent gaps in knowledge that the curator or user should address.
+#
+# Usage:
+#   ask --title "..." [--context FILE] [--body "..."]
+#
+# Options:
+#   --title TEXT     Question (required)
+#   --context PATH   Knowledge file or directory this relates to (optional)
+#   --body TEXT      Additional context. If omitted and stdin is piped, reads stdin.
+#   --source TEXT    Who created this (default: "session")
+#   --no-commit      Skip the auto-commit
+#
+# Examples:
+#   ask --title "Who owns paycheck-status now?" --context knowledge/ach/pdsa-green-status.md
+#   ask --title "How does the overdraft exclusion list work?"
+#   ask --title "Full NOT_A_PAYCHECK_CATEGORY enumeration?" --body "Referenced in pdsa-green-status but never listed."
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+OPEN_DIR="$CONTENT_DIR/questions/open"
+
+TITLE=""
+CONTEXT=""
+BODY=""
+SOURCE="session"
+DO_COMMIT=true
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --title)     need_arg "$1" $#; TITLE="$2"; shift 2 ;;
+        --context)   need_arg "$1" $#; CONTEXT="$2"; shift 2 ;;
+        --body)      need_arg "$1" $#; BODY="$2"; shift 2 ;;
+        --source)    need_arg "$1" $#; SOURCE="$2"; shift 2 ;;
+        --no-commit) DO_COMMIT=false; shift ;;
+        -h|--help)
+            sed -n '2,/^$/{ s/^# //; p }' "$0"
+            exit 0
+            ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [[ -z "$TITLE" ]]; then
+    echo "Error: --title is required" >&2
+    exit 1
+fi
+
+# Read body from stdin if not provided and stdin is piped
+if [[ -z "$BODY" ]] && [[ ! -t 0 ]]; then
+    BODY="$(cat)"
+fi
+
+# Normalize --context to a content-relative path
+if [[ -n "$CONTEXT" ]]; then
+    resolved="$(resolve_path "$CONTEXT")" && CONTEXT="$resolved"
+fi
+
+# Generate filename
+timestamp="$(date -u +%Y%m%dT%H%M%S)"
+suffix="$(head -c 2 /dev/urandom | xxd -p | head -c 4)"
+filename="${timestamp}-${suffix}.md"
+filepath="$OPEN_DIR/$filename"
+
+# Build frontmatter
+safe_title="$(yaml_escape "$TITLE")"
+{
+    echo "---"
+    echo "title: \"$safe_title\""
+    echo "source: $SOURCE"
+    if [[ -n "$CONTEXT" ]]; then
+        echo "context: $CONTEXT"
+    fi
+    echo "created: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "---"
+    if [[ -n "$BODY" ]]; then
+        echo ""
+        echo "$BODY"
+    fi
+} > "$filepath"
+
+echo "Wrote: questions/open/$filename"
+
+# Auto-commit
+if [[ "$DO_COMMIT" == true ]]; then
+    locked_commit "Ask: $TITLE" "questions/open/$filename"
+fi

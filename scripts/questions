@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+#
+# questions - List or read open questions in the knowledge base.
+#
+# Shows questions that the curator or other sessions have flagged as gaps.
+# Questions may optionally have a context field linking them to a knowledge
+# area.
+#
+# Usage:
+#   questions [--path DIR_OR_FILE] [--full] [--all]
+#   questions --file FILENAME
+#
+# Options:
+#   --path PATH      Only show questions whose context falls under PATH
+#   --file FILENAME  Read a single question file from questions/open/
+#   --full           Show full question content (default: title + context only)
+#   --all            Include resolved questions too
+#
+# Examples:
+#   questions                                  # all open questions
+#   questions --path knowledge/ach/            # open questions about ACH
+#   questions --full                           # full content
+#   questions --file 20260324T220000-abcd.md   # read one question
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+
+PATH_FILTER=""
+SINGLE_FILE=""
+FULL=false
+ALL=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --path)  need_arg "$1" $#; PATH_FILTER="$2"; shift 2 ;;
+        --file)  need_arg "$1" $#; SINGLE_FILE="$2"; shift 2 ;;
+        --full)  FULL=true; shift ;;
+        --all)   ALL=true; shift ;;
+        -h|--help)
+            sed -n '2,/^$/{ s/^# //; p }' "$0"
+            exit 0
+            ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+# Single-file mode: read one question and exit
+if [[ -n "$SINGLE_FILE" ]]; then
+    target="$CONTENT_DIR/questions/open/$SINGLE_FILE"
+    if [[ ! -f "$target" ]]; then
+        # Check resolved
+        target="$CONTENT_DIR/questions/resolved/$SINGLE_FILE"
+    fi
+    if [[ ! -f "$target" ]]; then
+        echo "Not found: $SINGLE_FILE (checked open/ and resolved/)" >&2
+        exit 1
+    fi
+    cat "$target"
+    exit 0
+fi
+
+# Normalize --path filter to content-relative (matching ask --context storage)
+if [[ -n "$PATH_FILTER" ]]; then
+    resolved="$(resolve_path "$PATH_FILTER")" && PATH_FILTER="$resolved"
+fi
+
+DIRS=("$CONTENT_DIR/questions/open")
+if [[ "$ALL" == true ]]; then
+    DIRS+=("$CONTENT_DIR/questions/resolved")
+fi
+
+count=0
+
+for dir in "${DIRS[@]}"; do
+    [[ -d "$dir" ]] || continue
+
+    while IFS= read -r -d '' file; do
+        [[ "$(basename "$file")" == ".gitkeep" ]] && continue
+
+        title="$(frontmatter_field "title" "$file" || echo "")"
+        context="$(frontmatter_field "context" "$file" || echo "")"
+
+        # Apply path filter
+        if [[ -n "$PATH_FILTER" ]]; then
+            # Skip questions with no context when filtering by path
+            [[ -z "$context" ]] && continue
+            # Check if context starts with the filter path
+            [[ "$context" != "$PATH_FILTER"* ]] && continue
+        fi
+
+        count=$((count + 1))
+
+        # Determine which directory this is from for --all mode
+        dirname="$(basename "$(dirname "$file")")"
+
+        if [[ "$FULL" == true ]]; then
+            echo "--- $(basename "$file") ---"
+            cat "$file"
+            echo ""
+        else
+            status=""
+            [[ "$ALL" == true ]] && [[ "$dirname" == "resolved" ]] && status=" [resolved]"
+
+            if [[ -n "$context" ]]; then
+                echo "- ${title}${status} (${context})"
+            else
+                echo "- ${title}${status}"
+            fi
+        fi
+    done < <(find "$dir" -name '*.md' -type f -print0 | sort -z)
+done
+
+if (( count == 0 )); then
+    if [[ -n "$PATH_FILTER" ]]; then
+        echo "No open questions for ${PATH_FILTER}"
+    else
+        echo "No open questions."
+    fi
+fi

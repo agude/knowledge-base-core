@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+#
+# pending - List uncurated observations.
+#
+# Shows pending observations with their titles and dates.
+# Use --full to include the body text.
+#
+# Usage:
+#   pending [--full] [--count]
+#
+# Options:
+#   --full    Show full observation content, not just titles
+#   --count   Just print the count
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+PENDING_DIR="$CONTENT_DIR/observations/pending"
+
+FULL=false
+COUNT_ONLY=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --full)  FULL=true; shift ;;
+        --count) COUNT_ONLY=true; shift ;;
+        -h|--help)
+            sed -n '2,/^$/{ s/^# //; p }' "$0"
+            exit 0
+            ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [[ ! -d "$PENDING_DIR" ]]; then
+    echo "0"
+    exit 0
+fi
+
+files=()
+while IFS= read -r -d '' f; do
+    files+=("$f")
+done < <(find "$PENDING_DIR" -name '*.md' -type f -print0 | sort -z)
+
+if [[ "$COUNT_ONLY" == true ]]; then
+    echo "${#files[@]}"
+    exit 0
+fi
+
+if [[ ${#files[@]} -eq 0 ]]; then
+    echo "No pending observations."
+    exit 0
+fi
+
+echo "${#files[@]} pending observation(s):"
+echo ""
+
+for file in "${files[@]}"; do
+    basename="$(basename "$file")"
+    title="$(frontmatter_field "title" "$file" || echo "")"
+    created="$(frontmatter_field "created" "$file" || echo "")"
+
+    if [[ "$FULL" == true ]]; then
+        echo "--- $basename ---"
+        cat "$file"
+        echo ""
+    else
+        printf "  %-30s  %s  [%s]\n" "$title" "$created" "$basename"
+    fi
+done
