@@ -3,6 +3,11 @@
 An external memory and context layer for Claude sessions on this machine.
 Located at `$KNOWLEDGE_BASE` (this directory).
 
+Before doing work, search the knowledge base. It contains curated articles
+about the user's systems, domain, preferences, team, and tooling — context
+that would otherwise take multiple rounds of questions to establish. A quick
+`search` or `toc` scan up front often saves significant back-and-forth.
+
 ## Scripts
 
 All paths are `$KNOWLEDGE_BASE/scripts/<name>`.
