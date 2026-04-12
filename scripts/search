@@ -34,7 +34,7 @@ find "${SEARCH_DIRS[@]}" \
     -name '*.md' -type f 2>/dev/null | while read -r file; do
     relpath="${file#"$CONTENT_DIR/"}"
     grep -n -i -F "$QUERY" "$file" 2>/dev/null | while IFS=: read -r lineno line; do
-        section=$(head -n "$lineno" "$file" | grep '^## ' | tail -1 | sed 's/^## //')
+        section=$(head -n "$lineno" "$file" | grep '^## ' | tail -1 | sed 's/^## //' || true)
         section="${section:-top}"
         trimmed=$(echo "$line" | sed 's/^[[:space:]]*//' | cut -c1-120)
         echo "$relpath | $section | $trimmed"
