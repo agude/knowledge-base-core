@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+#
+# session-end - SessionEnd hook for the knowledge base.
+#
+# Called by Claude Code's SessionEnd hook. Flushes the session
+# observation file into actual observations, then cleans up.
+#
+# Input: JSON on stdin with session_id, reason, etc.
+
+set -euo pipefail
+
+# Skip if observation is disabled
+[[ "${KNOWLEDGE_OBSERVE:-}" == "0" ]] && exit 0
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+SESSION_DIR="/tmp/knowledge-sessions"
+
+# Read hook input
+INPUT="$(cat)"
+SESSION_ID="$(echo "$INPUT" | jq -r '.session_id // empty')"
+
+if [[ -z "$SESSION_ID" ]]; then
+    exit 0
+fi
+
+SESSION_FILE="$SESSION_DIR/session-${SESSION_ID}.jsonl"
+
+if [[ ! -f "$SESSION_FILE" ]]; then
+    exit 0
+fi
+
+# Flush synchronously — takes a few seconds, well within the
+# 60-second hook timeout.
+exec "$SCRIPT_DIR/session-flush" "$SESSION_FILE"

@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+#
+# session-start - SessionStart hook for the knowledge base.
+#
+# Called by Claude Code's SessionStart hook. Does three things:
+# 1. Creates a session-specific observation buffer file.
+# 2. Sets KNOWLEDGE_OBSERVE=1 and KNOWLEDGE_SESSION_FILE via CLAUDE_ENV_FILE.
+# 3. Outputs the knowledge base CLAUDE.md to stdout (injected into context).
+#
+# Also processes any orphaned session files from crashed sessions.
+#
+# Input: JSON on stdin with session_id, transcript_path, etc.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SESSION_DIR="/tmp/knowledge-sessions"
+
+# Read hook input (must consume stdin before any early exit)
+INPUT="$(cat)"
+
+# Respect a pre-existing KNOWLEDGE_OBSERVE=0 (launch with
+# KNOWLEDGE_OBSERVE=0 claude to suppress all observation for a session).
+if [[ "${KNOWLEDGE_OBSERVE:-}" == "0" ]]; then
+    if [[ -n "${CLAUDE_ENV_FILE:-}" ]]; then
+        echo "KNOWLEDGE_OBSERVE=0" >> "$CLAUDE_ENV_FILE"
+    fi
+    # Still output CLAUDE.md (instructions are useful even without observation)
+    if [[ -f "$REPO_ROOT/CLAUDE.md" ]]; then
+        cat "$REPO_ROOT/CLAUDE.md"
+    fi
+    exit 0
+fi
+
+SESSION_ID="$(echo "$INPUT" | jq -r '.session_id // empty')"
+
+if [[ -z "$SESSION_ID" ]]; then
+    # Fallback if jq fails or session_id missing
+    SESSION_ID="$$-$(date +%s)"
+fi
+
+# Ensure session directory exists
+mkdir -p "$SESSION_DIR"
+
+# Process orphaned session files from crashed sessions
+for orphan in "$SESSION_DIR"/session-*.jsonl; do
+    [[ -f "$orphan" ]] || continue
+    # Skip our own (shouldn't exist yet, but be safe)
+    [[ "$orphan" == "$SESSION_DIR/session-${SESSION_ID}.jsonl" ]] && continue
+
+    # Check if the file is older than 1 hour (likely orphaned)
+    if [[ "$(find "$orphan" -mmin +60 2>/dev/null)" ]]; then
+        # Process orphaned observations
+        "$SCRIPT_DIR/session-flush" "$orphan" 2>/dev/null || true
+    fi
+done
+
+# Create session file
+SESSION_FILE="$SESSION_DIR/session-${SESSION_ID}.jsonl"
+touch "$SESSION_FILE"
+
+# Set environment variables for the session
+if [[ -n "${CLAUDE_ENV_FILE:-}" ]]; then
+    echo "KNOWLEDGE_OBSERVE=1" >> "$CLAUDE_ENV_FILE"
+    echo "KNOWLEDGE_SESSION_FILE=$SESSION_FILE" >> "$CLAUDE_ENV_FILE"
+fi
+
+# Output CLAUDE.md to inject into context
+if [[ -f "$REPO_ROOT/CLAUDE.md" ]]; then
+    cat "$REPO_ROOT/CLAUDE.md"
+fi

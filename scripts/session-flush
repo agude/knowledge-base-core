@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+#
+# session-flush - Convert a session buffer into a raw observation.
+#
+# Reads the session JSONL (user prompts + assistant responses), formats
+# it as a readable transcript, and saves it as a single observation.
+# The curator handles extraction and judgment later.
+#
+# Called by session-end and session-start (for orphaned files).
+#
+# Usage:
+#   session-flush <session-file>
+
+set -euo pipefail
+
+# session-flush is only called when observation was enabled for the session.
+# Export so observe (and any other callees) see it.
+export KNOWLEDGE_OBSERVE=1
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+SESSION_FILE="${1:-}"
+
+if [[ -z "$SESSION_FILE" ]] || [[ ! -f "$SESSION_FILE" ]]; then
+    exit 0
+fi
+
+# Skip empty files
+if [[ ! -s "$SESSION_FILE" ]]; then
+    rm -f "$SESSION_FILE"
+    exit 0
+fi
+
+# Build a readable transcript from the JSONL
+TRANSCRIPT=""
+while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    [[ "$line" != \{* ]] && continue
+
+    ROLE="$(echo "$line" | jq -r '.role // empty' 2>/dev/null)"
+    MESSAGE="$(echo "$line" | jq -r '.message // empty' 2>/dev/null)"
+
+    if [[ -n "$ROLE" ]] && [[ -n "$MESSAGE" ]]; then
+        TRANSCRIPT="${TRANSCRIPT}### ${ROLE}
+
+${MESSAGE}
+
+"
+    fi
+done < "$SESSION_FILE"
+
+if [[ -z "$TRANSCRIPT" ]]; then
+    rm -f "$SESSION_FILE"
+    exit 0
+fi
+
+# Count turns for the title
+TURN_COUNT="$(grep -c '"role"' "$SESSION_FILE" 2>/dev/null || echo 0)"
+
+# Save as a single observation
+if "$SCRIPT_DIR/observe" \
+    --title "Session transcript (${TURN_COUNT} messages)" \
+    --body "$TRANSCRIPT" \
+    --source "session-transcript" \
+    2>/dev/null; then
+    # Clean up session file only on successful observe
+    rm -f "$SESSION_FILE"
+else
+    echo "session-flush: observe failed, keeping $SESSION_FILE" >&2
+fi

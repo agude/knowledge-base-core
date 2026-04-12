@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+#
+# session-prompt - UserPromptSubmit hook for the knowledge base.
+#
+# Appends the user's prompt to the session buffer file.
+#
+# Input: JSON on stdin with session_id, prompt, etc.
+
+set -euo pipefail
+
+# Skip if observation is disabled
+[[ "${KNOWLEDGE_OBSERVE:-}" == "0" ]] && exit 0
+
+SESSION_DIR="/tmp/knowledge-sessions"
+
+INPUT="$(cat)"
+
+SESSION_ID="$(echo "$INPUT" | jq -r '.session_id // empty')"
+PROMPT="$(echo "$INPUT" | jq -r '.prompt // empty')"
+
+if [[ -z "$SESSION_ID" ]] || [[ -z "$PROMPT" ]]; then
+    exit 0
+fi
+
+SESSION_FILE="$SESSION_DIR/session-${SESSION_ID}.jsonl"
+
+[[ -f "$SESSION_FILE" ]] || exit 0
+
+# Skip very short prompts
+if [[ ${#PROMPT} -lt 20 ]]; then
+    exit 0
+fi
+
+echo "$INPUT" | jq -c '{role: "user", message: .prompt, timestamp: now}' \
+    >> "$SESSION_FILE" 2>/dev/null || true
+
+exit 0
