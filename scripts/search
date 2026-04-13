@@ -2,10 +2,22 @@
 #
 # search - Search knowledge and pending observations.
 #
-# Usage: search <query>
+# Case-insensitive substring search across knowledge articles, source
+# documents, and pending observations. Returns matching lines with
+# file path and section context.
+#
+# Usage:
+#   search <query>
+#
+# Options:
+#   -h, --help   Show this help message
 #
 # Output format:
 #   <relative-path> | <section heading or "top"> | <matched line trimmed>
+#
+# Examples:
+#   search "risk arbiter"
+#   search PostgreSQL
 
 set -euo pipefail
 
@@ -14,6 +26,11 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/_lib.sh"
 
 QUERY="${1:-}"
+
+if [[ "$QUERY" == "-h" || "$QUERY" == "--help" ]]; then
+    show_help "$0"
+    exit 0
+fi
 
 if [[ -z "$QUERY" ]]; then
     echo "Usage: search <query>" >&2

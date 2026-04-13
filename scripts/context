@@ -2,14 +2,26 @@
 #
 # context - Output a brief knowledge base summary for session injection.
 #
-# Called by the SessionStart hook. Prints a compact summary to stdout
-# that gets injected into Claude's context.
+# Prints a compact summary of the knowledge base: topic list, source
+# document count, pending observation count, and available scripts.
+# Intended for injection into Claude's context at session start.
+#
+# Usage:
+#   context
+#
+# Options:
+#   -h, --help   Show this help message
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/_lib.sh"
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    show_help "$0"
+    exit 0
+fi
 KNOWLEDGE_DIR="$CONTENT_DIR/knowledge"
 PENDING_DIR="$CONTENT_DIR/observations/pending"
 

@@ -12,6 +12,17 @@
 
 CONTENT_DIR="${KB_CONTENT_DIR:-$REPO_ROOT/content}"
 
+# show_help - Print the comment-header help block from a script.
+#
+# Extracts lines between the shebang and the first blank line, stripping
+# the leading "# " or "#" prefix. Uses awk for macOS/Linux portability.
+#
+# Usage (inside a -h|--help case arm):
+#   show_help "$0"
+show_help() {
+    awk 'NR==1{next} /^$/{exit} {sub(/^# ?/,""); print}' "$1"
+}
+
 # need_arg - Verify that a flag's required value is present.
 #
 # Call inside argument-parsing loops before accessing $2.

@@ -2,14 +2,25 @@
 #
 # status - Summary stats for the knowledge base.
 #
+# Prints article counts, observation counts, and timestamps for the
+# most recent knowledge update and observation.
+#
 # Usage:
 #   status
+#
+# Options:
+#   -h, --help   Show this help message
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/_lib.sh"
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    show_help "$0"
+    exit 0
+fi
 KNOWLEDGE_DIR="$CONTENT_DIR/knowledge"
 PENDING_DIR="$CONTENT_DIR/observations/pending"
 ARCHIVED_DIR="$CONTENT_DIR/observations/archived"

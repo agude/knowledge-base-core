@@ -5,6 +5,30 @@ load test_helper
 setup() { setup_content_dir; }
 teardown() { teardown_content_dir; }
 
+# --- show_help ---
+
+@test "show_help extracts comment header" {
+    local script="$TEST_CONTENT_DIR/test-script.sh"
+    cat > "$script" <<'SCRIPT'
+#!/usr/bin/env bash
+#
+# test-script - A test script.
+#
+# Does something useful.
+#
+# Usage:
+#   test-script [--flag]
+
+set -euo pipefail
+SCRIPT
+    source "$SCRIPTS/_lib.sh"
+    run show_help "$script"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"test-script - A test script."* ]]
+    [[ "$output" == *"Usage:"* ]]
+    [[ "$output" != *"set -euo pipefail"* ]]
+}
+
 # --- need_arg ---
 
 @test "need_arg fails when no argument follows flag" {
