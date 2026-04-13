@@ -94,8 +94,8 @@ if [[ "$DIRS" == true ]]; then
 fi
 
 # Collect files
+FILES=()
 if [[ -d "$TARGET" ]]; then
-    FILES=()
     while IFS= read -r -d '' f; do
         FILES+=("$f")
     done < <(find "$TARGET" -name '*.md' -type f -print0 | sort -z)
@@ -104,6 +104,10 @@ elif [[ -f "$TARGET" ]]; then
 else
     echo "Not found: $TARGET" >&2
     exit 1
+fi
+
+if [[ ${#FILES[@]} -eq 0 ]]; then
+    exit 0
 fi
 
 for file in "${FILES[@]}"; do

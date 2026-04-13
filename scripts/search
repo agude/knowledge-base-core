@@ -38,5 +38,5 @@ find "${SEARCH_DIRS[@]}" \
         section="${section:-top}"
         trimmed=$(echo "$line" | sed 's/^[[:space:]]*//' | cut -c1-120)
         echo "$relpath | $section | $trimmed"
-    done
+    done || true
 done

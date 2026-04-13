@@ -55,6 +55,23 @@ Some content."
     [[ "$status" -eq 0 ]]
 }
 
+@test "search works when first file has no match" {
+    create_test_article "aaa-no-match.md" "# No Match
+
+## Section
+
+Nothing relevant here."
+    create_test_article "zzz-has-match.md" "# Has Match
+
+## Found It
+
+The PostgreSQL server is running."
+    run "$SCRIPTS/search" "PostgreSQL"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"zzz-has-match.md"* ]]
+    [[ "$output" != *"aaa-no-match.md"* ]]
+}
+
 @test "search shows 'top' when match is before any H2" {
     create_test_article "topic.md" "---
 title: \"Matched in frontmatter\"
