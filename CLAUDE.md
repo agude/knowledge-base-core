@@ -1,12 +1,19 @@
 # Knowledge Base
 
-An external memory and context layer for Claude sessions on this machine.
-Located at `$KNOWLEDGE_BASE` (this directory).
+Previously learned facts about this user's work: business logic, institutional
+history, technical stack, processes, people, and domain knowledge. Located at
+`$KNOWLEDGE_BASE`.
 
-The knowledge base contains curated articles about the user's systems, domain,
-preferences, tooling, etc. --- context that would otherwise take multiple
-rounds of questions to establish. A quick `search` or `toc` scan up front
-often saves significant back-and-forth.
+**Before starting any task, scan the topic list below for relevant articles.**
+Many questions you would otherwise spend multiple tool calls investigating —
+team ownership, system behavior, domain rules, data tables, process details —
+are already answered here. Use `section` to read what is relevant. This
+consistently saves significant research work.
+
+## Topics
+
+The topic list is appended after this file at session start. If missing, run:
+`$KNOWLEDGE_BASE/scripts/toc --depth 1`
 
 ## Scripts
 
@@ -46,6 +53,17 @@ scripts/observe --title "<one-line summary>" --body "<details>"
   check for this and won't write if its not set.
 - Capture IMMEDIATELY. Do not wait until the task is done.
 - Be specific. One observation per concept. Include concrete details.
+
+## Freshness
+
+Each article has a `verified` date in frontmatter. Staleness thresholds:
+
+- **People, roles, org structure** — stale after ~2 weeks.
+- **Active initiatives, deadlines, project status** — stale after ~2 weeks.
+- **Processes and workflows** — stale after ~2 months.
+- **Domain rules, regulations, system behavior** — stale after ~6 months.
+
+If stale, verify against live sources before acting on the information.
 
 ## Rules
 

@@ -20,21 +20,30 @@ SESSION_DIR="/tmp/knowledge-sessions"
 # Read hook input (must consume stdin before any early exit)
 INPUT="$(cat)"
 
+source "$SCRIPT_DIR/_lib.sh"
+
+# Output CLAUDE.md, topic list, and project-specific context
+output_context() {
+    if [[ -f "$REPO_ROOT/CLAUDE.md" ]]; then
+        cat "$REPO_ROOT/CLAUDE.md"
+    fi
+    echo ""
+    echo "## Topics (auto-generated)"
+    echo ""
+    "$SCRIPT_DIR/toc" --depth 1 2>/dev/null || true
+    if [[ -f "$CONTENT_DIR/CLAUDE.md" ]]; then
+        echo ""
+        cat "$CONTENT_DIR/CLAUDE.md"
+    fi
+}
+
 # Respect a pre-existing KNOWLEDGE_OBSERVE=0 (launch with
 # KNOWLEDGE_OBSERVE=0 claude to suppress all observation for a session).
 if [[ "${KNOWLEDGE_OBSERVE:-}" == "0" ]]; then
     if [[ -n "${CLAUDE_ENV_FILE:-}" ]]; then
         echo "KNOWLEDGE_OBSERVE=0" >> "$CLAUDE_ENV_FILE"
     fi
-    # Still output CLAUDE.md (instructions are useful even without observation)
-    if [[ -f "$REPO_ROOT/CLAUDE.md" ]]; then
-        cat "$REPO_ROOT/CLAUDE.md"
-    fi
-    CONTENT_DIR="${KB_CONTENT_DIR:-$REPO_ROOT/content}"
-    if [[ -f "$CONTENT_DIR/CLAUDE.md" ]]; then
-        echo ""
-        cat "$CONTENT_DIR/CLAUDE.md"
-    fi
+    output_context
     exit 0
 fi
 
@@ -71,14 +80,5 @@ if [[ -n "${CLAUDE_ENV_FILE:-}" ]]; then
     echo "KNOWLEDGE_SESSION_FILE=$SESSION_FILE" >> "$CLAUDE_ENV_FILE"
 fi
 
-# Output CLAUDE.md to inject into context
-if [[ -f "$REPO_ROOT/CLAUDE.md" ]]; then
-    cat "$REPO_ROOT/CLAUDE.md"
-fi
-
-# Append project-specific context if it exists
-CONTENT_DIR="${KB_CONTENT_DIR:-$REPO_ROOT/content}"
-if [[ -f "$CONTENT_DIR/CLAUDE.md" ]]; then
-    echo ""
-    cat "$CONTENT_DIR/CLAUDE.md"
-fi
+# Output CLAUDE.md, topic list, and project-specific context
+output_context
