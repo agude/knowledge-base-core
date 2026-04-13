@@ -2,6 +2,8 @@
 name: knowledge-base
 description: Look up, record, and manage knowledge base content. Use when the user asks to find information, record something, or work with the knowledge base.
 user-invocable: true
+allowed-tools:
+  - "Bash(${CLAUDE_SKILL_DIR}/../scripts/*)"
 ---
 
 # Knowledge Base
@@ -14,19 +16,19 @@ through scripts in `$KNOWLEDGE_BASE/scripts/`.
 
 Start by searching, not browsing.
 
-1. **Search first.** `scripts/search "<query>"` returns matches across
+1. **Search first.** `${CLAUDE_SKILL_DIR}/../scripts/search "<query>"` returns matches across
    knowledge articles, source documents, and pending observations. Output
    format: `<file> | <section> | <matched line>`.
 
 2. **Narrow with toc.** If search gives too many results or you need to
-   explore a topic area, use `scripts/toc` to scan section names.
+   explore a topic area, use `${CLAUDE_SKILL_DIR}/../scripts/toc` to scan section names.
    - `toc --depth 1` — just topic names (one line per file)
    - `toc --depth 2` — H2 section names (the primary content units)
    - `toc --depth 3` — H3 subsections with dot numbers (1.1, 1.2)
    - `toc --path knowledge/some-dir/` — scope to a subdirectory
    - `toc --dirs` — show the file/directory tree
 
-3. **Load a section.** `scripts/section --file <path> --number N` loads one
+3. **Load a section.** `${CLAUDE_SKILL_DIR}/../scripts/section --file <path> --number N` loads one
    H2. Use `--number N.M` for an H3 subsection. Use `--heading "text"` for
    a case-insensitive substring match on any heading level.
 
@@ -41,7 +43,7 @@ states a preference, shares domain knowledge, or you discover something
 unexpected — capture it immediately:
 
 ```bash
-scripts/observe --title "<one-line summary>" --body "<details>"
+${CLAUDE_SKILL_DIR}/../scripts/observe --title "<one-line summary>" --body "<details>"
 ```
 
 ### Rules
@@ -76,7 +78,7 @@ When you notice a gap — a system, person, or process referenced but not
 covered in the knowledge base — flag it:
 
 ```bash
-scripts/ask --title "Who owns the feature-flag service?" --context knowledge/deploys/canary.md
+${CLAUDE_SKILL_DIR}/../scripts/ask --title "Who owns the feature-flag service?" --context knowledge/deploys/canary.md
 ```
 
 - `--context` is optional. Links the question to a knowledge area.
@@ -100,6 +102,8 @@ If an article's `verified` date exceeds these thresholds, treat its claims
 with skepticism and verify against live sources before acting on them.
 
 ## Script reference
+
+All scripts are at `${CLAUDE_SKILL_DIR}/../scripts/<name>`.
 
 | Script | Purpose |
 |---|---|
