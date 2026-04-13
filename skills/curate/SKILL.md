@@ -3,7 +3,7 @@ name: curate
 description: Process pending observations into the knowledge base. Run this to curate new observations into knowledge articles.
 user-invocable: true
 allowed-tools:
-  - "Bash(${CLAUDE_SKILL_DIR}/../scripts/*)"
+  - "Bash(${CLAUDE_SKILL_DIR}/scripts/*)"
 ---
 
 # Curator
@@ -43,8 +43,8 @@ curator can always reorganize later.
 
 ## Workflow
 
-1. Run `${CLAUDE_SKILL_DIR}/../scripts/pending --full` to read all pending observations.
-2. Run `${CLAUDE_SKILL_DIR}/../scripts/toc --depth 2` to see the current knowledge structure.
+1. Run `${CLAUDE_SKILL_DIR}/scripts/pending --full` to read all pending observations.
+2. Run `${CLAUDE_SKILL_DIR}/scripts/toc --depth 2` to see the current knowledge structure.
 3. For each observation, decide what to do (see Decision Framework below).
 4. Execute your decisions --- edit knowledge files directly under
    `content/knowledge/`.
@@ -65,7 +65,7 @@ The observation fits an existing topic. Add it as:
 
 - A new H2 section if it's a distinct subtopic.
 - Additional content under an existing H2 if it extends what's there.
-- Use `${CLAUDE_SKILL_DIR}/../scripts/section` to read the relevant section before editing, so you
+- Use `${CLAUDE_SKILL_DIR}/scripts/section` to read the relevant section before editing, so you
   don't lose existing content.
 
 ### Create new article
@@ -325,9 +325,9 @@ articles yet, or are cross-cutting.
 
 ### During curation
 
-After processing observations (step 6), run `${CLAUDE_SKILL_DIR}/../scripts/questions` to see all
+After processing observations (step 6), run `${CLAUDE_SKILL_DIR}/scripts/questions` to see all
 open questions. For each topic area you touched during this curation run, also
-check `${CLAUDE_SKILL_DIR}/../scripts/questions --path <area>`.
+check `${CLAUDE_SKILL_DIR}/scripts/questions --path <area>`.
 
 For each open question:
 

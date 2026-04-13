@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# hook-matcher: Bash
+#
+# PreToolUse hook: auto-allow scripts bundled with this project's skills.
+#
+# Self-locating: resolves its own symlink chain to find the project's
+# scripts/ directory, then checks if incoming Bash commands resolve to
+# the same directory. Works regardless of where the project is cloned.
+
+set -uo pipefail
+
+# Resolve this hook's real location (macOS readlink has no -f).
+self="$0"
+while [[ -L "$self" ]]; do
+    link="$(readlink "$self")"
+    if [[ "$link" == /* ]]; then
+        self="$link"
+    else
+        self="$(dirname "$self")/$link"
+    fi
+done
+SCRIPTS_DIR="$(cd "$(dirname "$self")" && pwd -P)"
+
+# Read hook input
+INPUT="$(cat)"
+
+# Extract the command
+COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
+[[ -n "$COMMAND" ]] || exit 0
+
+# Extract the script path (first whitespace-delimited token)
+script_path="${COMMAND%% *}"
+
+# Resolve the script path's directory through symlinks
+script_dir="$(cd "$(dirname "$script_path")" 2>/dev/null && pwd -P)" || exit 0
+
+# If the resolved directory matches our scripts directory, force allow
+if [[ "$script_dir" == "$SCRIPTS_DIR" ]]; then
+    printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"Auto-approved skill script"}}\n'
+fi

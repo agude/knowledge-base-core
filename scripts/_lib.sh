@@ -3,8 +3,8 @@
 # _lib.sh - Shared functions for knowledge base scripts.
 #
 # Source this after setting REPO_ROOT:
-#   SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-#   REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+#   SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+#   REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 #   source "$SCRIPT_DIR/_lib.sh"
 #
 # Sets CONTENT_DIR (defaults to $REPO_ROOT/content, overridable via
