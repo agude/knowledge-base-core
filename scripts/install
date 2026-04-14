@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+#
+# install - Wire hooks and skills into the system.
+#
+# Creates symlinks for coat-tree hooks and Claude Code skills.
+# Idempotent — safe to re-run after updates.
+#
+# Usage:
+#   install
+#
+# Locations:
+#   Hooks:  ~/.config/coat-tree/hooks.d/<event>/010.knowledge
+#   Skills: ~/.claude/skills/<name>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+
+COAT_TREE_HOOKS="${XDG_CONFIG_HOME:-$HOME/.config}/coat-tree/hooks.d"
+SKILLS_DIR="$HOME/.claude/skills"
+HOOK_PREFIX="010.knowledge"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            awk 'NR==1{next} /^$/{exit} {sub(/^# ?/,""); print}' "$0"
+            exit 0
+            ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+# --- Hooks ---
+
+HOOKS=(
+    "SessionStart:session-start"
+    "UserPromptSubmit:session-prompt"
+    "Stop:session-stop"
+    "SessionEnd:session-end"
+    "PreToolUse:pretool-allow"
+)
+
+echo "Installing hooks..."
+for pair in "${HOOKS[@]}"; do
+    event="${pair%%:*}"
+    script="${pair##*:}"
+    mkdir -p "${COAT_TREE_HOOKS}/${event}"
+    ln -sf "${SCRIPT_DIR}/${script}" "${COAT_TREE_HOOKS}/${event}/${HOOK_PREFIX}"
+    echo "  ${event}/${HOOK_PREFIX}"
+done
+
+# --- Skills ---
+
+echo "Installing skills..."
+mkdir -p "$SKILLS_DIR"
+for skill_dir in "$REPO_ROOT/skills/"*/; do
+    [[ -d "$skill_dir" ]] || continue
+    name="$(basename "$skill_dir")"
+    ln -sfn "$skill_dir" "${SKILLS_DIR}/${name}"
+    echo "  ${name}"
+done
+
+# --- Cleanup stale symlinks ---
+
+stale=0
+for link in "${COAT_TREE_HOOKS}"/*/* "${SKILLS_DIR}"/*; do
+    [[ -L "$link" ]] || continue
+    target="$(readlink "$link")"
+    case "$target" in
+        "${REPO_ROOT}/"*)
+            if [[ ! -e "$link" ]]; then
+                rm "$link"
+                echo "  removed stale: $(basename "$link")"
+                stale=$((stale + 1))
+            fi
+            ;;
+    esac
+done
+if (( stale > 0 )); then
+    echo "Cleaned $stale stale symlink(s)."
+fi
+
+echo "Done."
+
+# --- Environment reminder ---
+
+if [[ -z "${KNOWLEDGE_BASE:-}" ]]; then
+    echo ""
+    echo "Note: KNOWLEDGE_BASE is not set in your shell."
+    echo "  Add to your shell config:"
+    echo "    export KNOWLEDGE_BASE=\"${REPO_ROOT}\""
+fi
