@@ -121,7 +121,9 @@ Project skills activate when Claude is working in this repo.
 into Claude's context at session start. It also sets `KNOWLEDGE_OBSERVE=1`
 so the session can capture observations, and creates a session-specific
 buffer file for batching writes. Install it by symlinking into the
-coat-tree hooks directory (the dotfiles installer handles this).
+coat-tree hooks directory (the dotfiles installer handles this). coat-tree
+is not required. If you prefer, point Claude Code's `SessionStart` hook
+in `settings.json` directly at `scripts/session-start`.
 
 [ct]: https://github.com/agude/coat-tree
 
