@@ -26,11 +26,6 @@ SESSION_FILE="$SESSION_DIR/session-${SESSION_ID}.jsonl"
 
 [[ -f "$SESSION_FILE" ]] || exit 0
 
-# Skip very short prompts
-if [[ ${#PROMPT} -lt 20 ]]; then
-    exit 0
-fi
-
 echo "$INPUT" | jq -c '{role: "user", message: .prompt, timestamp: now}' \
     >> "$SESSION_FILE" 2>/dev/null || true
 
