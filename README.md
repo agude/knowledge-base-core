@@ -117,10 +117,13 @@ Project skills activate when Claude is working in this repo.
 
 ### Session hook
 
-`scripts/session-start` is a hook that injects `CLAUDE.md` into Claude's
-context at session start. It also sets `KNOWLEDGE_OBSERVE=1` so the session
-can capture observations, and creates a session-specific buffer file for
-batching writes.
+`scripts/session-start` is a [coat-tree][ct] hook that injects `CLAUDE.md`
+into Claude's context at session start. It also sets `KNOWLEDGE_OBSERVE=1`
+so the session can capture observations, and creates a session-specific
+buffer file for batching writes. Install it by symlinking into the
+coat-tree hooks directory (the dotfiles installer handles this).
+
+[ct]: https://github.com/agude/coat-tree
 
 ## Testing
 
