@@ -43,14 +43,19 @@ curator can always reorganize later.
 
 ## Workflow
 
-1. Run `${CLAUDE_SKILL_DIR}/scripts/pending --full` to read all pending observations.
-2. Run `${CLAUDE_SKILL_DIR}/scripts/toc --depth 2` to see the current knowledge structure.
-3. For each observation, decide what to do (see Decision Framework below).
-4. Execute your decisions --- edit knowledge files directly under
+1. Run `${CLAUDE_SKILL_DIR}/scripts/pending --count` to see how many pending
+   observations you have to work on. If there are a lot, you'll need to handle
+   them in batches to avoid running out of context.
+2. If there are only a small number of observations, run
+   `${CLAUDE_SKILL_DIR}/scripts/pending --full` to read them all. Otherwise
+   use your READ tool to go through them one by one.
+3. Run `${CLAUDE_SKILL_DIR}/scripts/toc --depth 2` to see the current knowledge structure.
+4. For each observation, decide what to do (see Decision Framework below).
+5. Execute your decisions --- edit knowledge files directly under
    `content/knowledge/`.
-5. Move each processed observation to `content/observations/archived/`.
-6. Review open questions (see Open Questions below).
-7. Commit all changes as a single batch.
+6. Move each processed observation to `content/observations/archived/`.
+7. Review open questions (see Open Questions below).
+8. Commit all changes as a single batch.
 
 If there are no pending observations, check open questions anyway (step 6),
 then stop if there's nothing to do.
