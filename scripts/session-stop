@@ -2,11 +2,14 @@
 #
 # session-stop - Stop hook for the knowledge base.
 #
-# Appends Claude's last response to the session buffer file.
+# Appends Claude's last response to the session buffer file, then flushes
+# the session to an observation.
 #
 # Input: JSON on stdin with session_id, last_assistant_message, etc.
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 
 # Skip if observation is disabled
 [[ "${KNOWLEDGE_OBSERVE:-}" == "0" ]] && exit 0
@@ -28,5 +31,8 @@ SESSION_FILE="$SESSION_DIR/session-${SESSION_ID}.jsonl"
 
 echo "$INPUT" | jq -c '{role: "assistant", message: .last_assistant_message, timestamp: now}' \
     >> "$SESSION_FILE" 2>/dev/null || true
+
+# Flush the session to an observation
+"$SCRIPT_DIR/session-flush" "$SESSION_FILE" 2>/dev/null || true
 
 exit 0
