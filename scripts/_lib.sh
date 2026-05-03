@@ -90,6 +90,30 @@ resolve_path() {
     return 1
 }
 
+# break_stale_git_lock - Remove git's index.lock if stale (>5 min old, no holder).
+#
+# Git's index.lock survives process kills (SIGKILL, crashes). This checks
+# age and whether any git process is running before removing.
+#
+# Usage: break_stale_git_lock /path/to/repo
+break_stale_git_lock() {
+    local repo_dir="$1"
+    local lockfile="$repo_dir/.git/index.lock"
+
+    [[ -f "$lockfile" ]] || return 0
+
+    # Check if any git process is running in this repo
+    if pgrep -f "git.*$repo_dir" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    # Break if older than 5 minutes
+    if find "$lockfile" -maxdepth 0 -mmin +5 2>/dev/null | grep -q .; then
+        rm -f "$lockfile"
+        echo "Removed stale git lock: $lockfile" >&2
+    fi
+}
+
 # locked_commit - Commit with a filesystem lock to serialize concurrent writes.
 #
 # Uses a PID file inside the lock dir to detect and break stale locks
@@ -97,6 +121,8 @@ resolve_path() {
 # clears it after the explicit cleanup to avoid stealing another
 # process's lock. Git operations run in a subshell to avoid leaking
 # a cd into the caller.
+#
+# Also cleans up stale .git/index.lock files before git operations.
 #
 # Usage:
 #   locked_commit "message" path1 [path2 ...]
@@ -128,6 +154,9 @@ locked_commit() {
 
     echo $$ > "$pidfile"
     trap 'rm -rf "'"$CONTENT_DIR"'/.observe.lock" 2>/dev/null || true' EXIT
+
+    # Clean up stale git locks before operating
+    break_stale_git_lock "$CONTENT_DIR"
 
     (
         cd "$CONTENT_DIR"
