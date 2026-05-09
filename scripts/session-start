@@ -78,6 +78,9 @@ touch "$SESSION_FILE"
 if [[ -n "${CLAUDE_ENV_FILE:-}" ]]; then
     echo "KNOWLEDGE_OBSERVE=1" >> "$CLAUDE_ENV_FILE"
     echo "KNOWLEDGE_SESSION_FILE=$SESSION_FILE" >> "$CLAUDE_ENV_FILE"
+    logger -t knowledge "session-start: set KNOWLEDGE_OBSERVE=1 for $SESSION_ID" 2>/dev/null || true
+else
+    logger -t knowledge "session-start: CLAUDE_ENV_FILE not set, cannot export KNOWLEDGE_OBSERVE" 2>/dev/null || true
 fi
 
 # Output CLAUDE.md, topic list, and project-specific context

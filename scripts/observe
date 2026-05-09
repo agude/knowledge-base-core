@@ -47,12 +47,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Hard guard: only write if observation is explicitly enabled
-if [[ "${KNOWLEDGE_OBSERVE:-}" != "1" ]]; then
-    echo "Observation disabled (KNOWLEDGE_OBSERVE is not 1)" >&2
-    exit 0
-fi
-
 if [[ -z "$TITLE" ]]; then
     echo "Error: --title is required" >&2
     exit 1

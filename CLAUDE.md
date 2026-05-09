@@ -48,9 +48,8 @@ non-obvious during a task, capture it immediately:
 scripts/observe --title "<one-line summary>" --body "<details>"
 ```
 
-- **Only observe if `KNOWLEDGE_OBSERVE=1`** is set in your environment.
-  Subagents do not get this variable. Only top-level sessions observe. Scripts
-  check for this and won't write if its not set.
+- Explicit observe calls always work. The `KNOWLEDGE_OBSERVE` variable only
+  controls automatic session capture, not the observe script.
 - Capture IMMEDIATELY. Do not wait until the task is done.
 - Be specific. One observation per concept. Include concrete details.
 
