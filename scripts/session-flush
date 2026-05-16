@@ -6,7 +6,7 @@
 # it as a readable transcript, and saves it as a single observation.
 # The curator handles extraction and judgment later.
 #
-# Called by session-end and session-start (for orphaned files).
+# Called by session-end (SessionEnd hook) and session-start (orphaned files).
 #
 # Usage:
 #   session-flush <session-file>
