@@ -15,7 +15,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SESSION_DIR="/tmp/knowledge-sessions"
+SESSION_DIR="${SESSION_DIR:-/tmp/knowledge-sessions}"
 
 # Read hook input (must consume stdin before any early exit)
 INPUT="$(cat)"

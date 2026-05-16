@@ -11,7 +11,7 @@ set -euo pipefail
 # Skip if observation is disabled
 [[ "${KNOWLEDGE_OBSERVE:-}" == "0" ]] && exit 0
 
-SESSION_DIR="/tmp/knowledge-sessions"
+SESSION_DIR="${SESSION_DIR:-/tmp/knowledge-sessions}"
 
 INPUT="$(cat)"
 

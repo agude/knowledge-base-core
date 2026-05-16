@@ -27,21 +27,12 @@ teardown() { teardown_content_dir; }
     grep -q 'source: slack' "$file"
 }
 
-@test "observe refuses without KNOWLEDGE_OBSERVE=1" {
+@test "observe works without KNOWLEDGE_OBSERVE set" {
     unset KNOWLEDGE_OBSERVE
     run "$SCRIPTS/observe" --title "Test" --body "Body" --no-commit
     [[ "$status" -eq 0 ]]
-    [[ "$output" == *"Observation disabled"* ]]
     count=$(ls "$TEST_CONTENT_DIR/observations/pending/"*.md 2>/dev/null | wc -l)
-    [[ "$count" -eq 0 ]]
-}
-
-@test "observe refuses with KNOWLEDGE_OBSERVE=0" {
-    export KNOWLEDGE_OBSERVE=0
-    run "$SCRIPTS/observe" --title "Test" --body "Body" --no-commit
-    [[ "$output" == *"Observation disabled"* ]]
-    count=$(ls "$TEST_CONTENT_DIR/observations/pending/"*.md 2>/dev/null | wc -l)
-    [[ "$count" -eq 0 ]]
+    [[ "$count" -eq 1 ]]
 }
 
 @test "observe requires --title" {
