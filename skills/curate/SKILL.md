@@ -312,6 +312,16 @@ Questions live in `content/questions/open/` as individual markdown files.
 They represent gaps in the knowledge base --- things the curator or other
 sessions noticed but couldn't answer.
 
+**A question is a missing fact, not an open action item.** The test: would the
+answer be a durable fact recorded in a knowledge article? If yes, it's a
+question. If the "answer" would be a decision made, a task done, or a purchase
+approved, it does not belong here --- that's what the task tracker and the
+Johnny Decimal project files are for.
+
+Needing someone to go find out is fine; plenty of real gaps resolve only by
+asking a person or taking a measurement. What disqualifies a question is that
+its resolution is a *choice* rather than a *fact*.
+
 ### File format
 
 ```markdown
@@ -355,6 +365,19 @@ Examples of good questions:
 - "What are the exact canary promotion thresholds? Percentages needed."
 - "Who owns the feature-flag service now that the platform team reorged?"
 - "How does the deploy freeze calendar work during holiday weeks?"
+
+Examples that are **not** questions --- these are action items, and recording
+them here clutters the list with things no answer can ever close:
+
+- "Should we upgrade from the 1/2 inch foam to 1 inch?" --- a decision, not a
+  fact. The cost analysis belongs in the article; the decision belongs to the
+  user.
+- "Ask the contractor to confirm the balcony removal is in writing."
+- "Resolve the 195 mypy errors before adding a `type-check` recipe."
+
+The first two examples in the *good* list also need someone to go find out.
+That's not what separates them --- "what are the thresholds" has a numeric
+answer that lands in an article, while "should we upgrade" does not.
 
 ### Committing
 
