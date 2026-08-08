@@ -46,6 +46,39 @@ derivation. An observation that worked through an analysis in twenty steps
 becomes the conclusion plus the one or two facts that would let a reader
 re-derive it — not the twenty steps. See "Cut before you split" below.
 
+### If it has a repo, the repo owns it
+
+**Anything a future session can verify from a project's own repo in one grep
+does not belong here.** Most of the user's projects ship `AGENTS.md` /
+`CLAUDE.md`, and several ship `.claude/skills/` with reference docs — all of
+which load automatically for a session working in that repo, and all of which
+are kept current by tests and review. A knowledge-base copy has none of that
+and can only drift. A stale second source is worse than no source: the reader
+cannot tell which one is current.
+
+Before writing project detail into an article, check what the repo already has:
+
+```bash
+ls ~/Projects/<repo>/AGENTS.md ~/Projects/<repo>/CLAUDE.md
+ls -d ~/Projects/<repo>/.claude/skills/*/
+```
+
+**Keep here:** a pointer table naming the authority files (and stating the repo
+wins on conflict), decisions and **rejected alternatives** with reasoning, facts
+spanning the repo and the outside world (hosting, DNS, where notes are filed,
+which of several tools the user actually uses), incidents stated as their
+lesson, and domain knowledge about the subject matter rather than the software.
+
+**Drop here:** file and API inventories, class or method names, `file.rb:50`
+references, CSS mechanics, test names, Makefile variables, and sections shaped
+like changelog entries ("Feed repair (July 2026)") whose content is just the
+repo's current state.
+
+If an observation carries real repo knowledge the repo is missing, say so in
+your summary so it can be moved into the repo — do not settle for recording it
+here. See `knowledge/claude-code/knowledge-base-design.md` for the worked
+example.
+
 ## Workflow
 
 1. Run `${CLAUDE_SKILL_DIR}/scripts/pending --count` to see how many pending
