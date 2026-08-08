@@ -41,6 +41,11 @@ Examples of what does NOT belong:
 When in doubt, include it. Thin coverage is the main risk, not bloat. The
 curator can always reorganize later.
 
+**That licenses breadth, not depth.** Include the topic; do not include the
+derivation. An observation that worked through an analysis in twenty steps
+becomes the conclusion plus the one or two facts that would let a reader
+re-derive it — not the twenty steps. See "Cut before you split" below.
+
 ## Workflow
 
 1. Run `${CLAUDE_SKILL_DIR}/scripts/pending --count` to see how many pending
@@ -53,11 +58,19 @@ curator can always reorganize later.
 4. For each observation, decide what to do (see Decision Framework below).
 5. Execute your decisions --- edit knowledge files directly under
    `content/knowledge/`.
-6. Move each processed observation to `content/observations/archived/`.
-7. Review open questions (see Open Questions below).
-8. Commit all changes as a single batch.
+6. **Check what you wrote.** Measure every section you touched and fix
+   anything over ~50 lines --- by cutting first, splitting second (see "Cut
+   before you split"). You will not notice this by eye; measure it.
 
-If there are no pending observations, check open questions anyway (step 6),
+   ```bash
+   awk '/^## /{if(n)printf "%4d  %s\n", c, n; n=$0; c=0} {c++} \
+        END{printf "%4d  %s\n", c, n}' content/knowledge/<file>.md | sort -rn
+   ```
+7. Move each processed observation to `content/observations/archived/`.
+8. Review open questions (see Open Questions below).
+9. Commit all changes as a single batch.
+
+If there are no pending observations, check open questions anyway (step 8),
 then stop if there's nothing to do.
 
 ## Decision Framework
@@ -130,6 +143,28 @@ push detail into H3 subsections (which can be loaded individually via `section
 A 500-line H2 defeats the entire system. Ten 50-line H2s with clear names is
 infinitely better. If you think you need a 500 line H2, perhaps it needs to be
 promoted to an H1.
+
+### Cut before you split
+
+Splitting is the right remedy when the content earns its place and only the
+packaging is wrong. It is the wrong remedy for a section that is long because
+it was **transcribed rather than curated** — six 33-line sections of worked
+arithmetic cost a future session exactly as much as one 199-line section.
+
+Ask which one you have. The tell is that the length comes from *reasoning* —
+step-by-step derivations, option tables you already picked from, arithmetic
+that was performed once to reach a conclusion. **State the conclusion and the
+inputs that would let a reader redo the work. Delete the work.**
+
+Real example: an earthquake-insurance analysis went in at 199 lines carrying
+CRRA utility math, post-quake outcome tables and NPV derivations. Curated to
+109 lines it says the limit and deductible contradict each other, the
+deductible should go up not down, and the case rests on correlation — each
+with its number, none with its derivation. Nothing a future session needs was
+lost.
+
+Do not let the 500-line alarm calibrate you. A 70-line section is already
+2-7x the target and will not feel wrong.
 
 ### Structure
 
@@ -340,7 +375,7 @@ articles yet, or are cross-cutting.
 
 ### During curation
 
-After processing observations (step 6), run `${CLAUDE_SKILL_DIR}/scripts/questions` to see all
+After processing observations (step 8), run `${CLAUDE_SKILL_DIR}/scripts/questions` to see all
 open questions. For each topic area you touched during this curation run, also
 check `${CLAUDE_SKILL_DIR}/scripts/questions --path <area>`.
 
