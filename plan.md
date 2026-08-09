@@ -7,7 +7,7 @@ content.
 
 ## Status
 
-Branch `fix-retrieval-layer`, 21 commits. Suite green at 191 tests;
+Branch `fix-retrieval-layer`, 26 commits. Suite green at 208 tests;
 shellcheck clean.
 
 ### Done
@@ -48,6 +48,7 @@ Measured:
 | Archive reachable by search | no (1,366 files) | **`--archive`** |
 | Freshness thresholds | prose in 3 documents | **`ttl:`, read by `stale`** |
 | Tests | 89 | **208** |
+| `lint` errors over the corpus | 2 (undetectable) | **0** |
 | shellcheck findings | 41 (never run) | **0** |
 
 ### Open
@@ -62,9 +63,10 @@ Measured:
    Areas worth attacking: `is_simple_command` (a security control), the
    `pre-commit` stamping awk under amend/rebase/merge, and whether the
    fence parser disagrees with CommonMark anywhere that matters.
-2. **F19 — the two double-H1 articles.** `lint` errors on them, so the
-   next curation run that touches either is blocked until they are fixed.
-   Filed as an observation; article edits belong to the curator.
+2. ~~F19 — the two double-H1 articles.~~ **Closed.** Filed as an
+   observation; the curation run of 2026-08-09 fixed both. `lint` now
+   reports 0 errors over 129 articles (3 oversized-H2 warnings remain,
+   which is the intended severity for a target rather than a rule).
 3. **`~/Wiki` still has the `pretool-allow` bypass.** Same code, separate
    repo, live and unfixed. Its skill description also still overlaps this
    one's.
