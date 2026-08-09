@@ -81,7 +81,10 @@ example.
 
 ## Workflow
 
-1. Run `${CLAUDE_SKILL_DIR}/scripts/pending --count` to see how many pending
+1. Run `${CLAUDE_SKILL_DIR}/scripts/sync` first. Observations accumulate on
+   whichever machine ran the session, so anything captured elsewhere is
+   invisible until it is pulled. Then run
+   `${CLAUDE_SKILL_DIR}/scripts/pending --count` to see how many pending
    observations you have to work on. If there are a lot, you'll need to handle
    them in batches to avoid running out of context.
 2. If there are only a small number of observations, run

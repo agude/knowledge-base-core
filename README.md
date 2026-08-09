@@ -150,6 +150,7 @@ Standard markdown content. Links use [normal syntax](other-page.md).
 | `stale [--days N] [--path DIR]` | List articles needing re-verification |
 | `lint [--path DIR] [--strict]` | Check articles against the structural conventions |
 | `commit -m "..."` | Commit curation work under the write lock |
+| `sync [--status]` | Pull and push the content repo |
 | `status` | Summary stats |
 | `context` | Compact summary for session injection |
 | `session-start` | SessionStart hook for Claude Code |

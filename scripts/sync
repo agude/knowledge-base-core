@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+#
+# sync - Bring the content repo in line with its remote.
+#
+# Observations accumulate on whichever machine ran the session, and each
+# machine commits them locally. Curation can only see what has reached
+# one place, so the workflow is: sync on every machine, then curate on
+# one. Doing that by hand is three commands and a decision about rebase
+# vs merge; this is one command with the decision already made.
+#
+# Rebase, not merge: observation filenames are timestamped and unique, so
+# concurrent machines never touch the same file and a rebase is always
+# clean. Merge commits would just add noise to a log that is already
+# mostly "Observe:".
+#
+# Runs under the same lock as the capture scripts, so a session cannot
+# commit an observation in the middle of a rebase.
+#
+# Usage:
+#   sync [--status]
+#
+# Options:
+#   --status     Report what is ahead or behind; change nothing
+#   --no-push    Pull only
+#
+# Exit status:
+#   0  in sync (or successfully synced)
+#   1  could not sync — uncommitted work, no remote, or a failed rebase
+#
+# Examples:
+#   sync              # pull, then push
+#   sync --status     # what would it do?
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+source "$SCRIPT_DIR/_lib.sh"
+
+STATUS_ONLY=false
+DO_PUSH=true
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --status)  STATUS_ONLY=true; shift ;;
+        --no-push) DO_PUSH=false; shift ;;
+        -h|--help)
+            show_help "$0"
+            exit 0
+            ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [[ ! -d "$CONTENT_DIR/.git" ]]; then
+    echo "Not a git repository: $CONTENT_DIR" >&2
+    exit 1
+fi
+
+cd "$CONTENT_DIR"
+
+if ! git remote get-url origin > /dev/null 2>&1; then
+    echo "No 'origin' remote on $CONTENT_DIR — nothing to sync." >&2
+    exit 1
+fi
+
+branch="$(git rev-parse --abbrev-ref HEAD)"
+
+# Uncommitted work means a curation run is in progress. Rebasing under it
+# would either fail or silently reorder someone's half-finished edits.
+dirty="$(git status --porcelain)"
+if [[ -n "$dirty" ]]; then
+    echo "Uncommitted changes in $CONTENT_DIR — commit or stash first:" >&2
+    printf '%s\n' "$dirty" | head -10 >&2
+    exit 1
+fi
+
+git fetch --quiet origin "$branch" 2>/dev/null || true
+
+ahead=0
+behind=0
+if git rev-parse --verify --quiet "origin/$branch" > /dev/null; then
+    read -r behind ahead < <(
+        git rev-list --left-right --count "origin/$branch...HEAD" 2>/dev/null \
+            || echo "0 0"
+    )
+fi
+
+if [[ "$STATUS_ONLY" == true ]]; then
+    if (( ahead == 0 && behind == 0 )); then
+        echo "In sync with origin/$branch."
+    else
+        echo "$ahead to push, $behind to pull (origin/$branch)."
+    fi
+    exit 0
+fi
+
+if (( ahead == 0 && behind == 0 )); then
+    echo "Already in sync with origin/$branch."
+    exit 0
+fi
+
+acquire_lock || exit 1
+
+rc=0
+if (( behind > 0 )); then
+    echo "Pulling $behind commit(s)..."
+    git pull --rebase --quiet origin "$branch" || rc=$?
+    if (( rc != 0 )); then
+        echo "Rebase failed. Resolve it in $CONTENT_DIR, then run sync again." >&2
+        # Leave the rebase in place: aborting would discard the conflict
+        # the user needs to see.
+    fi
+fi
+
+if (( rc == 0 )) && [[ "$DO_PUSH" == true ]]; then
+    pushing="$(git rev-list --count "origin/$branch..HEAD" 2>/dev/null || echo 0)"
+    if (( pushing > 0 )); then
+        echo "Pushing $pushing commit(s)..."
+        git push --quiet origin "$branch" || rc=$?
+    fi
+fi
+
+release_lock
+
+if (( rc != 0 )); then
+    exit 1
+fi
+
+echo "Synced $CONTENT_DIR with origin/$branch."
