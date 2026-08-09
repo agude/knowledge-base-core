@@ -4,77 +4,58 @@ Previously learned facts about this user's work: business logic, institutional
 history, technical stack, processes, people, and domain knowledge. Located at
 `$KNOWLEDGE_BASE`.
 
-**Before starting any task, scan the topic list below for relevant articles.**
-Many questions you would otherwise spend multiple tool calls investigating —
-team ownership, system behavior, domain rules, data tables, process details —
-are already answered here. Use `section` to read what is relevant. This
-consistently saves significant research work.
+**Search it before starting any task.** Team ownership, system behavior,
+domain rules, data tables, process details — the answers are often already
+here, and finding them costs one command instead of an investigation.
 
-## Topics
+```bash
+$KNOWLEDGE_BASE/scripts/search <term> [term ...]   # start here
+$KNOWLEDGE_BASE/scripts/toc --path knowledge/<area>  # titles in one area
+$KNOWLEDGE_BASE/scripts/section --file <path> --number N   # load one section
+$KNOWLEDGE_BASE/scripts/observe --title "..." --body "..." # record a fact
+```
 
-The topic list is appended after this file at session start. If missing, run:
-`$KNOWLEDGE_BASE/scripts/toc --depth 1`
+Load the minimum: scan the index, then pull only the section you need. Do not
+read whole articles.
 
-## Scripts
-
-All paths are `$KNOWLEDGE_BASE/scripts/<name>`.
-
-| Script | Purpose |
-|---|---|
-| `search "<query>"` | Search all content |
-| `toc [--depth N] [--path DIR] [--flat] [--dirs]` | List topics and sections |
-| `section --file FILE (--number N \| --heading TEXT)` | Extract a section |
-| `observe --title "..." --body "..."` | Record an observation |
-| `pending [--full] [--count]` | List uncurated observations |
-| `ask --title "..." [--context FILE] [--body "..."]` | Record a question |
-| `questions [--path DIR] [--file F] [--full] [--all]` | List open questions |
-| `resolve --file F [--answer "..."]` | Resolve a question |
-| `archive FILENAME [--all]` | Move observations to archived |
-| `stale [--days N] [--path DIR]` | List articles needing re-verification |
-| `lint [--path DIR] [--strict]` | Check articles against the structural conventions |
-| `init [--path DIR]` | Initialize an empty content repo |
-| `status` | Summary stats |
-| `context` | Compact summary |
-
-Use the `knowledge-base` skill for detailed lookup and recording workflows.
-Use the `curate` skill to process pending observations into knowledge
-articles.
+Invoke the **`knowledge-base` skill** for the full script reference, lookup
+workflow, and freshness rules. Invoke the **`curate` skill** to process
+pending observations into articles.
 
 ## Observations
+
+Observation triggers live here rather than in the skill because an agent has
+to notice spontaneously — it cannot load a skill to learn that it should.
 
 When the user corrects you, states a preference, or you discover something
 non-obvious during a task, capture it immediately:
 
-```
-scripts/observe --title "<one-line summary>" --body "<details>"
+```bash
+$KNOWLEDGE_BASE/scripts/observe --title "<one-line summary>" --body "<details>"
 ```
 
-- Explicit observe calls always work. The `KNOWLEDGE_OBSERVE` variable only
-  controls automatic session capture, not the observe script.
-- Capture IMMEDIATELY. Do not wait until the task is done.
-- Be specific. One observation per concept. Include concrete details.
+- **Capture immediately.** Do not wait until the task is done.
+- **One observation per concept.** Three things learned, three calls.
+- **Be specific.** Exact commands, error messages, version numbers, who said
+  it. "Use uv + PEP 723 for standalone scripts" is good; "use modern tooling"
+  is not.
+- Skip ephemeral state ("the build is broken right now") and anything already
+  in the base.
+
+Explicit `observe` calls always work. `KNOWLEDGE_OBSERVE` only controls
+automatic session capture.
 
 ## Freshness
 
-Each article has a `verified` date in frontmatter. Staleness thresholds:
-
-- **People, roles, org structure** — stale after ~2 weeks.
-- **Active initiatives, deadlines, project status** — stale after ~2 weeks.
-- **Processes and workflows** — stale after ~2 months.
-- **Domain rules, regulations, system behavior** — stale after ~6 months.
-
-If stale, verify against live sources before acting on the information.
+Every article carries a `verified` date. People and project status rot in
+about two weeks, processes in two months, domain rules in six. Past that,
+verify against live sources before acting. The `knowledge-base` skill has the
+full table.
 
 ## Rules
 
-- **Use scripts, not direct file I/O**, for observations and reading.
-- **Do NOT edit entries directly.** Curated entries under `content/knowledge/`
-  are maintained exclusively by the curation agent.
-- **The curator is the exception.** It reads and writes knowledge files
-  directly via its own skill.
-
-## Project-specific rules
-
-This knowledge base may include project-specific instructions in
-`content/CLAUDE.md`. Those instructions take precedence over the defaults
-above when they conflict.
+- **Use the scripts, not direct file I/O**, for reading and recording.
+- **Do NOT edit `content/knowledge/` directly.** Those articles are the
+  curator's; the `curate` skill is the only writer.
+- `content/CLAUDE.md`, when present, adds project-specific policy and takes
+  precedence over this file.
