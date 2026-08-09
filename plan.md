@@ -1,8 +1,44 @@
 # Knowledge Base System Review — Improvement Plan
 
 First review: 2026-07-02. Re-reviewed and expanded: 2026-08-08.
+Implementation started 2026-08-08 on branch `fix-retrieval-layer`.
 Scope: structure, mechanics, and correctness of the tooling — not article
 content.
+
+## Status
+
+| | Finding | State |
+|---|---|---|
+| **P0** | F10 fenced headings corrupt `toc`/`section` | **done** — shared `md_heading` parser, 8 tests |
+| | F11 `search` drops terms after the first | **done** — multi-term AND, `--`, 6 tests |
+| | F12 `context` reports an empty base | **done** — recursive count |
+| | lint + run it automatically | **done** — `scripts/lint`, content-repo `pre-commit` |
+| **P1** | F13 `pretool-allow` approves chained commands | **done** — `is_simple_command`, 17 tests |
+| | F14 session buffers in shared `/tmp` | **done** — `$XDG_RUNTIME_DIR`, mode 700 |
+| | F15 missing `jq` kills the injection | **done** — EXIT-trap emission, `jq` guards |
+| **P2** | F21/F1 injection size | **done** — 12.3 KB → 3.3 KB, 486 → 84 lines |
+| | live state in the injection | **done** — `status --brief`, `stale --count` |
+| **P4** | F16 orphan sweep silently ends capture | **done** — `session_buffer_path` recreates |
+| **P5** | F17 `locked_commit` commits the whole index | **done** — pathspec + exit status |
+| **P9** | F27 CI is thin | **done** — shellcheck job, `apt-get update` |
+| **P3** | F3 search ranking, limits, `--all` | open |
+| **P4** | F18 stdin fallback, F23 turn threshold | open |
+| **P5** | F26 `curate` skill is CWD-bound | open |
+| **P6** | `sync`, stale-driven questions | open |
+| **P7** | F25 `ttl:` frontmatter | open |
+| **P8** | F24 three memory systems, F8 lateral links | open |
+| **P9** | F19 two double-H1 articles, F20 nits | open (F19 filed as an observation for the curator) |
+
+Measured after P0–P2:
+
+| Metric | Before | After |
+|---|---|---|
+| SessionStart injection | 12,269 B / 486 lines | **3,321 B / 84 lines** |
+| `toc --depth 1` payload | 8,447 B | **770 B** (`toc --map`) |
+| Phantom topics from fenced comments | 18 | **0** |
+| `section` on `find-recipes.md § Dangling symlinks` | 3 lines (truncated) | **26 lines** |
+| Tests | 89 | **167** |
+| shellcheck findings | 41 (never run) | **0** |
 
 ## What changed since 2026-07-02
 
