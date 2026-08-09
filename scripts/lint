@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+#
+# lint - Check knowledge articles against the structural conventions.
+#
+# Retrieval assumes every article has one H1, carries a parseable verified
+# date, and splits into H2 sections small enough to be worth loading.
+# Nothing enforced that, so drift surfaced only as bad answers: a second
+# H1 turns one article into two topics in `toc`, and an unclosed code
+# fence hides every heading after it from both `toc` and `section`.
+#
+# Run during curation and after bulk edits.
+#
+# Usage:
+#   lint [--path DIR_OR_FILE] [--max-lines N] [--strict]
+#
+# Options:
+#   --path PATH     Directory or file to check (default: knowledge/)
+#   --max-lines N   Warn when an H2 exceeds N lines (default: 50)
+#   --strict        Treat warnings as errors
+#
+# Checks:
+#   error    no H1, or more than one H1
+#   error    frontmatter missing title, updated, or verified
+#   error    verified is not a YYYY-MM-DD date
+#   error    a code fence is left open at end of file
+#   warning  an H2 exceeds --max-lines
+#   warning  two H2s in one file share the same text (--heading picks the
+#            first silently)
+#
+# Exit status:
+#   0  clean
+#   1  at least one error, or any warning under --strict
+#
+# Examples:
+#   lint
+#   lint --path knowledge/home/
+#   lint --file knowledge/home/insulation.md --max-lines 40
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+source "$SCRIPT_DIR/_lib.sh"
+
+TARGET=""
+MAX_LINES=50
+STRICT=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --path|--file) need_arg "$1" $#; TARGET="$2"; shift 2 ;;
+        --max-lines)   need_arg "$1" $#; MAX_LINES="$2"; shift 2 ;;
+        --strict)      STRICT=true; shift ;;
+        -h|--help)
+            show_help "$0"
+            exit 0
+            ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [[ ! "$MAX_LINES" =~ ^[0-9]+$ ]]; then
+    echo "Error: --max-lines takes a number" >&2
+    exit 1
+fi
+
+if [[ -z "$TARGET" ]]; then
+    TARGET="$CONTENT_DIR/knowledge"
+else
+    resolved="$(resolve_path "$TARGET")" && TARGET="$CONTENT_DIR/$resolved"
+fi
+
+FILES=()
+if [[ -d "$TARGET" ]]; then
+    while IFS= read -r -d '' f; do
+        FILES+=("$f")
+    done < <(find "$TARGET" -name '*.md' -type f -print0 | sort -z)
+elif [[ -f "$TARGET" ]]; then
+    FILES=("$TARGET")
+else
+    echo "Not found: $TARGET" >&2
+    exit 1
+fi
+
+errors=0
+warnings=0
+
+err() {
+    errors=$((errors + 1))
+    printf "  error    %s:%s  %s\n" "$1" "$2" "$3"
+}
+
+warn() {
+    warnings=$((warnings + 1))
+    printf "  warning  %s:%s  %s\n" "$1" "$2" "$3"
+}
+
+check_frontmatter() {
+    local file="$1" rel="$2" field value
+
+    for field in title updated verified; do
+        value="$(frontmatter_field "$field" "$file" 2>/dev/null || echo "")"
+        if [[ -z "$value" ]]; then
+            err "$rel" 1 "frontmatter missing $field"
+        elif [[ "$field" != "title" ]] \
+            && [[ ! "$value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+            err "$rel" 1 "$field is not a YYYY-MM-DD date: $value"
+        fi
+    done
+}
+
+check_headings() {
+    local file="$1" rel="$2"
+    local line lineno=0 h1_count=0
+    local h2_text="" h2_start=0 seen=""
+
+    # close_h2 - Emit length and duplicate warnings for the open H2.
+    close_h2() {
+        local end="$1" len
+        [[ -z "$h2_text" ]] && return 0
+        len=$((end - h2_start + 1))
+        if (( len > MAX_LINES )); then
+            warn "$rel" "$h2_start" "H2 is $len lines (max $MAX_LINES): $h2_text"
+        fi
+        if printf '%s' "$seen" | grep -qxF "$h2_text"; then
+            warn "$rel" "$h2_start" "duplicate H2 text: $h2_text"
+        fi
+        seen="$seen$h2_text
+"
+        h2_text=""
+    }
+
+    md_heading_reset
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        lineno=$((lineno + 1))
+        md_heading "$line" || continue
+
+        if (( MD_HEADING_LEVEL <= 2 )); then
+            close_h2 $((lineno - 1))
+        fi
+
+        if (( MD_HEADING_LEVEL == 1 )); then
+            h1_count=$((h1_count + 1))
+            if (( h1_count == 2 )); then
+                err "$rel" "$lineno" \
+                    "second H1 (one article, one H1): $MD_HEADING_TEXT"
+            fi
+        elif (( MD_HEADING_LEVEL == 2 )); then
+            h2_text="$MD_HEADING_TEXT"
+            h2_start=$lineno
+        fi
+    done < "$file"
+
+    close_h2 "$lineno"
+
+    if (( h1_count == 0 )); then
+        err "$rel" 1 "no H1 (toc has no title for this file)"
+    fi
+
+    if [[ "$MD_FENCE_OPEN" == true ]]; then
+        err "$rel" "$lineno" \
+            "unclosed code fence (hides later headings from toc and section)"
+    fi
+}
+
+for file in "${FILES[@]}"; do
+    rel="${file#"$CONTENT_DIR/"}"
+    check_frontmatter "$file" "$rel"
+    check_headings "$file" "$rel"
+done
+
+echo ""
+printf "%d file(s): %d error(s), %d warning(s)\n" \
+    "${#FILES[@]}" "$errors" "$warnings"
+
+if (( errors > 0 )); then
+    exit 1
+fi
+
+if [[ "$STRICT" == true ]] && (( warnings > 0 )); then
+    exit 1
+fi

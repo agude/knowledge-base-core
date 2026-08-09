@@ -148,6 +148,7 @@ Standard markdown content. Links use [normal syntax](other-page.md).
 | `questions [--path DIR] [--file F] [--full] [--all]` | List open questions |
 | `resolve --file F [--answer "..."]` | Resolve a question |
 | `stale [--days N] [--path DIR]` | List articles needing re-verification |
+| `lint [--path DIR] [--strict]` | Check articles against the structural conventions |
 | `status` | Summary stats |
 | `context` | Compact summary for session injection |
 | `session-start` | SessionStart hook for Claude Code |

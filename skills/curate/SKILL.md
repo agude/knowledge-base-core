@@ -91,14 +91,17 @@ example.
 4. For each observation, decide what to do (see Decision Framework below).
 5. Execute your decisions --- edit knowledge files directly under
    `content/knowledge/`.
-6. **Check what you wrote.** Measure every section you touched and fix
-   anything over ~50 lines --- by cutting first, splitting second (see "Cut
-   before you split"). You will not notice this by eye; measure it.
+6. **Check what you wrote.** Run the linter over everything you touched.
+   It reports oversized H2s, second H1s, missing or malformed `verified`
+   dates, unclosed code fences, and duplicate H2 names. You will not
+   notice any of these by eye; measure them.
 
    ```bash
-   awk '/^## /{if(n)printf "%4d  %s\n", c, n; n=$0; c=0} {c++} \
-        END{printf "%4d  %s\n", c, n}' content/knowledge/<file>.md | sort -rn
+   ${CLAUDE_SKILL_DIR}/scripts/lint --path knowledge/<dir>
    ```
+
+   Fix every error before committing. Fix oversized-H2 warnings by
+   cutting first, splitting second (see "Cut before you split").
 7. Move each processed observation to `content/observations/archived/`.
 8. Review open questions (see Open Questions below).
 9. Commit all changes as a single batch.

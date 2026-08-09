@@ -31,6 +31,7 @@ All paths are `$KNOWLEDGE_BASE/scripts/<name>`.
 | `resolve --file F [--answer "..."]` | Resolve a question |
 | `archive FILENAME [--all]` | Move observations to archived |
 | `stale [--days N] [--path DIR]` | List articles needing re-verification |
+| `lint [--path DIR] [--strict]` | Check articles against the structural conventions |
 | `init [--path DIR]` | Initialize an empty content repo |
 | `status` | Summary stats |
 | `context` | Compact summary |
