@@ -359,6 +359,38 @@ are exactly what shellcheck flags.
 
 ---
 
+## Automation policy — what runs without being asked
+
+Rule: **script anything that should always happen or that is
+deterministic; leave judgment manual.** Applied to this system:
+
+| Should be automatic | Why it qualifies | Where |
+|---|---|---|
+| `lint` on staged `knowledge/**.md` | Every check is pass/fail with no judgment. A second H1 is always wrong. | content-repo `pre-commit` |
+| Stamping `updated:` on edited articles | If the content changed, the edit date is today. It is a fact, not a decision. | same hook |
+| `shellcheck` + `bats` | Deterministic; every bug in this audit was bash. | CI (P9) |
+| Live pending/stale/question counts | Already computed; the only question is whether anyone sees them. | injection (P2) |
+| `pull --rebase` / `push` around content writes | Mechanical, and the current failure mode (silently divergent machines) is invisible. | `scripts/sync` (P6) |
+
+Deliberately **not** automatic:
+
+- **`verified:`.** It asserts that someone confirmed the content still
+  holds. Stamping it on edit would zero out `stale` forever and destroy
+  the only freshness signal the system has. `updated` is mechanical;
+  `verified` is a judgment. That distinction is the whole point of
+  carrying both dates.
+- **Curation.** Recorded decision: the expensive model on a weekly,
+  budget-aware cadence, not a nightly job.
+- **Warnings.** An oversized H2 is a target missed, not a defect;
+  `--strict` exists for runs that should hold the line.
+- **Archiving observations.** Which observations a pass consumed is a
+  curator judgment, not a file-mtime fact.
+
+Prerequisite: `locked_commit` currently hides commit failures behind
+`2>/dev/null`, so a hook rejection would silently leave an observation
+written but uncommitted. Fix that before adding any hook that can reject
+(F17).
+
 ## Improvement plan (prioritized)
 
 ### P0. Fix the retrieval layer (F10, F11, F12) — do this first
@@ -372,9 +404,16 @@ Everything else is optimization; this is correctness.
 - **Regression tests** with a fixture article containing `# comment` lines
   inside a fence: assert `toc` reports exactly the real headings and
   `section` returns the whole section.
-- **Lint pass** — `scripts/lint` (also wired into CI) that fails on: a
-  second H1, an H2 over ~50 lines, a missing `verified`, a heading inside
-  a fence that the parser would once have caught. Run it during `/curate`.
+- **Lint pass** — `scripts/lint` failing on a second H1, a missing or
+  malformed `verified`, and an unclosed fence; warning on an oversized or
+  duplicated H2. CI cannot check the corpus (`content/` is a separate
+  private repo), so CI covers the linter and the corpus is checked at
+  commit time.
+- **Run it automatically.** A content-repo `pre-commit` hook that lints
+  the staged `knowledge/**.md` files and stamps `updated:` on them —
+  installed by `scripts/install`. Requires surfacing commit failures in
+  `locked_commit` first (F17), or a rejected commit leaves an observation
+  written but uncommitted with no error. See "Automation policy" above.
 - **`search` argument handling.** Accept multiple terms; use `grep -e` or
   `--` so leading-dash queries are literal; error on an empty query rather
   than printing help for `-h`-shaped input.
