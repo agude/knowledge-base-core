@@ -102,3 +102,61 @@ echo pwned"
     run bash -c "printf '{}' | $HOOK"
     [[ -z "$output" ]]
 }
+
+# --- what an approved command can actually do ---
+#
+# is_simple_command constrains the shell. It says nothing about what the
+# blessed script is then told to do, and that gap was the real hole: the
+# approved script was itself the read primitive.
+
+@test "an approved section command cannot read outside the content dir" {
+    outside="$TEST_CONTENT_DIR/../outside-$$.md"
+    printf '# Secret\n\ntop secret\n' > "$outside"
+
+    # The hook does approve this: argv[0] is one of our scripts and the
+    # command runs one thing. That is precisely why the script itself has
+    # to refuse the argument.
+    run decide "$SCRIPTS/section --file $outside --heading Secret"
+    [[ "$output" == *'"allow"'* ]]
+
+    run "$SCRIPTS/section" --file "$outside" --heading Secret
+    [[ "$status" -ne 0 ]]
+    [[ "$output" != *"top secret"* ]]
+
+    rm -f "$outside"
+}
+
+@test "an approved section command cannot read an absolute system path" {
+    run "$SCRIPTS/section" --file /etc/passwd --heading root
+    [[ "$status" -ne 0 ]]
+    [[ "$output" != *"root:"* ]]
+}
+
+@test "an approved toc command cannot walk the filesystem" {
+    run "$SCRIPTS/toc" --path /etc
+    [[ "$status" -ne 0 ]]
+}
+
+@test "an approved toc --dirs cannot list an arbitrary tree" {
+    run "$SCRIPTS/toc" --dirs --path /etc
+    [[ "$status" -ne 0 ]]
+}
+
+@test "an approved resolve command cannot append to a file outside" {
+    victim="$TEST_CONTENT_DIR/../victim-$$.txt"
+    echo "original" > "$victim"
+    run "$SCRIPTS/resolve" --file "../../$(basename "$victim")" --answer "injected"
+    [[ "$status" -ne 0 ]]
+    run cat "$victim"
+    [[ "$output" == "original" ]]
+    rm -f "$victim"
+}
+
+@test "an approved archive command cannot move a file from outside" {
+    victim="$TEST_CONTENT_DIR/../victim-$$.md"
+    echo "mine" > "$victim"
+    run "$SCRIPTS/archive" "../$(basename "$victim")"
+    [[ "$status" -ne 0 ]]
+    [[ -f "$victim" ]]
+    rm -f "$victim"
+}
