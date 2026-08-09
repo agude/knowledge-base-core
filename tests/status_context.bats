@@ -26,6 +26,43 @@ teardown() { teardown_content_dir; }
     [[ "$output" == *"Content: $TEST_CONTENT_DIR"* ]]
 }
 
+@test "status --brief prints one line of live state" {
+    create_test_article "a.md" '---
+title: "A"
+updated: 2026-08-08
+verified: 2026-08-08
+---
+
+# A'
+    create_test_observation "20260412T000000-aaaa.md" "Obs" "Body"
+    create_test_question "20260412T000000-bbbb.md" "Who owns this?"
+
+    run "$SCRIPTS/status" --brief
+    [[ "$status" -eq 0 ]]
+    [[ "${#lines[@]}" -eq 1 ]]
+    [[ "$output" == *"1 articles"* ]]
+    [[ "$output" == *"1 pending"* ]]
+    [[ "$output" == *"1 open question(s)"* ]]
+}
+
+@test "status --brief counts stale articles" {
+    create_test_article "old.md" '---
+title: "Old"
+updated: 2020-01-01
+verified: 2020-01-01
+---
+
+# Old'
+    run "$SCRIPTS/status" --brief
+    [[ "$output" == *"1 stale"* ]]
+}
+
+@test "status rejects an unknown option" {
+    run "$SCRIPTS/status" --bogus
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Unknown option"* ]]
+}
+
 # --- context ---
 
 @test "context runs with empty content" {

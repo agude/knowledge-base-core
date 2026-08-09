@@ -5,6 +5,39 @@ load test_helper
 setup() { setup_content_dir; }
 teardown() { teardown_content_dir; }
 
+@test "stale --count prints only a number" {
+    create_test_article "old.md" '---
+verified: 2020-01-01
+---
+
+# Old'
+    create_test_article "fresh.md" "---
+verified: $(date -u +%Y-%m-%d)
+---
+
+# Fresh"
+    run "$SCRIPTS/stale" --count
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == "1" ]]
+}
+
+@test "stale --count includes articles with no verified date" {
+    create_test_article "nodate.md" "# No Date"
+    run "$SCRIPTS/stale" --count
+    [[ "$output" == "1" ]]
+}
+
+@test "stale --count prints 0 for a clean base" {
+    create_test_article "fresh.md" "---
+verified: $(date -u +%Y-%m-%d)
+---
+
+# Fresh"
+    run "$SCRIPTS/stale" --count
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == "0" ]]
+}
+
 @test "stale reports nothing when no articles exist" {
     run "$SCRIPTS/stale"
     [[ "$status" -eq 0 ]]

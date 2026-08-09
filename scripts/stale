@@ -6,11 +6,12 @@
 # it against today. Articles are grouped by staleness severity.
 #
 # Usage:
-#   stale [--days N] [--path DIR]
+#   stale [--days N] [--path DIR] [--count]
 #
 # Options:
 #   --days N     Override threshold: flag anything older than N days
 #   --path DIR   Scope to a subdirectory of knowledge/
+#   --count      Print only the number of articles needing attention
 #
 # Examples:
 #   stale                        # use default thresholds
@@ -33,11 +34,13 @@ source "$SCRIPT_DIR/_lib.sh"
 
 CUSTOM_DAYS=""
 TARGET=""
+COUNT_ONLY=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --days) need_arg "$1" $#; CUSTOM_DAYS="$2"; shift 2 ;;
         --path) need_arg "$1" $#; TARGET="$2"; shift 2 ;;
+        --count) COUNT_ONLY=true; shift ;;
         -h|--help)
             show_help "$0"
             exit 0
@@ -83,7 +86,9 @@ while IFS= read -r -d '' file; do
 
     if [[ -z "$verified" ]]; then
         no_date_count=$((no_date_count + 1))
-        echo "  [no date]  $relpath"
+        if [[ "$COUNT_ONLY" == false ]]; then
+            echo "  [no date]  $relpath"
+        fi
         continue
     fi
 
@@ -93,7 +98,9 @@ while IFS= read -r -d '' file; do
 
     if [[ -z "$verified_epoch" ]]; then
         no_date_count=$((no_date_count + 1))
-        echo "  [bad date] $relpath  (verified: $verified)"
+        if [[ "$COUNT_ONLY" == false ]]; then
+            echo "  [bad date] $relpath  (verified: $verified)"
+        fi
         continue
     fi
 
@@ -104,12 +111,20 @@ while IFS= read -r -d '' file; do
 
     if (( age_secs > threshold_secs )); then
         stale_count=$((stale_count + 1))
-        printf "  %4d days  %s  (verified: %s)\n" "$age_days" "$relpath" "$verified_date"
+        if [[ "$COUNT_ONLY" == false ]]; then
+            printf "  %4d days  %s  (verified: %s)\n" \
+                "$age_days" "$relpath" "$verified_date"
+        fi
     fi
 
 done < <(find "$TARGET" -name '*.md' -type f -print0 | sort -z)
 
 total=$((stale_count + no_date_count))
+
+if [[ "$COUNT_ONLY" == true ]]; then
+    echo "$total"
+    exit 0
+fi
 
 if (( total == 0 )); then
     echo "No stale articles."
