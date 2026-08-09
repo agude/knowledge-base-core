@@ -95,18 +95,21 @@ Questions are reviewed during curation passes.
 
 ## Freshness
 
-Knowledge articles have a `verified` date in frontmatter. Compare it against
-today and the type of content:
+Knowledge articles carry a `verified` date and a `ttl` in frontmatter.
+`ttl` is the article's own answer to how fast it rots:
 
-| Content type | Stale after |
-|---|---|
-| People, roles, org structure | ~2 weeks |
-| Active initiatives, project status | ~2 weeks |
-| Processes and workflows | ~2 months |
-| Domain rules, system behavior | ~6 months |
+| `ttl` | Stale after | Typical content |
+|---|---|---|
+| `people`, `status` | 14 days | People, roles, org, active projects |
+| `process` | 60 days | Processes and workflows |
+| `domain` | 180 days | Domain rules, system behavior |
+| *absent* | 60 days | Unclassified |
 
-If an article's `verified` date exceeds these thresholds, treat its claims
-with skepticism and verify against live sources before acting on them.
+`${CLAUDE_SKILL_DIR}/scripts/stale` lists what is past its threshold.
+
+If an article is past its `ttl`, treat its claims with skepticism and
+verify against live sources before acting on them. Source documents under
+`sources/` use `synced` instead — the date the local copy was pulled.
 
 ## Script reference
 

@@ -18,13 +18,23 @@
 #   stale --days 30              # flag anything not verified in 30 days
 #   stale --path knowledge/deploys/
 #
-# Default thresholds (when --days is not set):
-#   14 days  — articles mentioning people, roles, org, or status
-#   60 days  — general articles
-#   180 days — domain rules and system behavior
+# Per-article thresholds come from a `ttl:` field in the frontmatter,
+# either a number of days or one of these names:
 #
-# Since content type can't be reliably auto-detected, the default
-# threshold is 60 days. Use --days to override for specific reviews.
+#   people    14 days  — people, roles, org structure
+#   status    14 days  — active initiatives, project status
+#   process   60 days  — processes and workflows
+#   domain   180 days  — domain rules and system behavior
+#
+# Content type cannot be auto-detected, so an article with no `ttl:`
+# falls back to 60 days. The curator sets it when writing the article;
+# that is the only place the type is actually known.
+#
+# Files under sources/ are local copies of external documents, so their
+# freshness is `synced:` — when the copy was last pulled — rather than
+# `verified:`.
+#
+# --days overrides everything, for a one-off review at a chosen depth.
 
 set -euo pipefail
 
@@ -62,6 +72,19 @@ fi
 
 DEFAULT_DAYS=60
 
+# ttl_days - Map a `ttl:` value to a number of days.
+#
+# Prints nothing for an unrecognized value, so the caller can fall back.
+ttl_days() {
+    case "$1" in
+        people|status)  echo 14 ;;
+        process)        echo 60 ;;
+        domain)         echo 180 ;;
+        ''|*[!0-9]*)    echo "" ;;
+        *)              echo "$1" ;;
+    esac
+}
+
 # Get today as seconds since epoch (portable across GNU and BSD date)
 today_epoch="$(date -u +%s)"
 
@@ -82,12 +105,19 @@ no_date_count=0
 while IFS= read -r -d '' file; do
     relpath="${file#"$CONTENT_DIR/"}"
 
-    verified="$(frontmatter_field "verified" "$file" 2>/dev/null || echo "")"
+    # sources/ holds copies of external documents; `synced:` is when the
+    # copy was pulled, which is what goes stale about it.
+    if [[ "$relpath" == sources/* ]]; then
+        date_field="synced"
+    else
+        date_field="verified"
+    fi
+    verified="$(frontmatter_field "$date_field" "$file" 2>/dev/null || echo "")"
 
     if [[ -z "$verified" ]]; then
         no_date_count=$((no_date_count + 1))
         if [[ "$COUNT_ONLY" == false ]]; then
-            echo "  [no date]  $relpath"
+            echo "  [no $date_field]  $relpath"
         fi
         continue
     fi
@@ -104,7 +134,13 @@ while IFS= read -r -d '' file; do
         continue
     fi
 
-    threshold_days="${CUSTOM_DAYS:-$DEFAULT_DAYS}"
+    if [[ -n "$CUSTOM_DAYS" ]]; then
+        threshold_days="$CUSTOM_DAYS"
+    else
+        ttl="$(frontmatter_field "ttl" "$file" 2>/dev/null || echo "")"
+        threshold_days="$(ttl_days "$ttl")"
+        threshold_days="${threshold_days:-$DEFAULT_DAYS}"
+    fi
     threshold_secs=$((threshold_days * 86400))
     age_secs=$((today_epoch - verified_epoch))
     age_days=$((age_secs / 86400))
@@ -112,8 +148,9 @@ while IFS= read -r -d '' file; do
     if (( age_secs > threshold_secs )); then
         stale_count=$((stale_count + 1))
         if [[ "$COUNT_ONLY" == false ]]; then
-            printf "  %4d days  %s  (verified: %s)\n" \
-                "$age_days" "$relpath" "$verified_date"
+            printf "  %4d days  %s  (%s: %s, ttl %sd)\n" \
+                "$age_days" "$relpath" "$date_field" "$verified_date" \
+                "$threshold_days"
         fi
     fi
 

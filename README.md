@@ -120,6 +120,7 @@ Knowledge articles live in `knowledge/`, organized into topic subdirectories.
 title: "Sync Topology"
 updated: 2026-04-12
 verified: 2026-04-12
+ttl: domain
 sources:
   - observations/archived/20260412T101500-a1b2.md
 ---
@@ -127,10 +128,14 @@ sources:
 Standard markdown content. Links use [normal syntax](other-page.md).
 ```
 
-- `updated` — date of the last curator edit.
-- `verified` — date the content was last confirmed accurate. `stale` compares
-  this against a per-topic threshold, so it is the field that decides how much
-  a reading session should trust the article.
+- `updated` — date of the last edit. Stamped by the content repo's
+  pre-commit hook; do not set it by hand.
+- `verified` — date the content was last confirmed accurate. Set only by a
+  curator who actually looked. This is the field that decides how much a
+  reading session should trust the article, so nothing automatic touches it.
+- `ttl` — how fast the article rots: `people`/`status` (14 days),
+  `process` (60), `domain` (180), or a number. `stale` reads it; absent
+  means 60.
 - `sources` — the observation files that fed the article. Append on update.
 
 ## Scripts

@@ -272,19 +272,30 @@ Curated:
 title: "Topic Name"
 updated: 2026-03-23
 verified: 2026-03-23
+ttl: domain
 sources:
   - observations/archived/20260323T174030-18ee.md
 ---
 ```
 
-- `updated` --- date of last curator edit.
-- `verified` --- date the article's content was last confirmed accurate by a
-  human or by the curator cross-checking against live sources. Set to today
-  when you verify an article's claims still hold, even if you don't change the
-  content. A session reading an article can compare `verified` against the
-  current date and the type of content (people/roles rot fast, domain rules
-  rot slowly) to judge how much to trust it.
+- `updated` --- date of the last edit. **Do not set this by hand.** The
+  content repo's pre-commit hook stamps it, because "the content changed
+  today" is a fact, not a judgment.
+- `verified` --- date the content was last confirmed accurate, by a human
+  or by you cross-checking against live sources. Set it to today when you
+  confirm the claims still hold, **even if you change nothing**. Nothing
+  stamps this for you: it is the one date that means someone looked.
+  Setting it without looking destroys the only freshness signal the
+  system has.
+- `ttl` --- how fast this article rots. `people`, `status` (14 days),
+  `process` (60), `domain` (180), or a number of days. `stale` reads it.
+  Set it when you create the article; without it everything decays at one
+  rate, which is wrong in both directions --- an org chart is stale in a
+  fortnight and a protocol description is not stale in a year.
 - `sources` --- observation files that contributed. Append on update.
+
+An article that mixes fast- and slow-rotting content is usually two
+articles. Split it rather than picking an average `ttl`.
 
 ### Granularity
 
