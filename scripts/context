@@ -28,9 +28,22 @@ PENDING_DIR="$CONTENT_DIR/observations/pending"
 echo "=== Knowledge Base ($REPO_ROOT) ==="
 echo ""
 
+# count_md - Count markdown files anywhere under a directory.
+#
+# Articles live in topic subdirectories, so a `dir/*.md` glob sees none of
+# them; the count has to recurse.
+count_md() {
+    local dir="$1"
+    if [[ -d "$dir" ]]; then
+        find "$dir" -name '*.md' -type f | wc -l | tr -d ' '
+    else
+        echo "0"
+    fi
+}
+
 # Topic list
-if [[ -d "$KNOWLEDGE_DIR" ]] && compgen -G "$KNOWLEDGE_DIR/*.md" > /dev/null 2>&1; then
-    count=$(find "$KNOWLEDGE_DIR" -name '*.md' -type f | wc -l | tr -d ' ')
+count="$(count_md "$KNOWLEDGE_DIR")"
+if (( count > 0 )); then
     echo "Topics ($count files):"
     "$SCRIPT_DIR/toc" --depth 1 --flat | sed 's/^/  /'
 else
@@ -40,23 +53,12 @@ fi
 echo ""
 
 # Source documents
-SOURCES_DIR="$CONTENT_DIR/sources"
-if [[ -d "$SOURCES_DIR" ]]; then
-    src_count=$(find "$SOURCES_DIR" -name '*.md' -type f | wc -l | tr -d ' ')
-    echo "Source documents: $src_count"
-else
-    echo "Source documents: 0"
-fi
+echo "Source documents: $(count_md "$CONTENT_DIR/sources")"
 
 echo ""
 
 # Pending observations
-if [[ -d "$PENDING_DIR" ]] && compgen -G "$PENDING_DIR/*.md" > /dev/null 2>&1; then
-    pending=$(find "$PENDING_DIR" -name '*.md' -type f | wc -l | tr -d ' ')
-    echo "Pending observations: $pending"
-else
-    echo "Pending observations: 0"
-fi
+echo "Pending observations: $(count_md "$PENDING_DIR")"
 
 echo ""
 script_list="$(ls "$SCRIPT_DIR" | grep -v '^_' | grep -v '^session-' | paste -sd',' - | sed 's/,/, /g')"

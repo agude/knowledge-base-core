@@ -45,6 +45,25 @@ Content."
     [[ "$output" == *"Networking"* ]]
 }
 
+@test "context lists topics that live only in subdirectories" {
+    create_test_article "infra/nas.md" "# NAS
+
+## Bind mounts
+
+Content."
+    run "$SCRIPTS/context"
+    [[ "$output" == *"Topics (1 files)"* ]]
+    [[ "$output" == *"NAS"* ]]
+    [[ "$output" != *"none yet"* ]]
+}
+
+@test "context counts sources in subdirectories" {
+    mkdir -p "$TEST_CONTENT_DIR/sources/vendor"
+    echo "# Doc" > "$TEST_CONTENT_DIR/sources/vendor/manual.md"
+    run "$SCRIPTS/context"
+    [[ "$output" == *"Source documents: 1"* ]]
+}
+
 @test "context shows pending count" {
     create_test_observation "a.md" "Obs" "Body"
     run "$SCRIPTS/context"
