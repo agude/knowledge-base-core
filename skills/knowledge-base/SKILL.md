@@ -1,6 +1,6 @@
 ---
 name: knowledge-base
-description: Look up, record, and manage knowledge base content. Use when the user asks to find information, record something, or work with the knowledge base.
+description: Search and record durable facts a future Claude session would need -- domain rules, system behavior, people and ownership, the user's preferences and conventions, and why things were decided. Use before starting any task, to check what is already known. This is Claude's own memory (~/Knowledge); it is NOT the wiki (~/Wiki, written for the user to read) and NOT Johnny Decimal (~/Documents, which files artifacts like PDFs and receipts).
 user-invocable: true
 allowed-tools:
   - "Bash(${CLAUDE_SKILL_DIR}/scripts/*)"
@@ -11,6 +11,27 @@ allowed-tools:
 You have access to a knowledge base at `$KNOWLEDGE_BASE`. It contains curated
 articles, source documents, and pending observations. All interaction goes
 through scripts in `$KNOWLEDGE_BASE/scripts/`.
+
+## Which system is this
+
+Three systems overlap and putting something in the wrong one is how it
+gets lost. The split is by **audience**, not by topic:
+
+| System | Audience | Holds |
+|---|---|---|
+| **Knowledge base** (`~/Knowledge`) | Claude sessions | Curated articles loaded for context: domain rules, system behavior, people, preferences, decisions |
+| Wiki (`~/Wiki`) | The user, reading | "How my stuff works" — architecture, runbooks, decision logs, written as prose for a person |
+| Johnny Decimal (`~/Documents`) | The user, filing | Artifacts: PDFs, scans, receipts, project documents |
+
+This skill is the first one. If what you learned is something a *future
+session* needs in order to work — record it here. If it is something the
+user would sit down and read — that is the wiki. If it is a file — that
+is Johnny Decimal.
+
+Claude Code's own per-project auto-memory is a fourth store. Keep it for
+interaction-style feedback ("stop explaining before you act"); anything
+durable about systems, domain, or people belongs here, where it is
+curated, dated, and searchable across projects.
 
 ## Looking things up
 

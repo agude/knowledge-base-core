@@ -47,10 +47,16 @@ automatic session capture.
 
 ## Freshness
 
-Every article carries a `verified` date. People and project status rot in
-about two weeks, processes in two months, domain rules in six. Past that,
-verify against live sources before acting. The `knowledge-base` skill has the
-full table.
+Articles carry `verified` and a `ttl` (14/60/180 days by content type).
+Past it, verify against live sources before acting. `scripts/stale` lists
+what has expired.
+
+## Where this ends
+
+Split by audience. **Here**: what a future Claude session needs to work.
+**`~/Wiki`**: what the user would sit down and read. **`~/Documents`**:
+artifacts (PDFs, scans). **Auto-memory**: interaction style only —
+anything durable about systems, domain, or people belongs here.
 
 ## Rules
 
