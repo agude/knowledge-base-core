@@ -5,6 +5,20 @@ load test_helper
 setup() { setup_content_dir; }
 teardown() { teardown_content_dir; }
 
+@test "pending reports no observations when the directory is missing" {
+    rm -rf "$TEST_CONTENT_DIR/observations/pending"
+    run "$SCRIPTS/pending"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == "No pending observations." ]]
+}
+
+@test "pending --count reports 0 when the directory is missing" {
+    rm -rf "$TEST_CONTENT_DIR/observations/pending"
+    run "$SCRIPTS/pending" --count
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == "0" ]]
+}
+
 @test "pending shows 0 when empty" {
     run "$SCRIPTS/pending" --count
     [[ "$output" == "0" ]]

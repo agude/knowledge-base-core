@@ -34,15 +34,10 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ ! -d "$PENDING_DIR" ]]; then
-    echo "0"
-    exit 0
-fi
-
 files=()
 while IFS= read -r -d '' f; do
     files+=("$f")
-done < <(find "$PENDING_DIR" -name '*.md' -type f -print0 | sort -z)
+done < <(find "$PENDING_DIR" -name '*.md' -type f -print0 2>/dev/null | sort -z)
 
 if [[ "$COUNT_ONLY" == true ]]; then
     echo "${#files[@]}"

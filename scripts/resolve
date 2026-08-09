@@ -58,10 +58,8 @@ if [[ ! -f "$src" ]]; then
     exit 1
 fi
 
-# Read answer from stdin if --answer -
+# Read answer from stdin only when asked; --answer is optional here.
 if [[ "$ANSWER" == "-" ]]; then
-    ANSWER="$(cat)"
-elif [[ -z "$ANSWER" ]] && [[ ! -t 0 ]]; then
     ANSWER="$(cat)"
 fi
 
