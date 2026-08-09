@@ -7,8 +7,9 @@ content.
 
 ## Status
 
-Branch `fix-retrieval-layer`, 26 commits. Suite green at 208 tests;
-shellcheck clean.
+Branch `fix-retrieval-layer`, 33 commits. Suite green at 240 tests;
+shellcheck clean. A hostile review agent ran against the branch and found
+eleven further defects, all fixed below.
 
 ### Done
 
@@ -44,36 +45,50 @@ Measured:
 | `toc --depth 1` payload | 8,447 B | **770 B** (`toc --map`) |
 | Phantom topics from fenced comments | 18 | **0** |
 | `section` on `find-recipes.md § Dangling symlinks` | 3 lines (truncated) | **26 lines** |
-| `search the` | 15.6 s, 2,971 lines | **0.31 s, 20 ranked lines** |
+| `search the` | 15.6 s, 2,971 lines | **0.11 s, 20 ranked lines** |
 | Archive reachable by search | no (1,366 files) | **`--archive`** |
 | Freshness thresholds | prose in 3 documents | **`ttl:`, read by `stale`** |
-| Tests | 89 | **208** |
+| Tests | 89 | **240** |
 | `lint` errors over the corpus | 2 (undetectable) | **0** |
+| Arbitrary file read via an approved script | yes | **refused** |
 | shellcheck findings | 41 (never run) | **0** |
 
 ### Open
 
-1. **Critique.** A hostile review agent is running against the branch. The
-   first attempt died on a session limit. This bash has already produced
-   three `set -e` hazards of the form `[[ cond ]] && cmd` as a loop-body
-   tail, and the search rewrite shipped four bugs found only by running
-   it: IFS-whitespace collapsing an empty field, `printf '%s'` leaving the
-   last line unterminated so `read` never returned it, title-only matches
-   printing nothing, and `(( )) &&` at top level exiting the script.
-   Areas worth attacking: `is_simple_command` (a security control), the
-   `pre-commit` stamping awk under amend/rebase/merge, and whether the
-   fence parser disagrees with CommonMark anywhere that matters.
-2. ~~F19 — the two double-H1 articles.~~ **Closed.** Filed as an
-   observation; the curation run of 2026-08-09 fixed both. `lint` now
-   reports 0 errors over 129 articles (3 oversized-H2 warnings remain,
-   which is the intended severity for a target rather than a rule).
-3. **`~/Wiki` still has the `pretool-allow` bypass.** Same code, separate
-   repo, live and unfixed. Its skill description also still overlaps this
-   one's.
-4. **F5 — mid-turn discoveries are still lost.** `session-stop` records
-   only `last_assistant_message`, so a correction absorbed mid-turn never
-   reaches the buffer. Open by design: the mitigation is the explicit
-   `observe` habit, not more automated capture.
+1. **F19 is closed.** The curation run of 2026-08-09 fixed both
+   double-H1 articles. `lint` reports 0 errors over 129 files (3
+   oversized-H2 warnings remain, which is the severity a target
+   deserves).
+2. **`~/Wiki` still has the `pretool-allow` bypass** and an overlapping
+   skill description. Same code, separate repo, live and unfixed. It also
+   needs the argument-confinement fix, since its scripts are blessed by
+   the same mechanism.
+3. **F5 — mid-turn discoveries are still lost.** `session-stop` records
+   only `last_assistant_message`. Open by design: the mitigation is the
+   explicit `observe` habit, not more automated capture.
+4. **A second review pass would still be worth it.** The first found
+   eleven defects across four areas after the branch already looked
+   finished, including one that made *every* search return nothing.
+
+### What the review caught
+
+Worth recording, because the pattern is more useful than the list:
+
+- **Silent total failure.** One article whose filename contained a space
+  made every query return nothing — `xargs` split the name and gawk
+  treats an unopenable file as fatal, while `2>/dev/null || true` ate
+  both the error and the status.
+- **A guard that only guarded the happy path.** `is_simple_command`
+  constrained the shell correctly; the approved script was itself the
+  read primitive, so `section --file ~/.ssh/config` was auto-approved.
+- **A hook that edited files before deciding to reject them**, and that
+  treated a setext underline as frontmatter, overwriting body lines.
+- **Tests that asserted the presence of a word rather than a number**,
+  and so passed against provably wrong output.
+
+Every one was invisible to the test suite and to shellcheck. The bash
+`set -e` exemption for non-final commands in a `&&` list accounts for
+four separate bugs on this branch alone.
 
 ### Deferred deliberately
 
