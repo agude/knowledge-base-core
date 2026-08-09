@@ -152,3 +152,62 @@ HOOK
     run resolve_path "no-such-file.md"
     [[ "$status" -ne 0 ]]
 }
+
+# --- path containment ---
+#
+# The PreToolUse hook auto-approves these scripts, so their arguments are
+# part of the security boundary.
+
+@test "resolve_path refuses a path escaping the content root" {
+    source "$SCRIPTS/_lib.sh"
+    run resolve_path "../../../../etc/passwd"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"outside the knowledge base"* ]]
+}
+
+@test "resolve_path refuses an absolute path outside the content root" {
+    source "$SCRIPTS/_lib.sh"
+    run resolve_path "/etc/passwd"
+    [[ "$status" -ne 0 ]]
+}
+
+@test "resolve_path refuses a symlink pointing out of the content root" {
+    ln -s /etc/passwd "$TEST_CONTENT_DIR/knowledge/sneaky.md"
+    source "$SCRIPTS/_lib.sh"
+    run resolve_path "knowledge/sneaky.md"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"outside the knowledge base"* ]]
+}
+
+@test "resolve_path still accepts ordinary paths" {
+    create_test_article "topic.md" "# Topic"
+    source "$SCRIPTS/_lib.sh"
+    run resolve_path "topic.md"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == "knowledge/topic.md" ]]
+}
+
+@test "section refuses to read outside the content root" {
+    run "$SCRIPTS/section" --file ../../../../etc/passwd --number 1
+    [[ "$status" -ne 0 ]]
+}
+
+@test "toc refuses to scan outside the content root" {
+    run "$SCRIPTS/toc" --path ../../../../etc
+    [[ "$status" -ne 0 ]]
+}
+
+@test "archive refuses a filename containing a path" {
+    outside="$TEST_CONTENT_DIR/../outside-$$.md"
+    echo "not yours" > "$outside"
+    run "$SCRIPTS/archive" "../outside-$$.md"
+    [[ "$status" -ne 0 ]]
+    [[ -f "$outside" ]]
+    rm -f "$outside"
+}
+
+@test "resolve refuses a question filename containing a path" {
+    run "$SCRIPTS/resolve" --file "../../etc/passwd"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Not a question filename"* ]]
+}

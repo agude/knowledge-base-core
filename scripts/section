@@ -61,7 +61,11 @@ if [[ -z "$NUMBER" ]] && [[ -z "$HEADING" ]]; then
     exit 1
 fi
 
-resolved="$(resolve_path "$FILE")" && FILE="$CONTENT_DIR/$resolved"
+if ! resolved="$(resolve_path "$FILE")"; then
+    echo "File not found: $FILE" >&2
+    exit 1
+fi
+FILE="$CONTENT_DIR/$resolved"
 
 if [[ ! -f "$FILE" ]]; then
     echo "File not found: $FILE" >&2

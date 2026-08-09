@@ -50,6 +50,11 @@ if [[ -z "$FILENAME" ]]; then
     exit 1
 fi
 
+if [[ "$FILENAME" == */* ]]; then
+    echo "Not a question filename: $FILENAME" >&2
+    exit 1
+fi
+
 src="$OPEN_DIR/$FILENAME"
 dst="$RESOLVED_DIR/$FILENAME"
 

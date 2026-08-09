@@ -60,7 +60,11 @@ fi
 
 # Normalize --context to a content-relative path
 if [[ -n "$CONTEXT" ]]; then
-    resolved="$(resolve_path "$CONTEXT")" && CONTEXT="$resolved"
+    if ! resolved="$(resolve_path "$CONTEXT")"; then
+        echo "Not found: $CONTEXT" >&2
+        exit 1
+    fi
+    CONTEXT="$resolved"
 fi
 
 # Generate filename

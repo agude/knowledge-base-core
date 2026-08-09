@@ -56,6 +56,14 @@ fi
 
 archived=0
 for name in "${FILES[@]}"; do
+    # A bare filename, never a path. These scripts are auto-approved by
+    # the PreToolUse hook, so `archive ../../something` would move a file
+    # from outside the knowledge base without a prompt.
+    if [[ "$name" == */* ]]; then
+        echo "Not a pending filename: $name" >&2
+        continue
+    fi
+
     src="$PENDING_DIR/$name"
     dst="$ARCHIVED_DIR/$name"
 

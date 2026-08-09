@@ -36,16 +36,70 @@ need_arg() {
     fi
 }
 
+# path_is_contained - True when a path resolves inside the content root.
+#
+# The PreToolUse hook auto-approves these scripts, so their arguments are
+# part of the security boundary: without this, `section --file
+# ../../../../etc/passwd` reads outside the knowledge base with no
+# permission prompt, and `toc --path ../../..` walks the filesystem.
+#
+# Compares canonicalized paths, so symlinks pointing out are caught too.
+path_is_contained() {
+    local target="$1" root real
+
+    root="$(cd "$CONTENT_DIR" 2>/dev/null && pwd -P)" || return 1
+    real="$(canonicalize "$target")" || return 1
+
+    [[ "$real" == "$root" || "$real" == "$root"/* ]]
+}
+
+# canonicalize - Absolute path with symlinks resolved.
+#
+# readlink -f would do this, but BSD readlink has no -f. Follows the
+# final component too: a symlink inside the content root pointing at
+# /etc/passwd is exactly the case path_is_contained exists to catch.
+canonicalize() {
+    local target="$1" link dir base hops=0
+
+    while [[ -L "$target" ]] && (( hops < 40 )); do
+        link="$(readlink "$target")" || return 1
+        if [[ "$link" == /* ]]; then
+            target="$link"
+        else
+            target="$(dirname "$target")/$link"
+        fi
+        hops=$((hops + 1))
+    done
+
+    if [[ -d "$target" ]]; then
+        ( cd "$target" 2>/dev/null && pwd -P ) || return 1
+        return 0
+    fi
+
+    dir="$(cd "$(dirname "$target")" 2>/dev/null && pwd -P)" || return 1
+    base="$(basename "$target")"
+    echo "$dir/$base"
+}
+
 # resolve_path - Normalize a path to be relative to the content root.
 #
 # Handles: absolute paths, content-relative paths, knowledge/-relative paths,
 # and bare filenames (searched under knowledge/ only).
 #
-# Prints the resolved content-relative path on success.
-# Returns 1 if not found; prints error to stderr if ambiguous.
+# Refuses anything that resolves outside the content root.
 #
-# Usage:
-#   resolved="$(resolve_path "$path")" && VAR="$CONTENT_DIR/$resolved"
+# Prints the resolved content-relative path on success.
+# Returns 1 if not found; prints error to stderr if ambiguous or escaping.
+#
+# Usage — check the status explicitly; do NOT write
+#   resolved="$(resolve_path "$p")" && VAR=...
+# because `set -e` exempts every command in a && list except the last, so
+# a failure there silently leaves the caller holding the raw path:
+#
+#   if ! resolved="$(resolve_path "$path")"; then
+#       exit 1
+#   fi
+#   VAR="$CONTENT_DIR/$resolved"
 resolve_path() {
     local input="$1"
 
@@ -54,6 +108,10 @@ resolve_path() {
 
     # Exists relative to content root
     if [[ -e "$CONTENT_DIR/$input" ]]; then
+        if ! path_is_contained "$CONTENT_DIR/$input"; then
+            echo "Refusing path outside the knowledge base: $1" >&2
+            return 1
+        fi
         echo "$input"
         return 0
     fi
@@ -62,6 +120,10 @@ resolve_path() {
     if [[ "$input" != knowledge/* ]] && [[ "$input" != sources/* ]] \
         && [[ "$input" != observations/* ]] && [[ "$input" != questions/* ]]; then
         if [[ -e "$CONTENT_DIR/knowledge/$input" ]]; then
+            if ! path_is_contained "$CONTENT_DIR/knowledge/$input"; then
+                echo "Refusing path outside the knowledge base: $1" >&2
+                return 1
+            fi
             echo "knowledge/$input"
             return 0
         fi
@@ -81,6 +143,10 @@ resolve_path() {
     count="$(echo "$matches" | wc -l | tr -d ' ')"
 
     if (( count == 1 )); then
+        if ! path_is_contained "$matches"; then
+            echo "Refusing path outside the knowledge base: $1" >&2
+            return 1
+        fi
         echo "${matches#"$CONTENT_DIR/"}"
         return 0
     fi
