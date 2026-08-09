@@ -11,12 +11,14 @@
 # Run during curation and after bulk edits.
 #
 # Usage:
-#   lint [--path DIR_OR_FILE] [--max-lines N] [--strict]
+#   lint [PATH ...] [--max-lines N] [--strict]
 #
 # Options:
-#   --path PATH     Directory or file to check (default: knowledge/)
+#   --path PATH     Directory or file to check (repeatable; also positional)
 #   --max-lines N   Warn when an H2 exceeds N lines (default: 50)
 #   --strict        Treat warnings as errors
+#
+# With no path, checks knowledge/.
 #
 # Checks:
 #   error    no H1, or more than one H1
@@ -34,7 +36,8 @@
 # Examples:
 #   lint
 #   lint --path knowledge/home/
-#   lint --file knowledge/home/insulation.md --max-lines 40
+#   lint knowledge/home/insulation.md --max-lines 40
+#   lint knowledge/a.md knowledge/b.md
 
 set -euo pipefail
 
@@ -42,20 +45,21 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 source "$SCRIPT_DIR/_lib.sh"
 
-TARGET=""
+TARGETS=()
 MAX_LINES=50
 STRICT=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --path|--file) need_arg "$1" $#; TARGET="$2"; shift 2 ;;
+        --path|--file) need_arg "$1" $#; TARGETS+=("$2"); shift 2 ;;
         --max-lines)   need_arg "$1" $#; MAX_LINES="$2"; shift 2 ;;
         --strict)      STRICT=true; shift ;;
         -h|--help)
             show_help "$0"
             exit 0
             ;;
-        *) echo "Unknown option: $1" >&2; exit 1 ;;
+        -*) echo "Unknown option: $1" >&2; exit 1 ;;
+        *)  TARGETS+=("$1"); shift ;;
     esac
 done
 
@@ -64,23 +68,31 @@ if [[ ! "$MAX_LINES" =~ ^[0-9]+$ ]]; then
     exit 1
 fi
 
-if [[ -z "$TARGET" ]]; then
-    TARGET="$CONTENT_DIR/knowledge"
-else
-    resolved="$(resolve_path "$TARGET")" && TARGET="$CONTENT_DIR/$resolved"
+if [[ ${#TARGETS[@]} -eq 0 ]]; then
+    TARGETS=("$CONTENT_DIR/knowledge")
 fi
 
 FILES=()
-if [[ -d "$TARGET" ]]; then
-    while IFS= read -r -d '' f; do
-        FILES+=("$f")
-    done < <(find "$TARGET" -name '*.md' -type f -print0 | sort -z)
-elif [[ -f "$TARGET" ]]; then
-    FILES=("$TARGET")
-else
-    echo "Not found: $TARGET" >&2
-    exit 1
-fi
+for target in "${TARGETS[@]}"; do
+    if [[ ! -e "$target" ]]; then
+        # Report the path the caller gave us, not a set -e exit, when
+        # resolve_path cannot place it.
+        if resolved="$(resolve_path "$target")"; then
+            target="$CONTENT_DIR/$resolved"
+        fi
+    fi
+
+    if [[ -d "$target" ]]; then
+        while IFS= read -r -d '' f; do
+            FILES+=("$f")
+        done < <(find "$target" -name '*.md' -type f -print0 | sort -z)
+    elif [[ -f "$target" ]]; then
+        FILES+=("$target")
+    else
+        echo "Not found: $target" >&2
+        exit 1
+    fi
+done
 
 errors=0
 warnings=0

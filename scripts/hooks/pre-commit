@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+#
+# pre-commit - Content-repo hook: lint staged articles and stamp `updated`.
+#
+# Installed into <content>/.git/hooks/pre-commit by scripts/install.
+#
+# Two jobs, both deterministic, which is why they belong in a hook rather
+# than in a curator's memory:
+#
+# 1. Stamp `updated:` to today on every staged knowledge article. If the
+#    content changed, the edit date is today; that is a fact. It is NOT
+#    `verified:`, which asserts that someone confirmed the content still
+#    holds — stamping that automatically would zero out `stale` forever.
+#
+# 2. Lint them. A second H1, a missing or malformed `verified`, or an
+#    unclosed code fence corrupts retrieval, and none of it is visible by
+#    eye. Errors reject the commit; warnings print and let it through.
+#
+# Commits that stage no knowledge articles — every observe, ask, resolve,
+# and archive — exit immediately.
+
+set -uo pipefail
+
+# Resolve the hook's real location to find the scripts directory.
+self="$0"
+while [[ -L "$self" ]]; do
+    link="$(readlink "$self")"
+    if [[ "$link" == /* ]]; then
+        self="$link"
+    else
+        self="$(dirname "$self")/$link"
+    fi
+done
+SCRIPTS_DIR="$(cd "$(dirname "$self")/.." && pwd -P)"
+
+# The hook runs at the root of whichever content repo is committing, which
+# is not necessarily the core repo's default ./content.
+KB_CONTENT_DIR="$(git rev-parse --show-toplevel)"
+export KB_CONTENT_DIR
+
+mapfile -t STAGED < <(
+    git diff --cached --name-only --diff-filter=ACMR -- knowledge/ \
+        | grep '\.md$' || true
+)
+
+if [[ ${#STAGED[@]} -eq 0 ]]; then
+    exit 0
+fi
+
+TODAY="$(date -u +%Y-%m-%d)"
+
+# A partial commit (`git commit -- <paths>`) runs against a temporary
+# index, so anything the hook stages is discarded. Detect it and skip
+# stamping rather than silently dropping the change.
+partial=false
+if [[ -n "${GIT_INDEX_FILE:-}" ]] && [[ "$GIT_INDEX_FILE" != *".git/index" ]]; then
+    partial=true
+fi
+
+stamped=0
+for file in "${STAGED[@]}"; do
+    [[ -f "$file" ]] || continue
+
+    current="$(awk '
+        /^---[[:space:]]*$/ { fm++; print; next }
+        fm == 1 && /^updated:/ { sub(/^updated:[[:space:]]*/, ""); print; exit }
+    ' "$file" | tail -1)"
+
+    # No `updated:` line to stamp — lint reports the missing field.
+    [[ "$current" == "---" || -z "$current" ]] && continue
+    [[ "$current" == "$TODAY" ]] && continue
+
+    if [[ "$partial" == true ]]; then
+        echo "pre-commit: $file has updated: $current, not $TODAY" \
+             "(partial commit — not stamping)" >&2
+        continue
+    fi
+
+    tmp="$(mktemp)"
+    awk -v today="$TODAY" '
+        /^---[[:space:]]*$/ { fm++ }
+        fm == 1 && /^updated:/ && !done { print "updated: " today; done=1; next }
+        { print }
+    ' "$file" > "$tmp" && mv "$tmp" "$file"
+
+    git add -- "$file"
+    stamped=$((stamped + 1))
+done
+
+if (( stamped > 0 )); then
+    echo "pre-commit: stamped updated: $TODAY on $stamped article(s)"
+fi
+
+PRESENT=()
+for file in "${STAGED[@]}"; do
+    [[ -f "$file" ]] && PRESENT+=("$file")
+done
+
+if [[ ${#PRESENT[@]} -eq 0 ]]; then
+    exit 0
+fi
+
+if ! "$SCRIPTS_DIR/lint" "${PRESENT[@]}"; then
+    echo "" >&2
+    echo "pre-commit: lint errors — commit rejected." >&2
+    exit 1
+fi
+
+exit 0
