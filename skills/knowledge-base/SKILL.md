@@ -16,9 +16,16 @@ through scripts in `$KNOWLEDGE_BASE/scripts/`.
 
 Start by searching, not browsing.
 
-1. **Search first.** `${CLAUDE_SKILL_DIR}/scripts/search "<query>"` returns matches across
-   knowledge articles, source documents, and pending observations. Output
-   format: `<file> | <section> | <matched line>`.
+1. **Search first.** `${CLAUDE_SKILL_DIR}/scripts/search <term> [term ...]`
+   returns matches across knowledge articles, source documents, and pending
+   observations. Output format: `<file> | <section> | <matched line>`.
+   - Several terms are ANDed: the file must contain all of them.
+   - Results are ranked; a term in the title outranks one in a heading,
+     which outranks one in the body.
+   - Output is capped at 20 lines. Use `--limit N`, or `--files` to see
+     just which articles matched.
+   - `--archive` widens the search to archived observations and open
+     questions. The default corpus is curated articles only.
 
 2. **Narrow with toc.** If search gives too many results or you need to
    explore a topic area, use `${CLAUDE_SKILL_DIR}/scripts/toc` to scan section names.
@@ -107,7 +114,7 @@ All scripts are at `${CLAUDE_SKILL_DIR}/scripts/<name>`.
 
 | Script | Purpose |
 |---|---|
-| `search "<query>"` | Search all content |
+| `search <term> [term ...]` | Search all content, ranked |
 | `toc [--depth N] [--path DIR] [--flat] [--dirs]` | List topics and sections |
 | `section --file FILE (--number N \| --heading TEXT)` | Extract a section |
 | `observe --title "..." --body "..."` | Record an observation |

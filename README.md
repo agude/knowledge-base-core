@@ -141,7 +141,7 @@ Standard markdown content. Links use [normal syntax](other-page.md).
 | `observe --title "..." --body "..."` | Capture an observation to observations/pending/ |
 | `pending [--full] [--count]` | List uncurated observations |
 | `archive FILENAME [--all]` | Move observations to observations/archived/ |
-| `search "<query>"` | Search all content |
+| `search <term> [term ...]` | Search all content, ranked |
 | `toc [--depth N] [--path DIR] [--flat] [--dirs]` | List topics and sections |
 | `section --file FILE (--number N \| --heading TEXT)` | Extract a section from an article |
 | `ask --title "..." [--context FILE] [--body "..."]` | Record a question |

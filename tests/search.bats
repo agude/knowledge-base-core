@@ -156,3 +156,159 @@ Preamble with target_word here."
     run "$SCRIPTS/search" "target_word"
     [[ "$output" == *"| top |"* ]]
 }
+
+@test "search ranks a title match above a body match" {
+    create_test_article "exact.md" '---
+title: "Bind Mounts on Synology"
+updated: 2026-08-08
+verified: 2026-08-08
+---
+
+# Bind Mounts on Synology
+
+## Setup
+
+Details.'
+    create_test_article "passing.md" '---
+title: "Home Lab Overview"
+updated: 2026-08-08
+verified: 2026-08-08
+---
+
+# Home Lab Overview
+
+## Machines
+
+One line mentions bind mounts in passing.'
+    run "$SCRIPTS/search" --files "bind mounts"
+    [[ "${lines[0]}" == *"exact.md"* ]]
+    [[ "${lines[1]}" == *"passing.md"* ]]
+}
+
+@test "search ranks a heading match above a body match" {
+    create_test_article "heading.md" "# A
+
+## Docker networking
+
+Content."
+    create_test_article "body.md" "# B
+
+## Other
+
+We mention docker here in prose."
+    run "$SCRIPTS/search" --files docker
+    [[ "${lines[0]}" == *"heading.md"* ]]
+}
+
+@test "search never prints frontmatter lines as results" {
+    create_test_article "fm.md" '---
+title: "Postgres Notes"
+updated: 2026-08-08
+verified: 2026-08-08
+---
+
+# Postgres Notes
+
+## Setup
+
+The server runs Postgres.'
+    run "$SCRIPTS/search" postgres
+    [[ "$output" != *'title: "Postgres Notes"'* ]]
+    [[ "$output" == *"The server runs Postgres"* ]]
+}
+
+@test "search caps output at --limit and says what it dropped" {
+    for i in 1 2 3 4 5 6 7 8; do
+        create_test_article "topic$i.md" "# Topic $i
+
+## Section
+
+A line about widgets here.
+Another line about widgets.
+A third widgets line.
+A fourth widgets line."
+    done
+    run "$SCRIPTS/search" --limit 5 widgets
+    matches=0
+    for l in "${lines[@]}"; do
+        [[ "$l" == *" | "* ]] && matches=$((matches + 1))
+    done
+    [[ "$matches" -eq 5 ]]
+    [[ "$output" == *"more line(s)"* ]]
+}
+
+@test "search --limit 0 prints everything" {
+    for i in 1 2 3 4 5 6 7 8; do
+        create_test_article "topic$i.md" "# Topic $i
+
+## Section
+
+A line about widgets here."
+    done
+    run "$SCRIPTS/search" --limit 0 --per-file 0 widgets
+    matches=0
+    for l in "${lines[@]}"; do
+        [[ "$l" == *" | "* ]] && matches=$((matches + 1))
+    done
+    [[ "$matches" -eq 8 ]]
+}
+
+@test "search caps lines from a single file with --per-file" {
+    create_test_article "many.md" "# Many
+
+## Section
+
+widgets one
+widgets two
+widgets three
+widgets four
+widgets five"
+    run "$SCRIPTS/search" --per-file 2 widgets
+    matches=0
+    for l in "${lines[@]}"; do
+        [[ "$l" == *" | "* ]] && matches=$((matches + 1))
+    done
+    [[ "$matches" -eq 2 ]]
+}
+
+@test "search skips the archive unless asked" {
+    mkdir -p "$TEST_CONTENT_DIR/observations/archived"
+    cat > "$TEST_CONTENT_DIR/observations/archived/20260412T000000-cccc.md" <<'EOF'
+---
+title: "Old note"
+---
+
+Something about kubernetes.
+EOF
+    run "$SCRIPTS/search" kubernetes
+    [[ -z "$output" ]]
+
+    run "$SCRIPTS/search" --archive kubernetes
+    [[ "$output" == *"observations/archived"* ]]
+}
+
+@test "search --archive includes open questions" {
+    create_test_question "20260412T000000-dddd.md" "Who owns the kafka cluster?"
+    run "$SCRIPTS/search" --archive kafka
+    [[ "$output" == *"questions/open"* ]]
+}
+
+@test "search rejects a non-numeric limit" {
+    run "$SCRIPTS/search" --limit lots widgets
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"take a number"* ]]
+}
+
+@test "search ignores headings inside code fences for section context" {
+    create_test_article "fenced.md" '# Fenced
+
+## Real Section
+
+```bash
+## not a heading
+grep widgets file
+```'
+    run "$SCRIPTS/search" widgets
+    [[ "$output" == *"| Real Section |"* ]]
+    [[ "$output" != *"| not a heading |"* ]]
+}
