@@ -234,7 +234,9 @@ A fourth widgets line."
         [[ "$l" == *" | "* ]] && matches=$((matches + 1))
     done
     [[ "$matches" -eq 5 ]]
-    [[ "$output" == *"more line(s)"* ]]
+    # 8 files x 4 matching lines = 32; 5 shown, so 27 hidden. The count
+    # has to be right, not merely present.
+    [[ "$output" == *"27 more line(s)"* ]]
 }
 
 @test "search --limit 0 prints everything" {
@@ -311,4 +313,99 @@ grep widgets file
     run "$SCRIPTS/search" widgets
     [[ "$output" == *"| Real Section |"* ]]
     [[ "$output" != *"| not a heading |"* ]]
+}
+
+# --- regressions found by review ---
+
+@test "search survives a filename containing a space" {
+    create_test_article "docker.md" "# D
+
+## S
+
+docker notes"
+    printf '# X\n\n## S\n\nx\n' > "$TEST_CONTENT_DIR/knowledge/has space.md"
+    run "$SCRIPTS/search" docker
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"docker.md"* ]]
+}
+
+@test "search survives a filename containing a quote" {
+    create_test_article "docker.md" "# D
+
+## S
+
+docker notes"
+    printf '# X\n\n## S\n\nx\n' > "$TEST_CONTENT_DIR/knowledge/it's.md"
+    run "$SCRIPTS/search" docker
+    [[ "$output" == *"docker.md"* ]]
+}
+
+@test "search matches a term containing a backslash literally" {
+    cat > "$TEST_CONTENT_DIR/knowledge/win.md" <<'EOF'
+# W
+
+## S
+
+path C:\new\table here
+EOF
+    run "$SCRIPTS/search" 'C:\new'
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"win.md"* ]]
+}
+
+@test "search does not expand an escape sequence in a term" {
+    printf '# T\n\n## S\n\nliteral a\tb\n' > "$TEST_CONTENT_DIR/knowledge/tab.md"
+    run "$SCRIPTS/search" 'a\tb'
+    [[ -z "$output" ]]
+}
+
+@test "search keeps fields apart when a heading contains a pipe" {
+    create_test_article "pipe.md" "# P
+
+## A | B
+
+zebra here"
+    run "$SCRIPTS/search" zebra
+    [[ "$output" == *"| A | B | zebra here"* ]]
+}
+
+@test "search reports the true number of hidden lines and files" {
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        create_test_article "f$i.md" "# T$i
+
+## S
+
+needle here"
+    done
+    run "$SCRIPTS/search" --limit 4 needle
+    [[ "$output" == *"6 more line(s)"* ]]
+    [[ "$output" == *"6 unshown file(s)"* ]]
+}
+
+@test "search --files reports how many files it hid" {
+    for i in 1 2 3 4 5 6; do
+        create_test_article "f$i.md" "# T$i
+
+## S
+
+needle here"
+    done
+    run "$SCRIPTS/search" --files --limit 2 needle
+    [[ "$output" == *"4 more file(s)"* ]]
+}
+
+@test "search honors fence length like the shared parser" {
+    create_test_article "nested.md" '# N
+
+## Real
+
+````markdown
+```
+## not a heading
+needle inside
+```
+````'
+    run "$SCRIPTS/search" needle
+    [[ "$output" == *"| Real |"* ]]
+    [[ "$output" != *"not a heading"* ]]
 }
