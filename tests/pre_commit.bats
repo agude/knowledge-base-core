@@ -132,3 +132,111 @@ EOF
     committed="$(git -C "$TEST_CONTENT_DIR" show HEAD:knowledge/net.md)"
     [[ "$committed" == *"updated: 2020-01-01"* ]]
 }
+
+# --- regressions found by review ---
+
+@test "pre-commit does not rewrite body lines in a file with no frontmatter" {
+    printf '# Title\n\nRelease checklist\n---\n\nupdated: $(git describe)\n' \
+        > "$TEST_CONTENT_DIR/knowledge/nofm.md"
+    git -C "$TEST_CONTENT_DIR" add knowledge/nofm.md
+    run git -C "$TEST_CONTENT_DIR" commit -q -m "Add"
+    # No verified: either, so lint rejects it — but the body must survive.
+    grep -q 'updated: \$(git describe)' "$TEST_CONTENT_DIR/knowledge/nofm.md"
+}
+
+@test "pre-commit leaves the tree untouched when lint rejects" {
+    cat > "$TEST_CONTENT_DIR/knowledge/good.md" <<'EOF'
+---
+title: "Good"
+updated: 2020-01-01
+verified: 2026-08-08
+---
+
+# Good
+
+## Section
+
+Content.
+EOF
+    cat > "$TEST_CONTENT_DIR/knowledge/bad.md" <<'EOF'
+---
+title: "Bad"
+updated: 2020-01-01
+verified: 2026-08-08
+---
+
+# One
+
+## S
+
+Content.
+
+# Two
+EOF
+    git -C "$TEST_CONTENT_DIR" add knowledge/
+    run git -C "$TEST_CONTENT_DIR" commit -q -m "Add"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"nothing modified"* ]]
+    # good.md must not have been stamped before the rejection
+    grep -q 'updated: 2020-01-01' "$TEST_CONTENT_DIR/knowledge/good.md"
+}
+
+@test "pre-commit stamps an article with a non-ASCII filename" {
+    cat > "$TEST_CONTENT_DIR/knowledge/café.md" <<'EOF'
+---
+title: "Cafe"
+updated: 2020-01-01
+verified: 2026-08-08
+---
+
+# Cafe
+
+## Section
+
+Content.
+EOF
+    git -C "$TEST_CONTENT_DIR" add -A knowledge/
+    run git -C "$TEST_CONTENT_DIR" commit -q -m "Add"
+    [[ "$status" -eq 0 ]]
+    committed="$(git -C "$TEST_CONTENT_DIR" show "HEAD:knowledge/café.md")"
+    [[ "$committed" == *"updated: $(date -u +%Y-%m-%d)"* ]]
+}
+
+@test "pre-commit lints an article with a non-ASCII filename" {
+    cat > "$TEST_CONTENT_DIR/knowledge/café.md" <<'EOF'
+---
+title: "Cafe"
+updated: 2026-08-08
+verified: 2026-08-08
+---
+
+# One
+
+## S
+
+Content.
+
+# Two
+EOF
+    git -C "$TEST_CONTENT_DIR" add -A knowledge/
+    run git -C "$TEST_CONTENT_DIR" commit -q -m "Add"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"second H1"* ]]
+}
+
+@test "pre-commit preserves file mode" {
+    good_article "Content." > "$TEST_CONTENT_DIR/knowledge/net.md"
+    chmod 644 "$TEST_CONTENT_DIR/knowledge/net.md"
+    git -C "$TEST_CONTENT_DIR" add knowledge/net.md
+    git -C "$TEST_CONTENT_DIR" commit -q -m "Add"
+    run stat -c '%a' "$TEST_CONTENT_DIR/knowledge/net.md"
+    [[ "$output" == "644" ]]
+}
+
+@test "pre-commit does not turn a symlinked article into a regular file" {
+    good_article "Content." > "$TEST_CONTENT_DIR/real.md"
+    ln -s ../real.md "$TEST_CONTENT_DIR/knowledge/link.md"
+    git -C "$TEST_CONTENT_DIR" add -A
+    git -C "$TEST_CONTENT_DIR" commit -q -m "Add"
+    [[ -L "$TEST_CONTENT_DIR/knowledge/link.md" ]]
+}

@@ -7,14 +7,18 @@
 # Two jobs, both deterministic, which is why they belong in a hook rather
 # than in a curator's memory:
 #
-# 1. Stamp `updated:` to today on every staged knowledge article. If the
+# 1. Lint them. A second H1, a missing or malformed `verified`, or an
+#    unclosed code fence corrupts retrieval, and none of it is visible by
+#    eye. Errors reject the commit; warnings print and let it through.
+#
+# 2. Stamp `updated:` to today on every staged knowledge article. If the
 #    content changed, the edit date is today; that is a fact. It is NOT
 #    `verified:`, which asserts that someone confirmed the content still
 #    holds — stamping that automatically would zero out `stale` forever.
 #
-# 2. Lint them. A second H1, a missing or malformed `verified`, or an
-#    unclosed code fence corrupts retrieval, and none of it is visible by
-#    eye. Errors reject the commit; warnings print and let it through.
+# Lint runs FIRST. A hook that rewrites files and then rejects the commit
+# leaves the author holding modified, staged files and a "rejected"
+# message that never mentions them.
 #
 # Commits that stage no knowledge articles — every observe, ask, resolve,
 # and archive — exit immediately.
@@ -38,14 +42,29 @@ SCRIPTS_DIR="$(cd "$(dirname "$self")/.." && pwd -P)"
 KB_CONTENT_DIR="$(git rev-parse --show-toplevel)"
 export KB_CONTENT_DIR
 
-mapfile -t STAGED < <(
-    git diff --cached --name-only --diff-filter=ACMR -- knowledge/ \
-        | grep '\.md$' || true
-)
+# -z, not plain --name-only: under the default core.quotePath git quotes
+# any path with non-ASCII bytes, and the quoted form matches nothing on
+# disk — so knowledge/café.md was silently neither linted nor stamped.
+STAGED=()
+while IFS= read -r -d '' file; do
+    case "$file" in
+        *.md) if [[ -f "$file" ]]; then STAGED+=("$file"); fi ;;
+    esac
+done < <(git diff --cached -z --name-only --diff-filter=ACMR -- knowledge/)
 
 if [[ ${#STAGED[@]} -eq 0 ]]; then
     exit 0
 fi
+
+# --- 1. Lint, before touching anything ---
+
+if ! "$SCRIPTS_DIR/lint" "${STAGED[@]}"; then
+    echo "" >&2
+    echo "pre-commit: lint errors — commit rejected, nothing modified." >&2
+    exit 1
+fi
+
+# --- 2. Stamp updated: ---
 
 TODAY="$(date -u +%Y-%m-%d)"
 
@@ -57,18 +76,41 @@ if [[ -n "${GIT_INDEX_FILE:-}" ]] && [[ "$GIT_INDEX_FILE" != *".git/index" ]]; t
     partial=true
 fi
 
+# current_updated - The `updated:` value from a real frontmatter block.
+#
+# Frontmatter is the block opened by `---` on line 1. Counting `---`
+# anywhere also fires on a setext heading underline, and then the first
+# later body line starting with `updated:` was rewritten as a date.
+current_updated() {
+    awk '
+        NR == 1 { if ($0 !~ /^---[[:space:]]*$/) exit; next }
+        /^---[[:space:]]*$/ { exit }
+        /^updated:[[:space:]]*/ {
+            sub(/^updated:[[:space:]]*/, "")
+            print
+            exit
+        }
+    ' "$1"
+}
+
+stamp_updated() {
+    awk -v today="$TODAY" '
+        NR == 1 { if ($0 !~ /^---[[:space:]]*$/) done = 1; print; next }
+        !done && /^---[[:space:]]*$/ { done = 1; print; next }
+        !done && /^updated:[[:space:]]*/ { print "updated: " today; next }
+        { print }
+    ' "$1"
+}
+
 stamped=0
 for file in "${STAGED[@]}"; do
-    [[ -f "$file" ]] || continue
+    current="$(current_updated "$file")"
 
-    current="$(awk '
-        /^---[[:space:]]*$/ { fm++; print; next }
-        fm == 1 && /^updated:/ { sub(/^updated:[[:space:]]*/, ""); print; exit }
-    ' "$file" | tail -1)"
-
-    # No `updated:` line to stamp — lint reports the missing field.
-    [[ "$current" == "---" || -z "$current" ]] && continue
-    [[ "$current" == "$TODAY" ]] && continue
+    # No frontmatter, or no `updated:` to stamp. Lint reports a missing
+    # field; inventing one is not this hook's job.
+    if [[ -z "$current" || "$current" == "$TODAY" ]]; then
+        continue
+    fi
 
     if [[ "$partial" == true ]]; then
         echo "pre-commit: $file has updated: $current, not $TODAY" \
@@ -76,34 +118,22 @@ for file in "${STAGED[@]}"; do
         continue
     fi
 
+    # Write back through the existing inode. mktemp + mv would replace a
+    # symlinked article with a regular file and carry mktemp's 0600 over
+    # the article's own mode.
     tmp="$(mktemp)"
-    awk -v today="$TODAY" '
-        /^---[[:space:]]*$/ { fm++ }
-        fm == 1 && /^updated:/ && !done { print "updated: " today; done=1; next }
-        { print }
-    ' "$file" > "$tmp" && mv "$tmp" "$file"
-
-    git add -- "$file"
-    stamped=$((stamped + 1))
+    if stamp_updated "$file" > "$tmp" && [[ -s "$tmp" ]]; then
+        cat "$tmp" > "$file"
+        git add -- "$file"
+        stamped=$((stamped + 1))
+    else
+        echo "pre-commit: could not stamp $file, leaving it alone" >&2
+    fi
+    rm -f "$tmp"
 done
 
 if (( stamped > 0 )); then
     echo "pre-commit: stamped updated: $TODAY on $stamped article(s)"
-fi
-
-PRESENT=()
-for file in "${STAGED[@]}"; do
-    [[ -f "$file" ]] && PRESENT+=("$file")
-done
-
-if [[ ${#PRESENT[@]} -eq 0 ]]; then
-    exit 0
-fi
-
-if ! "$SCRIPTS_DIR/lint" "${PRESENT[@]}"; then
-    echo "" >&2
-    echo "pre-commit: lint errors — commit rejected." >&2
-    exit 1
 fi
 
 exit 0
