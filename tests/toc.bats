@@ -77,6 +77,50 @@ Content."
     [[ "$output" == *"1. Section One"* ]]
 }
 
+@test "toc --map lists areas with counts" {
+    create_test_article "home/a.md" "# A"
+    create_test_article "home/b.md" "# B"
+    create_test_article "shell/c.md" "# C"
+    run "$SCRIPTS/toc" --map
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"knowledge/home/"* ]]
+    [[ "$output" == *"knowledge/shell/"* ]]
+    [[ "$output" == *"3 articles"* ]]
+}
+
+@test "toc --map counts nested directories in their parent" {
+    create_test_article "home/a.md" "# A"
+    create_test_article "home/remodel/b.md" "# B"
+    create_test_article "home/remodel/c.md" "# C"
+    run "$SCRIPTS/toc" --map
+    [[ "$output" =~ knowledge/home/[[:space:]]+3 ]]
+    [[ "$output" =~ remodel/[[:space:]]+2 ]]
+}
+
+@test "toc --map omits directories with no articles" {
+    create_test_article "home/a.md" "# A"
+    mkdir -p "$TEST_CONTENT_DIR/knowledge/empty"
+    run "$SCRIPTS/toc" --map
+    [[ "$output" != *"empty/"* ]]
+}
+
+@test "toc --map reports files loose at the root" {
+    create_test_article "loose.md" "# Loose"
+    create_test_article "home/a.md" "# A"
+    run "$SCRIPTS/toc" --map
+    [[ "$output" == *"loose files"* ]]
+    [[ "$output" == *"2 articles"* ]]
+}
+
+@test "toc --map is far smaller than --depth 1" {
+    for i in 1 2 3 4 5 6 7 8; do
+        create_test_article "area/topic$i.md" "# Topic $i"
+    done
+    map_size=$("$SCRIPTS/toc" --map | wc -c)
+    full_size=$("$SCRIPTS/toc" --depth 1 | wc -c)
+    [[ "$map_size" -lt "$full_size" ]]
+}
+
 @test "toc h3 counter resets per H2" {
     create_test_article "multi.md" "# Multi
 
