@@ -297,6 +297,28 @@ sources:
 An article that mixes fast- and slow-rotting content is usually two
 articles. Split it rather than picking an average `ttl`.
 
+### See also
+
+An article the reader lands on is a dead end unless it says where to go
+next. `search` and `toc` find articles by name and content; neither knows
+that `synology-bind-mounts.md` is only half the story without
+`home-lab-overview.md`.
+
+When an article is meaningfully incomplete without another, end the
+relevant H2 with a link:
+
+```markdown
+See also: [Home Lab Overview](../infrastructure/home-lab-overview.md).
+```
+
+Put it inside the H2 it belongs to, not in a trailing section of its own
+--- a session loads one H2 at a time and never sees the rest of the file.
+Relative paths, so the link survives a file being moved with its
+neighbours.
+
+Link when the other article is genuinely needed to act on this one.
+Linking everything to everything is the same as linking nothing.
+
 ### Granularity
 
 - Each H2: aim for 10-50 lines. Shorter is better.
