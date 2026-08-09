@@ -30,9 +30,7 @@ if [[ -z "$SESSION_ID" ]] || [[ -z "$PROMPT" ]]; then
     exit 0
 fi
 
-SESSION_FILE="$SESSION_DIR/session-${SESSION_ID}.jsonl"
-
-[[ -f "$SESSION_FILE" ]] || exit 0
+SESSION_FILE="$(session_buffer_path "$SESSION_DIR" "$SESSION_ID")" || exit 0
 
 echo "$INPUT" | jq -c '{role: "user", message: .prompt, timestamp: now}' \
     >> "$SESSION_FILE" 2>/dev/null || true

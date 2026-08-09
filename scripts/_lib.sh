@@ -224,6 +224,48 @@ ensure_session_dir() {
     return 0
 }
 
+# session_buffer_path - Path to a session's buffer, recreating it if gone.
+#
+# The buffer's existence used to gate capture: session-prompt and
+# session-stop exited when the file was missing. But session-start
+# flushes and deletes buffers older than an hour, and mtime only advances
+# on a recorded turn — so a session idle for an hour (a terminal left
+# open) had its buffer swept by the next session to start, and then
+# captured nothing for the rest of its life, silently and permanently.
+#
+# Recreate instead. A swept session resumes into a second observation,
+# which is honest about what happened; capturing nothing is not.
+#
+# Only recreate when session-start actually ran for this session: it sets
+# both KNOWLEDGE_OBSERVE=1 and KNOWLEDGE_SESSION_FILE. Otherwise capture
+# stays off.
+#
+# Prints the path; returns 1 when capture should be skipped.
+#
+# Usage:
+#   file="$(session_buffer_path "$dir" "$id")" || exit 0
+session_buffer_path() {
+    local dir="$1" id="$2"
+    local file="$dir/session-$id.jsonl"
+
+    if [[ -f "$file" ]]; then
+        echo "$file"
+        return 0
+    fi
+
+    if [[ "${KNOWLEDGE_OBSERVE:-}" != "1" ]] \
+        && [[ -z "${KNOWLEDGE_SESSION_FILE:-}" ]]; then
+        return 1
+    fi
+
+    ensure_session_dir "$dir" || return 1
+    touch "$file" 2>/dev/null || return 1
+    chmod 600 "$file" 2>/dev/null || true
+
+    echo "$file"
+    return 0
+}
+
 # --- Markdown heading parsing -------------------------------------------
 #
 # A `#` line inside a fenced code block is a shell comment, not a heading.

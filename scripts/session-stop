@@ -31,9 +31,7 @@ if [[ -z "$SESSION_ID" ]] || [[ -z "$LAST_MESSAGE" ]]; then
     exit 0
 fi
 
-SESSION_FILE="$SESSION_DIR/session-${SESSION_ID}.jsonl"
-
-[[ -f "$SESSION_FILE" ]] || exit 0
+SESSION_FILE="$(session_buffer_path "$SESSION_DIR" "$SESSION_ID")" || exit 0
 
 echo "$INPUT" | jq -c '{role: "assistant", message: .last_assistant_message, timestamp: now}' \
     >> "$SESSION_FILE" 2>/dev/null || true

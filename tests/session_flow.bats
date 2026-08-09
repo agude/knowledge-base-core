@@ -107,14 +107,46 @@ run_session_end() {
     [[ ! -f "$SESSION_FILE" ]]
 }
 
-@test "session-stop without session file is a no-op" {
-    # Don't create session file
+@test "session-stop recreates a swept buffer" {
     run run_session_stop "Response"
     [[ "$status" -eq 0 ]]
+    [[ -f "$SESSION_FILE" ]]
+    grep -q "Response" "$SESSION_FILE"
 }
 
-@test "session-prompt without session file is a no-op" {
-    # Don't create session file
+@test "session-prompt recreates a swept buffer" {
     run run_session_prompt "Hello"
     [[ "$status" -eq 0 ]]
+    [[ -f "$SESSION_FILE" ]]
+    grep -q "Hello" "$SESSION_FILE"
+}
+
+@test "capture continues after the orphan sweep removes the buffer" {
+    touch "$SESSION_FILE"
+    run_session_prompt "Before the sweep"
+    run_session_stop "First answer"
+
+    # An hour-idle buffer swept by another session starting up
+    rm -f "$SESSION_FILE"
+
+    run_session_prompt "After the sweep"
+    run_session_stop "Second answer"
+
+    [[ -f "$SESSION_FILE" ]]
+    local count
+    count=$(wc -l < "$SESSION_FILE")
+    [[ "$count" -eq 2 ]]
+    grep -q "After the sweep" "$SESSION_FILE"
+}
+
+@test "capture stays off when session-start never ran" {
+    run bash -c 'echo "{\"session_id\":\"'"$SESSION_ID"'\",\"prompt\":\"Hi\"}" | "$SCRIPTS/session-prompt"'
+    [[ "$status" -eq 0 ]]
+    [[ ! -f "$SESSION_FILE" ]]
+}
+
+@test "capture stays off when KNOWLEDGE_OBSERVE=0" {
+    run bash -c 'echo "{\"session_id\":\"'"$SESSION_ID"'\",\"prompt\":\"Hi\"}" | KNOWLEDGE_OBSERVE=0 "$SCRIPTS/session-prompt"'
+    [[ "$status" -eq 0 ]]
+    [[ ! -f "$SESSION_FILE" ]]
 }
