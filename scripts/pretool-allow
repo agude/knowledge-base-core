@@ -53,7 +53,7 @@ is_simple_command() {
         fi
 
         # A backslash escapes the next character in both remaining states.
-        if [[ "$ch" == '\' ]]; then
+        if [[ "$ch" == "\\" ]]; then
             i=$((i + 1))
             continue
         fi

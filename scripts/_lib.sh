@@ -86,7 +86,10 @@ resolve_path() {
     fi
 
     echo "Ambiguous match for '$base' — $count files found:" >&2
-    echo "$matches" | sed "s|^$CONTENT_DIR/|  |" >&2
+    local m
+    while IFS= read -r m; do
+        echo "  ${m#"$CONTENT_DIR/"}" >&2
+    done <<< "$matches"
     return 1
 }
 
@@ -215,7 +218,9 @@ session_dir() {
 ensure_session_dir() {
     local dir="$1"
 
-    mkdir -p -m 700 "$dir" 2>/dev/null || return 1
+    # umask, not `mkdir -m`: with -p, -m applies only to the deepest
+    # directory, and there must be no window where the path is readable.
+    ( umask 077 && mkdir -p "$dir" ) 2>/dev/null || return 1
     [[ -d "$dir" ]] || return 1
     [[ -O "$dir" ]] || return 1
 
@@ -277,7 +282,10 @@ session_buffer_path() {
 MD_FENCE_OPEN=false
 MD_FENCE_CHAR=""
 MD_FENCE_LEN=0
+# Outputs of md_heading, read by the scripts that source this file.
+# shellcheck disable=SC2034
 MD_HEADING_LEVEL=0
+# shellcheck disable=SC2034
 MD_HEADING_TEXT=""
 
 # Up to three leading spaces, then a run of three or more ` or ~.
@@ -341,7 +349,9 @@ md_heading() {
     [[ "$MD_FENCE_OPEN" == true ]] && return 1
     [[ "$line" =~ ^(#{1,6})[[:space:]]+(.*) ]] || return 1
 
+    # shellcheck disable=SC2034  # read by callers after md_heading returns
     MD_HEADING_LEVEL=${#BASH_REMATCH[1]}
+    # shellcheck disable=SC2034
     MD_HEADING_TEXT="${BASH_REMATCH[2]}"
     return 0
 }

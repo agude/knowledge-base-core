@@ -61,6 +61,15 @@ echo ""
 echo "Pending observations: $(count_md "$PENDING_DIR")"
 
 echo ""
-script_list="$(ls "$SCRIPT_DIR" | grep -v '^_' | grep -v '^session-' | paste -sd',' - | sed 's/,/, /g')"
-echo "Scripts: $script_list"
+scripts=()
+for path in "$SCRIPT_DIR"/*; do
+    [[ -f "$path" && -x "$path" ]] || continue
+    name="$(basename "$path")"
+    case "$name" in
+        _*|session-*|pretool-allow|install) continue ;;
+    esac
+    scripts+=("$name")
+done
+script_list="$(IFS=,; echo "${scripts[*]}")"
+echo "Scripts: ${script_list//,/, }"
 echo "Usage: \$KNOWLEDGE_BASE/scripts/<script> [args]"
