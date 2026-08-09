@@ -90,11 +90,11 @@ if [[ -n "$HEADING" ]]; then
     heading_lower="$(echo "$HEADING" | tr '[:upper:]' '[:lower:]')"
 fi
 
+md_heading_reset
 while IFS= read -r line; do
-    if [[ "$line" =~ ^(#{1,6})[[:space:]]+(.*) ]]; then
-        hashes="${BASH_REMATCH[1]}"
-        title="${BASH_REMATCH[2]}"
-        level=${#hashes}
+    if md_heading "$line"; then
+        title="$MD_HEADING_TEXT"
+        level="$MD_HEADING_LEVEL"
 
         if [[ "$found" == true ]]; then
             # Inside matched section. Stop at same or higher level heading.

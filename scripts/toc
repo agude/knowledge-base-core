@@ -120,11 +120,11 @@ for file in "${FILES[@]}"; do
         echo "[$relative]"
     fi
 
+    md_heading_reset
     while IFS= read -r line; do
-        if [[ "$line" =~ ^(#{1,6})[[:space:]]+(.*) ]]; then
-            hashes="${BASH_REMATCH[1]}"
-            title="${BASH_REMATCH[2]}"
-            level=${#hashes}
+        if md_heading "$line"; then
+            title="$MD_HEADING_TEXT"
+            level="$MD_HEADING_LEVEL"
 
             if (( level > DEPTH )); then
                 continue

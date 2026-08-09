@@ -170,6 +170,86 @@ locked_commit() {
     trap - EXIT
 }
 
+# --- Markdown heading parsing -------------------------------------------
+#
+# A `#` line inside a fenced code block is a shell comment, not a heading.
+# Parsers that ignore fences invent topics in `toc` and truncate `section`
+# at the first commented command. Both scripts read files line by line, so
+# the state lives in globals: call md_heading_reset before each file, then
+# md_heading on every line.
+
+MD_FENCE_OPEN=false
+MD_FENCE_CHAR=""
+MD_FENCE_LEN=0
+MD_HEADING_LEVEL=0
+MD_HEADING_TEXT=""
+
+# Up to three leading spaces, then a run of three or more ` or ~.
+_MD_FENCE_RE='^[[:blank:]]{0,3}(`{3,}|~{3,})[[:blank:]]*(.*)$'
+
+# md_heading_reset - Clear fence state. Call once per file.
+md_heading_reset() {
+    MD_FENCE_OPEN=false
+    MD_FENCE_CHAR=""
+    MD_FENCE_LEN=0
+}
+
+# _md_fence_track - Update fence state for one line.
+#
+# Returns 0 if the line is a fence delimiter, 1 otherwise.
+_md_fence_track() {
+    local line="$1" marker info char len
+
+    [[ "$line" =~ $_MD_FENCE_RE ]] || return 1
+
+    marker="${BASH_REMATCH[1]}"
+    info="${BASH_REMATCH[2]}"
+    char="${marker:0:1}"
+    len=${#marker}
+
+    if [[ "$MD_FENCE_OPEN" == false ]]; then
+        # A backtick fence may not carry backticks in its info string.
+        if [[ "$char" == '`' ]] && [[ "$info" == *'`'* ]]; then
+            return 1
+        fi
+        MD_FENCE_OPEN=true
+        MD_FENCE_CHAR="$char"
+        MD_FENCE_LEN=$len
+        return 0
+    fi
+
+    # Only a bare marker of the same character and at least the same
+    # length closes the block; anything else is content.
+    if [[ "$char" == "$MD_FENCE_CHAR" ]] && (( len >= MD_FENCE_LEN )) \
+        && [[ -z "${info//[[:blank:]]/}" ]]; then
+        md_heading_reset
+    fi
+    return 0
+}
+
+# md_heading - Classify one line, skipping fenced code blocks.
+#
+# Returns 0 and sets MD_HEADING_LEVEL and MD_HEADING_TEXT when the line is
+# an ATX heading outside a fence. Returns 1 otherwise.
+#
+# Usage:
+#   md_heading_reset
+#   while IFS= read -r line; do
+#       md_heading "$line" || continue
+#       ...
+#   done < "$file"
+md_heading() {
+    local line="$1"
+
+    _md_fence_track "$line" && return 1
+    [[ "$MD_FENCE_OPEN" == true ]] && return 1
+    [[ "$line" =~ ^(#{1,6})[[:space:]]+(.*) ]] || return 1
+
+    MD_HEADING_LEVEL=${#BASH_REMATCH[1]}
+    MD_HEADING_TEXT="${BASH_REMATCH[2]}"
+    return 0
+}
+
 # yaml_escape - Escape a string for safe use in double-quoted YAML values.
 #
 # Handles backslashes and double quotes. Sufficient for single-line shell
