@@ -37,20 +37,34 @@ output_context() {
     fi
 }
 
+# Capture setup must never suppress the injection. A session without an
+# observation buffer still works; a session without the knowledge base
+# does not. Under `set -e` any failure below — a missing jq, an
+# unwritable session directory — exited before output_context ever ran,
+# and the hook produced zero bytes. Emit on the way out, whatever
+# happened.
+trap 'output_context; exit 0' EXIT
+
 # Respect a pre-existing KNOWLEDGE_OBSERVE=0 (launch with
 # KNOWLEDGE_OBSERVE=0 claude to suppress all observation for a session).
 if [[ "${KNOWLEDGE_OBSERVE:-}" == "0" ]]; then
     if [[ -n "${CLAUDE_ENV_FILE:-}" ]]; then
         echo "KNOWLEDGE_OBSERVE=0" >> "$CLAUDE_ENV_FILE"
     fi
-    output_context
     exit 0
 fi
 
-SESSION_ID="$(echo "$INPUT" | jq -r '.session_id // empty')"
+# jq parses the hook payload. Without it there is no session id and so no
+# capture, but the context still goes out.
+if ! command -v jq > /dev/null 2>&1; then
+    logger -t knowledge "session-start: jq not found, capture disabled" 2>/dev/null || true
+    exit 0
+fi
+
+SESSION_ID="$(echo "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")"
 
 if [[ -z "$SESSION_ID" ]]; then
-    # Fallback if jq fails or session_id missing
+    # Fallback when session_id is missing from the payload
     SESSION_ID="$$-$(date +%s)"
 fi
 
@@ -83,5 +97,4 @@ else
     logger -t knowledge "session-start: CLAUDE_ENV_FILE not set, cannot export KNOWLEDGE_OBSERVE" 2>/dev/null || true
 fi
 
-# Output CLAUDE.md, topic list, and project-specific context
-output_context
+# output_context runs from the EXIT trap.

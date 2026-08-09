@@ -32,6 +32,31 @@ Content."
     [[ "$output" == *"Project Rules"* ]]
 }
 
+@test "session-start still injects context when jq is missing" {
+    local stub="$TEST_CONTENT_DIR/bin"
+    mkdir -p "$stub"
+    for b in bash cat date find touch mkdir readlink dirname pwd sort awk sed grep wc tr; do
+        ln -sf "$(command -v $b)" "$stub/$b" 2>/dev/null || true
+    done
+    create_test_article "networking.md" "# Networking
+
+## DNS
+
+Content."
+    run bash -c 'echo "{\"session_id\":\"test-nojq\"}" | PATH='"$stub"' "$SCRIPTS/session-start"'
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Networking"* ]]
+    [[ "$output" == *"## Topics (auto-generated)"* ]]
+}
+
+@test "session-start still injects context when the session dir is unwritable" {
+    local blocked="$TEST_CONTENT_DIR/blocked"
+    touch "$blocked"
+    run bash -c 'echo "{\"session_id\":\"test-blocked\"}" | SESSION_DIR='"$blocked"' "$SCRIPTS/session-start"'
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Knowledge Base"* ]]
+}
+
 @test "session-start sets KNOWLEDGE_OBSERVE=1 by default" {
     local env_file="$TEST_CONTENT_DIR/env_test"
     touch "$env_file"
