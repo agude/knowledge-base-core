@@ -114,7 +114,16 @@ break_stale_git_lock() {
     fi
 }
 
-# locked_commit - Commit with a filesystem lock to serialize concurrent writes.
+# locked_commit - Commit given paths with a lock to serialize concurrent writes.
+#
+# Commits ONLY the named paths. A bare `git commit` would sweep up whatever
+# else happened to be staged — an observe firing mid-curation would carry
+# the curator's staged articles into a "Observe: session transcript" commit.
+#
+# The pathspec form builds a temporary index, so a pre-commit hook that
+# modifies files cannot write back into this commit. That is fine for the
+# capture scripts, which only ever commit observations/ and questions/;
+# curation commits knowledge/ through the full index instead.
 #
 # Uses a PID file inside the lock dir to detect and break stale locks
 # left by killed processes. Registers an EXIT trap as a safety net;
@@ -123,6 +132,9 @@ break_stale_git_lock() {
 # a cd into the caller.
 #
 # Also cleans up stale .git/index.lock files before git operations.
+#
+# Returns the git exit status, so a rejecting hook is visible to callers
+# instead of leaving a file written but uncommitted.
 #
 # Usage:
 #   locked_commit "message" path1 [path2 ...]
@@ -158,16 +170,22 @@ locked_commit() {
     # Clean up stale git locks before operating
     break_stale_git_lock "$CONTENT_DIR"
 
+    local rc=0
     (
         cd "$CONTENT_DIR"
         for p in "$@"; do
             git add "$p"
         done
-        git commit -m "$message" -q 2>/dev/null || echo "locked_commit: git commit failed for: $message" >&2
-    )
+        git commit -q -m "$message" -- "$@"
+    ) || rc=$?
 
     rm -rf "$lockdir" 2>/dev/null || true
     trap - EXIT
+
+    if (( rc != 0 )); then
+        echo "locked_commit: commit failed ($rc) for: $message" >&2
+    fi
+    return $rc
 }
 
 # --- Markdown heading parsing -------------------------------------------

@@ -87,6 +87,50 @@ title: test
     [[ "$status" -ne 0 ]]
 }
 
+# --- locked_commit ---
+
+@test "locked_commit commits only the named paths" {
+    create_test_observation "20260412T000000-aaaa.md" "Obs" "Body"
+    create_test_article "staged-by-someone-else.md" "# Draft"
+    git -C "$TEST_CONTENT_DIR" add knowledge/staged-by-someone-else.md
+
+    source "$SCRIPTS/_lib.sh"
+    run locked_commit "Observe: Obs" "observations/pending/20260412T000000-aaaa.md"
+    [[ "$status" -eq 0 ]]
+
+    files="$(git -C "$TEST_CONTENT_DIR" show --name-only --format='' HEAD)"
+    [[ "$files" == *"observations/pending/20260412T000000-aaaa.md"* ]]
+    [[ "$files" != *"staged-by-someone-else"* ]]
+}
+
+@test "locked_commit returns nonzero when the commit is rejected" {
+    create_test_observation "20260412T000000-aaaa.md" "Obs" "Body"
+    cat > "$TEST_CONTENT_DIR/.git/hooks/pre-commit" <<'HOOK'
+#!/usr/bin/env bash
+echo "rejected by test hook" >&2
+exit 1
+HOOK
+    chmod +x "$TEST_CONTENT_DIR/.git/hooks/pre-commit"
+
+    source "$SCRIPTS/_lib.sh"
+    run locked_commit "Observe: Obs" "observations/pending/20260412T000000-aaaa.md"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"commit failed"* ]]
+}
+
+@test "locked_commit releases the lock after a rejected commit" {
+    create_test_observation "20260412T000000-aaaa.md" "Obs" "Body"
+    cat > "$TEST_CONTENT_DIR/.git/hooks/pre-commit" <<'HOOK'
+#!/usr/bin/env bash
+exit 1
+HOOK
+    chmod +x "$TEST_CONTENT_DIR/.git/hooks/pre-commit"
+
+    source "$SCRIPTS/_lib.sh"
+    run locked_commit "Observe: Obs" "observations/pending/20260412T000000-aaaa.md"
+    [[ ! -d "$TEST_CONTENT_DIR/.observe.lock" ]]
+}
+
 # --- resolve_path ---
 
 @test "resolve_path finds knowledge-relative path" {
