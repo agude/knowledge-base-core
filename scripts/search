@@ -6,8 +6,12 @@
 # documents, and pending observations. Returns matching lines with
 # file path and section context.
 #
+# Multiple terms are ANDed: a file must contain all of them, and every
+# line matching any of them is printed.
+#
 # Usage:
-#   search <query>
+#   search <term> [term ...]
+#   search -- <term>          # for terms that begin with a dash
 #
 # Options:
 #   -h, --help   Show this help message
@@ -16,8 +20,10 @@
 #   <relative-path> | <section heading or "top"> | <matched line trimmed>
 #
 # Examples:
-#   search "risk arbiter"
+#   search "risk arbiter"       # one phrase
+#   search synology nas         # files containing both
 #   search PostgreSQL
+#   search -- --no-verify
 
 set -euo pipefail
 
@@ -25,17 +31,38 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 source "$SCRIPT_DIR/_lib.sh"
 
-QUERY="${1:-}"
+TERMS=()
 
-if [[ "$QUERY" == "-h" || "$QUERY" == "--help" ]]; then
-    show_help "$0"
-    exit 0
-fi
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            show_help "$0"
+            exit 0
+            ;;
+        --) shift; TERMS+=("$@"); break ;;
+        -*) echo "Unknown option: $1 (use -- to search for it literally)" >&2
+            exit 1 ;;
+        *)  TERMS+=("$1"); shift ;;
+    esac
+done
 
-if [[ -z "$QUERY" ]]; then
-    echo "Usage: search <query>" >&2
+if [[ ${#TERMS[@]} -eq 0 ]]; then
+    echo "Usage: search <term> [term ...]" >&2
     exit 1
 fi
+
+for term in "${TERMS[@]}"; do
+    if [[ -z "$term" ]]; then
+        echo "Error: empty search term" >&2
+        exit 1
+    fi
+done
+
+# -e keeps terms that begin with a dash from being read as grep options.
+MATCH_ARGS=()
+for term in "${TERMS[@]}"; do
+    MATCH_ARGS+=(-e "$term")
+done
 
 SEARCH_DIRS=()
 for d in "$CONTENT_DIR/knowledge" "$CONTENT_DIR/sources" "$CONTENT_DIR/observations/pending"; do
@@ -49,8 +76,13 @@ fi
 
 find "${SEARCH_DIRS[@]}" \
     -name '*.md' -type f 2>/dev/null | while read -r file; do
+    # AND gate: every term must appear somewhere in the file.
+    for term in "${TERMS[@]}"; do
+        grep -q -i -F -e "$term" "$file" 2>/dev/null || continue 2
+    done
+
     relpath="${file#"$CONTENT_DIR/"}"
-    grep -n -i -F "$QUERY" "$file" 2>/dev/null | while IFS=: read -r lineno line; do
+    grep -n -i -F "${MATCH_ARGS[@]}" "$file" 2>/dev/null | while IFS=: read -r lineno line; do
         section=$(head -n "$lineno" "$file" | grep '^## ' | tail -1 | sed 's/^## //' || true)
         section="${section:-top}"
         trimmed=$(echo "$line" | sed 's/^[[:space:]]*//' | cut -c1-120)

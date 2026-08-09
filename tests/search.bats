@@ -72,6 +72,79 @@ The PostgreSQL server is running."
     [[ "$output" != *"aaa-no-match.md"* ]]
 }
 
+@test "search ANDs multiple terms within a file" {
+    create_test_article "both.md" "# Both
+
+## Info
+
+The Synology NAS runs Docker."
+    create_test_article "one.md" "# One
+
+## Info
+
+The Synology unit is upstairs."
+    run "$SCRIPTS/search" synology docker
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"both.md"* ]]
+    [[ "$output" != *"one.md"* ]]
+}
+
+@test "search prints every line matching any term" {
+    create_test_article "both.md" "# Both
+
+## Info
+
+The Synology NAS is upstairs.
+It runs Docker containers."
+    run "$SCRIPTS/search" synology docker
+    [[ "$output" == *"Synology NAS is upstairs"* ]]
+    [[ "$output" == *"runs Docker containers"* ]]
+}
+
+@test "search treats a multi-word argument as one phrase" {
+    create_test_article "phrase.md" "# Phrase
+
+## Info
+
+A Synology NAS lives here."
+    create_test_article "split.md" "# Split
+
+## Info
+
+Synology makes it. A NAS is a NAS."
+    run "$SCRIPTS/search" "synology nas"
+    [[ "$output" == *"phrase.md"* ]]
+    [[ "$output" != *"split.md"* ]]
+}
+
+@test "search rejects an unknown option instead of searching for it" {
+    create_test_article "topic.md" "# Topic
+
+## Info
+
+Content."
+    run "$SCRIPTS/search" --all
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Unknown option"* ]]
+}
+
+@test "search -- treats a leading-dash term literally" {
+    create_test_article "flags.md" "# Flags
+
+## Info
+
+Never pass --no-verify to git commit."
+    run "$SCRIPTS/search" -- --no-verify
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"flags.md"* ]]
+}
+
+@test "search with no terms exits nonzero" {
+    run "$SCRIPTS/search"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Usage"* ]]
+}
+
 @test "search shows 'top' when match is before any H2" {
     create_test_article "topic.md" "---
 title: \"Matched in frontmatter\"
