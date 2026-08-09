@@ -15,12 +15,15 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SESSION_DIR="${SESSION_DIR:-/tmp/knowledge-sessions}"
 
 # Read hook input (must consume stdin before any early exit)
 INPUT="$(cat)"
 
 source "$SCRIPT_DIR/_lib.sh"
+
+SESSION_DIR="$(session_dir)"
+# Buffers written before the directory moved out of shared /tmp.
+LEGACY_SESSION_DIR="/tmp/knowledge-sessions"
 
 # Output CLAUDE.md, topic list, and project-specific context
 output_context() {
@@ -68,12 +71,17 @@ if [[ -z "$SESSION_ID" ]]; then
     SESSION_ID="$$-$(date +%s)"
 fi
 
-# Ensure session directory exists
-mkdir -p "$SESSION_DIR"
+# Ensure session directory exists and is ours alone
+if ! ensure_session_dir "$SESSION_DIR"; then
+    logger -t knowledge "session-start: cannot use $SESSION_DIR, capture disabled" 2>/dev/null || true
+    exit 0
+fi
 
-# Process orphaned session files from crashed sessions
-for orphan in "$SESSION_DIR"/session-*.jsonl; do
+# Process orphaned session files from crashed sessions, including any
+# left in the old shared-/tmp location by a previous version.
+for orphan in "$SESSION_DIR"/session-*.jsonl "$LEGACY_SESSION_DIR"/session-*.jsonl; do
     [[ -f "$orphan" ]] || continue
+    [[ -O "$orphan" ]] || continue
     # Skip our own (shouldn't exist yet, but be safe)
     [[ "$orphan" == "$SESSION_DIR/session-${SESSION_ID}.jsonl" ]] && continue
 
@@ -84,9 +92,11 @@ for orphan in "$SESSION_DIR"/session-*.jsonl; do
     fi
 done
 
-# Create session file
+# Create session file. touch, not truncate: a resumed or cleared session
+# fires SessionStart again with the same id and must keep its buffer.
 SESSION_FILE="$SESSION_DIR/session-${SESSION_ID}.jsonl"
 touch "$SESSION_FILE"
+chmod 600 "$SESSION_FILE" 2>/dev/null || true
 
 # Set environment variables for the session
 if [[ -n "${CLAUDE_ENV_FILE:-}" ]]; then

@@ -11,7 +11,11 @@ set -euo pipefail
 # Skip if observation is disabled
 [[ "${KNOWLEDGE_OBSERVE:-}" == "0" ]] && exit 0
 
-SESSION_DIR="${SESSION_DIR:-/tmp/knowledge-sessions}"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+
+SESSION_DIR="$(session_dir)"
 
 # Capture is best-effort: without jq there is no session id to key
 # the buffer on. Fail quietly rather than erroring into the session.

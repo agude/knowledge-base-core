@@ -49,6 +49,29 @@ Content."
     [[ "$output" == *"## Topics (auto-generated)"* ]]
 }
 
+@test "session-start creates the session directory mode 700" {
+    local dir="$TEST_CONTENT_DIR/sessions"
+    run bash -c 'echo "{\"session_id\":\"test-mode\"}" | SESSION_DIR='"$dir"' "$SCRIPTS/session-start"'
+    [[ "$status" -eq 0 ]]
+    run stat -c '%a' "$dir"
+    [[ "$output" == "700" ]]
+}
+
+@test "session-start creates the buffer mode 600" {
+    local dir="$TEST_CONTENT_DIR/sessions"
+    run bash -c 'echo "{\"session_id\":\"test-fmode\"}" | SESSION_DIR='"$dir"' "$SCRIPTS/session-start"'
+    run stat -c '%a' "$dir/session-test-fmode.jsonl"
+    [[ "$output" == "600" ]]
+}
+
+@test "session-start tightens a pre-existing world-readable directory" {
+    local dir="$TEST_CONTENT_DIR/sessions"
+    mkdir -p -m 777 "$dir"
+    run bash -c 'echo "{\"session_id\":\"test-tighten\"}" | SESSION_DIR='"$dir"' "$SCRIPTS/session-start"'
+    run stat -c '%a' "$dir"
+    [[ "$output" == "700" ]]
+}
+
 @test "session-start still injects context when the session dir is unwritable" {
     local blocked="$TEST_CONTENT_DIR/blocked"
     touch "$blocked"

@@ -188,6 +188,42 @@ locked_commit() {
     return $rc
 }
 
+# session_dir - Path holding per-session observation buffers.
+#
+# Every user prompt of every session passes through these files, so the
+# directory must not be a predictable shared path: on a multi-user host
+# whoever creates /tmp/knowledge-sessions first receives the transcript
+# stream. Prefer XDG_RUNTIME_DIR, which is already per-user and mode 700;
+# fall back to a uid-scoped name under /tmp for macOS.
+#
+# SESSION_DIR overrides it (the tests set it).
+#
+# Usage: dir="$(session_dir)"
+session_dir() {
+    if [[ -n "${SESSION_DIR:-}" ]]; then
+        echo "$SESSION_DIR"
+        return 0
+    fi
+    echo "${XDG_RUNTIME_DIR:-/tmp}/knowledge-sessions-$(id -u)"
+}
+
+# ensure_session_dir - Create the session directory, private, and verify it.
+#
+# Returns 1 if the directory cannot be created or is owned by someone
+# else, so callers can skip capture instead of writing prompts somewhere
+# another user can read.
+ensure_session_dir() {
+    local dir="$1"
+
+    mkdir -p -m 700 "$dir" 2>/dev/null || return 1
+    [[ -d "$dir" ]] || return 1
+    [[ -O "$dir" ]] || return 1
+
+    # A pre-existing directory keeps its old mode; tighten it.
+    chmod 700 "$dir" 2>/dev/null || true
+    return 0
+}
+
 # --- Markdown heading parsing -------------------------------------------
 #
 # A `#` line inside a fenced code block is a shell comment, not a heading.
