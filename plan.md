@@ -7,29 +7,32 @@ content.
 
 ## Status
 
-| | Finding | State |
-|---|---|---|
-| **P0** | F10 fenced headings corrupt `toc`/`section` | **done** — shared `md_heading` parser, 8 tests |
-| | F11 `search` drops terms after the first | **done** — multi-term AND, `--`, 6 tests |
-| | F12 `context` reports an empty base | **done** — recursive count |
-| | lint + run it automatically | **done** — `scripts/lint`, content-repo `pre-commit` |
-| **P1** | F13 `pretool-allow` approves chained commands | **done** — `is_simple_command`, 17 tests |
-| | F14 session buffers in shared `/tmp` | **done** — `$XDG_RUNTIME_DIR`, mode 700 |
-| | F15 missing `jq` kills the injection | **done** — EXIT-trap emission, `jq` guards |
-| **P2** | F21/F1 injection size | **done** — 12.3 KB → 3.3 KB, 486 → 84 lines |
-| | live state in the injection | **done** — `status --brief`, `stale --count` |
-| **P4** | F16 orphan sweep silently ends capture | **done** — `session_buffer_path` recreates |
-| **P5** | F17 `locked_commit` commits the whole index | **done** — pathspec + exit status |
-| **P9** | F27 CI is thin | **done** — shellcheck job, `apt-get update` |
-| **P3** | F3 search ranking, limits, `--all` | open |
-| **P4** | F18 stdin fallback, F23 turn threshold | open |
-| **P5** | F26 `curate` skill is CWD-bound | open |
-| **P6** | `sync`, stale-driven questions | open |
-| **P7** | F25 `ttl:` frontmatter | open |
-| **P8** | F24 three memory systems, F8 lateral links | open |
-| **P9** | F19 two double-H1 articles, F20 nits | open (F19 filed as an observation for the curator) |
+Branch `fix-retrieval-layer`, 21 commits. Suite green at 191 tests;
+shellcheck clean.
 
-Measured after P0–P2:
+### Done
+
+| | Finding | Landed as |
+|---|---|---|
+| **P0** | F10 fenced headings corrupt `toc`/`section` | shared `md_heading` parser, 8 tests |
+| | F11 `search` drops terms after the first | multi-term AND, `--`, unknown-option rejection |
+| | F12 `context` reports an empty base | recursive count |
+| | lint, and run it automatically | `scripts/lint` + content-repo `pre-commit` |
+| **P1** | F13 `pretool-allow` approves chained commands | `is_simple_command`, 17 tests |
+| | F14 session buffers in shared `/tmp` | `$XDG_RUNTIME_DIR`, mode 700, uid-scoped |
+| | F15 missing `jq` kills the injection | EXIT-trap emission, `jq` guards |
+| **P2** | F21/F1 injection size | `toc --map`; 12.3 KB → 3.3 KB |
+| | live state in the injection | `status --brief`, `stale --count` |
+| **P3** | F3 search ranking, limits, archive | single-pass awk; 15.6 s → 0.31 s |
+| **P4** | F16 orphan sweep silently ends capture | `session_buffer_path` recreates |
+| | F18 stdin guessing | `--body -` required |
+| | F23 trivial transcripts | `KNOWLEDGE_MIN_MESSAGES`, default 3 |
+| **P5** | F17 `locked_commit` commits the whole index | pathspec + exit status |
+| | F26 `curate` is CWD-bound, needs a personal alias | `scripts/commit` |
+| **P9** | F27 CI is thin | shellcheck job, `apt-get update` |
+| | F20 nits | 8-hex suffixes, `od` not `xxd`, `pending` flags |
+
+Measured:
 
 | Metric | Before | After |
 |---|---|---|
@@ -37,8 +40,47 @@ Measured after P0–P2:
 | `toc --depth 1` payload | 8,447 B | **770 B** (`toc --map`) |
 | Phantom topics from fenced comments | 18 | **0** |
 | `section` on `find-recipes.md § Dangling symlinks` | 3 lines (truncated) | **26 lines** |
-| Tests | 89 | **167** |
+| `search the` | 15.6 s, 2,971 lines | **0.31 s, 20 lines ranked** |
+| Archive reachable by search | no (1,366 files) | **`--archive`** |
+| Tests | 89 | **191** |
 | shellcheck findings | 41 (never run) | **0** |
+
+### Next, in order
+
+1. **Get the branch critiqued.** A review agent was launched and died on a
+   session limit before reporting. Re-run it. The bash written here is
+   worth a hostile read — three `set -e` hazards of the form
+   `[[ cond ]] && cmd` as a loop-body tail were introduced and caught
+   during this work, and the search rewrite shipped four bugs found only
+   by running it (IFS-whitespace field collapse, unterminated last line,
+   title-only matches printing nothing, `(( )) &&` at top level).
+   Specifically worth attacking: `is_simple_command` in `pretool-allow`
+   (it is a security control), the `pre-commit` stamping awk against
+   amend/rebase/merge, and whether the fence parser disagrees with
+   CommonMark anywhere that matters.
+2. **P6 `scripts/sync`** — `git pull --rebase && git push` on the content
+   repo. The multi-machine story is still manual, and observations
+   accumulate locally on each machine.
+3. **P7 `ttl:` frontmatter** — per-article freshness. `stale` still has
+   one global knob and 37 articles are past it, including `user/` content
+   the stated thresholds say rots in 14 days. Teach `stale` to read
+   `ttl:`, and `synced:` for `sources/`.
+4. **P8 routing** — rewrite the `knowledge-base` and `wiki` skill
+   descriptions so they are distinguishable from the description alone,
+   and state the KB / wiki / auto-memory boundary in both `CLAUDE.md`s.
+   Three memory systems still have no division of labor an agent can see.
+5. **P8 lateral links** — "See also" lines, a curation habit rather than
+   tooling.
+6. **F19** — the two double-H1 articles now fail `lint`, so the next
+   curation run that touches them is blocked until they are fixed. Filed
+   as an observation; the curator owns article edits, not this branch.
+
+### Deferred deliberately
+
+- **sqlite FTS5.** The awk pass answers in 0.31 s over 128 articles.
+  Revisit if the corpus reaches ~500, not before.
+- **Fixing `~/Wiki`'s copy of `pretool-allow`.** Same bypass, separate
+  repo, out of scope for this branch — but it is live and unfixed.
 
 ## What changed since 2026-07-02
 
