@@ -122,3 +122,19 @@ Content."
     # Should NOT contain OBSERVE=1
     [[ "$output" != *"KNOWLEDGE_OBSERVE=1"* ]]
 }
+
+@test "session-start does not flush a symlinked orphan buffer" {
+    local dir="$TEST_CONTENT_DIR/sessions"
+    mkdir -p -m 700 "$dir"
+    secret="$TEST_CONTENT_DIR/secret.txt"
+    printf '{"role":"user","message":"private"}\n' > "$secret"
+    ln -s "$secret" "$dir/session-planted.jsonl"
+    touch -d '2 hours ago' "$secret" 2>/dev/null || touch -A -020000 "$secret"
+
+    run bash -c 'echo "{\"session_id\":\"test-sym\"}" | SESSION_DIR='"$dir"' "$SCRIPTS/session-start"'
+    [[ "$status" -eq 0 ]]
+    # The symlink target must not have been turned into an observation
+    run bash -c 'grep -rl private "$TEST_CONTENT_DIR/observations/pending" 2>/dev/null | wc -l'
+    [[ "$output" -eq 0 ]]
+    [[ -f "$secret" ]]
+}

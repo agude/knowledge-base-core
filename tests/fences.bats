@@ -142,3 +142,40 @@ Content.'
     [[ "$output" == *"2. Two"* ]]
     [[ "$output" != *"not a heading"* ]]
 }
+
+@test "toc strips the closing hashes of an ATX heading" {
+    create_test_article "h.md" '# H
+
+## Closed With Hashes ##
+
+body
+
+### Also Closed ###
+
+more'
+    run "$SCRIPTS/toc" --depth 3
+    [[ "$output" == *"1. Closed With Hashes"* ]]
+    [[ "$output" != *"Closed With Hashes ##"* ]]
+    [[ "$output" != *"Also Closed ###"* ]]
+}
+
+@test "section --exact matches the name toc printed" {
+    create_test_article "h.md" '# H
+
+## Closed With Hashes ##
+
+body here'
+    run "$SCRIPTS/section" --file knowledge/h.md --heading 'Closed With Hashes' --exact
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"body here"* ]]
+}
+
+@test "a heading of only hashes does not become a heading name" {
+    create_test_article "h.md" '# H
+
+## Real Section
+
+body'
+    run "$SCRIPTS/toc" --depth 2
+    [[ "$output" == *"1. Real Section"* ]]
+}

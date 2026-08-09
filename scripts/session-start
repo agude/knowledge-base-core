@@ -86,17 +86,32 @@ fi
 
 # Process orphaned session files from crashed sessions, including any
 # left in the old shared-/tmp location by a previous version.
-for orphan in "$SESSION_DIR"/session-*.jsonl "$LEGACY_SESSION_DIR"/session-*.jsonl; do
-    [[ -f "$orphan" ]] || continue
-    [[ -O "$orphan" ]] || continue
-    # Skip our own (shouldn't exist yet, but be safe)
-    [[ "$orphan" == "$SESSION_DIR/session-${SESSION_ID}.jsonl" ]] && continue
+#
+# The legacy directory lives in shared /tmp, so it is swept only when we
+# own it, and symlinks are skipped everywhere: -O follows the link and
+# reports on the target, so a planted symlink to a file the user owns
+# would have been read straight into a committed observation.
+SWEEP_DIRS=("$SESSION_DIR")
+if [[ -d "$LEGACY_SESSION_DIR" && -O "$LEGACY_SESSION_DIR" && ! -L "$LEGACY_SESSION_DIR" ]]; then
+    SWEEP_DIRS+=("$LEGACY_SESSION_DIR")
+fi
 
-    # Check if the file is older than 1 hour (likely orphaned)
-    if [[ "$(find "$orphan" -mmin +60 2>/dev/null)" ]]; then
-        # Process orphaned observations
-        "$SCRIPT_DIR/session-flush" "$orphan" 2>/dev/null || true
-    fi
+for dir in "${SWEEP_DIRS[@]}"; do
+    for orphan in "$dir"/session-*.jsonl; do
+        [[ -f "$orphan" ]] || continue
+        if [[ -L "$orphan" ]]; then continue; fi
+        [[ -O "$orphan" ]] || continue
+        # Skip our own (shouldn't exist yet, but be safe)
+        if [[ "$orphan" == "$SESSION_DIR/session-${SESSION_ID}.jsonl" ]]; then
+            continue
+        fi
+
+        # Check if the file is older than 1 hour (likely orphaned)
+        if [[ "$(find "$orphan" -mmin +60 2>/dev/null)" ]]; then
+            # Process orphaned observations
+            "$SCRIPT_DIR/session-flush" "$orphan" 2>/dev/null || true
+        fi
+    done
 done
 
 # Create session file. touch, not truncate: a resumed or cleared session

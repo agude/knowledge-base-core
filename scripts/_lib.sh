@@ -459,8 +459,20 @@ md_heading() {
 
     # shellcheck disable=SC2034  # read by callers after md_heading returns
     MD_HEADING_LEVEL=${#BASH_REMATCH[1]}
+    local text="${BASH_REMATCH[2]}"
+
+    # ATX headings may close with hashes: `## Title ##`. Strip them, or
+    # toc prints a name that `section --heading --exact` cannot match,
+    # and toc output is documented as section's input.
+    text="${text%"${text##*[![:space:]]}"}"
+    if [[ "$text" =~ ^(.*[^#[:space:]])[[:space:]]+#+$ ]]; then
+        text="${BASH_REMATCH[1]}"
+    elif [[ "$text" =~ ^#+$ ]]; then
+        text=""
+    fi
+
     # shellcheck disable=SC2034
-    MD_HEADING_TEXT="${BASH_REMATCH[2]}"
+    MD_HEADING_TEXT="$text"
     return 0
 }
 
