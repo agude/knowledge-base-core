@@ -149,6 +149,7 @@ Standard markdown content. Links use [normal syntax](other-page.md).
 | `resolve --file F [--answer "..."]` | Resolve a question |
 | `stale [--days N] [--path DIR]` | List articles needing re-verification |
 | `lint [--path DIR] [--strict]` | Check articles against the structural conventions |
+| `commit -m "..."` | Commit curation work under the write lock |
 | `status` | Summary stats |
 | `context` | Compact summary for session injection |
 | `session-start` | SessionStart hook for Claude Code |

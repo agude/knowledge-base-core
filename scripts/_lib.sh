@@ -141,10 +141,7 @@ break_stale_git_lock() {
 #
 # Usage:
 #   locked_commit "message" path1 [path2 ...]
-locked_commit() {
-    local message="$1"
-    shift
-
+acquire_lock() {
     local lockdir="$CONTENT_DIR/.observe.lock"
     local pidfile="$lockdir/pid"
     local retries=30
@@ -172,6 +169,19 @@ locked_commit() {
 
     # Clean up stale git locks before operating
     break_stale_git_lock "$CONTENT_DIR"
+    return 0
+}
+
+release_lock() {
+    rm -rf "$CONTENT_DIR/.observe.lock" 2>/dev/null || true
+    trap - EXIT
+}
+
+locked_commit() {
+    local message="$1"
+    shift
+
+    acquire_lock || return 1
 
     local rc=0
     (
@@ -182,11 +192,43 @@ locked_commit() {
         git commit -q -m "$message" -- "$@"
     ) || rc=$?
 
-    rm -rf "$lockdir" 2>/dev/null || true
-    trap - EXIT
+    release_lock
 
     if (( rc != 0 )); then
         echo "locked_commit: commit failed ($rc) for: $message" >&2
+    fi
+    return $rc
+}
+
+# locked_commit_index - Commit everything staged, under the same lock.
+#
+# For curation, which edits articles the pre-commit hook then stamps and
+# re-stages. A pathspec commit builds a temporary index and would discard
+# that stamping, so this one deliberately commits the whole index — and
+# takes the lock so a concurrent observe cannot slip a file in between.
+#
+# Usage:
+#   locked_commit_index "message" path1 [path2 ...]
+locked_commit_index() {
+    local message="$1"
+    shift
+
+    acquire_lock || return 1
+
+    local rc=0
+    (
+        cd "$CONTENT_DIR"
+        for p in "$@"; do
+            [[ -e "$p" ]] || continue
+            git add -A "$p"
+        done
+        git commit -q -m "$message"
+    ) || rc=$?
+
+    release_lock
+
+    if (( rc != 0 )); then
+        echo "locked_commit_index: commit failed ($rc) for: $message" >&2
     fi
     return $rc
 }

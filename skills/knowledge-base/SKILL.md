@@ -118,6 +118,7 @@ All scripts are at `${CLAUDE_SKILL_DIR}/scripts/<name>`.
 | `archive FILENAME [--all]` | Move observations to archived |
 | `stale [--days N] [--path DIR]` | List articles needing re-verification |
 | `lint [--path DIR] [--strict]` | Check articles against the structural conventions |
+| `commit -m "..."` | Commit curation work under the write lock |
 | `init [--path DIR]` | Initialize an empty content repo |
 | `status` | Summary stats |
 | `context` | Compact summary for session injection |
