@@ -17,6 +17,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 
+# Hooks must resolve against the deployed knowledge base (which has
+# content/), not the infra repo. Use KNOWLEDGE_BASE when set; fall
+# back to the repo this script lives in.
+HOOK_SCRIPT_DIR="${KNOWLEDGE_BASE:+${KNOWLEDGE_BASE}/scripts}"
+HOOK_SCRIPT_DIR="${HOOK_SCRIPT_DIR:-$SCRIPT_DIR}"
+
 COAT_TREE_HOOKS="${XDG_CONFIG_HOME:-$HOME/.config}/coat-tree/hooks.d"
 SKILLS_DIR="$HOME/.claude/skills"
 HOOK_PREFIX="010.knowledge"
@@ -43,7 +49,7 @@ for link in "${COAT_TREE_HOOKS}"/*/* "${SKILLS_DIR}"/*; do
     [[ -L "$link" ]] || continue
     target="$(readlink "$link")"
     case "$target" in
-        "${REPO_ROOT}/"*)
+        "${REPO_ROOT}/"*|"${HOOK_SCRIPT_DIR}/"*)
             rm "$link"
             removed=$((removed + 1))
             ;;
@@ -68,8 +74,8 @@ for pair in "${HOOKS[@]}"; do
     event="${pair%%:*}"
     script="${pair##*:}"
     mkdir -p "${COAT_TREE_HOOKS}/${event}"
-    ln -sf "${SCRIPT_DIR}/${script}" "${COAT_TREE_HOOKS}/${event}/${HOOK_PREFIX}"
-    echo "  ${event}/${HOOK_PREFIX}"
+    ln -sf "${HOOK_SCRIPT_DIR}/${script}" "${COAT_TREE_HOOKS}/${event}/${HOOK_PREFIX}"
+    echo "  ${event}/${HOOK_PREFIX} → ${HOOK_SCRIPT_DIR}/${script}"
 done
 
 # --- Skills ---
