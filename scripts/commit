@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+#
+# commit - Commit curation work in the content repo.
+#
+# Stages knowledge/, observations/, questions/ and sources/, then commits
+# them under the same lock the capture scripts use, so an observe firing
+# mid-run cannot interleave with a half-staged curation pass.
+#
+# Use this instead of a bare `git commit`:
+#
+#   - It finds the content repo through KB_CONTENT_DIR rather than
+#     assuming the caller is standing in ./content.
+#   - It takes the lock. `git commit` does not.
+#   - It commits the whole index, so the pre-commit hook's `updated:`
+#     stamping lands in the same commit. A pathspec commit would silently
+#     discard it.
+#
+# Usage:
+#   commit -m "Curate: <summary>"
+#
+# Options:
+#   -m, --message TEXT   Commit message (required)
+#
+# Examples:
+#   commit -m "Curate: smoke alarms, front door hardware"
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+source "$SCRIPT_DIR/_lib.sh"
+
+MESSAGE=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -m|--message) need_arg "$1" $#; MESSAGE="$2"; shift 2 ;;
+        -h|--help)
+            show_help "$0"
+            exit 0
+            ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [[ -z "$MESSAGE" ]]; then
+    echo "Error: -m is required" >&2
+    exit 1
+fi
+
+if [[ ! -d "$CONTENT_DIR/.git" ]]; then
+    echo "Not a git repository: $CONTENT_DIR" >&2
+    exit 1
+fi
+
+if [[ -z "$(cd "$CONTENT_DIR" && git status --porcelain)" ]]; then
+    echo "Nothing to commit."
+    exit 0
+fi
+
+locked_commit_index "$MESSAGE" knowledge observations questions sources
+
+echo "Committed: $MESSAGE"

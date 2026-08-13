@@ -42,13 +42,33 @@ teardown() { teardown_content_dir; }
     [[ "$output" == *"--title is required"* ]]
 }
 
-@test "observe reads body from stdin" {
-    export KNOWLEDGE_OBSERVE=1
-    echo "Piped body content" | run "$SCRIPTS/observe" --title "Stdin test" --no-commit
-    # bats 'run' doesn't pipe stdin well, so test directly
-    echo "Piped body content" | KNOWLEDGE_OBSERVE=1 "$SCRIPTS/observe" --title "Stdin test" --no-commit
+@test "observe reads body from stdin with --body -" {
+    echo "Piped body content" | KNOWLEDGE_OBSERVE=1 \
+        "$SCRIPTS/observe" --title "Stdin test" --body - --no-commit
     file=$(ls "$TEST_CONTENT_DIR/observations/pending/"*.md | head -1)
     grep -q 'Piped body content' "$file"
+}
+
+@test "observe requires --body rather than silently reading stdin" {
+    # Under an agent's Bash tool stdin is never a terminal, so the old
+    # fallback turned a mistyped --body into an empty observation.
+    run bash -c 'printf "" | KNOWLEDGE_OBSERVE=1 "$SCRIPTS/observe" --title "No body" --no-commit'
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"--body is required"* ]]
+    count=$(ls "$TEST_CONTENT_DIR/observations/pending/"*.md 2>/dev/null | wc -l)
+    [[ "$count" -eq 0 ]]
+}
+
+@test "observe filenames carry enough entropy to avoid collisions" {
+    for i in 1 2 3 4 5; do
+        KNOWLEDGE_OBSERVE=1 "$SCRIPTS/observe" --title "T$i" --body "B" --no-commit
+    done
+    # 8 hex digits after the timestamp
+    for f in "$TEST_CONTENT_DIR/observations/pending/"*.md; do
+        [[ "$(basename "$f")" =~ ^[0-9]{8}T[0-9]{6}-[0-9a-f]{8}\.md$ ]]
+    done
+    count=$(ls "$TEST_CONTENT_DIR/observations/pending/"*.md | wc -l)
+    [[ "$count" -eq 5 ]]
 }
 
 @test "observe escapes quotes in title" {

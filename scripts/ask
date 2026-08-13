@@ -11,7 +11,7 @@
 # Options:
 #   --title TEXT     Question (required)
 #   --context PATH   Knowledge file or directory this relates to (optional)
-#   --body TEXT      Additional context. If omitted and stdin is piped, reads stdin.
+#   --body TEXT      Additional context (optional). Use - to read stdin.
 #   --source TEXT    Who created this (default: "session")
 #   --no-commit      Skip the auto-commit
 #
@@ -53,19 +53,23 @@ if [[ -z "$TITLE" ]]; then
     exit 1
 fi
 
-# Read body from stdin if not provided and stdin is piped
-if [[ -z "$BODY" ]] && [[ ! -t 0 ]]; then
+# Read body from stdin only when asked; --body is optional here.
+if [[ "$BODY" == "-" ]]; then
     BODY="$(cat)"
 fi
 
 # Normalize --context to a content-relative path
 if [[ -n "$CONTEXT" ]]; then
-    resolved="$(resolve_path "$CONTEXT")" && CONTEXT="$resolved"
+    if ! resolved="$(resolve_path "$CONTEXT")"; then
+        echo "Not found: $CONTEXT" >&2
+        exit 1
+    fi
+    CONTEXT="$resolved"
 fi
 
 # Generate filename
 timestamp="$(date -u +%Y%m%dT%H%M%S)"
-suffix="$(head -c 2 /dev/urandom | xxd -p | head -c 4)"
+suffix="$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
 filename="${timestamp}-${suffix}.md"
 filepath="$OPEN_DIR/$filename"
 

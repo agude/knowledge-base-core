@@ -81,7 +81,10 @@ example.
 
 ## Workflow
 
-1. Run `${CLAUDE_SKILL_DIR}/scripts/pending --count` to see how many pending
+1. Run `${CLAUDE_SKILL_DIR}/scripts/sync` first. Observations accumulate on
+   whichever machine ran the session, so anything captured elsewhere is
+   invisible until it is pulled. Then run
+   `${CLAUDE_SKILL_DIR}/scripts/pending --count` to see how many pending
    observations you have to work on. If there are a lot, you'll need to handle
    them in batches to avoid running out of context.
 2. If there are only a small number of observations, run
@@ -89,19 +92,25 @@ example.
    use your READ tool to go through them one by one.
 3. Run `${CLAUDE_SKILL_DIR}/scripts/toc --depth 2` to see the current knowledge structure.
 4. For each observation, decide what to do (see Decision Framework below).
-5. Execute your decisions --- edit knowledge files directly under
-   `content/knowledge/`.
-6. **Check what you wrote.** Measure every section you touched and fix
-   anything over ~50 lines --- by cutting first, splitting second (see "Cut
-   before you split"). You will not notice this by eye; measure it.
+5. Execute your decisions --- edit knowledge articles directly. Find the
+   content root with `${CLAUDE_SKILL_DIR}/scripts/status`; do not assume
+   it is `./content`.
+6. **Check what you wrote.** Run the linter over everything you touched.
+   It reports oversized H2s, second H1s, missing or malformed `verified`
+   dates, unclosed code fences, and duplicate H2 names. You will not
+   notice any of these by eye; measure them.
 
    ```bash
-   awk '/^## /{if(n)printf "%4d  %s\n", c, n; n=$0; c=0} {c++} \
-        END{printf "%4d  %s\n", c, n}' content/knowledge/<file>.md | sort -rn
+   ${CLAUDE_SKILL_DIR}/scripts/lint --path knowledge/<dir>
    ```
-7. Move each processed observation to `content/observations/archived/`.
+
+   Fix every error before committing. Fix oversized-H2 warnings by
+   cutting first, splitting second (see "Cut before you split").
+7. Archive each processed observation with
+   `${CLAUDE_SKILL_DIR}/scripts/archive --all --no-commit`.
 8. Review open questions (see Open Questions below).
-9. Commit all changes as a single batch.
+9. Commit everything as one batch with
+   `${CLAUDE_SKILL_DIR}/scripts/commit -m "Curate: <summary>"`.
 
 If there are no pending observations, check open questions anyway (step 8),
 then stop if there's nothing to do.
@@ -121,8 +130,8 @@ The observation fits an existing topic. Add it as:
 
 ### Create new article
 
-The observation covers a topic with no existing home. Create a new file in
-`content/knowledge/`. Think about where a future agent would look for this
+The observation covers a topic with no existing home. Create a new file
+under `knowledge/`. Think about where a future agent would look for this
 information and name the file accordingly.
 
 ### Merge observations
@@ -161,12 +170,16 @@ actually decomposable into small, self-contained pieces.
 
 The hierarchy IS the compression scheme:
 
-1. `toc --depth 1` --- topic names only (~1 line per file). Agent scans this
-   to decide which files are relevant.
-2. `toc --depth 2` --- H2 section names (~5-15 lines per file). Agent picks
-   the specific section it needs.
+1. `toc --map` --- one line per topic area. This is what session-start
+   injects, so it is what most sessions see first.
+2. `toc --path knowledge/<area>` --- H1s and H2 section names for one area.
+   Agent picks the specific section it needs.
 3. `section --number N` --- the actual content. This is what hits the context
    window.
+
+Every article you write is read through that funnel, so its file name and
+its H2 names are load-bearing: they are all a session sees before deciding
+whether to spend context on it.
 
 Step 3 is the expensive one. **Keep each H2 section short enough to be worth
 loading.** If an H2 would exceed ~30-50 lines, split it into multiple H2s or
@@ -259,19 +272,52 @@ Curated:
 title: "Topic Name"
 updated: 2026-03-23
 verified: 2026-03-23
+ttl: domain
 sources:
   - observations/archived/20260323T174030-18ee.md
 ---
 ```
 
-- `updated` --- date of last curator edit.
-- `verified` --- date the article's content was last confirmed accurate by a
-  human or by the curator cross-checking against live sources. Set to today
-  when you verify an article's claims still hold, even if you don't change the
-  content. A session reading an article can compare `verified` against the
-  current date and the type of content (people/roles rot fast, domain rules
-  rot slowly) to judge how much to trust it.
+- `updated` --- date of the last edit. **Do not set this by hand.** The
+  content repo's pre-commit hook stamps it, because "the content changed
+  today" is a fact, not a judgment.
+- `verified` --- date the content was last confirmed accurate, by a human
+  or by you cross-checking against live sources. Set it to today when you
+  confirm the claims still hold, **even if you change nothing**. Nothing
+  stamps this for you: it is the one date that means someone looked.
+  Setting it without looking destroys the only freshness signal the
+  system has.
+- `ttl` --- how fast this article rots. `people`, `status` (14 days),
+  `process` (60), `domain` (180), or a number of days. `stale` reads it.
+  Set it when you create the article; without it everything decays at one
+  rate, which is wrong in both directions --- an org chart is stale in a
+  fortnight and a protocol description is not stale in a year.
 - `sources` --- observation files that contributed. Append on update.
+
+An article that mixes fast- and slow-rotting content is usually two
+articles. Split it rather than picking an average `ttl`.
+
+### See also
+
+An article the reader lands on is a dead end unless it says where to go
+next. `search` and `toc` find articles by name and content; neither knows
+that `synology-bind-mounts.md` is only half the story without
+`home-lab-overview.md`.
+
+When an article is meaningfully incomplete without another, end the
+relevant H2 with a link:
+
+```markdown
+See also: [Home Lab Overview](../infrastructure/home-lab-overview.md).
+```
+
+Put it inside the H2 it belongs to, not in a trailing section of its own
+--- a session loads one H2 at a time and never sees the rest of the file.
+Relative paths, so the link survives a file being moved with its
+neighbours.
+
+Link when the other article is genuinely needed to act on this one.
+Linking everything to everything is the same as linking nothing.
 
 ### Granularity
 
@@ -342,37 +388,35 @@ to fetch the current version.
 Knowledge articles that reference source documents should list the local
 path in their `sources:` frontmatter (e.g., `sources/incident-response-runbook.md`).
 
-### Committing
-
-Include `sources/` in commits:
-
-```bash
-git add knowledge/ observations/ questions/ sources/
-git secure-commit -m "Curate: <brief summary>"
-```
-
 ## Archiving Observations
 
-After processing, move each observation:
+After processing, archive each observation --- including the ones you
+discarded. The archive is the complete record of everything we have ever
+seen.
 
 ```bash
-cd content/
-git mv observations/pending/FILENAME observations/archived/FILENAME
+${CLAUDE_SKILL_DIR}/scripts/archive --all --no-commit
 ```
 
-Do this for every observation, including discarded ones. The archive is
-the complete record of everything we've ever seen.
+`--no-commit` leaves the moves staged for the single commit below.
 
 ## Committing
 
-After all edits and moves, commit everything in one batch. The content
-directory is its own git repo:
+One commit per curation run, covering articles, archived observations,
+questions and sources:
 
 ```bash
-cd content/
-git add knowledge/ observations/
-git secure-commit -m "Curate: <brief summary of what changed>"
+${CLAUDE_SKILL_DIR}/scripts/commit -m "Curate: <brief summary of what changed>"
 ```
+
+Use `commit`, not `git commit`. It locates the content repo rather than
+assuming you are standing in `./content`, it takes the same lock the
+capture scripts use so a background `observe` cannot interleave with a
+half-staged run, and it commits the whole index so the pre-commit hook's
+`updated:` stamping lands in your commit.
+
+That hook also lints what you staged. If it rejects the commit, fix the
+errors it lists --- do not work around it.
 
 ## Open Questions
 
@@ -447,12 +491,4 @@ The first two examples in the *good* list also need someone to go find out.
 That's not what separates them --- "what are the thresholds" has a numeric
 answer that lands in an article, while "should we upgrade" does not.
 
-### Committing
-
-Include `questions/` in the commit:
-
-```bash
-cd content/
-git add knowledge/ observations/ questions/
-git secure-commit -m "Curate: <brief summary>"
-```
+Questions are included in the single `commit` at the end of the run.

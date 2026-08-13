@@ -36,16 +36,70 @@ need_arg() {
     fi
 }
 
+# path_is_contained - True when a path resolves inside the content root.
+#
+# The PreToolUse hook auto-approves these scripts, so their arguments are
+# part of the security boundary: without this, `section --file
+# ../../../../etc/passwd` reads outside the knowledge base with no
+# permission prompt, and `toc --path ../../..` walks the filesystem.
+#
+# Compares canonicalized paths, so symlinks pointing out are caught too.
+path_is_contained() {
+    local target="$1" root real
+
+    root="$(cd "$CONTENT_DIR" 2>/dev/null && pwd -P)" || return 1
+    real="$(canonicalize "$target")" || return 1
+
+    [[ "$real" == "$root" || "$real" == "$root"/* ]]
+}
+
+# canonicalize - Absolute path with symlinks resolved.
+#
+# readlink -f would do this, but BSD readlink has no -f. Follows the
+# final component too: a symlink inside the content root pointing at
+# /etc/passwd is exactly the case path_is_contained exists to catch.
+canonicalize() {
+    local target="$1" link dir base hops=0
+
+    while [[ -L "$target" ]] && (( hops < 40 )); do
+        link="$(readlink "$target")" || return 1
+        if [[ "$link" == /* ]]; then
+            target="$link"
+        else
+            target="$(dirname "$target")/$link"
+        fi
+        hops=$((hops + 1))
+    done
+
+    if [[ -d "$target" ]]; then
+        ( cd "$target" 2>/dev/null && pwd -P ) || return 1
+        return 0
+    fi
+
+    dir="$(cd "$(dirname "$target")" 2>/dev/null && pwd -P)" || return 1
+    base="$(basename "$target")"
+    echo "$dir/$base"
+}
+
 # resolve_path - Normalize a path to be relative to the content root.
 #
 # Handles: absolute paths, content-relative paths, knowledge/-relative paths,
 # and bare filenames (searched under knowledge/ only).
 #
-# Prints the resolved content-relative path on success.
-# Returns 1 if not found; prints error to stderr if ambiguous.
+# Refuses anything that resolves outside the content root.
 #
-# Usage:
-#   resolved="$(resolve_path "$path")" && VAR="$CONTENT_DIR/$resolved"
+# Prints the resolved content-relative path on success.
+# Returns 1 if not found; prints error to stderr if ambiguous or escaping.
+#
+# Usage — check the status explicitly; do NOT write
+#   resolved="$(resolve_path "$p")" && VAR=...
+# because `set -e` exempts every command in a && list except the last, so
+# a failure there silently leaves the caller holding the raw path:
+#
+#   if ! resolved="$(resolve_path "$path")"; then
+#       exit 1
+#   fi
+#   VAR="$CONTENT_DIR/$resolved"
 resolve_path() {
     local input="$1"
 
@@ -54,6 +108,10 @@ resolve_path() {
 
     # Exists relative to content root
     if [[ -e "$CONTENT_DIR/$input" ]]; then
+        if ! path_is_contained "$CONTENT_DIR/$input"; then
+            echo "Refusing path outside the knowledge base: $1" >&2
+            return 1
+        fi
         echo "$input"
         return 0
     fi
@@ -62,6 +120,10 @@ resolve_path() {
     if [[ "$input" != knowledge/* ]] && [[ "$input" != sources/* ]] \
         && [[ "$input" != observations/* ]] && [[ "$input" != questions/* ]]; then
         if [[ -e "$CONTENT_DIR/knowledge/$input" ]]; then
+            if ! path_is_contained "$CONTENT_DIR/knowledge/$input"; then
+                echo "Refusing path outside the knowledge base: $1" >&2
+                return 1
+            fi
             echo "knowledge/$input"
             return 0
         fi
@@ -81,12 +143,19 @@ resolve_path() {
     count="$(echo "$matches" | wc -l | tr -d ' ')"
 
     if (( count == 1 )); then
+        if ! path_is_contained "$matches"; then
+            echo "Refusing path outside the knowledge base: $1" >&2
+            return 1
+        fi
         echo "${matches#"$CONTENT_DIR/"}"
         return 0
     fi
 
     echo "Ambiguous match for '$base' — $count files found:" >&2
-    echo "$matches" | sed "s|^$CONTENT_DIR/|  |" >&2
+    local m
+    while IFS= read -r m; do
+        echo "  ${m#"$CONTENT_DIR/"}" >&2
+    done <<< "$matches"
     return 1
 }
 
@@ -114,7 +183,16 @@ break_stale_git_lock() {
     fi
 }
 
-# locked_commit - Commit with a filesystem lock to serialize concurrent writes.
+# locked_commit - Commit given paths with a lock to serialize concurrent writes.
+#
+# Commits ONLY the named paths. A bare `git commit` would sweep up whatever
+# else happened to be staged — an observe firing mid-curation would carry
+# the curator's staged articles into a "Observe: session transcript" commit.
+#
+# The pathspec form builds a temporary index, so a pre-commit hook that
+# modifies files cannot write back into this commit. That is fine for the
+# capture scripts, which only ever commit observations/ and questions/;
+# curation commits knowledge/ through the full index instead.
 #
 # Uses a PID file inside the lock dir to detect and break stale locks
 # left by killed processes. Registers an EXIT trap as a safety net;
@@ -124,12 +202,12 @@ break_stale_git_lock() {
 #
 # Also cleans up stale .git/index.lock files before git operations.
 #
+# Returns the git exit status, so a rejecting hook is visible to callers
+# instead of leaving a file written but uncommitted.
+#
 # Usage:
 #   locked_commit "message" path1 [path2 ...]
-locked_commit() {
-    local message="$1"
-    shift
-
+acquire_lock() {
     local lockdir="$CONTENT_DIR/.observe.lock"
     local pidfile="$lockdir/pid"
     local retries=30
@@ -157,17 +235,245 @@ locked_commit() {
 
     # Clean up stale git locks before operating
     break_stale_git_lock "$CONTENT_DIR"
+    return 0
+}
 
+release_lock() {
+    rm -rf "$CONTENT_DIR/.observe.lock" 2>/dev/null || true
+    trap - EXIT
+}
+
+locked_commit() {
+    local message="$1"
+    shift
+
+    acquire_lock || return 1
+
+    local rc=0
     (
         cd "$CONTENT_DIR"
         for p in "$@"; do
             git add "$p"
         done
-        git commit -m "$message" -q 2>/dev/null || echo "locked_commit: git commit failed for: $message" >&2
-    )
+        git commit -q -m "$message" -- "$@"
+    ) || rc=$?
 
-    rm -rf "$lockdir" 2>/dev/null || true
-    trap - EXIT
+    release_lock
+
+    if (( rc != 0 )); then
+        echo "locked_commit: commit failed ($rc) for: $message" >&2
+    fi
+    return $rc
+}
+
+# locked_commit_index - Commit everything staged, under the same lock.
+#
+# For curation, which edits articles the pre-commit hook then stamps and
+# re-stages. A pathspec commit builds a temporary index and would discard
+# that stamping, so this one deliberately commits the whole index — and
+# takes the lock so a concurrent observe cannot slip a file in between.
+#
+# Usage:
+#   locked_commit_index "message" path1 [path2 ...]
+locked_commit_index() {
+    local message="$1"
+    shift
+
+    acquire_lock || return 1
+
+    local rc=0
+    (
+        cd "$CONTENT_DIR"
+        for p in "$@"; do
+            [[ -e "$p" ]] || continue
+            git add -A "$p"
+        done
+        git commit -q -m "$message"
+    ) || rc=$?
+
+    release_lock
+
+    if (( rc != 0 )); then
+        echo "locked_commit_index: commit failed ($rc) for: $message" >&2
+    fi
+    return $rc
+}
+
+# session_dir - Path holding per-session observation buffers.
+#
+# Every user prompt of every session passes through these files, so the
+# directory must not be a predictable shared path: on a multi-user host
+# whoever creates /tmp/knowledge-sessions first receives the transcript
+# stream. Prefer XDG_RUNTIME_DIR, which is already per-user and mode 700;
+# fall back to a uid-scoped name under /tmp for macOS.
+#
+# SESSION_DIR overrides it (the tests set it).
+#
+# Usage: dir="$(session_dir)"
+session_dir() {
+    if [[ -n "${SESSION_DIR:-}" ]]; then
+        echo "$SESSION_DIR"
+        return 0
+    fi
+    echo "${XDG_RUNTIME_DIR:-/tmp}/knowledge-sessions-$(id -u)"
+}
+
+# ensure_session_dir - Create the session directory, private, and verify it.
+#
+# Returns 1 if the directory cannot be created or is owned by someone
+# else, so callers can skip capture instead of writing prompts somewhere
+# another user can read.
+ensure_session_dir() {
+    local dir="$1"
+
+    # umask, not `mkdir -m`: with -p, -m applies only to the deepest
+    # directory, and there must be no window where the path is readable.
+    ( umask 077 && mkdir -p "$dir" ) 2>/dev/null || return 1
+    [[ -d "$dir" ]] || return 1
+    [[ -O "$dir" ]] || return 1
+
+    # A pre-existing directory keeps its old mode; tighten it.
+    chmod 700 "$dir" 2>/dev/null || true
+    return 0
+}
+
+# session_buffer_path - Path to a session's buffer, recreating it if gone.
+#
+# The buffer's existence used to gate capture: session-prompt and
+# session-stop exited when the file was missing. But session-start
+# flushes and deletes buffers older than an hour, and mtime only advances
+# on a recorded turn — so a session idle for an hour (a terminal left
+# open) had its buffer swept by the next session to start, and then
+# captured nothing for the rest of its life, silently and permanently.
+#
+# Recreate instead. A swept session resumes into a second observation,
+# which is honest about what happened; capturing nothing is not.
+#
+# Only recreate when session-start actually ran for this session: it sets
+# both KNOWLEDGE_OBSERVE=1 and KNOWLEDGE_SESSION_FILE. Otherwise capture
+# stays off.
+#
+# Prints the path; returns 1 when capture should be skipped.
+#
+# Usage:
+#   file="$(session_buffer_path "$dir" "$id")" || exit 0
+session_buffer_path() {
+    local dir="$1" id="$2"
+    local file="$dir/session-$id.jsonl"
+
+    if [[ -f "$file" ]]; then
+        echo "$file"
+        return 0
+    fi
+
+    if [[ "${KNOWLEDGE_OBSERVE:-}" != "1" ]] \
+        && [[ -z "${KNOWLEDGE_SESSION_FILE:-}" ]]; then
+        return 1
+    fi
+
+    ensure_session_dir "$dir" || return 1
+    touch "$file" 2>/dev/null || return 1
+    chmod 600 "$file" 2>/dev/null || true
+
+    echo "$file"
+    return 0
+}
+
+# --- Markdown heading parsing -------------------------------------------
+#
+# A `#` line inside a fenced code block is a shell comment, not a heading.
+# Parsers that ignore fences invent topics in `toc` and truncate `section`
+# at the first commented command. Both scripts read files line by line, so
+# the state lives in globals: call md_heading_reset before each file, then
+# md_heading on every line.
+
+MD_FENCE_OPEN=false
+MD_FENCE_CHAR=""
+MD_FENCE_LEN=0
+# Outputs of md_heading, read by the scripts that source this file.
+# shellcheck disable=SC2034
+MD_HEADING_LEVEL=0
+# shellcheck disable=SC2034
+MD_HEADING_TEXT=""
+
+# Up to three leading spaces, then a run of three or more ` or ~.
+_MD_FENCE_RE='^[[:blank:]]{0,3}(`{3,}|~{3,})[[:blank:]]*(.*)$'
+
+# md_heading_reset - Clear fence state. Call once per file.
+md_heading_reset() {
+    MD_FENCE_OPEN=false
+    MD_FENCE_CHAR=""
+    MD_FENCE_LEN=0
+}
+
+# _md_fence_track - Update fence state for one line.
+#
+# Returns 0 if the line is a fence delimiter, 1 otherwise.
+_md_fence_track() {
+    local line="$1" marker info char len
+
+    [[ "$line" =~ $_MD_FENCE_RE ]] || return 1
+
+    marker="${BASH_REMATCH[1]}"
+    info="${BASH_REMATCH[2]}"
+    char="${marker:0:1}"
+    len=${#marker}
+
+    if [[ "$MD_FENCE_OPEN" == false ]]; then
+        # A backtick fence may not carry backticks in its info string.
+        if [[ "$char" == '`' ]] && [[ "$info" == *'`'* ]]; then
+            return 1
+        fi
+        MD_FENCE_OPEN=true
+        MD_FENCE_CHAR="$char"
+        MD_FENCE_LEN=$len
+        return 0
+    fi
+
+    # Only a bare marker of the same character and at least the same
+    # length closes the block; anything else is content.
+    if [[ "$char" == "$MD_FENCE_CHAR" ]] && (( len >= MD_FENCE_LEN )) \
+        && [[ -z "${info//[[:blank:]]/}" ]]; then
+        md_heading_reset
+    fi
+    return 0
+}
+
+# md_heading - Classify one line, skipping fenced code blocks.
+#
+# Returns 0 and sets MD_HEADING_LEVEL and MD_HEADING_TEXT when the line is
+# an ATX heading outside a fence. Returns 1 otherwise.
+#
+# Usage:
+#   md_heading_reset
+#   while IFS= read -r line; do
+#       md_heading "$line" || continue
+#       ...
+#   done < "$file"
+md_heading() {
+    local line="$1"
+
+    _md_fence_track "$line" && return 1
+    [[ "$MD_FENCE_OPEN" == true ]] && return 1
+    [[ "$line" =~ ^(#{1,6})[[:space:]]+(.*) ]] || return 1
+
+    # shellcheck disable=SC2034  # read by callers after md_heading returns
+    MD_HEADING_LEVEL=${#BASH_REMATCH[1]}
+    local text="${BASH_REMATCH[2]}"
+
+    # ATX headings may close with hashes: `## Title ##`. Strip them, or
+    # toc prints a name that `section --heading --exact` cannot match,
+    # and toc output is documented as section's input.
+    text="${text%"${text##*[![:space:]]}"}"
+    if [[ "$text" =~ ^(.*[^#[:space:]])[[:space:]]+#+$ ]]; then
+        text="${BASH_REMATCH[1]}"
+    elif [[ "$text" =~ ^#+$ ]]; then
+        text=""
+    fi
+
+    # shellcheck disable=SC2034
+    MD_HEADING_TEXT="$text"
+    return 0
 }
 
 # yaml_escape - Escape a string for safe use in double-quoted YAML values.

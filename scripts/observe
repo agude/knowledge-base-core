@@ -6,19 +6,18 @@
 # auto-commits it. The body can come from --body or stdin.
 #
 # Usage:
-#   observe --title "..." [--body "..."]
-#   observe --title "..." < file.txt
-#   echo "stuff" | observe --title "..."
+#   observe --title "..." --body "..."
+#   observe --title "..." --body - < file.txt
 #
 # Options:
 #   --title TEXT   Observation title (required)
-#   --body TEXT    Observation body. If omitted, reads from stdin.
+#   --body TEXT    Observation body (required). Use - to read stdin.
 #   --source TEXT  Where this came from (default: "session")
 #   --no-commit    Skip the auto-commit
 #
 # Examples:
 #   observe --title "DNS caching issue" --body "Discovered that..."
-#   observe --title "Meeting notes" < /tmp/notes.txt
+#   observe --title "Meeting notes" --body - < /tmp/notes.txt
 #   observe --title "Quick note" --body "Remember to check X"
 
 set -euo pipefail
@@ -52,19 +51,23 @@ if [[ -z "$TITLE" ]]; then
     exit 1
 fi
 
-# Read body from stdin if not provided via --body
-if [[ -z "$BODY" ]]; then
-    if [[ ! -t 0 ]]; then
-        BODY="$(cat)"
-    else
-        echo "Error: --body not provided and stdin is a terminal" >&2
-        exit 1
-    fi
+# Read body from stdin only when asked. Falling back on "stdin is not a
+# terminal" fired under any agent's Bash tool, where a call with a
+# mistyped or shell-swallowed --body silently recorded an empty body, or
+# blocked on a pipe that never closed.
+if [[ "$BODY" == "-" ]]; then
+    BODY="$(cat)"
+elif [[ -z "$BODY" ]]; then
+    echo "Error: --body is required (use --body - to read stdin)" >&2
+    exit 1
 fi
 
 # Generate filename: YYYYMMDDTHHMMSS-<4 random chars>.md
 timestamp="$(date -u +%Y%m%dT%H%M%S)"
-suffix="$(head -c 2 /dev/urandom | xxd -p | head -c 4)"
+# 8 hex digits, and od rather than xxd, which is not installed
+# everywhere. A collision is a merge conflict on a content file, the
+# exact thing timestamped filenames exist to avoid.
+suffix="$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
 filename="${timestamp}-${suffix}.md"
 filepath="$PENDING_DIR/$filename"
 

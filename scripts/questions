@@ -49,7 +49,12 @@ done
 
 # Single-file mode: read one question and exit
 if [[ -n "$SINGLE_FILE" ]]; then
-    target="$CONTENT_DIR/questions/open/$SINGLE_FILE"
+    if [[ "$SINGLE_FILE" == */* ]]; then
+    echo "Not a question filename: $SINGLE_FILE" >&2
+    exit 1
+fi
+
+target="$CONTENT_DIR/questions/open/$SINGLE_FILE"
     if [[ ! -f "$target" ]]; then
         # Check resolved
         target="$CONTENT_DIR/questions/resolved/$SINGLE_FILE"
@@ -64,7 +69,13 @@ fi
 
 # Normalize --path filter to content-relative (matching ask --context storage)
 if [[ -n "$PATH_FILTER" ]]; then
-    resolved="$(resolve_path "$PATH_FILTER")" && PATH_FILTER="$resolved"
+    # A filter over recorded `context:` strings, not a path that has to
+    # exist: an article can be moved or deleted while questions about it
+    # stay open. Resolution is a convenience for bare filenames; falling
+    # back to the literal string is the intended behavior here.
+    if resolved="$(resolve_path "$PATH_FILTER" 2>/dev/null)"; then
+        PATH_FILTER="$resolved"
+    fi
 fi
 
 DIRS=("$CONTENT_DIR/questions/open")

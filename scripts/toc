@@ -7,12 +7,14 @@
 # shown indented under their parent H2 when --depth allows.
 #
 # Usage:
-#   toc [--depth N] [--path DIR_OR_FILE] [--flat]
+#   toc [--depth N] [--path DIR_OR_FILE] [--flat] [--dirs] [--map]
 #
 # Options:
 #   --depth N    Maximum heading level to include (default: 2, i.e., H1 + H2)
 #   --path PATH  Directory to scan or single file (default: knowledge/)
 #   --flat       Omit filename grouping, just list headings
+#   --dirs       Show the directory/file tree
+#   --map        One line per topic area with an article count
 #
 # Examples:
 #   toc                          # H1+H2 from knowledge/
@@ -20,6 +22,7 @@
 #   toc --path knowledge/topic.md
 #   toc --depth 1 --flat         # Just topic names, no file headers
 #   toc --dirs                   # Just show directory/file tree
+#   toc --map                    # Areas and counts, for session injection
 #
 # Output format (default):
 #   [knowledge/networking.md]
@@ -39,6 +42,15 @@
 #     git.md
 #     networking.md
 #
+# Output format (--map):
+#   knowledge/ach/          12
+#     fraud/                 4
+#   knowledge/deploys/       7
+#
+# Counts include nested directories. --map is what session-start injects:
+# it costs one line per area instead of three per article, and a session
+# drills in with `toc --path knowledge/<area>`.
+#
 # Use the section numbers with the `section` script:
 #   section --file knowledge/networking.md --number 2
 
@@ -48,6 +60,7 @@ DEPTH=2
 TARGET=""
 FLAT=false
 DIRS=false
+MAP=false
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 source "$SCRIPT_DIR/_lib.sh"
@@ -58,6 +71,7 @@ while [[ $# -gt 0 ]]; do
         --path)  need_arg "$1" $#; TARGET="$2"; shift 2 ;;
         --flat)  FLAT=true; shift ;;
         --dirs)  DIRS=true; shift ;;
+        --map)   MAP=true; shift ;;
         -h|--help)
             show_help "$0"
             exit 0
@@ -69,7 +83,48 @@ done
 if [[ -z "$TARGET" ]]; then
     TARGET="$CONTENT_DIR/knowledge"
 else
-    resolved="$(resolve_path "$TARGET")" && TARGET="$CONTENT_DIR/$resolved"
+    if ! resolved="$(resolve_path "$TARGET")"; then
+        echo "Not found: $TARGET" >&2
+        exit 1
+    fi
+    TARGET="$CONTENT_DIR/$resolved"
+fi
+
+# --map mode: one line per topic area, with a recursive article count
+if [[ "$MAP" == true ]]; then
+    if [[ ! -d "$TARGET" ]]; then
+        echo "Not a directory: $TARGET" >&2
+        exit 1
+    fi
+
+    root_count="$(find "$TARGET" -name '*.md' -type f | wc -l | tr -d ' ')"
+    loose_count="$(find "$TARGET" -maxdepth 1 -name '*.md' -type f | wc -l | tr -d ' ')"
+
+    while IFS= read -r -d '' dir; do
+        [[ "$dir" == "$TARGET" ]] && continue
+
+        count="$(find "$dir" -name '*.md' -type f | wc -l | tr -d ' ')"
+        (( count == 0 )) && continue
+
+        relative="${dir#"$TARGET"/}"
+        depth="$(printf '%s' "$relative" | tr -cd '/' | wc -c | tr -d ' ')"
+
+        if (( depth == 0 )); then
+            label="${dir#"$CONTENT_DIR"/}/"
+            printf "  %-38s %3d\n" "$label" "$count"
+        else
+            printf "  %*s%-*s %3d\n" \
+                $((depth * 2)) "" $((38 - depth * 2)) "$(basename "$dir")/" "$count"
+        fi
+    done < <(find "$TARGET" -type d -print0 | sort -z)
+
+    if (( loose_count > 0 )); then
+        printf "  %-38s %3d\n" "${TARGET#"$CONTENT_DIR"/}/ (loose files)" "$loose_count"
+    fi
+
+    echo ""
+    echo "  $root_count articles. Drill in with: toc --path <area>"
+    exit 0
 fi
 
 # --dirs mode: just show the directory/file tree
@@ -120,11 +175,11 @@ for file in "${FILES[@]}"; do
         echo "[$relative]"
     fi
 
+    md_heading_reset
     while IFS= read -r line; do
-        if [[ "$line" =~ ^(#{1,6})[[:space:]]+(.*) ]]; then
-            hashes="${BASH_REMATCH[1]}"
-            title="${BASH_REMATCH[2]}"
-            level=${#hashes}
+        if md_heading "$line"; then
+            title="$MD_HEADING_TEXT"
+            level="$MD_HEADING_LEVEL"
 
             if (( level > DEPTH )); then
                 continue

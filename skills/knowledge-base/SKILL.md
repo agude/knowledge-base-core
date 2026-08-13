@@ -1,6 +1,6 @@
 ---
 name: knowledge-base
-description: Look up, record, and manage knowledge base content. Use when the user asks to find information, record something, or work with the knowledge base.
+description: Search and record durable facts a future Claude session would need -- domain rules, system behavior, people and ownership, the user's preferences and conventions, and why things were decided. Use before starting any task, to check what is already known. This is Claude's own memory (~/Knowledge); it is NOT the wiki (~/Wiki, written for the user to read) and NOT Johnny Decimal (~/Documents, which files artifacts like PDFs and receipts).
 user-invocable: true
 allowed-tools:
   - "Bash(${CLAUDE_SKILL_DIR}/scripts/*)"
@@ -12,13 +12,41 @@ You have access to a knowledge base at `$KNOWLEDGE_BASE`. It contains curated
 articles, source documents, and pending observations. All interaction goes
 through scripts in `$KNOWLEDGE_BASE/scripts/`.
 
+## Which system is this
+
+Three systems overlap and putting something in the wrong one is how it
+gets lost. The split is by **audience**, not by topic:
+
+| System | Audience | Holds |
+|---|---|---|
+| **Knowledge base** (`~/Knowledge`) | Claude sessions | Curated articles loaded for context: domain rules, system behavior, people, preferences, decisions |
+| Wiki (`~/Wiki`) | The user, reading | "How my stuff works" — architecture, runbooks, decision logs, written as prose for a person |
+| Johnny Decimal (`~/Documents`) | The user, filing | Artifacts: PDFs, scans, receipts, project documents |
+
+This skill is the first one. If what you learned is something a *future
+session* needs in order to work — record it here. If it is something the
+user would sit down and read — that is the wiki. If it is a file — that
+is Johnny Decimal.
+
+Claude Code's own per-project auto-memory is a fourth store. Keep it for
+interaction-style feedback ("stop explaining before you act"); anything
+durable about systems, domain, or people belongs here, where it is
+curated, dated, and searchable across projects.
+
 ## Looking things up
 
 Start by searching, not browsing.
 
-1. **Search first.** `${CLAUDE_SKILL_DIR}/scripts/search "<query>"` returns matches across
-   knowledge articles, source documents, and pending observations. Output
-   format: `<file> | <section> | <matched line>`.
+1. **Search first.** `${CLAUDE_SKILL_DIR}/scripts/search <term> [term ...]`
+   returns matches across knowledge articles, source documents, and pending
+   observations. Output format: `<file> | <section> | <matched line>`.
+   - Several terms are ANDed: the file must contain all of them.
+   - Results are ranked; a term in the title outranks one in a heading,
+     which outranks one in the body.
+   - Output is capped at 20 lines. Use `--limit N`, or `--files` to see
+     just which articles matched.
+   - `--archive` widens the search to archived observations and open
+     questions. The default corpus is curated articles only.
 
 2. **Narrow with toc.** If search gives too many results or you need to
    explore a topic area, use `${CLAUDE_SKILL_DIR}/scripts/toc` to scan section names.
@@ -88,18 +116,21 @@ Questions are reviewed during curation passes.
 
 ## Freshness
 
-Knowledge articles have a `verified` date in frontmatter. Compare it against
-today and the type of content:
+Knowledge articles carry a `verified` date and a `ttl` in frontmatter.
+`ttl` is the article's own answer to how fast it rots:
 
-| Content type | Stale after |
-|---|---|
-| People, roles, org structure | ~2 weeks |
-| Active initiatives, project status | ~2 weeks |
-| Processes and workflows | ~2 months |
-| Domain rules, system behavior | ~6 months |
+| `ttl` | Stale after | Typical content |
+|---|---|---|
+| `people`, `status` | 14 days | People, roles, org, active projects |
+| `process` | 60 days | Processes and workflows |
+| `domain` | 180 days | Domain rules, system behavior |
+| *absent* | 60 days | Unclassified |
 
-If an article's `verified` date exceeds these thresholds, treat its claims
-with skepticism and verify against live sources before acting on them.
+`${CLAUDE_SKILL_DIR}/scripts/stale` lists what is past its threshold.
+
+If an article is past its `ttl`, treat its claims with skepticism and
+verify against live sources before acting on them. Source documents under
+`sources/` use `synced` instead — the date the local copy was pulled.
 
 ## Script reference
 
@@ -107,7 +138,7 @@ All scripts are at `${CLAUDE_SKILL_DIR}/scripts/<name>`.
 
 | Script | Purpose |
 |---|---|
-| `search "<query>"` | Search all content |
+| `search <term> [term ...]` | Search all content, ranked |
 | `toc [--depth N] [--path DIR] [--flat] [--dirs]` | List topics and sections |
 | `section --file FILE (--number N \| --heading TEXT)` | Extract a section |
 | `observe --title "..." --body "..."` | Record an observation |
@@ -117,6 +148,9 @@ All scripts are at `${CLAUDE_SKILL_DIR}/scripts/<name>`.
 | `resolve --file F [--answer "..."]` | Resolve a question |
 | `archive FILENAME [--all]` | Move observations to archived |
 | `stale [--days N] [--path DIR]` | List articles needing re-verification |
+| `lint [--path DIR] [--strict]` | Check articles against the structural conventions |
+| `commit -m "..."` | Commit curation work under the write lock |
+| `sync [--status]` | Pull and push the content repo |
 | `init [--path DIR]` | Initialize an empty content repo |
 | `status` | Summary stats |
 | `context` | Compact summary for session injection |

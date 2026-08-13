@@ -87,6 +87,50 @@ title: test
     [[ "$status" -ne 0 ]]
 }
 
+# --- locked_commit ---
+
+@test "locked_commit commits only the named paths" {
+    create_test_observation "20260412T000000-aaaa.md" "Obs" "Body"
+    create_test_article "staged-by-someone-else.md" "# Draft"
+    git -C "$TEST_CONTENT_DIR" add knowledge/staged-by-someone-else.md
+
+    source "$SCRIPTS/_lib.sh"
+    run locked_commit "Observe: Obs" "observations/pending/20260412T000000-aaaa.md"
+    [[ "$status" -eq 0 ]]
+
+    files="$(git -C "$TEST_CONTENT_DIR" show --name-only --format='' HEAD)"
+    [[ "$files" == *"observations/pending/20260412T000000-aaaa.md"* ]]
+    [[ "$files" != *"staged-by-someone-else"* ]]
+}
+
+@test "locked_commit returns nonzero when the commit is rejected" {
+    create_test_observation "20260412T000000-aaaa.md" "Obs" "Body"
+    cat > "$TEST_CONTENT_DIR/.git/hooks/pre-commit" <<'HOOK'
+#!/usr/bin/env bash
+echo "rejected by test hook" >&2
+exit 1
+HOOK
+    chmod +x "$TEST_CONTENT_DIR/.git/hooks/pre-commit"
+
+    source "$SCRIPTS/_lib.sh"
+    run locked_commit "Observe: Obs" "observations/pending/20260412T000000-aaaa.md"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"commit failed"* ]]
+}
+
+@test "locked_commit releases the lock after a rejected commit" {
+    create_test_observation "20260412T000000-aaaa.md" "Obs" "Body"
+    cat > "$TEST_CONTENT_DIR/.git/hooks/pre-commit" <<'HOOK'
+#!/usr/bin/env bash
+exit 1
+HOOK
+    chmod +x "$TEST_CONTENT_DIR/.git/hooks/pre-commit"
+
+    source "$SCRIPTS/_lib.sh"
+    run locked_commit "Observe: Obs" "observations/pending/20260412T000000-aaaa.md"
+    [[ ! -d "$TEST_CONTENT_DIR/.observe.lock" ]]
+}
+
 # --- resolve_path ---
 
 @test "resolve_path finds knowledge-relative path" {
@@ -107,4 +151,63 @@ title: test
     source "$SCRIPTS/_lib.sh"
     run resolve_path "no-such-file.md"
     [[ "$status" -ne 0 ]]
+}
+
+# --- path containment ---
+#
+# The PreToolUse hook auto-approves these scripts, so their arguments are
+# part of the security boundary.
+
+@test "resolve_path refuses a path escaping the content root" {
+    source "$SCRIPTS/_lib.sh"
+    run resolve_path "../../../../etc/passwd"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"outside the knowledge base"* ]]
+}
+
+@test "resolve_path refuses an absolute path outside the content root" {
+    source "$SCRIPTS/_lib.sh"
+    run resolve_path "/etc/passwd"
+    [[ "$status" -ne 0 ]]
+}
+
+@test "resolve_path refuses a symlink pointing out of the content root" {
+    ln -s /etc/passwd "$TEST_CONTENT_DIR/knowledge/sneaky.md"
+    source "$SCRIPTS/_lib.sh"
+    run resolve_path "knowledge/sneaky.md"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"outside the knowledge base"* ]]
+}
+
+@test "resolve_path still accepts ordinary paths" {
+    create_test_article "topic.md" "# Topic"
+    source "$SCRIPTS/_lib.sh"
+    run resolve_path "topic.md"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == "knowledge/topic.md" ]]
+}
+
+@test "section refuses to read outside the content root" {
+    run "$SCRIPTS/section" --file ../../../../etc/passwd --number 1
+    [[ "$status" -ne 0 ]]
+}
+
+@test "toc refuses to scan outside the content root" {
+    run "$SCRIPTS/toc" --path ../../../../etc
+    [[ "$status" -ne 0 ]]
+}
+
+@test "archive refuses a filename containing a path" {
+    outside="$TEST_CONTENT_DIR/../outside-$$.md"
+    echo "not yours" > "$outside"
+    run "$SCRIPTS/archive" "../outside-$$.md"
+    [[ "$status" -ne 0 ]]
+    [[ -f "$outside" ]]
+    rm -f "$outside"
+}
+
+@test "resolve refuses a question filename containing a path" {
+    run "$SCRIPTS/resolve" --file "../../etc/passwd"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Not a question filename"* ]]
 }

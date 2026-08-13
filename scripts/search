@@ -1,23 +1,42 @@
 #!/usr/bin/env bash
 #
-# search - Search knowledge and pending observations.
+# search - Search the knowledge base.
 #
 # Case-insensitive substring search across knowledge articles, source
-# documents, and pending observations. Returns matching lines with
-# file path and section context.
+# documents, and pending observations. Multiple terms are ANDed: a file
+# must contain all of them, and every line matching any of them is a
+# candidate result.
+#
+# Files are ranked, best first. A term in the title outranks a term in a
+# heading, which outranks a term in the body, because a file whose title
+# is your query is almost always the file you wanted.
+#
+# Output is capped by --limit, so a common word returns the best few
+# results instead of thousands of lines.
 #
 # Usage:
-#   search <query>
+#   search <term> [term ...]
+#   search -- <term>              # for terms that begin with a dash
 #
 # Options:
-#   -h, --help   Show this help message
+#   --limit N     Maximum result lines (default 20; 0 for all)
+#   --per-file N  Maximum lines from one file (default 3; 0 for all)
+#   --archive     Also search archived observations and questions
+#   --files       List matching files and scores only, no lines
+#   -h, --help    Show this help message
 #
 # Output format:
 #   <relative-path> | <section heading or "top"> | <matched line trimmed>
 #
+# Frontmatter lines are never shown as results — a title match raises the
+# file's rank instead of printing `title: "..."` back at you.
+#
 # Examples:
-#   search "risk arbiter"
-#   search PostgreSQL
+#   search "risk arbiter"         # one phrase
+#   search synology nas           # files containing both
+#   search --files docker         # which articles cover this
+#   search --archive "bind mount" # include the observation archive
+#   search -- --no-verify
 
 set -euo pipefail
 
@@ -25,35 +44,297 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 source "$SCRIPT_DIR/_lib.sh"
 
-QUERY="${1:-}"
+TERMS=()
+LIMIT=20
+PER_FILE=3
+ARCHIVE=false
+FILES_ONLY=false
 
-if [[ "$QUERY" == "-h" || "$QUERY" == "--help" ]]; then
-    show_help "$0"
-    exit 0
-fi
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --limit)    need_arg "$1" $#; LIMIT="$2"; shift 2 ;;
+        --per-file) need_arg "$1" $#; PER_FILE="$2"; shift 2 ;;
+        --archive)  ARCHIVE=true; shift ;;
+        --files)    FILES_ONLY=true; shift ;;
+        -h|--help)
+            show_help "$0"
+            exit 0
+            ;;
+        --) shift; TERMS+=("$@"); break ;;
+        -*) echo "Unknown option: $1 (use -- to search for it literally)" >&2
+            exit 1 ;;
+        *)  TERMS+=("$1"); shift ;;
+    esac
+done
 
-if [[ -z "$QUERY" ]]; then
-    echo "Usage: search <query>" >&2
+if [[ ${#TERMS[@]} -eq 0 ]]; then
+    echo "Usage: search <term> [term ...]" >&2
     exit 1
 fi
 
-SEARCH_DIRS=()
-for d in "$CONTENT_DIR/knowledge" "$CONTENT_DIR/sources" "$CONTENT_DIR/observations/pending"; do
-    [[ -d "$d" ]] && SEARCH_DIRS+=("$d")
+for term in "${TERMS[@]}"; do
+    if [[ -z "$term" ]]; then
+        echo "Error: empty search term" >&2
+        exit 1
+    fi
 done
+
+for n in "$LIMIT" "$PER_FILE"; do
+    if [[ ! "$n" =~ ^[0-9]+$ ]]; then
+        echo "Error: --limit and --per-file take a number" >&2
+        exit 1
+    fi
+done
+
+SEARCH_DIRS=()
+for d in "$CONTENT_DIR/knowledge" "$CONTENT_DIR/sources" \
+         "$CONTENT_DIR/observations/pending"; do
+    if [[ -d "$d" ]]; then SEARCH_DIRS+=("$d"); fi
+done
+if [[ "$ARCHIVE" == true ]]; then
+    for d in "$CONTENT_DIR/observations/archived" "$CONTENT_DIR/questions"; do
+        if [[ -d "$d" ]]; then SEARCH_DIRS+=("$d"); fi
+    done
+fi
 
 if [[ ${#SEARCH_DIRS[@]} -eq 0 ]]; then
     echo "No content directories found." >&2
     exit 0
 fi
 
-find "${SEARCH_DIRS[@]}" \
-    -name '*.md' -type f 2>/dev/null | while read -r file; do
-    relpath="${file#"$CONTENT_DIR/"}"
-    grep -n -i -F "$QUERY" "$file" 2>/dev/null | while IFS=: read -r lineno line; do
-        section=$(head -n "$lineno" "$file" | grep '^## ' | tail -1 | sed 's/^## //' || true)
-        section="${section:-top}"
-        trimmed=$(echo "$line" | sed 's/^[[:space:]]*//' | cut -c1-120)
-        echo "$relpath | $section | $trimmed"
-    done || true
+# Field separators are control characters, not tab or `|`. Tab is IFS
+# whitespace, so bash `read` collapses runs of it and an empty title
+# shifts every later field; `|` appears in markdown tables and in
+# headings, which shifted the section and text apart.
+US=$'\x1e'   # between fields of a record
+RS=$'\x1d'   # between the match records inside one file's line
+
+# Terms and paths reach awk through the environment, not -v: awk -v
+# processes escape sequences, so a term containing \n or \t or \\ was
+# altered before it was ever compared, and a content path was treated as
+# a regex.
+TERM_STR="${TERMS[0]}"
+for term in "${TERMS[@]:1}"; do
+    TERM_STR="${TERM_STR}${US}${term}"
 done
+
+# keep is the per-file cap; 0 means unlimited, expressed as a large
+# number so the awk stays a simple comparison.
+KEEP="$PER_FILE"
+if (( KEEP == 0 )); then
+    KEEP=1000000
+fi
+
+# One pass per file does everything the old implementation did with a
+# grep plus a `head | grep` per match — which was quadratic in file
+# length and took 15 seconds for a common word over 128 articles.
+#
+# Prints one record per matching file:
+#   score US path US title US count US lineno RS section RS text ...
+# shellcheck disable=SC2016  # awk program text; $ is awk's, not the shell's
+AWK_PROG='
+function trim(s) {
+    sub(/^[[:space:]]+/, "", s)
+    sub(/[[:space:]]+$/, "", s)
+    return s
+}
+
+# fence_check - Track fenced code blocks; returns 1 for a fence line.
+#
+# Mirrors _md_fence_track in _lib.sh: fence character, run length, and
+# info string all matter. Written with substr rather than a regex so it
+# does not depend on interval expressions, which older awks lack.
+function fence_check(line,   lead, ch, n, info) {
+    lead = 0
+    while (lead < 4 && substr(line, lead + 1, 1) == " ") lead++
+    if (lead > 3) return 0
+
+    ch = substr(line, lead + 1, 1)
+    if (ch != "`" && ch != "~") return 0
+
+    n = 0
+    while (substr(line, lead + n + 1, 1) == ch) n++
+    if (n < 3) return 0
+
+    info = substr(line, lead + n + 1)
+
+    if (!in_fence) {
+        # A backtick fence may not carry backticks in its info string.
+        if (ch == "`" && index(info, "`")) return 0
+        in_fence = 1; fence_ch = ch; fence_len = n
+        return 1
+    }
+
+    gsub(/[[:blank:]]/, "", info)
+    if (ch == fence_ch && n >= fence_len && info == "") {
+        in_fence = 0; fence_ch = ""; fence_len = 0
+    }
+    return 1
+}
+
+BEGIN {
+    US = ENVIRON["KB_US"]
+    RS_ = ENVIRON["KB_RS"]
+    prefix = ENVIRON["KB_PREFIX"]
+    plen = length(prefix)
+    keep = ENVIRON["KB_KEEP"] + 0
+    nterms = split(ENVIRON["KB_TERMS"], term, US)
+    for (i = 1; i <= nterms; i++) term[i] = tolower(term[i])
+}
+FNR == 1 {
+    if (NR > 1) emit()
+    reset()
+}
+{
+    line = $0
+    lower = tolower(line)
+
+    # Frontmatter: the block opened by --- on line 1. Title matches
+    # score, but the lines themselves are never results.
+    if (FNR == 1 && line ~ /^---[[:space:]]*$/) { in_fm = 1; next }
+    if (in_fm) {
+        if (line ~ /^---[[:space:]]*$/) { in_fm = 0; next }
+        if (line ~ /^title:/) {
+            title = trim(substr(line, 7))
+            gsub(/^"|"$/, "", title)
+            for (i = 1; i <= nterms; i++)
+                if (index(tolower(title), term[i])) { hit[i] = 1; score += 10 }
+        }
+        next
+    }
+
+    if (fence_check(line)) next
+
+    is_heading = 0
+    if (!in_fence && line ~ /^#+[[:space:]]/) {
+        is_heading = 1
+        if (line ~ /^##[[:space:]]/) {
+            section = trim(substr(line, 3))
+            sub(/[[:space:]]*#+$/, "", section)
+        } else if (line ~ /^#[[:space:]]/) {
+            section = "top"
+        }
+    }
+
+    matched = 0
+    for (i = 1; i <= nterms; i++) {
+        if (index(lower, term[i])) { hit[i] = 1; matched = 1 }
+    }
+    if (!matched) next
+
+    score += is_heading ? 3 : 1
+    nlines++
+    if (nlines <= keep) {
+        text = trim(line)
+        if (length(text) > 120) text = substr(text, 1, 120)
+        rec[nlines] = FNR RS_ section RS_ text
+    }
+}
+function reset() {
+    delete hit; delete rec
+    in_fm = 0; in_fence = 0; fence_ch = ""; fence_len = 0
+    nlines = 0; score = 0
+    section = "top"; title = ""
+    path = FILENAME
+    if (substr(path, 1, plen) == prefix) path = substr(path, plen + 1)
+}
+function emit(   i, out) {
+    for (i = 1; i <= nterms; i++) if (!hit[i]) return
+    if (score == 0) return
+
+    # Matched only in the title: report the title itself, or the file
+    # would score well and then print nothing.
+    if (nlines == 0) {
+        nlines = 1
+        rec[1] = "1" RS_ "title" RS_ title
+    }
+
+    out = score US path US title US nlines
+    for (i = 1; i <= nlines && i <= keep; i++) out = out US rec[i]
+    print out
+}
+END { if (NR > 0) emit() }
+'
+
+# -print0/-0: a single filename containing a space split under plain
+# xargs, and gawk treats an unopenable input file as fatal — so one badly
+# named article silently returned zero results for every query.
+results="$(
+    find "${SEARCH_DIRS[@]}" -name '*.md' -type f -print0 2>/dev/null \
+    | sort -z \
+    | KB_TERMS="$TERM_STR" KB_US="$US" KB_RS="$RS" KB_KEEP="$KEEP" \
+      KB_PREFIX="$CONTENT_DIR/" xargs -0 awk "$AWK_PROG" \
+    | sort -t"$US" -k1,1nr -k2,2 || true
+)"
+
+if [[ -z "$results" ]]; then
+    exit 0
+fi
+
+printed=0
+files_shown=0
+files_total=0
+lines_total=0
+
+# score orders the records; sort has already consumed it.
+# shellcheck disable=SC2034
+while IFS="$US" read -r score path title nlines rest; do
+    if [[ -z "$path" ]]; then
+        continue
+    fi
+
+    files_total=$((files_total + 1))
+    lines_total=$((lines_total + nlines))
+
+    if (( LIMIT > 0 && printed >= LIMIT )); then
+        continue
+    fi
+
+    if [[ "$FILES_ONLY" == true ]]; then
+        printf "%s  [%s] %s\n" "$path" "$nlines" "$title"
+        printed=$((printed + 1))
+        files_shown=$((files_shown + 1))
+        continue
+    fi
+
+    shown_here=0
+    while IFS="$RS" read -r lineno section text; do
+        if [[ -z "$lineno" ]]; then
+            continue
+        fi
+        if (( LIMIT > 0 && printed >= LIMIT )); then
+            break
+        fi
+        printf "%s | %s | %s\n" "$path" "${section:-top}" "$text"
+        printed=$((printed + 1))
+        shown_here=$((shown_here + 1))
+        # printf %s\n, not %s: an unterminated last line makes `read`
+        # return non-zero and the loop body never runs for it.
+    done < <(printf '%s\n' "$rest" | tr "$US" '\n')
+
+    if (( shown_here > 0 )); then
+        files_shown=$((files_shown + 1))
+    fi
+done <<< "$results"
+
+if [[ "$FILES_ONLY" == true ]]; then
+    hidden_files=$((files_total - files_shown))
+    if (( hidden_files > 0 )); then
+        echo ""
+        printf "... %d more file(s). Raise --limit, or narrow the query.\n" \
+            "$hidden_files"
+    fi
+    exit 0
+fi
+
+hidden_lines=$((lines_total - printed))
+hidden_files=$((files_total - files_shown))
+
+if (( hidden_lines > 0 )); then
+    echo ""
+    printf "... %d more line(s)" "$hidden_lines"
+    if (( hidden_files > 0 )); then
+        printf " in %d unshown file(s)" "$hidden_files"
+    fi
+    printf ". Raise --limit/--per-file, or narrow the query.\n"
+fi

@@ -9,13 +9,15 @@
 #   install
 #
 # Locations:
-#   Hooks:  ~/.config/coat-tree/hooks.d/<event>/010.knowledge
-#   Skills: ~/.claude/skills/<name>
+#   Hooks:      ~/.config/coat-tree/hooks.d/<event>/010.knowledge
+#   Skills:     ~/.claude/skills/<name>
+#   Git hooks:  <content>/.git/hooks/pre-commit
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+source "$SCRIPT_DIR/_lib.sh"
 
 # Hooks must resolve against the deployed knowledge base (which has
 # content/), not the infra repo. Use KNOWLEDGE_BASE when set; fall
@@ -88,6 +90,18 @@ for skill_dir in "$REPO_ROOT/skills/"*/; do
     ln -sfn "$skill_dir" "${SKILLS_DIR}/${name}"
     echo "  ${name}"
 done
+
+# --- Content repo git hooks ---
+#
+# Lints staged articles and stamps `updated:`. Skipped when the content
+# repo does not exist yet; init calls this again after creating it.
+
+if [[ -d "$CONTENT_DIR/.git" ]]; then
+    echo "Installing content repo git hooks..."
+    mkdir -p "$CONTENT_DIR/.git/hooks"
+    ln -sfn "${SCRIPT_DIR}/hooks/pre-commit" "$CONTENT_DIR/.git/hooks/pre-commit"
+    echo "  pre-commit"
+fi
 
 echo "Done."
 

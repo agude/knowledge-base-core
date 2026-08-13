@@ -6,6 +6,18 @@
 # it as a readable transcript, and saves it as a single observation.
 # The curator handles extraction and judgment later.
 #
+# Transcripts shorter than KNOWLEDGE_MIN_MESSAGES (default 3) are
+# dropped. A third of every transcript ever captured here was a single
+# question and its answer, and that noise is paid for twice: once in the
+# content repo's history and once in the curator's attention. The filter
+# is mechanical on purpose — nothing here judges content, because
+# whatever a weak filter discards is invisible to the curator forever.
+#
+# The cost is real: a one-exchange session that happened to contain a
+# durable fact is now lost unless the agent called `observe` explicitly,
+# which is what it is supposed to do anyway. Set
+# KNOWLEDGE_MIN_MESSAGES=0 to keep everything.
+#
 # Called by session-end (SessionEnd hook) and session-start (orphaned files).
 #
 # Usage:
@@ -26,6 +38,19 @@ fi
 
 # Skip empty files
 if [[ ! -s "$SESSION_FILE" ]]; then
+    rm -f "$SESSION_FILE"
+    exit 0
+fi
+
+MIN_MESSAGES="${KNOWLEDGE_MIN_MESSAGES:-3}"
+
+# Count first: a transcript below the threshold is not worth building.
+TURN_COUNT="$(grep -c '"role"' "$SESSION_FILE" 2>/dev/null || echo 0)"
+
+if (( TURN_COUNT < MIN_MESSAGES )); then
+    logger -t knowledge \
+        "session-flush: dropping $TURN_COUNT-message transcript (min $MIN_MESSAGES)" \
+        2>/dev/null || true
     rm -f "$SESSION_FILE"
     exit 0
 fi
@@ -52,9 +77,6 @@ if [[ -z "$TRANSCRIPT" ]]; then
     rm -f "$SESSION_FILE"
     exit 0
 fi
-
-# Count turns for the title
-TURN_COUNT="$(grep -c '"role"' "$SESSION_FILE" 2>/dev/null || echo 0)"
 
 # Save as a single observation
 if "$SCRIPT_DIR/observe" \
