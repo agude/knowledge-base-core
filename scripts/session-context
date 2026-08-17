@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+#
+# session-context - Output the knowledge base context for session injection.
+#
+# Prints the KB topic map, live state, and any project-specific CLAUDE.md
+# to stdout. Agent shims capture this and inject it into the session
+# using whichever protocol their agent requires.
+#
+# Usage: session-context
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+
+if [[ -f "$REPO_ROOT/CLAUDE.md" ]]; then
+    cat "$REPO_ROOT/CLAUDE.md"
+fi
+
+echo ""
+echo "## Topic areas (auto-generated)"
+echo ""
+"$SCRIPT_DIR/toc" --map 2>/dev/null || true
+
+echo ""
+echo "State: $("$SCRIPT_DIR/status" --brief 2>/dev/null || echo "unavailable")"
+
+if [[ -f "$CONTENT_DIR/CLAUDE.md" ]]; then
+    echo ""
+    cat "$CONTENT_DIR/CLAUDE.md"
+fi

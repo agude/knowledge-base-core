@@ -64,10 +64,6 @@ fi
 # --- Hooks ---
 
 HOOKS=(
-    "SessionStart:session-start"
-    "UserPromptSubmit:session-prompt"
-    "Stop:session-stop"
-    "SessionEnd:session-end"
     "PreToolUse:pretool-allow"
 )
 

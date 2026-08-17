@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+#
+# session-init - Create a session observation buffer.
+#
+# Creates a JSONL buffer file for the given session ID and prints its
+# path to stdout. Idempotent: a second call with the same ID returns
+# the existing path. Also sweeps orphaned buffers older than 1 hour.
+#
+# Usage: session-init --session-id ID
+#
+# Environment:
+#   SESSION_DIR  Override buffer directory (default: per-user runtime dir)
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+
+SESSION_ID=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --session-id) need_arg "$1" "$#"; SESSION_ID="$2"; shift 2 ;;
+        --help|-h) show_help "$0"; exit 0 ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [[ -z "$SESSION_ID" ]]; then
+    echo "session-init: --session-id is required" >&2
+    exit 1
+fi
+
+DIR="$(session_dir)"
+
+if ! ensure_session_dir "$DIR"; then
+    echo "session-init: cannot create session directory $DIR" >&2
+    exit 1
+fi
+
+# Sweep orphaned buffers (>1 hour old, not symlinks, owned by us).
+for orphan in "$DIR"/session-*.jsonl; do
+    [[ -f "$orphan" ]] || continue
+    [[ -L "$orphan" ]] && continue
+    [[ -O "$orphan" ]] || continue
+    [[ "$orphan" == "$DIR/session-${SESSION_ID}.jsonl" ]] && continue
+    if [[ "$(find "$orphan" -mmin +60 2>/dev/null)" ]]; then
+        "$SCRIPT_DIR/session-flush" "$orphan" 2>/dev/null || true
+    fi
+done
+
+SESSION_FILE="$DIR/session-${SESSION_ID}.jsonl"
+touch "$SESSION_FILE"
+chmod 600 "$SESSION_FILE" 2>/dev/null || true
+
+echo "$SESSION_FILE"

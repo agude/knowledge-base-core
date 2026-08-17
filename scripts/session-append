@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+#
+# session-append - Append a message to a session buffer.
+#
+# Adds a single JSONL line with role, message, and timestamp to the
+# given buffer file. No-ops silently if the file does not exist (no
+# buffer means capture was not initialized for this session).
+#
+# Usage: session-append --file PATH --role user|assistant --message TEXT
+
+set -euo pipefail
+
+FILE=""
+ROLE=""
+MESSAGE=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --file) [[ $# -ge 2 ]] || { echo "Option --file requires an argument" >&2; exit 1; }; FILE="$2"; shift 2 ;;
+        --role) [[ $# -ge 2 ]] || { echo "Option --role requires an argument" >&2; exit 1; }; ROLE="$2"; shift 2 ;;
+        --message) [[ $# -ge 2 ]] || { echo "Option --message requires an argument" >&2; exit 1; }; MESSAGE="$2"; shift 2 ;;
+        --help|-h)
+            echo "Usage: session-append --file PATH --role user|assistant --message TEXT"
+            exit 0
+            ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [[ -z "$FILE" ]]; then
+    echo "session-append: --file is required" >&2
+    exit 1
+fi
+
+if [[ -z "$ROLE" ]]; then
+    echo "session-append: --role is required" >&2
+    exit 1
+fi
+
+if [[ "$ROLE" != "user" && "$ROLE" != "assistant" ]]; then
+    echo "session-append: --role must be 'user' or 'assistant', got '$ROLE'" >&2
+    exit 1
+fi
+
+if [[ -z "$MESSAGE" ]]; then
+    exit 0
+fi
+
+# No buffer file means capture was not initialized — silent no-op.
+if [[ ! -f "$FILE" ]]; then
+    exit 0
+fi
+
+# jq for proper JSON escaping of the message text.
+if command -v jq > /dev/null 2>&1; then
+    jq -nc --arg role "$ROLE" --arg msg "$MESSAGE" \
+        '{role: $role, message: $msg, timestamp: now}' >> "$FILE" 2>/dev/null || true
+else
+    # Fallback: basic escaping for common characters.
+    escaped="$MESSAGE"
+    escaped="${escaped//\\/\\\\}"
+    escaped="${escaped//\"/\\\"}"
+    printf '{"role":"%s","message":"%s","timestamp":%s}\n' \
+        "$ROLE" "$escaped" "$(date +%s)" >> "$FILE" 2>/dev/null || true
+fi
