@@ -2,7 +2,7 @@
 #
 # install - Wire hooks and skills into the system.
 #
-# Creates symlinks for coat-tree hooks and Claude Code skills.
+# Creates symlinks for coat-tree hooks and agent skills.
 # Idempotent — safe to re-run after updates.
 #
 # Usage:
@@ -11,6 +11,8 @@
 # Locations:
 #   Hooks:      ~/.config/coat-tree/hooks.d/<event>/010.knowledge
 #   Skills:     ~/.claude/skills/<name>
+#               ~/.codex/skills/<name>
+#               ~/.config/opencode/skills/<name>
 #   Git hooks:  <content>/.git/hooks/pre-commit
 
 set -euo pipefail
@@ -26,7 +28,11 @@ HOOK_SCRIPT_DIR="${KNOWLEDGE_BASE:+${KNOWLEDGE_BASE}/scripts}"
 HOOK_SCRIPT_DIR="${HOOK_SCRIPT_DIR:-$SCRIPT_DIR}"
 
 COAT_TREE_HOOKS="${XDG_CONFIG_HOME:-$HOME/.config}/coat-tree/hooks.d"
-SKILLS_DIR="$HOME/.claude/skills"
+SKILL_DIRECTORIES=(
+    "$HOME/.claude/skills"
+    "$HOME/.codex/skills"
+    "$HOME/.config/opencode/skills"
+)
 HOOK_PREFIX="010.knowledge"
 
 while [[ $# -gt 0 ]]; do
@@ -47,7 +53,7 @@ done
 # gone. Clean slate is simpler than tracking which names are stale.
 
 removed=0
-for link in "${COAT_TREE_HOOKS}"/*/* "${SKILLS_DIR}"/*; do
+for link in "${COAT_TREE_HOOKS}"/*/*; do
     [[ -L "$link" ]] || continue
     target="$(readlink "$link")"
     case "$target" in
@@ -56,6 +62,19 @@ for link in "${COAT_TREE_HOOKS}"/*/* "${SKILLS_DIR}"/*; do
             removed=$((removed + 1))
             ;;
     esac
+done
+
+for skills_dir in "${SKILL_DIRECTORIES[@]}"; do
+    for link in "${skills_dir}"/*; do
+        [[ -L "$link" ]] || continue
+        target="$(readlink "$link")"
+        case "$target" in
+            "${REPO_ROOT}/"*|"${HOOK_SCRIPT_DIR}/"*)
+                rm "$link"
+                removed=$((removed + 1))
+                ;;
+        esac
+    done
 done
 if (( removed > 0 )); then
     echo "Removed $removed prior symlink(s)."
@@ -79,12 +98,14 @@ done
 # --- Skills ---
 
 echo "Installing skills..."
-mkdir -p "$SKILLS_DIR"
-for skill_dir in "$REPO_ROOT/skills/"*/; do
-    [[ -d "$skill_dir" ]] || continue
-    name="$(basename "$skill_dir")"
-    ln -sfn "$skill_dir" "${SKILLS_DIR}/${name}"
-    echo "  ${name}"
+for skills_dir in "${SKILL_DIRECTORIES[@]}"; do
+    mkdir -p "$skills_dir"
+    for skill_dir in "$REPO_ROOT/skills/"*/; do
+        [[ -d "$skill_dir" ]] || continue
+        name="$(basename "$skill_dir")"
+        ln -sfn "$skill_dir" "${skills_dir}/${name}"
+        echo "  ${skills_dir}/${name}"
+    done
 done
 
 # --- Content repo git hooks ---
