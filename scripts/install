@@ -11,8 +11,7 @@
 # Locations:
 #   Hooks:      ~/.config/coat-tree/hooks.d/<event>/010.knowledge
 #   Skills:     ~/.claude/skills/<name>
-#               ~/.codex/skills/<name>
-#               ~/.config/opencode/skills/<name>
+#               ~/.agents/skills/<name>  (Codex, Pi, OpenCode)
 #   Git hooks:  <content>/.git/hooks/pre-commit
 
 set -euo pipefail
@@ -30,6 +29,10 @@ HOOK_SCRIPT_DIR="${HOOK_SCRIPT_DIR:-$SCRIPT_DIR}"
 COAT_TREE_HOOKS="${XDG_CONFIG_HOME:-$HOME/.config}/coat-tree/hooks.d"
 SKILL_DIRECTORIES=(
     "$HOME/.claude/skills"
+    "$HOME/.agents/skills"
+)
+# Retired locations kept for cleanup only.
+LEGACY_SKILL_DIRECTORIES=(
     "$HOME/.codex/skills"
     "$HOME/.config/opencode/skills"
 )
@@ -64,7 +67,7 @@ for link in "${COAT_TREE_HOOKS}"/*/*; do
     esac
 done
 
-for skills_dir in "${SKILL_DIRECTORIES[@]}"; do
+for skills_dir in "${SKILL_DIRECTORIES[@]}" "${LEGACY_SKILL_DIRECTORIES[@]}"; do
     for link in "${skills_dir}"/*; do
         [[ -L "$link" ]] || continue
         target="$(readlink "$link")"
