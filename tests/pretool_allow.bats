@@ -7,7 +7,7 @@ load test_helper
 
 setup() {
     setup_content_dir
-    HOOK="$SCRIPTS/pretool-allow"
+    HOOK="$SCRIPTS/adapters/claude/pretool-allow"
 }
 teardown() { teardown_content_dir; }
 

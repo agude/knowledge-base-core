@@ -25,7 +25,7 @@ run_session_prompt() {
     local prompt="$1"
     echo "{\"session_id\":\"$SESSION_ID\",\"prompt\":\"$prompt\"}" | \
         KNOWLEDGE_OBSERVE=1 \
-        "$SCRIPTS/session-prompt"
+        "$SCRIPTS/adapters/claude/session-prompt"
 }
 
 # Helper to run session-stop (Stop hook)
@@ -33,14 +33,14 @@ run_session_stop() {
     local message="$1"
     echo "{\"session_id\":\"$SESSION_ID\",\"last_assistant_message\":\"$message\"}" | \
         KNOWLEDGE_OBSERVE=1 \
-        "$SCRIPTS/session-stop"
+        "$SCRIPTS/adapters/claude/session-stop"
 }
 
 # Helper to run session-end (SessionEnd hook)
 run_session_end() {
     echo "{\"session_id\":\"$SESSION_ID\",\"reason\":\"user_quit\"}" | \
         KNOWLEDGE_OBSERVE=1 \
-        "$SCRIPTS/session-end"
+        "$SCRIPTS/adapters/claude/session-end"
 }
 
 @test "session file persists after session-stop" {
@@ -113,7 +113,7 @@ run_session_end() {
     run_session_prompt "What is 2+2?"
     run_session_stop "4"
     echo "{\"session_id\":\"$SESSION_ID\",\"reason\":\"user_quit\"}" | \
-        KNOWLEDGE_OBSERVE=1 KNOWLEDGE_MIN_MESSAGES=0 "$SCRIPTS/session-end"
+        KNOWLEDGE_OBSERVE=1 KNOWLEDGE_MIN_MESSAGES=0 "$SCRIPTS/adapters/claude/session-end"
 
     run bash -c 'ls -1 "$TEST_CONTENT_DIR/observations/pending/"*.md 2>/dev/null | wc -l'
     [[ "$output" -eq 1 ]]
@@ -177,13 +177,13 @@ run_session_end() {
 }
 
 @test "capture stays off when session-start never ran" {
-    run bash -c 'echo "{\"session_id\":\"'"$SESSION_ID"'\",\"prompt\":\"Hi\"}" | "$SCRIPTS/session-prompt"'
+    run bash -c 'echo "{\"session_id\":\"'"$SESSION_ID"'\",\"prompt\":\"Hi\"}" | "$SCRIPTS/adapters/claude/session-prompt"'
     [[ "$status" -eq 0 ]]
     [[ ! -f "$SESSION_FILE" ]]
 }
 
 @test "capture stays off when KNOWLEDGE_OBSERVE=0" {
-    run bash -c 'echo "{\"session_id\":\"'"$SESSION_ID"'\",\"prompt\":\"Hi\"}" | KNOWLEDGE_OBSERVE=0 "$SCRIPTS/session-prompt"'
+    run bash -c 'echo "{\"session_id\":\"'"$SESSION_ID"'\",\"prompt\":\"Hi\"}" | KNOWLEDGE_OBSERVE=0 "$SCRIPTS/adapters/claude/session-prompt"'
     [[ "$status" -eq 0 ]]
     [[ ! -f "$SESSION_FILE" ]]
 }

@@ -30,7 +30,10 @@ while [[ -L "$self" ]]; do
         self="$(dirname "$self")/$link"
     fi
 done
-SCRIPTS_DIR="$(cd "$(dirname "$self")" && pwd -P)"
+# This adapter lives below scripts/adapters/claude; the approved command
+# surface is the neutral scripts directory, not the adapter directory.
+ADAPTER_DIR="$(cd "$(dirname "$self")" && pwd -P)"
+SCRIPTS_DIR="$(cd "$ADAPTER_DIR/../.." && pwd -P)"
 
 # is_simple_command - True when a command line runs exactly one command.
 #

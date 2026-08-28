@@ -2,17 +2,24 @@
 
 load test_helper
 
-setup() { setup_content_dir; }
-teardown() { teardown_content_dir; }
+setup() {
+    setup_content_dir
+    export SESSION_DIR="$(mktemp -d)"
+    chmod 700 "$SESSION_DIR"
+}
+teardown() {
+    teardown_content_dir
+    rm -rf "$SESSION_DIR"
+}
 
 @test "session-start outputs CLAUDE.md content" {
-    run bash -c 'echo "{\"session_id\":\"test-1\"}" | KNOWLEDGE_OBSERVE=0 "$SCRIPTS/session-start"'
+    run bash -c 'echo "{\"session_id\":\"test-1\"}" | KNOWLEDGE_OBSERVE=0 "$SCRIPTS/adapters/claude/session-start"'
     [[ "$status" -eq 0 ]]
     [[ "$output" == *"Knowledge Base"* ]]
 }
 
 @test "session-start includes auto-generated topics heading" {
-    run bash -c 'echo "{\"session_id\":\"test-2\"}" | KNOWLEDGE_OBSERVE=0 "$SCRIPTS/session-start"'
+    run bash -c 'echo "{\"session_id\":\"test-2\"}" | KNOWLEDGE_OBSERVE=0 "$SCRIPTS/adapters/claude/session-start"'
     [[ "$output" == *"## Topic areas (auto-generated)"* ]]
 }
 
@@ -22,14 +29,14 @@ teardown() { teardown_content_dir; }
 ## DNS
 
 Content."
-    run bash -c 'echo "{\"session_id\":\"test-3\"}" | KNOWLEDGE_OBSERVE=0 "$SCRIPTS/session-start"'
+    run bash -c 'echo "{\"session_id\":\"test-3\"}" | KNOWLEDGE_OBSERVE=0 "$SCRIPTS/adapters/claude/session-start"'
     [[ "$output" == *"knowledge/infra/"* ]]
     [[ "$output" == *"1 articles"* ]]
 }
 
 @test "session-start includes live state" {
     create_test_observation "20260412T000000-aaaa.md" "Obs" "Body"
-    run bash -c 'echo "{\"session_id\":\"test-state\"}" | KNOWLEDGE_OBSERVE=0 "$SCRIPTS/session-start"'
+    run bash -c 'echo "{\"session_id\":\"test-state\"}" | KNOWLEDGE_OBSERVE=0 "$SCRIPTS/adapters/claude/session-start"'
     [[ "$output" == *"State:"* ]]
     [[ "$output" == *"1 pending"* ]]
 }
@@ -42,14 +49,14 @@ Content."
 
 Content."
     done
-    run bash -c 'echo "{\"session_id\":\"test-size\"}" | KNOWLEDGE_OBSERVE=0 "$SCRIPTS/session-start"'
+    run bash -c 'echo "{\"session_id\":\"test-size\"}" | KNOWLEDGE_OBSERVE=0 "$SCRIPTS/adapters/claude/session-start"'
     # 30 articles must not add 30 lines: the map is per area, not per file.
     [[ "${#lines[@]}" -lt 100 ]]
 }
 
-@test "session-start includes content CLAUDE.md when present" {
-    echo "# Project Rules" > "$TEST_CONTENT_DIR/CLAUDE.md"
-    run bash -c 'echo "{\"session_id\":\"test-4\"}" | KNOWLEDGE_OBSERVE=0 "$SCRIPTS/session-start"'
+@test "session-start includes content AGENTS.md when present" {
+    echo "# Project Rules" > "$TEST_CONTENT_DIR/AGENTS.md"
+    run bash -c 'echo "{\"session_id\":\"test-4\"}" | KNOWLEDGE_OBSERVE=0 "$SCRIPTS/adapters/claude/session-start"'
     [[ "$output" == *"Project Rules"* ]]
 }
 
@@ -64,7 +71,7 @@ Content."
 ## DNS
 
 Content."
-    run bash -c 'echo "{\"session_id\":\"test-nojq\"}" | PATH='"$stub"' "$SCRIPTS/session-start"'
+    run bash -c 'echo "{\"session_id\":\"test-nojq\"}" | PATH='"$stub"' "$SCRIPTS/adapters/claude/session-start"'
     [[ "$status" -eq 0 ]]
     # The instructions are what the session cannot work without.
     [[ "$output" == *"Knowledge Base"* ]]
@@ -74,7 +81,7 @@ Content."
 
 @test "session-start creates the session directory mode 700" {
     local dir="$TEST_CONTENT_DIR/sessions"
-    run bash -c 'echo "{\"session_id\":\"test-mode\"}" | SESSION_DIR='"$dir"' "$SCRIPTS/session-start"'
+    run bash -c 'echo "{\"session_id\":\"test-mode\"}" | SESSION_DIR='"$dir"' "$SCRIPTS/adapters/claude/session-start"'
     [[ "$status" -eq 0 ]]
     run stat -c '%a' "$dir"
     [[ "$output" == "700" ]]
@@ -82,7 +89,7 @@ Content."
 
 @test "session-start creates the buffer mode 600" {
     local dir="$TEST_CONTENT_DIR/sessions"
-    run bash -c 'echo "{\"session_id\":\"test-fmode\"}" | SESSION_DIR='"$dir"' "$SCRIPTS/session-start"'
+    run bash -c 'echo "{\"session_id\":\"test-fmode\"}" | SESSION_DIR='"$dir"' "$SCRIPTS/adapters/claude/session-start"'
     run stat -c '%a' "$dir/session-test-fmode.jsonl"
     [[ "$output" == "600" ]]
 }
@@ -90,7 +97,7 @@ Content."
 @test "session-start tightens a pre-existing world-readable directory" {
     local dir="$TEST_CONTENT_DIR/sessions"
     mkdir -p -m 777 "$dir"
-    run bash -c 'echo "{\"session_id\":\"test-tighten\"}" | SESSION_DIR='"$dir"' "$SCRIPTS/session-start"'
+    run bash -c 'echo "{\"session_id\":\"test-tighten\"}" | SESSION_DIR='"$dir"' "$SCRIPTS/adapters/claude/session-start"'
     run stat -c '%a' "$dir"
     [[ "$output" == "700" ]]
 }
@@ -98,7 +105,7 @@ Content."
 @test "session-start still injects context when the session dir is unwritable" {
     local blocked="$TEST_CONTENT_DIR/blocked"
     touch "$blocked"
-    run bash -c 'echo "{\"session_id\":\"test-blocked\"}" | SESSION_DIR='"$blocked"' "$SCRIPTS/session-start"'
+    run bash -c 'echo "{\"session_id\":\"test-blocked\"}" | SESSION_DIR='"$blocked"' "$SCRIPTS/adapters/claude/session-start"'
     [[ "$status" -eq 0 ]]
     [[ "$output" == *"Knowledge Base"* ]]
 }
@@ -106,7 +113,7 @@ Content."
 @test "session-start sets KNOWLEDGE_OBSERVE=1 by default" {
     local env_file="$TEST_CONTENT_DIR/env_test"
     touch "$env_file"
-    run bash -c 'echo "{\"session_id\":\"test-5\"}" | CLAUDE_ENV_FILE='"$env_file"' "$SCRIPTS/session-start"'
+    run bash -c 'echo "{\"session_id\":\"test-5\"}" | CLAUDE_ENV_FILE='"$env_file"' "$SCRIPTS/adapters/claude/session-start"'
     [[ "$status" -eq 0 ]]
     run cat "$env_file"
     [[ "$output" == *"KNOWLEDGE_OBSERVE=1"* ]]
@@ -115,7 +122,7 @@ Content."
 @test "session-start respects KNOWLEDGE_OBSERVE=0" {
     local env_file="$TEST_CONTENT_DIR/env_test"
     touch "$env_file"
-    run bash -c 'echo "{\"session_id\":\"test-6\"}" | KNOWLEDGE_OBSERVE=0 CLAUDE_ENV_FILE='"$env_file"' "$SCRIPTS/session-start"'
+    run bash -c 'echo "{\"session_id\":\"test-6\"}" | KNOWLEDGE_OBSERVE=0 CLAUDE_ENV_FILE='"$env_file"' "$SCRIPTS/adapters/claude/session-start"'
     [[ "$status" -eq 0 ]]
     run cat "$env_file"
     [[ "$output" == *"KNOWLEDGE_OBSERVE=0"* ]]
@@ -131,7 +138,7 @@ Content."
     ln -s "$secret" "$dir/session-planted.jsonl"
     touch -d '2 hours ago' "$secret" 2>/dev/null || touch -A -020000 "$secret"
 
-    run bash -c 'echo "{\"session_id\":\"test-sym\"}" | SESSION_DIR='"$dir"' "$SCRIPTS/session-start"'
+    run bash -c 'echo "{\"session_id\":\"test-sym\"}" | SESSION_DIR='"$dir"' "$SCRIPTS/adapters/claude/session-start"'
     [[ "$status" -eq 0 ]]
     # The symlink target must not have been turned into an observation
     run bash -c 'grep -rl private "$TEST_CONTENT_DIR/observations/pending" 2>/dev/null | wc -l'

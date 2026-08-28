@@ -4,9 +4,11 @@
 # Sets KB_CONTENT_DIR so scripts find it. Cleans up on teardown.
 
 setup_content_dir() {
+    unset KNOWLEDGE_OBSERVE KNOWLEDGE_SESSION_FILE
     export TEST_CONTENT_DIR="$(mktemp -d)"
     mkdir -p "$TEST_CONTENT_DIR"/{knowledge,observations/{pending,archived},questions/{open,resolved},sources}
     export KB_CONTENT_DIR="$TEST_CONTENT_DIR"
+    export KNOWLEDGE_BASE="$BATS_TEST_DIRNAME/.."
     export SCRIPTS="$BATS_TEST_DIRNAME/../scripts"
 
     # Init a git repo in content dir (needed for locked_commit, status)

@@ -2,16 +2,14 @@
 #
 # install - Wire hooks and skills into the system.
 #
-# Creates symlinks for coat-tree hooks and agent skills.
+# Creates symlinks for the shared skills and content-repo hook.
 # Idempotent — safe to re-run after updates.
 #
 # Usage:
 #   install
 #
 # Locations:
-#   Hooks:      ~/.config/coat-tree/hooks.d/<event>/010.knowledge
-#   Skills:     ~/.claude/skills/<name>
-#               ~/.agents/skills/<name>  (Codex, Pi, OpenCode)
+#   Skills:     ~/.agents/skills/<name>  (shared agent location)
 #   Git hooks:  <content>/.git/hooks/pre-commit
 
 set -euo pipefail
@@ -20,23 +18,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 source "$SCRIPT_DIR/_lib.sh"
 
-# Hooks must resolve against the deployed knowledge base (which has
-# content/), not the infra repo. Use KNOWLEDGE_BASE when set; fall
-# back to the repo this script lives in.
-HOOK_SCRIPT_DIR="${KNOWLEDGE_BASE:+${KNOWLEDGE_BASE}/scripts}"
-HOOK_SCRIPT_DIR="${HOOK_SCRIPT_DIR:-$SCRIPT_DIR}"
-
-COAT_TREE_HOOKS="${XDG_CONFIG_HOME:-$HOME/.config}/coat-tree/hooks.d"
 SKILL_DIRECTORIES=(
-    "$HOME/.claude/skills"
     "$HOME/.agents/skills"
 )
-# Retired locations kept for cleanup only.
-LEGACY_SKILL_DIRECTORIES=(
-    "$HOME/.codex/skills"
-    "$HOME/.config/opencode/skills"
-)
-HOOK_PREFIX="010.knowledge"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -48,7 +32,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# --- Cleanup: remove every prior symlink pointing into this repo ---
+# --- Cleanup: remove prior skill symlinks pointing into this repo ---
 #
 # Anything currently linking into $REPO_ROOT was created by a previous
 # run of this install. Whichever entries we still want will be recreated
@@ -56,58 +40,38 @@ done
 # gone. Clean slate is simpler than tracking which names are stale.
 
 removed=0
-for link in "${COAT_TREE_HOOKS}"/*/*; do
-    [[ -L "$link" ]] || continue
-    target="$(readlink "$link")"
-    case "$target" in
-        "${REPO_ROOT}/"*|"${HOOK_SCRIPT_DIR}/"*)
-            rm "$link"
-            removed=$((removed + 1))
-            ;;
-    esac
-done
-
-for skills_dir in "${SKILL_DIRECTORIES[@]}" "${LEGACY_SKILL_DIRECTORIES[@]}"; do
+for skills_dir in "${SKILL_DIRECTORIES[@]}"; do
     for link in "${skills_dir}"/*; do
         [[ -L "$link" ]] || continue
         target="$(readlink "$link")"
         case "$target" in
-            "${REPO_ROOT}/"*|"${HOOK_SCRIPT_DIR}/"*)
-                rm "$link"
+            "${REPO_ROOT}/"*)
+                rm "$link" 2>/dev/null || true
                 removed=$((removed + 1))
                 ;;
         esac
     done
 done
 if (( removed > 0 )); then
-    echo "Removed $removed prior symlink(s)."
+    echo "Removed $removed prior skill symlink(s)."
 fi
-
-# --- Hooks ---
-
-HOOKS=(
-    "PreToolUse:pretool-allow"
-)
-
-echo "Installing hooks..."
-for pair in "${HOOKS[@]}"; do
-    event="${pair%%:*}"
-    script="${pair##*:}"
-    mkdir -p "${COAT_TREE_HOOKS}/${event}"
-    ln -sf "${HOOK_SCRIPT_DIR}/${script}" "${COAT_TREE_HOOKS}/${event}/${HOOK_PREFIX}"
-    echo "  ${event}/${HOOK_PREFIX} → ${HOOK_SCRIPT_DIR}/${script}"
-done
 
 # --- Skills ---
 
 echo "Installing skills..."
 for skills_dir in "${SKILL_DIRECTORIES[@]}"; do
-    mkdir -p "$skills_dir"
+    if ! mkdir -p "$skills_dir" 2>/dev/null; then
+        echo "  warning: cannot write skills at $skills_dir" >&2
+        continue
+    fi
     for skill_dir in "$REPO_ROOT/skills/"*/; do
         [[ -d "$skill_dir" ]] || continue
         name="$(basename "$skill_dir")"
-        ln -sfn "$skill_dir" "${skills_dir}/${name}"
-        echo "  ${skills_dir}/${name}"
+        if ln -sfn "$skill_dir" "${skills_dir}/${name}"; then
+            echo "  ${skills_dir}/${name}"
+        else
+            echo "  warning: cannot install ${skills_dir}/${name}" >&2
+        fi
     done
 done
 

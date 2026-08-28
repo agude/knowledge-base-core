@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Claude SessionStart adapter for the neutral knowledge-base session API.
+set -euo pipefail
+
+INPUT="$(cat)"
+KB="${KNOWLEDGE_BASE:-}"
+[[ -z "$KB" ]] && exit 0
+
+output_context() { "$KB/scripts/session-context" 2>/dev/null || true; }
+trap 'output_context; exit 0' EXIT
+
+if [[ "${KNOWLEDGE_OBSERVE:-}" == "0" ]]; then
+    [[ -n "${CLAUDE_ENV_FILE:-}" ]] && echo "KNOWLEDGE_OBSERVE=0" >> "$CLAUDE_ENV_FILE"
+    exit 0
+fi
+
+command -v jq > /dev/null 2>&1 || exit 0
+SESSION_ID="$(echo "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")"
+[[ -n "$SESSION_ID" ]] || SESSION_ID="$$-$(date +%s)"
+SESSION_FILE="$("$KB/scripts/session-init" --session-id "$SESSION_ID" 2>/dev/null || echo "")"
+
+if [[ -n "$SESSION_FILE" && -n "${CLAUDE_ENV_FILE:-}" ]]; then
+    echo "KNOWLEDGE_OBSERVE=1" >> "$CLAUDE_ENV_FILE"
+    echo "KNOWLEDGE_SESSION_FILE=$SESSION_FILE" >> "$CLAUDE_ENV_FILE"
+fi

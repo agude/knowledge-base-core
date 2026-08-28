@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Claude UserPromptSubmit adapter for the neutral session API.
+set -euo pipefail
+[[ "${KNOWLEDGE_OBSERVE:-}" == "0" ]] && exit 0
+
+KB="${KNOWLEDGE_BASE:-}"
+[[ -z "$KB" ]] && exit 0
+command -v jq > /dev/null 2>&1 || exit 0
+
+INPUT="$(cat)"
+SESSION_ID="$(echo "$INPUT" | jq -r '.session_id // empty')"
+PROMPT="$(echo "$INPUT" | jq -r '.prompt // empty')"
+[[ -z "$SESSION_ID" || -z "$PROMPT" ]] && exit 0
+
+if [[ -n "${KNOWLEDGE_SESSION_FILE:-}" ]]; then
+    "$KB/scripts/session-append" --file "$KNOWLEDGE_SESSION_FILE" \
+        --role user --message "$PROMPT" 2>/dev/null || true
+else
+    "$KB/scripts/session-append" --session-id "$SESSION_ID" \
+        --role user --message "$PROMPT" 2>/dev/null || true
+fi
