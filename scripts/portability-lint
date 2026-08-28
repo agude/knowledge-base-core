@@ -12,7 +12,17 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+# Resolve this script through symlinks with macOS-compatible utilities.
+self="$0"
+while [[ -L "$self" ]]; do
+    link="$(readlink "$self")"
+    if [[ "$link" == /* ]]; then
+        self="$link"
+    else
+        self="$(dirname "$self")/$link"
+    fi
+done
+SCRIPT_DIR="$(cd "$(dirname "$self")" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 CLIENT=""
@@ -63,11 +73,11 @@ while IFS= read -r -d '' file; do
 done < <(
     {
         printf '%s\0' "$REPO_ROOT/AGENTS.md"
-        find "$REPO_ROOT/skills" "$REPO_ROOT/scripts" -maxdepth 2 \
+        find "$REPO_ROOT/skills" "$REPO_ROOT/scripts" \
             -type f ! -path "$REPO_ROOT/scripts/adapters/*" \
             ! -path "$REPO_ROOT/scripts/install" \
             ! -path "$REPO_ROOT/scripts/portability-lint" -print0
-    } | sort -zu
+    }
 )
 
 while IFS= read -r -d '' skill; do
@@ -92,7 +102,7 @@ while IFS= read -r -d '' skill; do
             esac
         fi
     done < "$skill"
-done < <(find "$REPO_ROOT/skills" -name SKILL.md -type f -print0 | sort -z)
+done < <(find "$REPO_ROOT/skills" -name SKILL.md -type f -print0)
 
 if (( errors > 0 )); then
     echo "Portability lint failed with $errors error(s)." >&2

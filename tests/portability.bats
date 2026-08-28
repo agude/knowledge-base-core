@@ -28,6 +28,11 @@ teardown() { teardown_content_dir; }
     [[ "$output" == *"no adapter"* ]]
 }
 
+@test "portability lint avoids GNU-only path utilities" {
+    run grep -E 'readlink -f|sort -z|find .* -maxdepth' "$SCRIPTS/portability-lint"
+    [[ "$status" -ne 0 ]]
+}
+
 @test "OpenCode adapter maps lifecycle events to the core API" {
     local adapter="$SCRIPTS/adapters/opencode/knowledge.ts"
     [[ -f "$adapter" ]]
@@ -42,6 +47,8 @@ teardown() { teardown_content_dir; }
     [[ -f "$adapter" ]]
     grep -q 'session_start' "$adapter"
     grep -q 'message_end' "$adapter"
+    grep -q 'session_switch' "$adapter"
+    grep -q 'session_fork' "$adapter"
     grep -q 'session-append' "$adapter"
     grep -q 'session-flush' "$adapter"
 }

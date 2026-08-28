@@ -62,6 +62,19 @@ export default function knowledge(pi: ExtensionAPI): void {
     file = (await run("session-init", ["--session-id", sessionID])) || undefined
   }
 
+  async function flush(): Promise<void> {
+    if (!OBSERVE || !file || !existsSync(file)) return
+    const current = file
+    file = undefined
+    await run("session-flush", [current], 15000)
+  }
+
+  async function startSession(sessionFile?: string): Promise<void> {
+    sessionID = sessionFile ? basename(sessionFile, extname(sessionFile)) : randomUUID()
+    file = undefined
+    await init()
+  }
+
   async function append(role: "user" | "assistant", value: string): Promise<void> {
     if (!OBSERVE || !value) return
     if (!file || !existsSync(file)) await init()
@@ -70,9 +83,19 @@ export default function knowledge(pi: ExtensionAPI): void {
 
   pi.on("session_start", async (_event, ctx) => {
     if (!OBSERVE) return
-    const sessionFile = ctx.sessionManager.getSessionFile()
-    const id = sessionFile ? basename(sessionFile, extname(sessionFile)) : undefined
-    await init(id)
+    await startSession(ctx.sessionManager.getSessionFile())
+  })
+
+  pi.on("session_switch", async (_event, ctx) => {
+    if (!OBSERVE) return
+    await flush()
+    await startSession(ctx.sessionManager.getSessionFile())
+  })
+
+  pi.on("session_fork", async (_event, ctx) => {
+    if (!OBSERVE) return
+    await flush()
+    await startSession(ctx.sessionManager.getSessionFile())
   })
 
   pi.on("message_end", async (event) => {
@@ -100,9 +123,6 @@ export default function knowledge(pi: ExtensionAPI): void {
   })
 
   pi.on("session_shutdown", async () => {
-    if (!OBSERVE || !file || !existsSync(file)) return
-    const current = file
-    file = undefined
-    await run("session-flush", [current], 15000)
+    await flush()
   })
 }

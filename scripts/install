@@ -22,6 +22,24 @@ SKILL_DIRECTORIES=(
     "$HOME/.agents/skills"
 )
 
+LEGACY_HOOKS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/coat-tree/hooks.d"
+LEGACY_HOOK_EVENTS=(
+    "SessionStart"
+    "UserPromptSubmit"
+    "Stop"
+    "SessionEnd"
+    "PreToolUse"
+)
+LEGACY_HOOK_SCRIPTS=(
+    "session-start"
+    "session-prompt"
+    "session-stop"
+    "session-end"
+    "pretool-allow"
+)
+LEGACY_HOOK_SCRIPT_DIR="${KNOWLEDGE_BASE:+${KNOWLEDGE_BASE}/scripts}"
+LEGACY_HOOK_SCRIPT_DIR="${LEGACY_HOOK_SCRIPT_DIR:-$SCRIPT_DIR}"
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -h|--help)
@@ -31,6 +49,46 @@ while [[ $# -gt 0 ]]; do
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
 done
+
+# --- Migrate legacy Claude lifecycle hooks ---
+#
+# Before adapters existed, lifecycle scripts lived at scripts/<name> and
+# install placed pretool-allow in coat-tree. Some installations also linked
+# the lifecycle scripts directly. Replace only the known 010.knowledge links
+# so unrelated coat-tree hooks remain untouched.
+
+migrated=0
+for index in "${!LEGACY_HOOK_EVENTS[@]}"; do
+    event="${LEGACY_HOOK_EVENTS[$index]}"
+    legacy_script="${LEGACY_HOOK_SCRIPTS[$index]}"
+    link="$LEGACY_HOOKS_DIR/$event/010.knowledge"
+
+    [[ -L "$link" ]] || continue
+    target="$(readlink "$link")"
+    case "$target" in
+        "$SCRIPT_DIR/$legacy_script"|"$LEGACY_HOOK_SCRIPT_DIR/$legacy_script") ;;
+        *) continue ;;
+    esac
+
+    adapter="$SCRIPT_DIR/adapters/claude/$legacy_script"
+    if [[ ! -f "$adapter" ]]; then
+        if rm "$link"; then
+            migrated=$((migrated + 1))
+        else
+            echo "  warning: cannot remove legacy hook $link" >&2
+        fi
+        continue
+    fi
+
+    if ln -sfn "$adapter" "$link"; then
+        migrated=$((migrated + 1))
+    else
+        echo "  warning: cannot migrate legacy hook $link" >&2
+    fi
+done
+if (( migrated > 0 )); then
+    echo "Migrated $migrated legacy Claude hook(s)."
+fi
 
 # --- Cleanup: remove prior skill symlinks pointing into this repo ---
 #
