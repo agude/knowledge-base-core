@@ -50,7 +50,10 @@ for orphan in "$DIR"/session-*.jsonl; do
     fi
 done
 
-SESSION_FILE="$DIR/session-${SESSION_ID}.jsonl"
+SESSION_FILE="$(session_file_path "$DIR" "$SESSION_ID")" || {
+    echo "session-init: invalid session ID" >&2
+    exit 1
+}
 touch "$SESSION_FILE"
 chmod 600 "$SESSION_FILE" 2>/dev/null || true
 

@@ -52,8 +52,8 @@ Content."
     [[ "$output" == *"1 pending"* ]]
 }
 
-@test "session-context includes content CLAUDE.md when present" {
-    echo "# Project Rules" > "$TEST_CONTENT_DIR/CLAUDE.md"
+@test "session-context includes content AGENTS.md when present" {
+    echo "# Project Rules" > "$TEST_CONTENT_DIR/AGENTS.md"
     run "$SCRIPTS/session-context"
     [[ "$output" == *"Project Rules"* ]]
 }
@@ -95,6 +95,26 @@ Content."
     [[ "$status" -ne 0 ]]
 }
 
+@test "session-init rejects a path traversal session ID" {
+    run "$SCRIPTS/session-init" --session-id "../escape"
+    [[ "$status" -ne 0 ]]
+}
+
+@test "session-file resolves a session without creating it" {
+    run "$SCRIPTS/session-file" --session-id "resolver-1"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == "$SESSION_DIR/session-resolver-1.jsonl" ]]
+    [[ ! -e "$output" ]]
+}
+
+@test "session-file --create creates a private buffer" {
+    run "$SCRIPTS/session-file" --session-id "resolver-2" --create
+    [[ "$status" -eq 0 ]]
+    [[ -f "$output" ]]
+    run stat -c '%a' "$output"
+    [[ "$output" == "600" ]]
+}
+
 @test "session-init tightens a pre-existing world-readable directory" {
     local dir="$SESSION_DIR/wide"
     mkdir -p -m 777 "$dir"
@@ -124,6 +144,15 @@ Content."
     run cat "$file"
     [[ "$output" == *'"role":"assistant"'* ]]
     [[ "$output" == *'"message":"Hi there"'* ]]
+}
+
+@test "session-append resolves a session ID through the shared API" {
+    run "$SCRIPTS/session-init" --session-id "append-id"
+    run "$SCRIPTS/session-append" --session-id "append-id" \
+        --role user --message "Resolved message"
+    [[ "$status" -eq 0 ]]
+    run cat "$SESSION_DIR/session-append-id.jsonl"
+    [[ "$output" == *"Resolved message"* ]]
 }
 
 @test "session-append accumulates multiple messages" {

@@ -38,7 +38,7 @@ need_arg() {
 
 # path_is_contained - True when a path resolves inside the content root.
 #
-# The PreToolUse hook auto-approves these scripts, so their arguments are
+# The command-approval hook auto-approves these scripts, so their arguments are
 # part of the security boundary: without this, `section --file
 # ../../../../etc/passwd` reads outside the knowledge base with no
 # permission prompt, and `toc --path ../../..` walks the filesystem.
@@ -318,6 +318,21 @@ session_dir() {
     echo "${XDG_RUNTIME_DIR:-/tmp}/knowledge-sessions-$(id -u)"
 }
 
+# instruction_file - Select the canonical instruction file in a directory.
+#
+# AGENTS.md is the portable name. CLAUDE.md is retained as a compatibility
+# name for installations that have not migrated yet. Prefer AGENTS.md when
+# both exist so every client uses the same source.
+instruction_file() {
+    local dir="$1"
+
+    if [[ -f "$dir/AGENTS.md" ]]; then
+        echo "$dir/AGENTS.md"
+    elif [[ -f "$dir/CLAUDE.md" ]]; then
+        echo "$dir/CLAUDE.md"
+    fi
+}
+
 # ensure_session_dir - Create the session directory, private, and verify it.
 #
 # Returns 1 if the directory cannot be created or is owned by someone
@@ -335,6 +350,18 @@ ensure_session_dir() {
     # A pre-existing directory keeps its old mode; tighten it.
     chmod 700 "$dir" 2>/dev/null || true
     return 0
+}
+
+# session_file_path - Return the canonical path for a session buffer.
+#
+# Session IDs are supplied by host clients. Restrict them to filename-safe
+# characters before interpolating them into a path; callers must not be able
+# to escape the private session directory.
+session_file_path() {
+    local dir="$1" id="$2"
+
+    [[ "$id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || return 1
+    printf '%s/session-%s.jsonl\n' "$dir" "$id"
 }
 
 # session_buffer_path - Path to a session's buffer, recreating it if gone.
@@ -359,7 +386,9 @@ ensure_session_dir() {
 #   file="$(session_buffer_path "$dir" "$id")" || exit 0
 session_buffer_path() {
     local dir="$1" id="$2"
-    local file="$dir/session-$id.jsonl"
+    local file
+
+    file="$(session_file_path "$dir" "$id")" || return 1
 
     if [[ -f "$file" ]]; then
         echo "$file"

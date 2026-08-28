@@ -18,7 +18,7 @@
 # which is what it is supposed to do anyway. Set
 # KNOWLEDGE_MIN_MESSAGES=0 to keep everything.
 #
-# Called by session-end (SessionEnd hook) and session-start (orphaned files).
+# Called by host adapters and by session-init when it sweeps orphaned files.
 #
 # Usage:
 #   session-flush <session-file>

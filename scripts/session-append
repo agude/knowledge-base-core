@@ -6,30 +6,46 @@
 # given buffer file. No-ops silently if the file does not exist (no
 # buffer means capture was not initialized for this session).
 #
-# Usage: session-append --file PATH --role user|assistant --message TEXT
+# Usage: session-append (--file PATH | --session-id ID) \
+#          --role user|assistant --message TEXT
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+
 FILE=""
+SESSION_ID=""
 ROLE=""
 MESSAGE=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --file) [[ $# -ge 2 ]] || { echo "Option --file requires an argument" >&2; exit 1; }; FILE="$2"; shift 2 ;;
+        --session-id) [[ $# -ge 2 ]] || { echo "Option --session-id requires an argument" >&2; exit 1; }; SESSION_ID="$2"; shift 2 ;;
         --role) [[ $# -ge 2 ]] || { echo "Option --role requires an argument" >&2; exit 1; }; ROLE="$2"; shift 2 ;;
         --message) [[ $# -ge 2 ]] || { echo "Option --message requires an argument" >&2; exit 1; }; MESSAGE="$2"; shift 2 ;;
         --help|-h)
-            echo "Usage: session-append --file PATH --role user|assistant --message TEXT"
+            echo "Usage: session-append (--file PATH | --session-id ID) --role user|assistant --message TEXT"
             exit 0
             ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
 done
 
-if [[ -z "$FILE" ]]; then
-    echo "session-append: --file is required" >&2
+if [[ -n "$FILE" ]] && [[ -n "$SESSION_ID" ]]; then
+    echo "session-append: use only one of --file or --session-id" >&2
     exit 1
+fi
+
+if [[ -z "$FILE" ]] && [[ -z "$SESSION_ID" ]]; then
+    echo "session-append: --file or --session-id is required" >&2
+    exit 1
+fi
+
+if [[ -n "$SESSION_ID" ]]; then
+    FILE="$(session_buffer_path "$(session_dir)" "$SESSION_ID")" || exit 0
 fi
 
 if [[ -z "$ROLE" ]]; then

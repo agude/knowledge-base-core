@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+#
+# session-file - Resolve a session ID to its observation buffer path.
+#
+# Usage: session-file --session-id ID [--create]
+#
+# The resolver is the single path-formatting API for host adapters. Use
+# --create when an adapter needs to initialize a buffer after it was swept.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/_lib.sh"
+
+SESSION_ID=""
+CREATE=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --session-id) need_arg "$1" "$#"; SESSION_ID="$2"; shift 2 ;;
+        --create) CREATE=true; shift ;;
+        --help|-h) show_help "$0"; exit 0 ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [[ -z "$SESSION_ID" ]]; then
+    echo "session-file: --session-id is required" >&2
+    exit 1
+fi
+
+DIR="$(session_dir)"
+FILE="$(session_file_path "$DIR" "$SESSION_ID")" || {
+    echo "session-file: invalid session ID" >&2
+    exit 1
+}
+
+if [[ "$CREATE" == true ]]; then
+    ensure_session_dir "$DIR" || {
+        echo "session-file: cannot create session directory $DIR" >&2
+        exit 1
+    }
+    touch "$FILE"
+    chmod 600 "$FILE" 2>/dev/null || true
+fi
+
+echo "$FILE"
