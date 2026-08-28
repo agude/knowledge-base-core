@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+#
+# portability-lint - Check the shared library surface for host-specific drift.
+#
+# Portable SKILL.md files contain only cross-client metadata. Host protocol,
+# environment, and lifecycle names belong under scripts/adapters/<client>/.
+#
+# Usage: portability-lint [--client NAME]
+#
+# With no client, validate the shared surface. With --client, verify that the
+# named adapter exists without applying its provider-specific rules to it.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+CLIENT=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --client)
+            [[ $# -ge 2 ]] || { echo "Option --client requires an argument" >&2; exit 1; }
+            CLIENT="$2"
+            shift 2
+            ;;
+        --help|-h)
+            sed -n '2,/^$/s/^# \?//p' "$0"
+            exit 0
+            ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+errors=0
+error() {
+    errors=$((errors + 1))
+    printf '  error    %s:%s  %s\n' "$1" "$2" "$3"
+}
+
+if [[ -n "$CLIENT" ]]; then
+    ADAPTER_DIR="$REPO_ROOT/scripts/adapters/$CLIENT"
+    if [[ ! -d "$ADAPTER_DIR" ]]; then
+        error "scripts/adapters" 1 "no adapter for client '$CLIENT'"
+    else
+        find "$ADAPTER_DIR" -type f -print | sort | sed 's#^#  adapter  #'
+    fi
+    if (( errors == 0 )); then
+        exit 0
+    fi
+    exit 1
+fi
+
+# Provider protocol markers are forbidden in the shared surface. The
+# compatibility name CLAUDE.md is intentionally not listed: _lib.sh and
+# AGENTS.md document that fallback as a migration boundary.
+PATTERN='CLAUDE_ENV_FILE|CLAUDE_SKILL_DIR|\.claude/skills|Claude Code|Claude session|SessionStart|UserPromptSubmit|SessionEnd|PreToolUse'
+
+while IFS= read -r -d '' file; do
+    while IFS=: read -r line text; do
+        rel_file="$(printf '%s' "$file" | sed "s#^$REPO_ROOT/##")"
+        error "$rel_file" "$line" "host-specific marker: $text"
+    done < <(grep -nE "$PATTERN" "$file" || true)
+done < <(
+    {
+        printf '%s\0' "$REPO_ROOT/AGENTS.md"
+        find "$REPO_ROOT/skills" "$REPO_ROOT/scripts" -maxdepth 2 \
+            -type f ! -path "$REPO_ROOT/scripts/adapters/*" \
+            ! -path "$REPO_ROOT/scripts/install" \
+            ! -path "$REPO_ROOT/scripts/portability-lint" -print0
+    } | sort -zu
+)
+
+while IFS= read -r -d '' skill; do
+    in_frontmatter=false
+    line_no=0
+    while IFS= read -r line; do
+        line_no=$((line_no + 1))
+        if [[ "$line" == "---" ]]; then
+            if [[ "$in_frontmatter" == true ]]; then break; fi
+            in_frontmatter=true
+            continue
+        fi
+        [[ "$in_frontmatter" == true ]] || continue
+        [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+        if [[ "$line" =~ ^[A-Za-z0-9_-]+: ]]; then
+            key="$(printf '%s\n' "$line" | cut -d: -f1)"
+            case "$key" in
+                name|description|license|compatibility|metadata) ;;
+                *) error "$(printf '%s' "$skill" | sed "s#^$REPO_ROOT/##")" "$line_no" \
+                    "non-portable SKILL.md field: $key" ;;
+            esac
+        fi
+    done < "$skill"
+done < <(find "$REPO_ROOT/skills" -name SKILL.md -type f -print0 | sort -z)
+
+if (( errors > 0 )); then
+    echo "Portability lint failed with $errors error(s)." >&2
+    exit 1
+fi
+
+echo "Portable surface is clean."

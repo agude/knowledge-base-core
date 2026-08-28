@@ -19,7 +19,7 @@ jobs:
       # -x follows `source`, -P finds _lib.sh from any script's directory.
       - name: Lint shell scripts
         run: |
-          mapfile -t files < <(find scripts -type f)
+          mapfile -t files < <(find scripts -type f ! -name '*.ts')
           shellcheck -x -P scripts -s bash "${files[@]}"
 
   test:
