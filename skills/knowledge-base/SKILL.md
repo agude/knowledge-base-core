@@ -1,9 +1,6 @@
 ---
 name: knowledge-base
-description: Search and record durable facts a future Claude session would need -- domain rules, system behavior, people and ownership, the user's preferences and conventions, and why things were decided. Use before starting any task, to check what is already known. This is Claude's own memory (~/Knowledge); it is NOT the wiki (~/Wiki, written for the user to read) and NOT Johnny Decimal (~/Documents, which files artifacts like PDFs and receipts).
-user-invocable: true
-allowed-tools:
-  - "Bash(${CLAUDE_SKILL_DIR}/scripts/*)"
+description: Search and record durable facts a future agent session would need -- domain rules, system behavior, people and ownership, the user's preferences and conventions, and why things were decided. Use before starting any task, to check what is already known. This is the agent's durable memory (~/Knowledge); it is NOT the wiki (~/Wiki, written for the user to read) and NOT Johnny Decimal (~/Documents, which files artifacts like PDFs and receipts).
 ---
 
 # Knowledge Base
@@ -19,7 +16,7 @@ gets lost. The split is by **audience**, not by topic:
 
 | System | Audience | Holds |
 |---|---|---|
-| **Knowledge base** (`~/Knowledge`) | Claude sessions | Curated articles loaded for context: domain rules, system behavior, people, preferences, decisions |
+| **Knowledge base** (`~/Knowledge`) | agent sessions | Curated articles loaded for context: domain rules, system behavior, people, preferences, decisions |
 | Wiki (`~/Wiki`) | The user, reading | "How my stuff works" — architecture, runbooks, decision logs, written as prose for a person |
 | Johnny Decimal (`~/Documents`) | The user, filing | Artifacts: PDFs, scans, receipts, project documents |
 
@@ -28,7 +25,7 @@ session* needs in order to work — record it here. If it is something the
 user would sit down and read — that is the wiki. If it is a file — that
 is Johnny Decimal.
 
-Claude Code's own per-project auto-memory is a fourth store. Keep it for
+Each agent client's own per-project auto-memory is a fourth store. Keep it for
 interaction-style feedback ("stop explaining before you act"); anything
 durable about systems, domain, or people belongs here, where it is
 curated, dated, and searchable across projects.
@@ -37,7 +34,7 @@ curated, dated, and searchable across projects.
 
 Start by searching, not browsing.
 
-1. **Search first.** `${CLAUDE_SKILL_DIR}/scripts/search <term> [term ...]`
+1. **Search first.** `$KNOWLEDGE_BASE/scripts/search <term> [term ...]`
    returns matches across knowledge articles, source documents, and pending
    observations. Output format: `<file> | <section> | <matched line>`.
    - Several terms are ANDed: the file must contain all of them.
@@ -49,14 +46,14 @@ Start by searching, not browsing.
      questions. The default corpus is curated articles only.
 
 2. **Narrow with toc.** If search gives too many results or you need to
-   explore a topic area, use `${CLAUDE_SKILL_DIR}/scripts/toc` to scan section names.
+   explore a topic area, use `$KNOWLEDGE_BASE/scripts/toc` to scan section names.
    - `toc --depth 1` — just topic names (one line per file)
    - `toc --depth 2` — H2 section names (the primary content units)
    - `toc --depth 3` — H3 subsections with dot numbers (1.1, 1.2)
    - `toc --path knowledge/some-dir/` — scope to a subdirectory
    - `toc --dirs` — show the file/directory tree
 
-3. **Load a section.** `${CLAUDE_SKILL_DIR}/scripts/section --file <path> --number N` loads one
+3. **Load a section.** `$KNOWLEDGE_BASE/scripts/section --file <path> --number N` loads one
    H2. Use `--number N.M` for an H3 subsection. Use `--heading "text"` for
    a case-insensitive substring match on any heading level.
 
@@ -71,7 +68,7 @@ states a preference, shares domain knowledge, or you discover something
 unexpected — capture it immediately:
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/observe --title "<one-line summary>" --body "<details>"
+$KNOWLEDGE_BASE/scripts/observe --title "<one-line summary>" --body "<details>"
 ```
 
 ### Rules
@@ -106,7 +103,7 @@ When you notice a gap — a system, person, or process referenced but not
 covered in the knowledge base — flag it:
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/ask --title "Who owns the feature-flag service?" --context knowledge/deploys/canary.md
+$KNOWLEDGE_BASE/scripts/ask --title "Who owns the feature-flag service?" --context knowledge/deploys/canary.md
 ```
 
 - `--context` is optional. Links the question to a knowledge area.
@@ -126,7 +123,7 @@ Knowledge articles carry a `verified` date and a `ttl` in frontmatter.
 | `domain` | 180 days | Domain rules, system behavior |
 | *absent* | 60 days | Unclassified |
 
-`${CLAUDE_SKILL_DIR}/scripts/stale` lists what is past its threshold.
+`$KNOWLEDGE_BASE/scripts/stale` lists what is past its threshold.
 
 If an article is past its `ttl`, treat its claims with skepticism and
 verify against live sources before acting on them. Source documents under
@@ -134,7 +131,7 @@ verify against live sources before acting on them. Source documents under
 
 ## Script reference
 
-All scripts are at `${CLAUDE_SKILL_DIR}/scripts/<name>`.
+All scripts are at `$KNOWLEDGE_BASE/scripts/<name>`.
 
 | Script | Purpose |
 |---|---|

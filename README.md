@@ -1,8 +1,8 @@
 # knowledge-base-core
 
-**Knowledge-Base-Core** is an external memory and context layer for Claude
-Code sessions. Scripts, skills, and schemas that operate on a separate content
-repo.
+**Knowledge-Base-Core** is an external memory and context layer for LLM agent
+sessions. Scripts, portable skills, and host adapters operate on a separate
+content repo.
 
 The knowledge base stores curated articles about systems, domain knowledge,
 preferences, and tooling that the LLM learns as it goes.
@@ -42,9 +42,10 @@ articles).
 ```
 knowledge-base-core/    # this repo
 ├── scripts/            # CLI tools
-├── skills/             # Claude Code skills
+├── skills/             # Portable Agent Skills
 ├── tests/              # bats tests
-└── .claude/skills      # symlink → skills/
+├── scripts/adapters/   # Host-specific protocol adapters
+└── .agents/skills      # shared skill installation location
 
 content/                # separate git repo, gitignored by this one
 ├── knowledge/          # curated articles (organized by topic)
@@ -67,7 +68,7 @@ Scripts distinguish two roots, and that split is what lets the tooling be
 public while the data stays private:
 
 - **`REPO_ROOT`** (this repo) — finding sibling scripts, reading the infra
-  `CLAUDE.md`, display in `status` and `context`.
+  `AGENTS.md`, display in `status` and `context`.
 - **`CONTENT_DIR`** (the content repo) — every data path, `resolve_path`,
   lock-file placement, and `locked_commit`, which cds in and runs git there.
   Set by `_lib.sh`; defaults to `$REPO_ROOT/content`, overridable with
@@ -77,25 +78,26 @@ Output paths strip `$CONTENT_DIR/`, so users see and pass relative paths like
 `knowledge/topic.md`. **Every commit made by a script goes to the content
 repo.**
 
-### Pluggable `CLAUDE.md`
+### Pluggable instruction files
 
-`session-start` concatenates this repo's `CLAUDE.md` (how the knowledge base
-works) with `content/CLAUDE.md` (project-specific policy) when the latter
-exists.
+`session-context` concatenates this repo's `AGENTS.md` (how the knowledge base
+works) with `content/AGENTS.md` (project-specific policy) when the latter
+exists. `CLAUDE.md` is accepted as a compatibility name when `AGENTS.md` is
+absent.
 
 **Order matters:** the content file comes second, so its rules take precedence
 — later instructions override earlier ones. Policy like "we never record X"
-belongs in `content/CLAUDE.md`, not here.
+belongs in `content/AGENTS.md`, not here.
 
 ### Three layers of instruction
 
 | Layer | Loaded | Holds |
 |---|---|---|
-| `CLAUDE.md` (infra + content) | Every session, injected | Script table, observation trigger rules, pointer to the skills |
+| `AGENTS.md` (infra + content) | Every session, injected | Script table, observation trigger rules, pointer to the skills |
 | `knowledge-base` skill | On invoke | Lookup workflow, observation practices, attribution, freshness thresholds |
 | `curate` skill | On invoke | Curation workflow, article conventions, voice, frontmatter |
 
-Observation *trigger* rules stay in `CLAUDE.md` because an agent has to observe
+Observation *trigger* rules stay in `AGENTS.md` because an agent has to observe
 spontaneously — it cannot load a skill to learn that it should. The detailed
 "how to write a good observation" guidance lives in the skill.
 
@@ -158,7 +160,11 @@ Standard markdown content. Links use [normal syntax](other-page.md).
 | `sync [--status]` | Pull and push the content repo |
 | `status` | Summary stats |
 | `context` | Compact summary for session injection |
-| `session-start` | SessionStart hook for Claude Code |
+| `session-context` | Produce context for a host adapter |
+| `session-init` | Create a session buffer |
+| `session-file` | Resolve a session ID to its buffer path |
+| `session-append` | Append one message to a session buffer |
+| `session-flush` | Convert a buffer into an observation |
 
 All scripts support `--help`.
 
@@ -169,13 +175,13 @@ All scripts support `--help`.
    auto-committed.
 
 2. **Curate.** Review pending observations and merge them into knowledge
-   articles. The `curate` Claude skill handles this, or do it manually.
+articles. The `curate` skill handles this, or do it manually.
 
 3. **Archive.** Processed items move to `observations/archived/` for
    provenance. **Never delete an observation** — the archive is the complete
    record of everything the base has ever seen.
 
-## Claude Code integration
+## Host integration
 
 ### Skills
 
@@ -184,19 +190,21 @@ All scripts support `--help`.
 | `knowledge-base` | Project | Search, browse, observe |
 | `curate` | Project | Process observations into articles |
 
-Project skills activate when Claude is working in this repo.
+Skills use the Agent Skills `SKILL.md` format. Provider-specific metadata is
+kept outside the portable file and provider-specific behavior belongs in a
+host adapter.
 
-### Session hook
+### Session adapters
 
-`scripts/session-start` is a [coat-tree][ct] hook that injects `CLAUDE.md`
-into Claude's context at session start. It also sets `KNOWLEDGE_OBSERVE=1`
-so the session can capture observations, and creates a session-specific
-buffer file for batching writes. Install it by symlinking into the
-coat-tree hooks directory (the dotfiles installer handles this). coat-tree
-is not required. If you prefer, point Claude Code's `SessionStart` hook
-in `settings.json` directly at `scripts/session-start`.
+The neutral core exposes `session-context`, `session-init`, `session-file`,
+`session-append`, and `session-flush`. Adapters translate each host's event
+payload and output protocol into those commands. This repository includes
+Claude and Codex shell adapters under `scripts/adapters/`; OpenCode and Pi
+integrations can use the same API from their plugin systems.
 
-[ct]: https://github.com/agude/coat-tree
+Run `scripts/portability-lint` to reject host-specific lifecycle, environment,
+and skill metadata from the shared surface. Run it with `--client NAME` to
+verify a host adapter exists.
 
 ## Testing
 

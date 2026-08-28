@@ -1,24 +1,21 @@
 ---
 name: curate
 description: Process pending observations into the knowledge base. Run this to curate new observations into knowledge articles.
-user-invocable: true
-allowed-tools:
-  - "Bash(${CLAUDE_SKILL_DIR}/scripts/*)"
 ---
 
 # Curator
 
 You are the knowledge base curator. This knowledge base is an external memory
-and context layer for Claude sessions helping the user do their job.
+and context layer for agent sessions helping the user do their job.
 
 The goal is comprehensive coverage of everything the user knows that a future
-Claude session might need: business logic, institutional history, technical
+agent session might need: business logic, institutional history, technical
 stack, best practices, preferences, people, org structure, processes, and
 domain knowledge.
 
 ## What belongs in the knowledge base
 
-Almost everything. The bar for inclusion is: **"Could any future Claude
+Almost everything. The bar for inclusion is: **"Could any future agent
 session plausibly need this to do better work?"**
 
 Examples of what belongs:
@@ -50,7 +47,7 @@ re-derive it — not the twenty steps. See "Cut before you split" below.
 
 **Anything a future session can verify from a project's own repo in one grep
 does not belong here.** Most of the user's projects ship `AGENTS.md` /
-`CLAUDE.md`, and several ship `.claude/skills/` with reference docs — all of
+`CLAUDE.md`, and several ship `.agents/skills/` with reference docs — all of
 which load automatically for a session working in that repo, and all of which
 are kept current by tests and review. A knowledge-base copy has none of that
 and can only drift. A stale second source is worse than no source: the reader
@@ -60,7 +57,7 @@ Before writing project detail into an article, check what the repo already has:
 
 ```bash
 ls ~/Projects/<repo>/AGENTS.md ~/Projects/<repo>/CLAUDE.md
-ls -d ~/Projects/<repo>/.claude/skills/*/
+ls -d ~/Projects/<repo>/.agents/skills/*/
 ```
 
 **Keep here:** a pointer table naming the authority files (and stating the repo
@@ -81,19 +78,19 @@ example.
 
 ## Workflow
 
-1. Run `${CLAUDE_SKILL_DIR}/scripts/sync` first. Observations accumulate on
+1. Run `$KNOWLEDGE_BASE/scripts/sync` first. Observations accumulate on
    whichever machine ran the session, so anything captured elsewhere is
    invisible until it is pulled. Then run
-   `${CLAUDE_SKILL_DIR}/scripts/pending --count` to see how many pending
+   `$KNOWLEDGE_BASE/scripts/pending --count` to see how many pending
    observations you have to work on. If there are a lot, you'll need to handle
    them in batches to avoid running out of context.
 2. If there are only a small number of observations, run
-   `${CLAUDE_SKILL_DIR}/scripts/pending --full` to read them all. Otherwise
+   `$KNOWLEDGE_BASE/scripts/pending --full` to read them all. Otherwise
    use your READ tool to go through them one by one.
-3. Run `${CLAUDE_SKILL_DIR}/scripts/toc --depth 2` to see the current knowledge structure.
+3. Run `$KNOWLEDGE_BASE/scripts/toc --depth 2` to see the current knowledge structure.
 4. For each observation, decide what to do (see Decision Framework below).
 5. Execute your decisions --- edit knowledge articles directly. Find the
-   content root with `${CLAUDE_SKILL_DIR}/scripts/status`; do not assume
+   content root with `$KNOWLEDGE_BASE/scripts/status`; do not assume
    it is `./content`.
 6. **Check what you wrote.** Run the linter over everything you touched.
    It reports oversized H2s, second H1s, missing or malformed `verified`
@@ -101,16 +98,16 @@ example.
    notice any of these by eye; measure them.
 
    ```bash
-   ${CLAUDE_SKILL_DIR}/scripts/lint --path knowledge/<dir>
+   $KNOWLEDGE_BASE/scripts/lint --path knowledge/<dir>
    ```
 
    Fix every error before committing. Fix oversized-H2 warnings by
    cutting first, splitting second (see "Cut before you split").
 7. Archive each processed observation with
-   `${CLAUDE_SKILL_DIR}/scripts/archive --all --no-commit`.
+   `$KNOWLEDGE_BASE/scripts/archive --all --no-commit`.
 8. Review open questions (see Open Questions below).
 9. Commit everything as one batch with
-   `${CLAUDE_SKILL_DIR}/scripts/commit -m "Curate: <summary>"`.
+   `$KNOWLEDGE_BASE/scripts/commit -m "Curate: <summary>"`.
 
 If there are no pending observations, check open questions anyway (step 8),
 then stop if there's nothing to do.
@@ -125,7 +122,7 @@ The observation fits an existing topic. Add it as:
 
 - A new H2 section if it's a distinct subtopic.
 - Additional content under an existing H2 if it extends what's there.
-- Use `${CLAUDE_SKILL_DIR}/scripts/section` to read the relevant section before editing, so you
+- Use `$KNOWLEDGE_BASE/scripts/section` to read the relevant section before editing, so you
   don't lose existing content.
 
 ### Create new article
@@ -395,7 +392,7 @@ discarded. The archive is the complete record of everything we have ever
 seen.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/archive --all --no-commit
+$KNOWLEDGE_BASE/scripts/archive --all --no-commit
 ```
 
 `--no-commit` leaves the moves staged for the single commit below.
@@ -406,7 +403,7 @@ One commit per curation run, covering articles, archived observations,
 questions and sources:
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/commit -m "Curate: <brief summary of what changed>"
+$KNOWLEDGE_BASE/scripts/commit -m "Curate: <brief summary of what changed>"
 ```
 
 Use `commit`, not `git commit`. It locates the content repo rather than
@@ -452,9 +449,9 @@ articles yet, or are cross-cutting.
 
 ### During curation
 
-After processing observations (step 8), run `${CLAUDE_SKILL_DIR}/scripts/questions` to see all
+After processing observations (step 8), run `$KNOWLEDGE_BASE/scripts/questions` to see all
 open questions. For each topic area you touched during this curation run, also
-check `${CLAUDE_SKILL_DIR}/scripts/questions --path <area>`.
+check `$KNOWLEDGE_BASE/scripts/questions --path <area>`.
 
 For each open question:
 

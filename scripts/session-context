@@ -2,9 +2,8 @@
 #
 # session-context - Output the knowledge base context for session injection.
 #
-# Prints the KB topic map, live state, and any project-specific CLAUDE.md
-# to stdout. Agent shims capture this and inject it into the session
-# using whichever protocol their agent requires.
+# Prints the KB topic map, live state, and any project-specific instruction
+# file to stdout. Host adapters inject it using their own protocol.
 #
 # Usage: session-context
 
@@ -14,8 +13,9 @@ SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/_lib.sh"
 
-if [[ -f "$REPO_ROOT/CLAUDE.md" ]]; then
-    cat "$REPO_ROOT/CLAUDE.md"
+ROOT_INSTRUCTIONS="$(instruction_file "$REPO_ROOT")"
+if [[ -n "$ROOT_INSTRUCTIONS" ]]; then
+    cat "$ROOT_INSTRUCTIONS"
 fi
 
 echo ""
@@ -26,7 +26,8 @@ echo ""
 echo ""
 echo "State: $("$SCRIPT_DIR/status" --brief 2>/dev/null || echo "unavailable")"
 
-if [[ -f "$CONTENT_DIR/CLAUDE.md" ]]; then
+CONTENT_INSTRUCTIONS="$(instruction_file "$CONTENT_DIR")"
+if [[ -n "$CONTENT_INSTRUCTIONS" ]]; then
     echo ""
-    cat "$CONTENT_DIR/CLAUDE.md"
+    cat "$CONTENT_INSTRUCTIONS"
 fi

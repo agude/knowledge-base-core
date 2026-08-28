@@ -4,7 +4,7 @@
 #
 # Prints a compact summary of the knowledge base: topic list, source
 # document count, pending observation count, and available scripts.
-# Intended for injection into Claude's context at session start.
+# Intended for injection into an agent context at session start.
 #
 # Usage:
 #   context
