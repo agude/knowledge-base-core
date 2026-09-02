@@ -41,13 +41,13 @@ curator can always reorganize later.
 **That licenses breadth, not depth.** Include the topic; do not include the
 derivation. An observation that worked through an analysis in twenty steps
 becomes the conclusion plus the one or two facts that would let a reader
-re-derive it — not the twenty steps. See "Cut before you split" below.
+re-derive it --- not the twenty steps. See "Cut before you split" below.
 
 ### If it has a repo, the repo owns it
 
 **Anything a future session can verify from a project's own repo in one grep
 does not belong here.** Most of the user's projects ship `AGENTS.md` /
-`CLAUDE.md`, and several ship `.agents/skills/` with reference docs — all of
+`CLAUDE.md`, and several ship `.agents/skills/` with reference docs --- all of
 which load automatically for a session working in that repo, and all of which
 are kept current by tests and review. A knowledge-base copy has none of that
 and can only drift. A stale second source is worse than no source: the reader
@@ -72,16 +72,13 @@ like changelog entries ("Feed repair (July 2026)") whose content is just the
 repo's current state.
 
 If an observation carries real repo knowledge the repo is missing, say so in
-your summary so it can be moved into the repo — do not settle for recording it
+your summary so it can be moved into the repo --- do not settle for recording it
 here. See `knowledge/claude-code/knowledge-base-design.md` for the worked
 example.
 
 ## Workflow
 
-1. Run `$KNOWLEDGE_BASE/scripts/sync` first. Observations accumulate on
-   whichever machine ran the session, so anything captured elsewhere is
-   invisible until it is pulled. Then run
-   `$KNOWLEDGE_BASE/scripts/pending --count` to see how many pending
+1. Run `$KNOWLEDGE_BASE/scripts/pending --count` to see how many pending
    observations you have to work on. If there are a lot, you'll need to handle
    them in batches to avoid running out of context.
 2. If there are only a small number of observations, run
@@ -191,10 +188,10 @@ promoted to an H1.
 
 Splitting is the right remedy when the content earns its place and only the
 packaging is wrong. It is the wrong remedy for a section that is long because
-it was **transcribed rather than curated** — six 33-line sections of worked
+it was **transcribed rather than curated** --- six 33-line sections of worked
 arithmetic cost a future session exactly as much as one 199-line section.
 
-Ask which one you have. The tell is that the length comes from *reasoning* —
+Ask which one you have. The tell is that the length comes from *reasoning* ---
 step-by-step derivations, option tables you already picked from, arithmetic
 that was performed once to reach a conclusion. **State the conclusion and the
 inputs that would let a reader redo the work. Delete the work.**
@@ -202,7 +199,7 @@ inputs that would let a reader redo the work. Delete the work.**
 Real example: an earthquake-insurance analysis went in at 199 lines carrying
 CRRA utility math, post-quake outcome tables and NPV derivations. Curated to
 109 lines it says the limit and deductible contradict each other, the
-deductible should go up not down, and the case rests on correlation — each
+deductible should go up not down, and the case rests on correlation --- each
 with its number, none with its derivation. Nothing a future session needs was
 lost.
 
