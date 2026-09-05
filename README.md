@@ -149,9 +149,10 @@ Standard markdown content. Links use [normal syntax](other-page.md).
 | `pending [--full] [--count]` | List uncurated observations |
 | `archive FILENAME [--all]` | Move observations to observations/archived/ |
 | `batch start|status|defer` | Persist and resume a curation batch |
-| `search <term> [term ...]` | Search all content, ranked |
+| `search <term> [term ...] [--json\|--text-only]` | Search content, ranked, with freshness and provenance |
 | `toc [--depth N] [--path DIR] [--flat] [--dirs]` | List topics and sections |
-| `section --file FILE (--number N \| --heading TEXT)` | Extract a section from an article |
+| `section --file FILE (--number N \| --heading TEXT) [--json\|--text-only]` | Extract a section with freshness and provenance |
+| `section --file FILE --references [--json]` | Return the complete provenance reference list |
 | `ask --title "..." [--context FILE] [--body "..."]` | Record a question |
 | `questions [--path DIR] [--file F] [--full] [--all]` | List open questions |
 | `resolve --file F [--answer "..."]` | Resolve a question |
@@ -168,6 +169,37 @@ Standard markdown content. Links use [normal syntax](other-page.md).
 | `session-flush` | Convert a buffer into an observation |
 
 All scripts support `--help`.
+
+### Retrieval output
+
+`search` and `section` include retrieval metadata by default. `--text-only`
+preserves the historical body/line output for callers that cannot consume
+metadata. `--json` returns structured output and keeps diagnostics on stderr.
+The two modes cannot be combined.
+
+Metadata classifies each result as a curated article, source document, pending
+observation, question, or archive. Open and resolved questions use the
+`question` corpus with `provenance.state` set to `open` or `resolved`; they are
+knowledge gaps or question records, not evidence. Curated articles use
+`verified` and their applicable `ttl`; source documents use `synced`. Missing
+dates are `unknown`, malformed dates are `invalid`, and neither is reported as
+fresh. Stale results remain available and are labeled `stale`.
+
+Curated article `sources` are exposed as article-level references. They identify
+the evidence associated with the article and are not claim-level citations.
+The default output displays at most five references and reports
+`reference_count` and `references_truncated` in JSON. The complete list remains
+in the file's `sources:` frontmatter; retrieve it with
+`section --file FILE --references [--json]`. Pending and archived observations
+are labeled uncurated or archived evidence. Source documents expose their
+`canonical` reference when present.
+
+`search --json` returns an object with a bounded `results` array plus
+`total_files`, `total_lines`, `returned`, and `truncated`. Each line result
+contains `path`, `corpus`, `locator`, `freshness`, `provenance`, and `text`;
+`--files` returns one file result with `match_count` and a null locator.
+`section --json` returns one object with `path`, `corpus`, `locator`,
+`freshness`, `provenance`, and the multiline `content`.
 
 `sync` verifies a successful fetch and an available `origin/<branch>` tracking
 ref before reporting counts. Normal and `--status` runs return nonzero when

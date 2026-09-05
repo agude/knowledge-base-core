@@ -98,3 +98,37 @@ TLS overview.'
     [[ "$status" -eq 0 ]]
     [[ "$output" == *"## DNS Resolution"* ]]
 }
+
+@test "section default output labels freshness and provenance" {
+    create_test_article "old.md" $'---\nverified: 2020-01-01\nsources:\n  - observations/archived/evidence.md\n---\n\n# Old\n\n## Details\n\nHistorical details.'
+    run "$SCRIPTS/section" --file knowledge/old.md --number 1
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"corpus=curated article"* ]]
+    [[ "$output" == *"freshness=stale"* ]]
+    [[ "$output" == *"refs=observations/archived/evidence.md (article)"* ]]
+}
+
+@test "section text-only preserves the body without metadata" {
+    create_test_article "net.md" "$ARTICLE"
+    run "$SCRIPTS/section" --text-only --file knowledge/net.md --number 1
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == "## DNS Resolution"* ]]
+    [[ "$output" != *"Metadata:"* ]]
+}
+
+@test "section JSON includes locator, freshness, provenance, and multiline content" {
+    create_test_article "résumé notes.md" $'---\ntitle: "Résumé Notes"\nverified: 2020-01-01\nttl: people\nsources:\n  - "observations/archived/evidence file.md"\n---\n\n# Résumé Notes\n\n## Cité\n\nLine "one".\nLine two.'
+    run "$SCRIPTS/section" --json --file "knowledge/résumé notes.md" --heading Cité
+    [[ "$status" -eq 0 ]]
+    json="$output"
+    run jq -e '.path == "knowledge/résumé notes.md" and .corpus == "curated article" and .locator.heading == "Cité" and .freshness.status == "stale" and .freshness.ttl_days == 14 and .provenance.references[0] == "observations/archived/evidence file.md" and (.content | contains("Line \"one\".\nLine two."))' <<<"$json"
+    [[ "$status" -eq 0 ]]
+}
+
+@test "section references returns the complete provenance list" {
+    create_test_article "many-sources.md" $'---\ntitle: "Many Sources"\nsources:\n  - observations/evidence-1.md\n  - observations/evidence-2.md\n  - observations/evidence-3.md\n  - observations/evidence-4.md\n  - observations/evidence-5.md\n  - observations/evidence-6.md\n  - observations/evidence-7.md\n---\n\n# Many Sources\n\n## Facts\n\nDetails.'
+    run "$SCRIPTS/section" --references --json --file knowledge/many-sources.md
+    [[ "$status" -eq 0 ]]
+    run jq -e '.provenance | (.references | length == 7) and .reference_count == 7 and .references_truncated == false' <<<"$output"
+    [[ "$status" -eq 0 ]]
+}

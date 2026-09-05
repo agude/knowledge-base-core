@@ -23,10 +23,17 @@
 #   --per-file N  Maximum lines from one file (default 3; 0 for all)
 #   --archive     Also search archived observations and questions
 #   --files       List matching files and scores only, no lines
+#   --json        Return one JSON object containing bounded results
+#   --text-only   Preserve the historical text output without metadata
 #   -h, --help    Show this help message
 #
 # Output format:
 #   <relative-path> | <section heading or "top"> | <matched line trimmed>
+#   followed by freshness and provenance metadata unless --text-only is used.
+#   --json returns {"results":[...],"total_files":N,"total_lines":N,
+#   "returned":N,"truncated":BOOL}.
+#   Provenance displays at most five references; use section --references for
+#   the complete source list.
 #
 # Frontmatter lines are never shown as results — a title match raises the
 # file's rank instead of printing `title: "..."` back at you.
@@ -49,6 +56,8 @@ LIMIT=20
 PER_FILE=3
 ARCHIVE=false
 FILES_ONLY=false
+JSON=false
+TEXT_ONLY=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -56,6 +65,8 @@ while [[ $# -gt 0 ]]; do
         --per-file) need_arg "$1" $#; PER_FILE="$2"; shift 2 ;;
         --archive)  ARCHIVE=true; shift ;;
         --files)    FILES_ONLY=true; shift ;;
+        --json)     JSON=true; shift ;;
+        --text-only) TEXT_ONLY=true; shift ;;
         -h|--help)
             show_help "$0"
             exit 0
@@ -66,6 +77,11 @@ while [[ $# -gt 0 ]]; do
         *)  TERMS+=("$1"); shift ;;
     esac
 done
+
+if [[ "$JSON" == true ]] && [[ "$TEXT_ONLY" == true ]]; then
+    echo "Error: --json and --text-only cannot be combined" >&2
+    exit 1
+fi
 
 if [[ ${#TERMS[@]} -eq 0 ]]; then
     echo "Usage: search <term> [term ...]" >&2
@@ -98,9 +114,47 @@ if [[ "$ARCHIVE" == true ]]; then
 fi
 
 if [[ ${#SEARCH_DIRS[@]} -eq 0 ]]; then
-    echo "No content directories found." >&2
+    if [[ "$JSON" == true ]]; then
+        printf '{"results":[],"total_files":0,"total_lines":0,"returned":0,"truncated":false}\n'
+    else
+        echo "No content directories found." >&2
+    fi
     exit 0
 fi
+
+json_search_file() {
+    printf '{"path":'
+    json_quote "$path"
+    printf ',"corpus":'
+    json_quote "$RESULT_CORPUS"
+    printf ',"title":'
+    json_quote "$title"
+    printf ',"match_count":%s,"locator":null,"freshness":' "$nlines"
+    json_freshness
+    printf ',"provenance":'
+    json_provenance display
+    printf '}'
+}
+
+json_search_line() {
+    local line_number="$1" section_name="$2" line_text="$3"
+
+    printf '{"path":'
+    json_quote "$path"
+    printf ',"corpus":'
+    json_quote "$RESULT_CORPUS"
+    printf ',"title":'
+    json_quote "$title"
+    printf ',"locator":{"section":'
+    json_quote "${section_name:-top}"
+    printf ',"line":%s},"freshness":' "$line_number"
+    json_freshness
+    printf ',"provenance":'
+    json_provenance display
+    printf ',"text":'
+    json_quote "$line_text"
+    printf '}'
+}
 
 # Field separators are control characters, not tab or `|`. Tab is IFS
 # whitespace, so bash `read` collapses runs of it and an empty title
@@ -268,6 +322,9 @@ results="$(
 )"
 
 if [[ -z "$results" ]]; then
+    if [[ "$JSON" == true ]]; then
+        printf '{"results":[],"total_files":0,"total_lines":0,"returned":0,"truncated":false}\n'
+    fi
     exit 0
 fi
 
@@ -275,6 +332,11 @@ printed=0
 files_shown=0
 files_total=0
 lines_total=0
+json_first=true
+
+if [[ "$JSON" == true ]]; then
+    printf '{"results":['
+fi
 
 # score orders the records; sort has already consumed it.
 # shellcheck disable=SC2034
@@ -290,8 +352,19 @@ while IFS="$US" read -r score path title nlines rest; do
         continue
     fi
 
+    retrieval_metadata_for_file "$path" "$CONTENT_DIR/$path"
+    metadata="$(retrieval_metadata_text)"
+
     if [[ "$FILES_ONLY" == true ]]; then
-        printf "%s  [%s] %s\n" "$path" "$nlines" "$title"
+        if [[ "$JSON" == true ]]; then
+            if [[ "$json_first" == false ]]; then printf ','; fi
+            json_search_file
+            json_first=false
+        elif [[ "$TEXT_ONLY" == true ]]; then
+            printf "%s  [%s] %s\n" "$path" "$nlines" "$title"
+        else
+            printf "%s  [%s] %s [%s]\n" "$path" "$nlines" "$title" "$metadata"
+        fi
         printed=$((printed + 1))
         files_shown=$((files_shown + 1))
         continue
@@ -305,7 +378,15 @@ while IFS="$US" read -r score path title nlines rest; do
         if (( LIMIT > 0 && printed >= LIMIT )); then
             break
         fi
-        printf "%s | %s | %s\n" "$path" "${section:-top}" "$text"
+        if [[ "$JSON" == true ]]; then
+            if [[ "$json_first" == false ]]; then printf ','; fi
+            json_search_line "$lineno" "$section" "$text"
+            json_first=false
+        elif [[ "$TEXT_ONLY" == true ]]; then
+            printf "%s | %s | %s\n" "$path" "${section:-top}" "$text"
+        else
+            printf "%s | %s | %s [%s]\n" "$path" "${section:-top}" "$text" "$metadata"
+        fi
         printed=$((printed + 1))
         shown_here=$((shown_here + 1))
         # printf %s\n, not %s: an unterminated last line makes `read`
@@ -316,6 +397,23 @@ while IFS="$US" read -r score path title nlines rest; do
         files_shown=$((files_shown + 1))
     fi
 done <<< "$results"
+
+if [[ "$JSON" == true ]]; then
+    hidden_lines=$((lines_total - printed))
+    hidden_files=$((files_total - files_shown))
+    truncated=false
+    if (( hidden_lines > 0 )); then truncated=true; fi
+    printf '],"total_files":%d,"total_lines":%d,"returned":%d,"truncated":%s}\n' \
+        "$files_total" "$lines_total" "$printed" "$truncated"
+    if (( hidden_lines > 0 )); then
+        printf 'search: %d result line(s) hidden' "$hidden_lines" >&2
+        if (( hidden_files > 0 )); then
+            printf ' in %d unshown file(s)' "$hidden_files" >&2
+        fi
+        printf '; raise --limit/--per-file or narrow the query.\n' >&2
+    fi
+    exit 0
+fi
 
 if [[ "$FILES_ONLY" == true ]]; then
     hidden_files=$((files_total - files_shown))

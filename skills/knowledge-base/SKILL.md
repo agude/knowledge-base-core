@@ -36,14 +36,20 @@ Start by searching, not browsing.
 
 1. **Search first.** `$KNOWLEDGE_BASE/scripts/search <term> [term ...]`
    returns matches across knowledge articles, source documents, and pending
-   observations. Output format: `<file> | <section> | <matched line>`.
+   observations. Output format: `<file> | <section> | <matched line>` followed
+   by freshness and provenance metadata.
    - Several terms are ANDed: the file must contain all of them.
    - Results are ranked; a term in the title outranks one in a heading,
      which outranks one in the body.
    - Output is capped at 20 lines. Use `--limit N`, or `--files` to see
      just which articles matched.
    - `--archive` widens the search to archived observations and open
-     questions. The default corpus is curated articles only.
+     questions. The default corpora are knowledge articles, source documents,
+     and pending observations.
+     Open and resolved questions are returned as the `question` corpus with
+     their state; they are knowledge gaps or question records, not evidence.
+   - Use `--text-only` for the historical output or `--json` for structured
+     output. The two modes cannot be combined.
 
 2. **Narrow with toc.** If search gives too many results or you need to
    explore a topic area, use `$KNOWLEDGE_BASE/scripts/toc` to scan section names.
@@ -55,7 +61,15 @@ Start by searching, not browsing.
 
 3. **Load a section.** `$KNOWLEDGE_BASE/scripts/section --file <path> --number N` loads one
    H2. Use `--number N.M` for an H3 subsection. Use `--heading "text"` for
-   a case-insensitive substring match on any heading level.
+   a case-insensitive substring match on any heading level. Normal output
+   includes the content-relative path, locator, corpus, freshness, and
+   provenance. Use `--text-only` for only the section body or `--json` for one
+   structured object. Use `--references` to retrieve the complete provenance
+   list from frontmatter; combine it with `--json` for structured output.
+
+Retrieval displays at most five provenance references. Structured results also
+include `reference_count` and `references_truncated`; use `section --references`
+when the complete list is required.
 
 **Always load the minimum content needed.** Do NOT read entire knowledge
 files. The toc → section hierarchy is the compression scheme — scan the
@@ -125,9 +139,12 @@ Knowledge articles carry a `verified` date and a `ttl` in frontmatter.
 
 `$KNOWLEDGE_BASE/scripts/stale` lists what is past its threshold.
 
-If an article is past its `ttl`, treat its claims with skepticism and
-verify against live sources before acting on them. Source documents under
-`sources/` use `synced` instead — the date the local copy was pulled.
+If an article is past its `ttl`, retrieval labels it `stale`; treat its claims
+with skepticism and verify against live sources before acting on them. Missing
+or malformed dates are labeled `unknown` or `invalid`, never `fresh`. Source
+documents under `sources/` use `synced` instead — the date the local copy was
+pulled. `search`, `section`, and `stale` share the same thresholds and date
+comparison.
 
 ## Script reference
 
@@ -135,9 +152,10 @@ All scripts are at `$KNOWLEDGE_BASE/scripts/<name>`.
 
 | Script | Purpose |
 |---|---|
-| `search <term> [term ...]` | Search all content, ranked |
+| `search <term> [term ...] [--json\|--text-only]` | Search content, ranked, with metadata |
 | `toc [--depth N] [--path DIR] [--flat] [--dirs]` | List topics and sections |
-| `section --file FILE (--number N \| --heading TEXT)` | Extract a section |
+| `section --file FILE (--number N \| --heading TEXT) [--json\|--text-only]` | Extract a section with metadata |
+| `section --file FILE --references [--json]` | Return the complete provenance reference list |
 | `observe --title "..." --body "..."` | Record an observation |
 | `pending [--full] [--count]` | List uncurated observations |
 | `batch start|status|defer` | Persist and resume a curation batch |

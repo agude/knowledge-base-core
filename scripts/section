@@ -8,12 +8,17 @@
 #
 # Usage:
 #   section --file FILE (--number N | --heading TEXT) [--exact]
+#           [--json | --text-only]
+#   section --file FILE --references [--json]
 #
 # Options:
 #   --file FILE      Markdown file to read (required)
 #   --number N       H2 section number, or N.M for H3 under H2 N (from toc output)
 #   --heading TEXT   Heading text to match (case-insensitive substring)
 #   --exact          Require exact heading match instead of substring
+#   --json           Return one structured JSON object
+#   --text-only      Return the historical section body without metadata
+#   --references     Return the complete provenance reference list
 #
 # Examples:
 #   section --file knowledge/networking.md --number 1     # 1st H2 section
@@ -36,6 +41,9 @@ FILE=""
 NUMBER=""
 HEADING=""
 EXACT=false
+JSON=false
+TEXT_ONLY=false
+REFERENCES_ONLY=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -43,6 +51,9 @@ while [[ $# -gt 0 ]]; do
         --number)  need_arg "$1" $#; NUMBER="$2"; shift 2 ;;
         --heading) need_arg "$1" $#; HEADING="$2"; shift 2 ;;
         --exact)   EXACT=true; shift ;;
+        --json)    JSON=true; shift ;;
+        --text-only) TEXT_ONLY=true; shift ;;
+        --references) REFERENCES_ONLY=true; shift ;;
         -h|--help)
             show_help "$0"
             exit 0
@@ -51,12 +62,25 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if [[ "$JSON" == true ]] && [[ "$TEXT_ONLY" == true ]]; then
+    echo "Error: --json and --text-only cannot be combined" >&2
+    exit 1
+fi
+
 if [[ -z "$FILE" ]]; then
     echo "Error: --file is required" >&2
     exit 1
 fi
 
-if [[ -z "$NUMBER" ]] && [[ -z "$HEADING" ]]; then
+if [[ "$REFERENCES_ONLY" == true ]] && {
+    [[ -n "$NUMBER" ]] || [[ -n "$HEADING" ]] || [[ "$EXACT" == true ]] \
+        || [[ "$TEXT_ONLY" == true ]];
+}; then
+    echo "Error: --references cannot be combined with section selectors or --text-only" >&2
+    exit 1
+fi
+
+if [[ "$REFERENCES_ONLY" == false ]] && [[ -z "$NUMBER" ]] && [[ -z "$HEADING" ]]; then
     echo "Error: provide --number N or --heading TEXT" >&2
     exit 1
 fi
@@ -72,10 +96,38 @@ if [[ ! -f "$FILE" ]]; then
     exit 1
 fi
 
+if [[ "$REFERENCES_ONLY" == true ]]; then
+    retrieval_metadata_for_file "$resolved" "$FILE"
+    if [[ "$JSON" == true ]]; then
+        printf '{"path":'
+        json_quote "$resolved"
+        printf ',"corpus":'
+        json_quote "$RESULT_CORPUS"
+        printf ',"freshness":'
+        json_freshness
+        printf ',"provenance":'
+        json_provenance all
+        printf '}\n'
+    else
+        printf '%s\n' "${PROVENANCE_REFERENCES[@]}"
+    fi
+    exit 0
+fi
+
 found=false
 match_level=0
 h2_count=0
 h3_count=0
+match_heading=""
+match_number=""
+match_level_number=""
+
+BODY_FILE="$(mktemp "${TMPDIR:-/tmp}/knowledge-section.XXXXXX")" || {
+    echo "Error: could not create temporary section output" >&2
+    exit 1
+}
+cleanup() { rm -f "$BODY_FILE"; }
+trap cleanup EXIT
 
 # Parse dot notation: "2.3" means H2 #2, H3 #3 under it
 TARGET_H2=""
@@ -91,7 +143,7 @@ fi
 
 # For heading matching, lowercase the query
 if [[ -n "$HEADING" ]]; then
-    heading_lower="$(echo "$HEADING" | tr '[:upper:]' '[:lower:]')"
+    heading_lower="$(printf '%s' "$HEADING" | tr '[:upper:]' '[:lower:]')"
 fi
 
 md_heading_reset
@@ -105,7 +157,7 @@ while IFS= read -r line; do
             if (( level <= match_level )); then
                 break
             fi
-            echo "$line"
+            printf '%s\n' "$line" >> "$BODY_FILE"
             continue
         fi
 
@@ -133,7 +185,7 @@ while IFS= read -r line; do
                 fi
             fi
         elif [[ -n "$HEADING" ]]; then
-            title_lower="$(echo "$title" | tr '[:upper:]' '[:lower:]')"
+            title_lower="$(printf '%s' "$title" | tr '[:upper:]' '[:lower:]')"
             if [[ "$EXACT" == true ]]; then
                 [[ "$title_lower" == "$heading_lower" ]] && matched=true
             else
@@ -144,11 +196,18 @@ while IFS= read -r line; do
         if [[ "$matched" == true ]]; then
             found=true
             match_level=$level
-            echo "$line"
+            match_heading="$title"
+            match_level_number="$level"
+            if (( level == 2 )); then
+                match_number="$h2_count"
+            elif (( level == 3 )); then
+                match_number="$h2_count.$h3_count"
+            fi
+            printf '%s\n' "$line" >> "$BODY_FILE"
         fi
     else
         if [[ "$found" == true ]]; then
-            echo "$line"
+            printf '%s\n' "$line" >> "$BODY_FILE"
         fi
     fi
 done < "$FILE"
@@ -161,3 +220,48 @@ if [[ "$found" == false ]]; then
     fi
     exit 1
 fi
+
+retrieval_metadata_for_file "$resolved" "$FILE"
+
+if [[ "$TEXT_ONLY" == true ]]; then
+    cat "$BODY_FILE"
+    exit 0
+fi
+
+if [[ "$JSON" == true ]]; then
+    printf '{"path":'
+    json_quote "$resolved"
+    printf ',"corpus":'
+    json_quote "$RESULT_CORPUS"
+    printf ',"locator":{"number":'
+    if [[ -n "$match_number" ]]; then
+        json_quote "$match_number"
+    else
+        printf 'null'
+    fi
+    printf ',"heading":'
+    json_quote "$match_heading"
+    printf ',"level":%s},"freshness":' "$match_level_number"
+    json_freshness
+    printf ',"provenance":'
+    json_provenance
+    printf ',"content":'
+    json_quote_file "$BODY_FILE"
+    printf '}\n'
+    exit 0
+fi
+
+if [[ -n "$match_number" ]]; then
+    locator="$match_number"
+else
+    locator="heading"
+fi
+printf 'Metadata: path=%s; corpus=%s; locator=%s "%s" (H%s)\n' \
+    "$resolved" "$RESULT_CORPUS" "$locator" "$match_heading" "$match_level_number"
+printf 'Freshness: '
+freshness_metadata_text
+printf '\n'
+printf 'Provenance: scope=%s; %s\n' "$PROVENANCE_SCOPE" \
+    "$(provenance_metadata_text)"
+printf -- '---\n'
+cat "$BODY_FILE"

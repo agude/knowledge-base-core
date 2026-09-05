@@ -556,3 +556,450 @@ frontmatter_field() {
 
     return 1
 }
+
+# --- Retrieval metadata -------------------------------------------------
+
+DEFAULT_FRESHNESS_DAYS=60
+MAX_DISPLAYED_PROVENANCE_REFERENCES=5
+
+# ttl_days - Map a frontmatter `ttl:` value to a number of days.
+#
+# Prints nothing for an unrecognized value, so callers can use the default.
+ttl_days() {
+    case "$1" in
+        people|status)  echo 14 ;;
+        process)        echo 60 ;;
+        domain)         echo 180 ;;
+        ''|*[!0-9]*)    echo "" ;;
+        *)              echo "$1" ;;
+    esac
+}
+
+# date_to_epoch - Convert YYYY-MM-DD to seconds since epoch.
+#
+# Works with both GNU date and BSD date. The caller decides whether an empty
+# result means a missing or malformed date.
+date_to_epoch() {
+    local date_value="$1"
+
+    date -u -d "$date_value" +%s 2>/dev/null && return
+    date -u -j -f "%Y-%m-%d" "$date_value" +%s 2>/dev/null && return
+    echo ""
+}
+
+# freshness_for_file - Populate shared freshness metadata for a content file.
+#
+# The globals are intentionally used instead of parsing a tab-delimited
+# result. Frontmatter values are user content and can contain spaces or tabs.
+# Pass an optional numeric threshold to implement stale --days. Tests and
+# deterministic callers may set FRESHNESS_TODAY_EPOCH to a fixed UTC epoch.
+#
+# Outputs:
+#   FRESHNESS_DATE_FIELD, FRESHNESS_DATE_VALUE, FRESHNESS_TTL_VALUE,
+#   FRESHNESS_TTL_DAYS, FRESHNESS_STATUS, FRESHNESS_AGE_DAYS.
+freshness_for_file() {
+    local relpath="$1" file="$2" threshold_override="${3:-}"
+    local raw_date date_value date_epoch ttl_raw threshold_days
+    local today_epoch age_seconds
+
+    FRESHNESS_DATE_FIELD=""
+    FRESHNESS_DATE_VALUE=""
+    FRESHNESS_TTL_VALUE=""
+    FRESHNESS_TTL_DAYS=""
+    FRESHNESS_STATUS="not-applicable"
+    FRESHNESS_AGE_DAYS=""
+
+    case "$relpath" in
+        knowledge/*) FRESHNESS_DATE_FIELD="verified" ;;
+        sources/*)   FRESHNESS_DATE_FIELD="synced" ;;
+        *)           return 0 ;;
+    esac
+
+    raw_date="$(frontmatter_field "$FRESHNESS_DATE_FIELD" "$file" 2>/dev/null || true)"
+    FRESHNESS_DATE_VALUE="$raw_date"
+
+    ttl_raw="$(frontmatter_field ttl "$file" 2>/dev/null || true)"
+    threshold_days="$(ttl_days "$ttl_raw")"
+    if [[ -z "$threshold_days" ]]; then
+        threshold_days="$DEFAULT_FRESHNESS_DAYS"
+    fi
+    FRESHNESS_TTL_DAYS="$threshold_days"
+    if [[ -n "$ttl_raw" ]] && [[ -n "$(ttl_days "$ttl_raw")" ]]; then
+        FRESHNESS_TTL_VALUE="$ttl_raw"
+    else
+        FRESHNESS_TTL_VALUE="default"
+    fi
+
+    if [[ -z "$raw_date" ]]; then
+        FRESHNESS_STATUS="unknown"
+        return 0
+    fi
+
+    date_value="${raw_date%T*}"
+    date_epoch="$(date_to_epoch "$date_value")"
+    if [[ -z "$date_epoch" ]]; then
+        FRESHNESS_STATUS="invalid"
+        return 0
+    fi
+
+    if [[ -n "$threshold_override" ]]; then
+        threshold_days="$threshold_override"
+        FRESHNESS_TTL_VALUE="override"
+        FRESHNESS_TTL_DAYS="$threshold_days"
+    fi
+
+    today_epoch="${FRESHNESS_TODAY_EPOCH:-}"
+    if [[ -z "$today_epoch" ]]; then
+        today_epoch="$(date -u +%s)"
+        FRESHNESS_TODAY_EPOCH="$today_epoch"
+    fi
+
+    age_seconds=$((today_epoch - date_epoch))
+    FRESHNESS_AGE_DAYS=$((age_seconds / 86400))
+    if (( age_seconds > threshold_days * 86400 )); then
+        FRESHNESS_STATUS="stale"
+    else
+        FRESHNESS_STATUS="fresh"
+    fi
+}
+
+# corpus_type_for_path - Classify a content-relative path for retrieval.
+corpus_type_for_path() {
+    case "$1" in
+        knowledge/*)             echo "curated article" ;;
+        sources/*)               echo "source document" ;;
+        observations/pending/*)  echo "pending observation" ;;
+        observations/archived/*) echo "archive" ;;
+        questions/open/*)        echo "question" ;;
+        questions/resolved/*)    echo "question" ;;
+        questions/*)             echo "question" ;;
+        *)                       echo "unknown" ;;
+    esac
+}
+
+# provenance_for_file - Populate provenance metadata for a content record.
+#
+# `sources:` on a knowledge article is article-level evidence, not proof that
+# every individual sentence came from every listed observation. This scope is
+# exposed to structured consumers so they cannot mistake an article reference
+# for claim-level citation.
+provenance_for_file() {
+    local relpath="$1" file="$2" line value in_frontmatter=false in_sources=false
+
+    PROVENANCE_SCOPE="record"
+    PROVENANCE_LABEL=""
+    PROVENANCE_REFERENCES=()
+    PROVENANCE_DISPLAY_REFERENCES=()
+    PROVENANCE_REFERENCE_COUNT=0
+    PROVENANCE_REFERENCES_TRUNCATED=false
+    PROVENANCE_STATE=""
+    PROVENANCE_DISPOSITION=""
+    PROVENANCE_DESTINATION=""
+
+    case "$relpath" in
+        knowledge/*)
+            PROVENANCE_SCOPE="article"
+            PROVENANCE_LABEL="article-level references"
+            ;;
+        sources/*)
+            PROVENANCE_SCOPE="document"
+            PROVENANCE_LABEL="document-level reference"
+            value="$(frontmatter_field canonical "$file" 2>/dev/null || true)"
+            [[ -n "$value" ]] && PROVENANCE_REFERENCES+=("$value")
+            ;;
+        observations/pending/*)
+            PROVENANCE_SCOPE="observation"
+            PROVENANCE_LABEL="uncurated evidence"
+            ;;
+        observations/archived/*)
+            PROVENANCE_SCOPE="archive"
+            PROVENANCE_LABEL="archived evidence"
+            ;;
+        questions/open/*)
+            PROVENANCE_SCOPE="question"
+            PROVENANCE_LABEL="unresolved knowledge gap"
+            PROVENANCE_STATE="open"
+            ;;
+        questions/resolved/*)
+            PROVENANCE_SCOPE="question"
+            PROVENANCE_LABEL="resolved question record"
+            PROVENANCE_STATE="resolved"
+            ;;
+        questions/*)
+            PROVENANCE_SCOPE="question"
+            PROVENANCE_LABEL="question record"
+            PROVENANCE_STATE="unknown"
+            ;;
+        *)
+            PROVENANCE_SCOPE="record"
+            ;;
+    esac
+
+    # Parse the simple YAML list used by the curation frontmatter without
+    # loading the article body. List items remain separate even when they
+    # contain spaces.
+    while IFS= read -r line; do
+        if [[ "$line" == "---" ]]; then
+            if [[ "$in_frontmatter" == false ]]; then
+                in_frontmatter=true
+            else
+                break
+            fi
+            continue
+        fi
+        [[ "$in_frontmatter" == true ]] || continue
+
+        if [[ "$line" =~ ^sources:[[:space:]]*$ ]]; then
+            in_sources=true
+            continue
+        fi
+        if [[ "$in_sources" == true ]]; then
+            if [[ "$line" =~ ^[[:space:]]*-[[:space:]]+(.*)$ ]]; then
+                value="${BASH_REMATCH[1]}"
+                if [[ "$value" =~ ^\"(.*)\"$ ]]; then
+                    value="${BASH_REMATCH[1]}"
+                    value="${value//\\\"/\"}"
+                    value="${value//\\\\/\\}"
+                fi
+                PROVENANCE_REFERENCES+=("$value")
+                continue
+            fi
+            in_sources=false
+        fi
+    done < "$file"
+
+    if [[ "$relpath" == observations/archived/* ]]; then
+        PROVENANCE_DISPOSITION="$(frontmatter_field disposition "$file" 2>/dev/null || true)"
+        PROVENANCE_DESTINATION="$(frontmatter_field destination "$file" 2>/dev/null || true)"
+    fi
+
+    PROVENANCE_REFERENCE_COUNT=${#PROVENANCE_REFERENCES[@]}
+    local reference_index
+    for reference_index in "${!PROVENANCE_REFERENCES[@]}"; do
+        if (( reference_index >= MAX_DISPLAYED_PROVENANCE_REFERENCES )); then
+            PROVENANCE_REFERENCES_TRUNCATED=true
+            break
+        fi
+        PROVENANCE_DISPLAY_REFERENCES+=("${PROVENANCE_REFERENCES[$reference_index]}")
+    done
+}
+
+# retrieval_metadata_for_file - Populate every field used by retrieval tools.
+retrieval_metadata_for_file() {
+    local relpath="$1" file="$2"
+
+    RESULT_CORPUS="$(corpus_type_for_path "$relpath")"
+    freshness_for_file "$relpath" "$file"
+    provenance_for_file "$relpath" "$file"
+}
+
+# json_escape_value - Escape one shell value for use inside a JSON string.
+#
+# This preserves UTF-8 and escapes the JSON-significant characters plus the
+# control characters that can occur in multiline Markdown.
+json_escape_value() {
+    awk '
+    function escape(s,    i, c, out) {
+        for (i = 1; i <= length(s); i++) {
+            c = substr(s, i, 1)
+            if (c == "\\") out = out "\\\\"
+            else if (c == "\"") out = out "\\\""
+            else if (c == "\t") out = out "\\t"
+            else if (c == "\r") out = out "\\r"
+            else if (c == "\b") out = out "\\b"
+            else if (c == "\f") out = out "\\f"
+            else out = out c
+        }
+        return out
+    }
+    { if (seen) printf "\\n"; printf "%s", escape($0); seen = 1 }
+    '
+}
+
+# json_escape_file - Escape a text file while retaining its line breaks.
+json_escape_file() {
+    awk '
+    function escape(s,    i, c, out) {
+        for (i = 1; i <= length(s); i++) {
+            c = substr(s, i, 1)
+            if (c == "\\") out = out "\\\\"
+            else if (c == "\"") out = out "\\\""
+            else if (c == "\t") out = out "\\t"
+            else if (c == "\r") out = out "\\r"
+            else if (c == "\b") out = out "\\b"
+            else if (c == "\f") out = out "\\f"
+            else out = out c
+        }
+        return out
+    }
+    { if (seen) printf "\\n"; printf "%s", escape($0); seen = 1 }
+    END { if (seen) printf "\\n" }
+    ' "$1"
+}
+
+json_quote() {
+    printf '"'
+    printf '%s' "$1" | json_escape_value
+    printf '"'
+}
+
+json_quote_file() {
+    printf '"'
+    json_escape_file "$1"
+    printf '"'
+}
+
+json_nullable_string() {
+    if [[ -n "$1" ]]; then
+        json_quote "$1"
+    else
+        printf 'null'
+    fi
+}
+
+json_references() {
+    local reference first=true
+
+    printf '['
+    if [[ "${1:-}" == all ]]; then
+        for reference in "${PROVENANCE_REFERENCES[@]}"; do
+            if [[ "$first" == false ]]; then printf ','; fi
+            json_quote "$reference"
+            first=false
+        done
+    else
+        for reference in "${PROVENANCE_DISPLAY_REFERENCES[@]}"; do
+            if [[ "$first" == false ]]; then printf ','; fi
+            json_quote "$reference"
+            first=false
+        done
+    fi
+    printf ']'
+}
+
+json_provenance() {
+    local reference_mode="${1:-display}"
+    local references_truncated="$PROVENANCE_REFERENCES_TRUNCATED"
+
+    if [[ "$reference_mode" == all ]]; then
+        references_truncated=false
+    fi
+
+    printf '{"scope":'
+    json_quote "$PROVENANCE_SCOPE"
+    printf ',"label":'
+    json_nullable_string "$PROVENANCE_LABEL"
+    printf ',"references":'
+    json_references "$reference_mode"
+    printf ',"reference_count":%d,"references_truncated":%s' \
+        "$PROVENANCE_REFERENCE_COUNT" "$references_truncated"
+    if [[ -n "$PROVENANCE_STATE" ]]; then
+        printf ',"state":'
+        json_quote "$PROVENANCE_STATE"
+    fi
+    if [[ -n "$PROVENANCE_DISPOSITION" ]]; then
+        printf ',"disposition":'
+        json_quote "$PROVENANCE_DISPOSITION"
+    fi
+    if [[ -n "$PROVENANCE_DESTINATION" ]]; then
+        printf ',"destination":'
+        json_quote "$PROVENANCE_DESTINATION"
+    fi
+    printf '}'
+}
+
+json_freshness() {
+    printf '{"field":'
+    json_nullable_string "$FRESHNESS_DATE_FIELD"
+    printf ',"value":'
+    json_nullable_string "$FRESHNESS_DATE_VALUE"
+    printf ',"ttl":'
+    json_nullable_string "$FRESHNESS_TTL_VALUE"
+    printf ',"ttl_days":'
+    if [[ -n "$FRESHNESS_TTL_DAYS" ]]; then
+        printf '%s' "$FRESHNESS_TTL_DAYS"
+    else
+        printf 'null'
+    fi
+    printf ',"status":'
+    json_quote "$FRESHNESS_STATUS"
+    printf ',"age_days":'
+    if [[ -n "$FRESHNESS_AGE_DAYS" ]]; then
+        printf '%s' "$FRESHNESS_AGE_DAYS"
+    else
+        printf 'null'
+    fi
+    printf '}'
+}
+
+freshness_metadata_text() {
+    local date_display ttl_display
+
+    if [[ -n "$FRESHNESS_DATE_FIELD" ]]; then
+        date_display="${FRESHNESS_DATE_VALUE:-unknown}"
+        ttl_display="${FRESHNESS_TTL_DAYS}d"
+        printf '%s; %s=%s; ttl=%s; freshness=%s' \
+            "$RESULT_CORPUS" "$FRESHNESS_DATE_FIELD" "$date_display" \
+            "$ttl_display" "$FRESHNESS_STATUS"
+    else
+        printf '%s' "$RESULT_CORPUS"
+        [[ -n "$PROVENANCE_LABEL" ]] && printf '; %s' "$PROVENANCE_LABEL"
+    fi
+    return 0
+}
+
+retrieval_metadata_text() {
+    local refs_display="" reference hidden_reference_count
+
+    freshness_metadata_text
+
+    if ((${#PROVENANCE_DISPLAY_REFERENCES[@]} > 0)); then
+        for reference in "${PROVENANCE_DISPLAY_REFERENCES[@]}"; do
+            if [[ -n "$refs_display" ]]; then refs_display+=", "; fi
+            refs_display+="$reference"
+        done
+        if [[ "$PROVENANCE_REFERENCES_TRUNCATED" == true ]]; then
+            hidden_reference_count=$((PROVENANCE_REFERENCE_COUNT - MAX_DISPLAYED_PROVENANCE_REFERENCES))
+            printf '; refs=%s (+%d more; %s)' "$refs_display" \
+                "$hidden_reference_count" "$PROVENANCE_SCOPE"
+        else
+            printf '; refs=%s (%s)' "$refs_display" "$PROVENANCE_SCOPE"
+        fi
+    elif [[ -n "$PROVENANCE_LABEL" ]]; then
+        printf '; refs=none (%s)' "$PROVENANCE_SCOPE"
+    fi
+
+    [[ -n "$PROVENANCE_STATE" ]] && printf '; state=%s' "$PROVENANCE_STATE"
+    [[ -n "$PROVENANCE_DISPOSITION" ]] && \
+        printf '; disposition=%s' "$PROVENANCE_DISPOSITION"
+    [[ -n "$PROVENANCE_DESTINATION" ]] && \
+        printf '; destination=%s' "$PROVENANCE_DESTINATION"
+    return 0
+}
+
+provenance_metadata_text() {
+    local refs_display="" reference hidden_reference_count
+
+    if ((${#PROVENANCE_DISPLAY_REFERENCES[@]} > 0)); then
+        for reference in "${PROVENANCE_DISPLAY_REFERENCES[@]}"; do
+            if [[ -n "$refs_display" ]]; then refs_display+=", "; fi
+            refs_display+="$reference"
+        done
+        if [[ "$PROVENANCE_REFERENCES_TRUNCATED" == true ]]; then
+            hidden_reference_count=$((PROVENANCE_REFERENCE_COUNT - MAX_DISPLAYED_PROVENANCE_REFERENCES))
+            printf 'refs=%s (+%d more; %s)' "$refs_display" \
+                "$hidden_reference_count" "$PROVENANCE_SCOPE"
+        else
+            printf 'refs=%s (%s)' "$refs_display" "$PROVENANCE_SCOPE"
+        fi
+    else
+        printf 'refs=none (%s)' "$PROVENANCE_SCOPE"
+    fi
+
+    [[ -n "$PROVENANCE_STATE" ]] && printf '; state=%s' "$PROVENANCE_STATE"
+    [[ -n "$PROVENANCE_DISPOSITION" ]] && \
+        printf '; disposition=%s' "$PROVENANCE_DISPOSITION"
+    [[ -n "$PROVENANCE_DESTINATION" ]] && \
+        printf '; destination=%s' "$PROVENANCE_DESTINATION"
+    return 0
+}

@@ -74,87 +74,37 @@ if [[ ! -d "$TARGET" ]]; then
     exit 1
 fi
 
-DEFAULT_DAYS=60
-
-# ttl_days - Map a `ttl:` value to a number of days.
-#
-# Prints nothing for an unrecognized value, so the caller can fall back.
-ttl_days() {
-    case "$1" in
-        people|status)  echo 14 ;;
-        process)        echo 60 ;;
-        domain)         echo 180 ;;
-        ''|*[!0-9]*)    echo "" ;;
-        *)              echo "$1" ;;
-    esac
-}
-
-# Get today as seconds since epoch (portable across GNU and BSD date)
-today_epoch="$(date -u +%s)"
-
-# date_to_epoch - Convert YYYY-MM-DD to seconds since epoch.
-# Works with both GNU date (-d) and BSD date (-j -f).
-date_to_epoch() {
-    local d="$1"
-    # Try GNU date first
-    date -u -d "$d" +%s 2>/dev/null && return
-    # Fall back to BSD date
-    date -u -j -f "%Y-%m-%d" "$d" +%s 2>/dev/null && return
-    echo ""
-}
-
 stale_count=0
 no_date_count=0
 
 while IFS= read -r -d '' file; do
     relpath="${file#"$CONTENT_DIR/"}"
 
-    # sources/ holds copies of external documents; `synced:` is when the
-    # copy was pulled, which is what goes stale about it.
-    if [[ "$relpath" == sources/* ]]; then
-        date_field="synced"
-    else
-        date_field="verified"
-    fi
-    verified="$(frontmatter_field "$date_field" "$file" 2>/dev/null || echo "")"
+    threshold_override="${CUSTOM_DAYS:-}"
+    freshness_for_file "$relpath" "$file" "$threshold_override"
 
-    if [[ -z "$verified" ]]; then
+    if [[ "$FRESHNESS_STATUS" == unknown ]]; then
         no_date_count=$((no_date_count + 1))
         if [[ "$COUNT_ONLY" == false ]]; then
-            echo "  [no $date_field]  $relpath"
+            echo "  [no $FRESHNESS_DATE_FIELD]  $relpath"
         fi
         continue
     fi
 
-    # Parse the verified date (handle YYYY-MM-DD, strip any time component)
-    verified_date="${verified%T*}"
-    verified_epoch="$(date_to_epoch "$verified_date")"
-
-    if [[ -z "$verified_epoch" ]]; then
+    if [[ "$FRESHNESS_STATUS" == invalid ]]; then
         no_date_count=$((no_date_count + 1))
         if [[ "$COUNT_ONLY" == false ]]; then
-            echo "  [bad date] $relpath  (verified: $verified)"
+            echo "  [bad date] $relpath  ($FRESHNESS_DATE_FIELD: $FRESHNESS_DATE_VALUE)"
         fi
         continue
     fi
 
-    if [[ -n "$CUSTOM_DAYS" ]]; then
-        threshold_days="$CUSTOM_DAYS"
-    else
-        ttl="$(frontmatter_field "ttl" "$file" 2>/dev/null || echo "")"
-        threshold_days="$(ttl_days "$ttl")"
-        threshold_days="${threshold_days:-$DEFAULT_DAYS}"
-    fi
-    threshold_secs=$((threshold_days * 86400))
-    age_secs=$((today_epoch - verified_epoch))
-    age_days=$((age_secs / 86400))
-
-    if (( age_secs > threshold_secs )); then
+    if [[ "$FRESHNESS_STATUS" == stale ]]; then
         stale_count=$((stale_count + 1))
         if [[ "$COUNT_ONLY" == false ]]; then
             printf "  %4d days  %s  (%s: %s, ttl %sd)\n" \
-                "$age_days" "$relpath" "$date_field" "$verified_date" \
-                "$threshold_days"
+                "$FRESHNESS_AGE_DAYS" "$relpath" "$FRESHNESS_DATE_FIELD" \
+                "${FRESHNESS_DATE_VALUE%T*}" "$FRESHNESS_TTL_DAYS"
         fi
     fi
 

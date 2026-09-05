@@ -409,3 +409,99 @@ needle inside
     [[ "$output" == *"| Real |"* ]]
     [[ "$output" != *"not a heading"* ]]
 }
+
+@test "search default output labels freshness and uncurated evidence" {
+    create_test_article "old.md" $'---\ntitle: "Old"\nverified: 2020-01-01\n---\n\n# Old\n\nneedle'
+    create_test_observation "20260412T000000-eeee.md" "Pending" "needle"
+    run "$SCRIPTS/search" --limit 2 needle
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"freshness=stale"* ]]
+    [[ "$output" == *"pending observation; uncurated evidence"* ]]
+}
+
+@test "search text-only omits retrieval metadata" {
+    create_test_article "old.md" $'---\ntitle: "Old"\nverified: 2020-01-01\n---\n\n# Old\n\nneedle'
+    run "$SCRIPTS/search" --text-only needle
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"| top | needle"* ]]
+    [[ "$output" != *"freshness="* ]]
+}
+
+@test "search JSON handles spaces, quotes, Unicode, and empty results" {
+    create_test_article "résumé notes.md" $'---\ntitle: "Résumé Notes"\nverified: not-a-date\n---\n\n# Résumé Notes\n\n## Cité\n\nNeedle "quoted".'
+    run "$SCRIPTS/search" --json needle
+    [[ "$status" -eq 0 ]]
+    json="$output"
+    run jq -e '.results[0].path == "knowledge/résumé notes.md" and .results[0].text == "Needle \"quoted\"." and .results[0].freshness.status == "invalid" and .results[0].locator.section == "Cité" and .truncated == false' <<<"$json"
+    [[ "$status" -eq 0 ]]
+
+    run "$SCRIPTS/search" --json absent
+    [[ "$status" -eq 0 ]]
+    run jq -e '.results == [] and .returned == 0 and .truncated == false' <<<"$output"
+    [[ "$status" -eq 0 ]]
+}
+
+@test "search JSON reports source and archive provenance" {
+    mkdir -p "$TEST_CONTENT_DIR/sources" "$TEST_CONTENT_DIR/observations/archived"
+    cat > "$TEST_CONTENT_DIR/sources/manual.md" <<'EOF'
+---
+title: "Manual"
+canonical: "https://example.test/manual"
+synced: 2026-09-05
+---
+
+# Manual
+
+needle
+EOF
+    cat > "$TEST_CONTENT_DIR/observations/archived/old.md" <<'EOF'
+---
+title: "Old"
+disposition: duplicate
+destination: knowledge/manual.md#Setup
+---
+
+# Old
+
+needle
+EOF
+    run "$SCRIPTS/search" --json --archive needle
+    [[ "$status" -eq 0 ]]
+    json="$output"
+    run jq -e '[.results[] | select(.corpus == "source document") | .provenance.references[0]] | index("https://example.test/manual") != null' <<<"$json"
+    [[ "$status" -eq 0 ]]
+    run jq -e '[.results[] | select(.corpus == "archive") | .provenance.disposition] | index("duplicate") != null' <<<"$json"
+    [[ "$status" -eq 0 ]]
+}
+
+@test "search JSON keeps truncation diagnostics off stdout" {
+    for i in 1 2 3; do
+        create_test_article "topic$i.md" $'# Topic '"$i"$'\n\nneedle'
+    done
+    stderr_file="$TEST_CONTENT_DIR/search.stderr"
+    json="$($SCRIPTS/search --json --limit 1 needle 2>"$stderr_file")"
+    [[ "$?" -eq 0 ]]
+    run jq -e '.truncated == true and .returned == 1' <<<"$json"
+    [[ "$status" -eq 0 ]]
+    stderr="$(<"$stderr_file")"
+    [[ "$stderr" == *"hidden"* ]]
+}
+
+@test "search caps provenance references and reports the complete count" {
+    create_test_article "many-sources.md" $'---\ntitle: "Many Sources"\nverified: 2026-01-01\nsources:\n  - observations/evidence-1.md\n  - observations/evidence-2.md\n  - observations/evidence-3.md\n  - observations/evidence-4.md\n  - observations/evidence-5.md\n  - observations/evidence-6.md\n  - observations/evidence-7.md\n---\n\n# Many Sources\n\nneedle'
+    run "$SCRIPTS/search" --json needle
+    [[ "$status" -eq 0 ]]
+    run jq -e '.results[0].provenance | (.references | length == 5) and .reference_count == 7 and .references_truncated == true' <<<"$output"
+    [[ "$status" -eq 0 ]]
+
+    run "$SCRIPTS/search" needle
+    [[ "$output" == *"+2 more"* ]]
+}
+
+@test "search reports open questions as question records" {
+    create_test_question "20260412T000000-eeee.md" "Who owns the kafka cluster?"
+    run "$SCRIPTS/search" --json --archive kafka
+    [[ "$status" -eq 0 ]]
+    run jq -e '.results[0].corpus == "question" and .results[0].provenance.state == "open" and .results[0].provenance.label == "unresolved knowledge gap"' <<<"$output"
+    [[ "$status" -eq 0 ]]
+}

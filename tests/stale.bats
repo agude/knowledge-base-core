@@ -254,3 +254,31 @@ EOF
     run "$SCRIPTS/stale" --path sources
     [[ "$output" == *"[no synced]"* ]]
 }
+
+@test "stale labels an invalid freshness date" {
+    create_test_article "bad.md" $'---\ntitle: "Bad"\nverified: not-a-date\n---\n\n# Bad'
+    run "$SCRIPTS/stale"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"[bad date]"* ]]
+    [[ "$output" == *"verified: not-a-date"* ]]
+}
+
+@test "freshness boundary is shared by stale search and section" {
+    create_test_article "boundary-fresh.md" $'---\ntitle: "Boundary Fresh"\nverified: 2026-01-01\nttl: 10\n---\n\n# Boundary Fresh\n\n## Facts\n\nboundary'
+    create_test_article "boundary-stale.md" $'---\ntitle: "Boundary Stale"\nverified: 2025-12-31\nttl: 10\n---\n\n# Boundary Stale\n\n## Facts\n\nboundary'
+    fixed_epoch=1768089600 # 2026-01-11T00:00:00Z; exactly 10 days after 2026-01-01.
+
+    run env FRESHNESS_TODAY_EPOCH="$fixed_epoch" "$SCRIPTS/stale" --count
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == "1" ]]
+
+    run env FRESHNESS_TODAY_EPOCH="$fixed_epoch" "$SCRIPTS/search" --json boundary
+    [[ "$status" -eq 0 ]]
+    run jq -e '([.results[] | select(.path == "knowledge/boundary-fresh.md")][0].freshness.status == "fresh") and ([.results[] | select(.path == "knowledge/boundary-stale.md")][0].freshness.status == "stale")' <<<"$output"
+    [[ "$status" -eq 0 ]]
+
+    run env FRESHNESS_TODAY_EPOCH="$fixed_epoch" "$SCRIPTS/section" --json --file knowledge/boundary-fresh.md --number 1
+    [[ "$status" -eq 0 ]]
+    run jq -e '.freshness.status == "fresh" and .freshness.age_days == 10' <<<"$output"
+    [[ "$status" -eq 0 ]]
+}
