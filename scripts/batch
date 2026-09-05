@@ -47,6 +47,7 @@ start_batch() {
 }
 
 status_batch() {
+    acquire_lock || exit 1
     local file="$1" line name hash status disposition destination path actual
     [[ -f "$file" ]] || die "batch not found: $(basename "$file")"
     local pending=0 complete=0 deferred=0 invalid=0
@@ -72,6 +73,7 @@ status_batch() {
             echo "INVALID STATUS: $name ($status)"; invalid=$((invalid + 1))
         fi
     done < "$file"
+    release_lock
     echo "Batch $(basename "$file"): $complete complete, $pending pending, $deferred deferred"
     (( invalid == 0 )) || { echo "Batch requires attention: $invalid invalid item(s)." >&2; return 1; }
 }
@@ -79,6 +81,7 @@ status_batch() {
 defer_item() {
     local file="$1" name="$2" tmp row hash status actual found
     [[ "$name" != */* ]] || die "not a pending filename: $name"
+    acquire_lock || exit 1
     row="$(awk -F '\t' -v n="$name" '$1 == n { print; found=1 } END { if (!found) exit 1 }' "$file")" || die "item is not a member of batch: $name"
     IFS=$'\t' read -r _ hash status _ _ <<< "$row"
     [[ "$status" == pending ]] || die "item is already completed or deferred: $name"
@@ -88,6 +91,7 @@ defer_item() {
     tmp="$(mktemp)"
     awk -F '\t' -v n="$name" 'BEGIN { OFS="\t" } NR == 1 { print; next } $1 == n { $3="deferred"; $4="deferred"; found=1 } { print } END { if (!found) exit 1 }' "$file" > "$tmp" || { rm -f "$tmp"; die "item is not pending in batch: $name"; }
     mv "$tmp" "$file"
+    release_lock
     echo "Deferred: $name"
 }
 

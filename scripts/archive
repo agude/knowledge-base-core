@@ -85,9 +85,15 @@ if [[ -n "$BATCH" ]]; then
     [[ "$BATCH" != */* && "$BATCH" == *.tsv ]] || { echo "Invalid batch id: $BATCH" >&2; exit 1; }
     BATCH_FILE="$CONTENT_DIR/observations/batches/$BATCH"
     [[ -f "$BATCH_FILE" ]] || { echo "Batch not found: $BATCH" >&2; exit 1; }
+    if [[ "$DISPOSITION" == processed ]]; then
+        echo "Batch completion requires --disposition incorporated, duplicate, or ephemeral." >&2
+        exit 1
+    fi
 fi
 
+acquire_lock || exit 1
 archived=0
+recovered=0
 for name in "${FILES[@]}"; do
     # A bare filename, never a path. These scripts are auto-approved by
     # the command-approval hook, so `archive ../../something` would move a file
@@ -101,6 +107,18 @@ for name in "${FILES[@]}"; do
     dst="$ARCHIVED_DIR/$name"
 
     if [[ ! -f "$src" ]]; then
+        if [[ -n "$BATCH_FILE" && -f "$dst" ]]; then
+            archived_disposition="$(frontmatter_field disposition "$dst" || true)"
+            archived_destination="$(frontmatter_field destination "$dst" || true)"
+            if [[ "$archived_disposition" == "$DISPOSITION" && ( "$DISPOSITION" != incorporated || "$archived_destination" == "$DESTINATION" ) ]]; then
+                tmp="$(mktemp)"
+                awk -F '\t' -v OFS='\t' -v n="$name" -v d="$DISPOSITION" -v dest="$DESTINATION" 'NR == 1 { print; next } $1 == n { $3="complete"; $4=d; $5=dest } { print }' "$BATCH_FILE" > "$tmp"
+                mv "$tmp" "$BATCH_FILE"
+                recovered=$((recovered + 1))
+                echo "Recovered completed archive: observations/archived/$name"
+                continue
+            fi
+        fi
         echo "Not found: observations/pending/$name" >&2
         continue
     fi
@@ -133,9 +151,13 @@ if [[ -n "$BATCH_FILE" && $archived -eq 1 ]]; then
 fi
 
 if (( archived == 0 )); then
+    release_lock
+    (( recovered > 0 )) && exit 0
     echo "Nothing archived." >&2
     exit 1
 fi
+
+release_lock
 
 # Commit in the content repo
 if [[ "$DO_COMMIT" == true ]]; then

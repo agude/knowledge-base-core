@@ -68,3 +68,32 @@ commit_observations() {
     [[ "$status" -eq 0 ]]
     [[ "$output" == *"1 complete, 0 pending, 0 deferred"* ]]
 }
+
+@test "archive resumes after the observation move" {
+    create_test_observation a.md "A" "Body A"
+    commit_observations
+    batch_id="$("$SCRIPTS/batch" start | sed -n 's/^Created batch: //p')"
+    # Model an interrupted archive: the observation moved and already carries
+    # the durable disposition, but the manifest row was not updated.
+    "$SCRIPTS/archive" --disposition duplicate a.md --no-commit
+    batch_file="$TEST_CONTENT_DIR/observations/batches/$batch_id"
+    # Restore the pending state in the manifest while retaining the archive.
+    awk -F '\t' -v OFS='\t' 'NR == 1 { print; next } { $3="pending"; $4=""; $5=""; print }' "$batch_file" > "$batch_file.tmp"
+    mv "$batch_file.tmp" "$batch_file"
+    run "$SCRIPTS/archive" --batch "$batch_id" --disposition duplicate a.md --no-commit
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Recovered completed archive"* ]]
+    run "$SCRIPTS/batch" status "$batch_id"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"1 complete"* ]]
+}
+
+@test "batch rejects the compatibility processed disposition" {
+    create_test_observation a.md "A" "Body A"
+    commit_observations
+    batch_id="$("$SCRIPTS/batch" start | sed -n 's/^Created batch: //p')"
+    run "$SCRIPTS/archive" --batch "$batch_id" --disposition processed a.md --no-commit
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"requires --disposition incorporated, duplicate, or ephemeral"* ]]
+    [[ -f "$TEST_CONTENT_DIR/observations/pending/a.md" ]]
+}

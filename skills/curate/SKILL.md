@@ -106,6 +106,8 @@ example.
    ephemeral item with an explicit command such as:
    `$KNOWLEDGE_BASE/scripts/archive --batch BATCH_ID --disposition incorporated
    --destination knowledge/topic.md#Heading FILENAME --no-commit`.
+   Batch dispositions are limited to `incorporated`, `duplicate`, and
+   `ephemeral`; `deferred` is recorded by `batch defer` and is not archived.
    Defer an item with `batch defer BATCH_ID FILENAME`; it remains pending.
    Use `batch status BATCH_ID` to resume after interruption. Never use
    `archive --all` during curation: observations arriving after batch
