@@ -105,12 +105,21 @@ for name in "${FILES[@]}"; do
 
     src="$PENDING_DIR/$name"
     dst="$ARCHIVED_DIR/$name"
+    original_sha=""
+    batch_status=""
+
+    if [[ -n "$BATCH_FILE" ]]; then
+        row="$(awk -F '\t' -v n="$name" '$1 == n { print; found=1 } END { if (!found) exit 1 }' "$BATCH_FILE")" || { echo "Not a member of batch: $name" >&2; continue; }
+        IFS=$'\t' read -r _ original_sha batch_status _ _ <<< "$row"
+        [[ "$batch_status" == pending ]] || { echo "Already completed or deferred: $name" >&2; continue; }
+    fi
 
     if [[ ! -f "$src" ]]; then
         if [[ -n "$BATCH_FILE" && -f "$dst" ]]; then
             archived_disposition="$(frontmatter_field disposition "$dst" || true)"
             archived_destination="$(frontmatter_field destination "$dst" || true)"
-            if [[ "$archived_disposition" == "$DISPOSITION" && ( "$DISPOSITION" != incorporated || "$archived_destination" == "$DESTINATION" ) ]]; then
+            archived_sha="$(frontmatter_field original_sha256 "$dst" || true)"
+            if [[ "$archived_sha" == "$original_sha" && "$archived_disposition" == "$DISPOSITION" && ( "$DISPOSITION" != incorporated || "$archived_destination" == "$DESTINATION" ) ]]; then
                 tmp="$(mktemp)"
                 awk -F '\t' -v OFS='\t' -v n="$name" -v d="$DISPOSITION" -v dest="$DESTINATION" 'NR == 1 { print; next } $1 == n { $3="complete"; $4=d; $5=dest } { print }' "$BATCH_FILE" > "$tmp"
                 mv "$tmp" "$BATCH_FILE"
@@ -118,6 +127,8 @@ for name in "${FILES[@]}"; do
                 echo "Recovered completed archive: observations/archived/$name"
                 continue
             fi
+            echo "Archive cannot be recovered: membership, pending state, disposition, destination, or original hash does not match." >&2
+            continue
         fi
         echo "Not found: observations/pending/$name" >&2
         continue
@@ -127,16 +138,15 @@ for name in "${FILES[@]}"; do
         continue
     fi
 
+    actual_sha="$(sha256sum "$src" | awk '{print $1}')"
     if [[ -n "$BATCH_FILE" ]]; then
-        row="$(awk -F '\t' -v n="$name" '$1 == n { print; found=1 } END { if (!found) exit 1 }' "$BATCH_FILE")" || { echo "Not a member of batch: $name" >&2; continue; }
-        IFS=$'\t' read -r _ original_sha status _ _ <<< "$row"
-        [[ "$status" == pending ]] || { echo "Already completed or deferred: $name" >&2; continue; }
-        actual_sha="$(sha256sum "$src" | awk '{print $1}')"
         [[ "$actual_sha" == "$original_sha" ]] || { echo "Input changed since batch selection: observations/pending/$name" >&2; continue; }
+    else
+        original_sha="$actual_sha"
     fi
 
     tmp="$(mktemp)"
-    awk -v d="$DISPOSITION" -v dest="$DESTINATION" 'BEGIN { done=0 } /^---$/ && NR > 1 && !done { printf "disposition: %s\n", d; if (dest != "") printf "destination: %s\n", dest; done=1 } { print }' "$src" > "$tmp"
+    awk -v d="$DISPOSITION" -v dest="$DESTINATION" -v sha="$original_sha" 'BEGIN { done=0 } /^---$/ && NR > 1 && !done { printf "disposition: %s\n", d; if (dest != "") printf "destination: %s\n", dest; printf "original_sha256: %s\n", sha; done=1 } { print }' "$src" > "$tmp"
     mv "$tmp" "$src"
 
     mv "$src" "$dst"

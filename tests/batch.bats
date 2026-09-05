@@ -97,3 +97,27 @@ commit_observations() {
     [[ "$output" == *"requires --disposition incorporated, duplicate, or ephemeral"* ]]
     [[ -f "$TEST_CONTENT_DIR/observations/pending/a.md" ]]
 }
+
+@test "recovery rejects a non-member archive" {
+    create_test_observation a.md "A" "Body A"
+    commit_observations
+    batch_id="$("$SCRIPTS/batch" start | sed -n 's/^Created batch: //p')"
+    create_test_observation outsider.md "Outsider" "Body outsider"
+    "$SCRIPTS/archive" --disposition duplicate outsider.md --no-commit
+    run "$SCRIPTS/archive" --batch "$batch_id" --disposition duplicate outsider.md --no-commit
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Not a member of batch"* ]]
+    grep -q $'a.md\t.*\tpending' "$TEST_CONTENT_DIR/observations/batches/$batch_id"
+}
+
+@test "recovery rejects an archive with the wrong original hash" {
+    create_test_observation a.md "A" "Body A"
+    commit_observations
+    batch_id="$("$SCRIPTS/batch" start | sed -n 's/^Created batch: //p')"
+    "$SCRIPTS/archive" --disposition duplicate a.md --no-commit
+    sed -i 's/^original_sha256: .*/original_sha256: invalid/' "$TEST_CONTENT_DIR/observations/archived/a.md"
+    run "$SCRIPTS/archive" --batch "$batch_id" --disposition duplicate a.md --no-commit
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"original hash does not match"* ]]
+    grep -q $'a.md\t.*\tpending' "$TEST_CONTENT_DIR/observations/batches/$batch_id"
+}
