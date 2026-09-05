@@ -140,6 +140,7 @@ All scripts are at `$KNOWLEDGE_BASE/scripts/<name>`.
 | `section --file FILE (--number N \| --heading TEXT)` | Extract a section |
 | `observe --title "..." --body "..."` | Record an observation |
 | `pending [--full] [--count]` | List uncurated observations |
+| `batch start|status|defer` | Persist and resume a curation batch |
 | `ask --title "..." [--context FILE] [--body "..."]` | Record a question |
 | `questions [--path DIR] [--file F] [--full] [--all]` | List open questions |
 | `resolve --file F [--answer "..."]` | Resolve a question |

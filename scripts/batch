@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+#
+# batch - Create and inspect a curation batch.
+#
+# Usage:
+#   batch start
+#   batch status BATCH_ID
+#   batch defer BATCH_ID FILENAME
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+source "$SCRIPT_DIR/_lib.sh"
+
+BATCH_DIR="$CONTENT_DIR/observations/batches"
+PENDING_DIR="$CONTENT_DIR/observations/pending"
+
+die() { echo "Error: $*" >&2; exit 1; }
+
+batch_file() {
+    local id="$1"
+    [[ "$id" != */* && "$id" == *.tsv ]] || die "invalid batch id: $id"
+    echo "$BATCH_DIR/$id"
+}
+
+start_batch() {
+    acquire_lock || exit 1
+    mkdir -p "$BATCH_DIR"
+    local id="$(date -u +%Y%m%dT%H%M%S)-$$.tsv"
+    local file="$BATCH_DIR/$id"
+    {
+        echo $'filename\toriginal_sha256\tstatus\tdisposition\tdestination'
+        while IFS= read -r -d '' path; do
+            local name="$(basename "$path")"
+            printf '%s\t%s\tpending\t\t\n' "$name" "$(sha256sum "$path" | awk '{print $1}')"
+        done < <(find "$PENDING_DIR" -maxdepth 1 -name '*.md' -type f -print0 | sort -z)
+    } > "$file"
+    if [[ "$(wc -l < "$file")" -le 1 ]]; then
+        rm -f "$file"
+        release_lock
+        die "no pending observations"
+    fi
+    echo "Created batch: $id"
+    echo "Selected: $(( $(wc -l < "$file") - 1 )) observation(s)"
+    release_lock
+}
+
+status_batch() {
+    local file="$1" line name hash status disposition destination path actual
+    [[ -f "$file" ]] || die "batch not found: $(basename "$file")"
+    local pending=0 complete=0 deferred=0 invalid=0
+    while IFS=$'\t' read -r name hash status disposition destination; do
+        [[ "$name" == filename ]] && continue
+        path="$PENDING_DIR/$name"
+        if [[ "$status" == pending && -f "$path" ]]; then
+            actual="$(sha256sum "$path" | awk '{print $1}')"
+            if [[ "$actual" != "$hash" ]]; then
+                echo "CHANGED: observations/pending/$name"; invalid=$((invalid + 1))
+            else
+                pending=$((pending + 1))
+            fi
+        elif [[ "$status" == complete || "$status" == deferred ]]; then
+            if [[ "$status" == complete && ! -f "$CONTENT_DIR/observations/archived/$name" ]]; then
+                echo "MISSING ARCHIVE: observations/archived/$name"; invalid=$((invalid + 1))
+            elif [[ "$status" == deferred && ! -f "$path" ]]; then
+                echo "MISSING DEFERRED INPUT: observations/pending/$name"; invalid=$((invalid + 1))
+            else
+                [[ "$status" == complete ]] && complete=$((complete + 1)) || deferred=$((deferred + 1))
+            fi
+        else
+            echo "INVALID STATUS: $name ($status)"; invalid=$((invalid + 1))
+        fi
+    done < "$file"
+    echo "Batch $(basename "$file"): $complete complete, $pending pending, $deferred deferred"
+    (( invalid == 0 )) || { echo "Batch requires attention: $invalid invalid item(s)." >&2; return 1; }
+}
+
+defer_item() {
+    local file="$1" name="$2" tmp row hash status actual found
+    [[ "$name" != */* ]] || die "not a pending filename: $name"
+    row="$(awk -F '\t' -v n="$name" '$1 == n { print; found=1 } END { if (!found) exit 1 }' "$file")" || die "item is not a member of batch: $name"
+    IFS=$'\t' read -r _ hash status _ _ <<< "$row"
+    [[ "$status" == pending ]] || die "item is already completed or deferred: $name"
+    [[ -f "$PENDING_DIR/$name" ]] || die "pending input is missing: $name"
+    actual="$(sha256sum "$PENDING_DIR/$name" | awk '{print $1}')"
+    [[ "$actual" == "$hash" ]] || die "input changed since batch selection: observations/pending/$name"
+    tmp="$(mktemp)"
+    awk -F '\t' -v n="$name" 'BEGIN { OFS="\t" } NR == 1 { print; next } $1 == n { $3="deferred"; $4="deferred"; found=1 } { print } END { if (!found) exit 1 }' "$file" > "$tmp" || { rm -f "$tmp"; die "item is not pending in batch: $name"; }
+    mv "$tmp" "$file"
+    echo "Deferred: $name"
+}
+
+case "${1:-}" in
+    start) shift; [[ $# -eq 0 ]] || die "start takes no arguments"; start_batch ;;
+    status) shift; [[ $# -eq 1 ]] || die "usage: batch status BATCH_ID"; status_batch "$(batch_file "$1")" ;;
+    defer) shift; [[ $# -eq 2 ]] || die "usage: batch defer BATCH_ID FILENAME"; defer_item "$(batch_file "$1")" "$2" ;;
+    -h|--help) show_help "$0" ;;
+    *) die "usage: batch {start|status BATCH_ID|defer BATCH_ID FILENAME}" ;;
+esac

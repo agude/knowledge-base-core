@@ -16,6 +16,9 @@
 #   archive 20260412T000000-abcd.md
 #   archive 20260412T000000-abcd.md 20260412T000000-efgh.md
 #   archive --all
+#
+# Batch completion:
+#   archive --batch BATCH_ID --disposition incorporated --destination knowledge/x.md#Heading FILENAME
 
 set -euo pipefail
 
@@ -28,12 +31,18 @@ ARCHIVED_DIR="$CONTENT_DIR/observations/archived"
 
 ALL=false
 DO_COMMIT=true
+BATCH=""
+DISPOSITION="processed"
+DESTINATION=""
 FILES=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --all)       ALL=true; shift ;;
         --no-commit) DO_COMMIT=false; shift ;;
+        --batch)     need_arg "$1" $#; BATCH="$2"; shift 2 ;;
+        --disposition) need_arg "$1" $#; DISPOSITION="$2"; shift 2 ;;
+        --destination) need_arg "$1" $#; DESTINATION="$2"; shift 2 ;;
         -h|--help)
             show_help "$0"
             exit 0
@@ -54,6 +63,30 @@ if [[ ${#FILES[@]} -eq 0 ]]; then
     exit 0
 fi
 
+if [[ -n "$BATCH" && ( "$ALL" == true || ${#FILES[@]} -ne 1 ) ]]; then
+    echo "Batch completion requires exactly one explicit filename." >&2
+    exit 1
+fi
+if [[ "$DISPOSITION" == incorporated && -z "$DESTINATION" ]]; then
+    echo "Incorporated items require --destination." >&2
+    exit 1
+fi
+if [[ "$DISPOSITION" != incorporated && -n "$DESTINATION" ]]; then
+    echo "--destination is valid only for incorporated items." >&2
+    exit 1
+fi
+case "$DISPOSITION" in
+    processed|incorporated|duplicate|ephemeral) ;;
+    *) echo "Unknown disposition: $DISPOSITION" >&2; exit 1 ;;
+esac
+
+BATCH_FILE=""
+if [[ -n "$BATCH" ]]; then
+    [[ "$BATCH" != */* && "$BATCH" == *.tsv ]] || { echo "Invalid batch id: $BATCH" >&2; exit 1; }
+    BATCH_FILE="$CONTENT_DIR/observations/batches/$BATCH"
+    [[ -f "$BATCH_FILE" ]] || { echo "Batch not found: $BATCH" >&2; exit 1; }
+fi
+
 archived=0
 for name in "${FILES[@]}"; do
     # A bare filename, never a path. These scripts are auto-approved by
@@ -71,11 +104,33 @@ for name in "${FILES[@]}"; do
         echo "Not found: observations/pending/$name" >&2
         continue
     fi
+    if [[ -e "$dst" ]]; then
+        echo "Archive already exists: observations/archived/$name" >&2
+        continue
+    fi
+
+    if [[ -n "$BATCH_FILE" ]]; then
+        row="$(awk -F '\t' -v n="$name" '$1 == n { print; found=1 } END { if (!found) exit 1 }' "$BATCH_FILE")" || { echo "Not a member of batch: $name" >&2; continue; }
+        IFS=$'\t' read -r _ original_sha status _ _ <<< "$row"
+        [[ "$status" == pending ]] || { echo "Already completed or deferred: $name" >&2; continue; }
+        actual_sha="$(sha256sum "$src" | awk '{print $1}')"
+        [[ "$actual_sha" == "$original_sha" ]] || { echo "Input changed since batch selection: observations/pending/$name" >&2; continue; }
+    fi
+
+    tmp="$(mktemp)"
+    awk -v d="$DISPOSITION" -v dest="$DESTINATION" 'BEGIN { done=0 } /^---$/ && NR > 1 && !done { printf "disposition: %s\n", d; if (dest != "") printf "destination: %s\n", dest; done=1 } { print }' "$src" > "$tmp"
+    mv "$tmp" "$src"
 
     mv "$src" "$dst"
     archived=$((archived + 1))
     echo "Archived: observations/pending/$name"
 done
+
+if [[ -n "$BATCH_FILE" && $archived -eq 1 ]]; then
+    tmp="$(mktemp)"
+    awk -F '\t' -v OFS='\t' -v n="${FILES[0]}" -v d="$DISPOSITION" -v dest="$DESTINATION" 'NR == 1 { print; next } $1 == n { $3="complete"; $4=d; $5=dest } { print }' "$BATCH_FILE" > "$tmp"
+    mv "$tmp" "$BATCH_FILE"
+fi
 
 if (( archived == 0 )); then
     echo "Nothing archived." >&2

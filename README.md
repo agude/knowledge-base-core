@@ -148,6 +148,7 @@ Standard markdown content. Links use [normal syntax](other-page.md).
 | `observe --title "..." --body "..."` | Capture an observation to observations/pending/ |
 | `pending [--full] [--count]` | List uncurated observations |
 | `archive FILENAME [--all]` | Move observations to observations/archived/ |
+| `batch start|status|defer` | Persist and resume a curation batch |
 | `search <term> [term ...]` | Search all content, ranked |
 | `toc [--depth N] [--path DIR] [--flat] [--dirs]` | List topics and sections |
 | `section --file FILE (--number N \| --heading TEXT)` | Extract a section from an article |
@@ -174,8 +175,11 @@ All scripts support `--help`.
    file into `observations/pending/`). Observations are timestamped and
    auto-committed.
 
-2. **Curate.** Review pending observations and merge them into knowledge
-articles. The `curate` skill handles this, or do it manually.
+2. **Curate.** Create a batch with `scripts/batch start`, review its selected
+   observations, and merge them into knowledge articles. Complete items with
+   explicit `scripts/archive --batch ... FILENAME` commands; deferred and
+   newly arrived observations remain pending.
+   The `curate` skill handles this, or do it manually.
 
 3. **Archive.** Processed items move to `observations/archived/` for
    provenance. **Never delete an observation** — the archive is the complete

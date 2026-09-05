@@ -100,8 +100,16 @@ example.
 
    Fix every error before committing. Fix oversized-H2 warnings by
    cutting first, splitting second (see "Cut before you split").
-7. Archive each processed observation with
-   `$KNOWLEDGE_BASE/scripts/archive --all --no-commit`.
+7. Create a batch before processing with
+   `$KNOWLEDGE_BASE/scripts/batch start`. The command records the exact
+   filenames and content hashes. Complete each incorporated, duplicate, or
+   ephemeral item with an explicit command such as:
+   `$KNOWLEDGE_BASE/scripts/archive --batch BATCH_ID --disposition incorporated
+   --destination knowledge/topic.md#Heading FILENAME --no-commit`.
+   Defer an item with `batch defer BATCH_ID FILENAME`; it remains pending.
+   Use `batch status BATCH_ID` to resume after interruption. Never use
+   `archive --all` during curation: observations arriving after batch
+   selection are not part of the batch.
 8. Review open questions (see Open Questions below).
 9. Commit everything as one batch with
    `$KNOWLEDGE_BASE/scripts/commit -m "Curate: <summary>"`.
@@ -384,15 +392,20 @@ path in their `sources:` frontmatter (e.g., `sources/incident-response-runbook.m
 
 ## Archiving Observations
 
-After processing, archive each observation --- including the ones you
-discarded. The archive is the complete record of everything we have ever
-seen.
+After processing, archive each selected observation --- including duplicates
+and ephemeral items. The archive is the complete record of everything we have
+ever seen. Complete only explicit members of the persisted batch; deferred
+items remain pending and new arrivals are handled by a later batch.
 
 ```bash
-$KNOWLEDGE_BASE/scripts/archive --all --no-commit
+$KNOWLEDGE_BASE/scripts/archive --batch BATCH_ID \
+  --disposition duplicate OBSERVATION_FILENAME --no-commit
 ```
 
-`--no-commit` leaves the moves staged for the single commit below.
+Use `--disposition incorporated --destination knowledge/article.md#Section`
+for incorporated evidence. Use `batch defer BATCH_ID FILENAME` for unfinished
+items. `batch status BATCH_ID` reports what remains after an interruption.
+`--no-commit` leaves the moves and batch state for the single commit below.
 
 ## Committing
 
