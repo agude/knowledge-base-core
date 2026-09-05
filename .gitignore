@@ -2,3 +2,5 @@ content/
 .observe.lock
 .extract.lock
 .claude/settings.local.json
+
+plan.md
