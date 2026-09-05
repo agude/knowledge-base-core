@@ -1,0 +1,641 @@
+{
+  "format": "knowledge-base-retrieval-evaluation-baseline",
+  "version": 1,
+  "fixture_id": "synthetic-retrieval-v1",
+  "corpus_id": "synthetic-corpus-v1",
+  "fixture_sha256": "ca63e270b5f41f41d49479cab7bd91225683902db8ef0c6f550527f875363236",
+  "corpus_sha256": "cf18ce2aa29cdee938d8ba917cf9b8a5c5893c81aa682e8940ae95fee3161b2f",
+  "top_k": 5,
+  "cases": [
+    {
+      "id": "exact-command-01",
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 551,
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 551,
+      "top_five": [
+        {
+          "path": "knowledge/operations.md",
+          "section": "Deployment commands"
+        }
+      ]
+    },
+    {
+      "id": "exact-command-02",
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 547,
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 547,
+      "top_five": [
+        {
+          "path": "knowledge/operations.md",
+          "section": "Deployment commands"
+        }
+      ]
+    },
+    {
+      "id": "exact-command-03",
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 533,
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 533,
+      "top_five": [
+        {
+          "path": "knowledge/operations.md",
+          "section": "Deployment commands"
+        }
+      ]
+    },
+    {
+      "id": "exact-command-04",
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 562,
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 562,
+      "top_five": [
+        {
+          "path": "knowledge/tooling.md",
+          "section": "Music tagger commands"
+        }
+      ]
+    },
+    {
+      "id": "exact-command-05",
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 548,
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 548,
+      "top_five": [
+        {
+          "path": "knowledge/tooling.md",
+          "section": "Path configuration"
+        }
+      ]
+    },
+    {
+      "id": "exact-command-06",
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 527,
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 527,
+      "top_five": [
+        {
+          "path": "knowledge/network.md",
+          "section": "WireGuard peers"
+        }
+      ]
+    },
+    {
+      "id": "exact-command-07",
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 510,
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 510,
+      "top_five": [
+        {
+          "path": "knowledge/tooling.md",
+          "section": "Named hosts"
+        }
+      ]
+    },
+    {
+      "id": "exact-command-08",
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 557,
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 557,
+      "top_five": [
+        {
+          "path": "knowledge/operations.md",
+          "section": "Encrypted backups"
+        }
+      ]
+    },
+    {
+      "id": "paraphrase-01",
+      "status": "fail",
+      "any_required_evidence": false,
+      "all_required_evidence": false,
+      "matched_required_evidence_count": 0,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 0,
+      "full_ranking_response_bytes": 78,
+      "top_five_raw_result_count": 0,
+      "top_five_section_count": 0,
+      "top_five_response_bytes": 78,
+      "top_five": []
+    },
+    {
+      "id": "paraphrase-02",
+      "status": "fail",
+      "any_required_evidence": false,
+      "all_required_evidence": false,
+      "matched_required_evidence_count": 0,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 0,
+      "full_ranking_response_bytes": 78,
+      "top_five_raw_result_count": 0,
+      "top_five_section_count": 0,
+      "top_five_response_bytes": 78,
+      "top_five": []
+    },
+    {
+      "id": "paraphrase-03",
+      "status": "fail",
+      "any_required_evidence": false,
+      "all_required_evidence": false,
+      "matched_required_evidence_count": 0,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 0,
+      "full_ranking_response_bytes": 78,
+      "top_five_raw_result_count": 0,
+      "top_five_section_count": 0,
+      "top_five_response_bytes": 78,
+      "top_five": []
+    },
+    {
+      "id": "paraphrase-04",
+      "status": "fail",
+      "any_required_evidence": false,
+      "all_required_evidence": false,
+      "matched_required_evidence_count": 0,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 0,
+      "full_ranking_response_bytes": 78,
+      "top_five_raw_result_count": 0,
+      "top_five_section_count": 0,
+      "top_five_response_bytes": 78,
+      "top_five": []
+    },
+    {
+      "id": "paraphrase-05",
+      "status": "fail",
+      "any_required_evidence": false,
+      "all_required_evidence": false,
+      "matched_required_evidence_count": 0,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 0,
+      "full_ranking_response_bytes": 78,
+      "top_five_raw_result_count": 0,
+      "top_five_section_count": 0,
+      "top_five_response_bytes": 78,
+      "top_five": []
+    },
+    {
+      "id": "paraphrase-06",
+      "status": "fail",
+      "any_required_evidence": false,
+      "all_required_evidence": false,
+      "matched_required_evidence_count": 0,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 0,
+      "full_ranking_response_bytes": 78,
+      "top_five_raw_result_count": 0,
+      "top_five_section_count": 0,
+      "top_five_response_bytes": 78,
+      "top_five": []
+    },
+    {
+      "id": "paraphrase-07",
+      "status": "fail",
+      "any_required_evidence": false,
+      "all_required_evidence": false,
+      "matched_required_evidence_count": 0,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 0,
+      "full_ranking_response_bytes": 78,
+      "top_five_raw_result_count": 0,
+      "top_five_section_count": 0,
+      "top_five_response_bytes": 78,
+      "top_five": []
+    },
+    {
+      "id": "paraphrase-08",
+      "status": "fail",
+      "any_required_evidence": false,
+      "all_required_evidence": false,
+      "matched_required_evidence_count": 0,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 0,
+      "full_ranking_response_bytes": 78,
+      "top_five_raw_result_count": 0,
+      "top_five_section_count": 0,
+      "top_five_response_bytes": 78,
+      "top_five": []
+    },
+    {
+      "id": "cross-article-01",
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "matched_required_evidence_count": 2,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 2,
+      "full_ranking_response_bytes": 1015,
+      "top_five_raw_result_count": 2,
+      "top_five_section_count": 2,
+      "top_five_response_bytes": 1015,
+      "top_five": [
+        {
+          "path": "knowledge/media.md",
+          "section": "Startup prerequisites"
+        },
+        {
+          "path": "knowledge/operations.md",
+          "section": "Restart order"
+        }
+      ]
+    },
+    {
+      "id": "cross-article-02",
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "matched_required_evidence_count": 2,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 3,
+      "full_ranking_response_bytes": 1508,
+      "top_five_raw_result_count": 3,
+      "top_five_section_count": 3,
+      "top_five_response_bytes": 1508,
+      "top_five": [
+        {
+          "path": "knowledge/operations.md",
+          "section": "Encrypted backups"
+        },
+        {
+          "path": "knowledge/people.md",
+          "section": "Recovery ownership"
+        },
+        {
+          "path": "knowledge/storage.md",
+          "section": "Backup recovery"
+        }
+      ]
+    },
+    {
+      "id": "cross-article-03",
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "matched_required_evidence_count": 2,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 3,
+      "full_ranking_response_bytes": 1450,
+      "top_five_raw_result_count": 3,
+      "top_five_section_count": 2,
+      "top_five_response_bytes": 1450,
+      "top_five": [
+        {
+          "path": "knowledge/temporal.md",
+          "section": "Current deploy target"
+        },
+        {
+          "path": "knowledge/operations.md",
+          "section": "Deployment target"
+        }
+      ]
+    },
+    {
+      "id": "cross-article-04",
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "matched_required_evidence_count": 2,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 3,
+      "full_ranking_response_bytes": 1437,
+      "top_five_raw_result_count": 3,
+      "top_five_section_count": 2,
+      "top_five_response_bytes": 1437,
+      "top_five": [
+        {
+          "path": "knowledge/people.md",
+          "section": "Pager owner"
+        },
+        {
+          "path": "knowledge/legacy.md",
+          "section": "Historical pager record"
+        }
+      ]
+    },
+    {
+      "id": "cross-article-05",
+      "status": "fail",
+      "any_required_evidence": false,
+      "all_required_evidence": false,
+      "matched_required_evidence_count": 0,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 0,
+      "full_ranking_response_bytes": 78,
+      "top_five_raw_result_count": 0,
+      "top_five_section_count": 0,
+      "top_five_response_bytes": 78,
+      "top_five": []
+    },
+    {
+      "id": "cross-article-06",
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "matched_required_evidence_count": 2,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 2,
+      "full_ranking_response_bytes": 996,
+      "top_five_raw_result_count": 2,
+      "top_five_section_count": 2,
+      "top_five_response_bytes": 996,
+      "top_five": [
+        {
+          "path": "knowledge/network.md",
+          "section": "DNS resolution"
+        },
+        {
+          "path": "knowledge/operations.md",
+          "section": "Network configuration"
+        }
+      ]
+    },
+    {
+      "id": "changed-fact-01",
+      "status": "fail",
+      "any_required_evidence": false,
+      "all_required_evidence": false,
+      "matched_required_evidence_count": 0,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 0,
+      "full_ranking_response_bytes": 78,
+      "top_five_raw_result_count": 0,
+      "top_five_section_count": 0,
+      "top_five_response_bytes": 78,
+      "top_five": []
+    },
+    {
+      "id": "changed-fact-02",
+      "status": "fail",
+      "any_required_evidence": false,
+      "all_required_evidence": false,
+      "matched_required_evidence_count": 0,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 0,
+      "full_ranking_response_bytes": 78,
+      "top_five_raw_result_count": 0,
+      "top_five_section_count": 0,
+      "top_five_response_bytes": 78,
+      "top_five": []
+    },
+    {
+      "id": "changed-fact-03",
+      "status": "fail",
+      "any_required_evidence": false,
+      "all_required_evidence": false,
+      "matched_required_evidence_count": 0,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 0,
+      "full_ranking_response_bytes": 78,
+      "top_five_raw_result_count": 0,
+      "top_five_section_count": 0,
+      "top_five_response_bytes": 78,
+      "top_five": []
+    },
+    {
+      "id": "changed-fact-04",
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 526,
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 526,
+      "top_five": [
+        {
+          "path": "knowledge/temporal.md",
+          "section": "Current queue policy"
+        }
+      ]
+    },
+    {
+      "id": "changed-fact-05",
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 518,
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 518,
+      "top_five": [
+        {
+          "path": "knowledge/temporal.md",
+          "section": "Current rollout label"
+        }
+      ]
+    },
+    {
+      "id": "conflict-01",
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "matched_required_evidence_count": 2,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 3,
+      "full_ranking_response_bytes": 1437,
+      "top_five_raw_result_count": 3,
+      "top_five_section_count": 2,
+      "top_five_response_bytes": 1437,
+      "top_five": [
+        {
+          "path": "knowledge/people.md",
+          "section": "Pager owner"
+        },
+        {
+          "path": "knowledge/legacy.md",
+          "section": "Historical pager record"
+        }
+      ]
+    },
+    {
+      "id": "conflict-02",
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "matched_required_evidence_count": 2,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 3,
+      "full_ranking_response_bytes": 1511,
+      "top_five_raw_result_count": 3,
+      "top_five_section_count": 2,
+      "top_five_response_bytes": 1511,
+      "top_five": [
+        {
+          "path": "knowledge/storage.md",
+          "section": "Canonical backup destination"
+        },
+        {
+          "path": "knowledge/conflicts.md",
+          "section": "Backup destination conflict"
+        }
+      ]
+    },
+    {
+      "id": "conflict-03",
+      "status": "fail",
+      "any_required_evidence": false,
+      "all_required_evidence": false,
+      "matched_required_evidence_count": 0,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 0,
+      "full_ranking_response_bytes": 78,
+      "top_five_raw_result_count": 0,
+      "top_five_section_count": 0,
+      "top_five_response_bytes": 78,
+      "top_five": []
+    },
+    {
+      "id": "conflict-04",
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "matched_required_evidence_count": 2,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 6,
+      "full_ranking_response_bytes": 2909,
+      "top_five_raw_result_count": 5,
+      "top_five_section_count": 2,
+      "top_five_response_bytes": 2438,
+      "top_five": [
+        {
+          "path": "knowledge/conflicts.md",
+          "section": "Retention conflict"
+        },
+        {
+          "path": "knowledge/storage.md",
+          "section": "Current retention"
+        }
+      ]
+    },
+    {
+      "id": "absent-01",
+      "status": "unanswerable",
+      "any_required_evidence": null,
+      "all_required_evidence": null,
+      "matched_required_evidence_count": null,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 0,
+      "full_ranking_response_bytes": 78,
+      "top_five_raw_result_count": 0,
+      "top_five_section_count": 0,
+      "top_five_response_bytes": 78,
+      "top_five": []
+    },
+    {
+      "id": "absent-02",
+      "status": "unanswerable",
+      "any_required_evidence": null,
+      "all_required_evidence": null,
+      "matched_required_evidence_count": null,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 0,
+      "full_ranking_response_bytes": 78,
+      "top_five_raw_result_count": 0,
+      "top_five_section_count": 0,
+      "top_five_response_bytes": 78,
+      "top_five": []
+    },
+    {
+      "id": "absent-03",
+      "status": "unanswerable",
+      "any_required_evidence": null,
+      "all_required_evidence": null,
+      "matched_required_evidence_count": null,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 0,
+      "full_ranking_response_bytes": 78,
+      "top_five_raw_result_count": 0,
+      "top_five_section_count": 0,
+      "top_five_response_bytes": 78,
+      "top_five": []
+    },
+    {
+      "id": "absent-04",
+      "status": "unanswerable",
+      "any_required_evidence": null,
+      "all_required_evidence": null,
+      "matched_required_evidence_count": null,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 0,
+      "full_ranking_response_bytes": 78,
+      "top_five_raw_result_count": 0,
+      "top_five_section_count": 0,
+      "top_five_response_bytes": 78,
+      "top_five": []
+    },
+    {
+      "id": "absent-05",
+      "status": "unanswerable",
+      "any_required_evidence": null,
+      "all_required_evidence": null,
+      "matched_required_evidence_count": null,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 0,
+      "full_ranking_response_bytes": 78,
+      "top_five_raw_result_count": 0,
+      "top_five_section_count": 0,
+      "top_five_response_bytes": 78,
+      "top_five": []
+    }
+  ]
+}

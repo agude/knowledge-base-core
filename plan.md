@@ -1,6 +1,6 @@
 # Knowledge Base Reliability and Retrieval Plan
 
-Created: 2026-09-04. Status: tasks 1–3 implemented; tasks 4–9 pending.
+Created: 2026-09-04. Status: tasks 1–4 implemented; tasks 5–9 pending.
 
 ## Objective
 
@@ -148,21 +148,21 @@ fast, deterministic test suite.
 
 **Acceptance criteria**
 
-- [ ] Define a versioned question format containing query, expected supporting
+- [x] Define a versioned question format containing query, expected supporting
   sections, whether multiple sections are required, and unanswerable status.
-- [ ] Provide 30–50 representative cases covering exact commands/names,
+- [x] Provide 30–50 representative cases covering exact commands/names,
   paraphrases, cross-article evidence, changed facts, conflicting evidence, and
   absent answers. Public fixtures must be synthetic or sanitized; private cases
   may be loaded from a separately configured location.
-- [ ] For each answerable case, report whether any required evidence and whether
-  all required evidence appear in the top five results. Report first relevant
+- [x] For each answerable case, report whether any required evidence and whether
+  all required evidence appear in the top five distinct sections. Report first relevant
   rank, returned bytes, and latency using documented measurement conditions.
-- [ ] Produce per-case failures as well as aggregate scores. Preserve a baseline
+- [x] Produce per-case failures as well as aggregate scores. Preserve a baseline
   for the pre-ranking-change implementation.
-- [ ] Provide an explicit, manually invoked answer-evaluation protocol recording
+- [x] Provide an explicit, manually invoked answer-evaluation protocol recording
   correctness, supporting citations, and correct abstention. Do not infer answer
   quality from retrieval metrics alone or incur automatic model charges.
-- [ ] Document one reproducible command for evaluation, corpus identity, and how
+- [x] Document one reproducible command for evaluation, corpus identity, and how
   expected section locators are updated when fixture articles change.
 
 ## 5. Improve Section Retrieval
@@ -405,3 +405,50 @@ Feedback follow-up:
 
 Compatibility change: default `search` and `section` output now includes
 metadata. Callers requiring the prior raw output must pass `--text-only`.
+
+### 2026-09-05 — Task 4
+
+Added `scripts/evaluate-retrieval`, a deterministic evaluator that runs
+`search --json` against versioned JSON fixtures. Version 1 cases define a
+query, expected content-relative section locators, whether all expected
+sections are required, and unanswerable status. Answerable locators are
+validated against the selected corpus before search runs. Reports include
+per-case failures, distinct-section top-five any/all evidence coverage, first
+relevant rank, full-ranking and bounded response bytes/latency, aggregate
+scores, fixture/corpus IDs, and SHA-256 identities.
+
+Added a public synthetic corpus and 36-case fixture covering exact
+commands/names, paraphrases, cross-article evidence, changed facts,
+conflicting evidence, and absent answers. Added a frozen baseline containing
+pre-ranking-change locators and outcomes. Baseline comparison reports fixture
+or corpus mismatches, changed cases, regressions, and improvements. It detects
+pass-to-fail changes, later first-relevant ranks, lost any/all evidence, and
+lower matched-evidence counts; it is manually invoked and can fail explicitly
+on regressions.
+
+Documented a separate manual answer-evaluation protocol. It records answer
+correctness, supporting section citations, abstention, and abstention
+correctness outside the public tooling repository. Updated the README and
+portable knowledge-base skill with the evaluator contract and reproducible
+commands.
+
+Verification:
+
+- `bats tests/evaluate_retrieval.bats` — 7 tests passed.
+- `bats tests/*.bats` — 311 tests passed.
+- `shellcheck -x -P scripts -s bash scripts/evaluate-retrieval` — passed.
+- `bash scripts/portability-lint` — passed.
+- `git diff --check` — passed.
+- Public baseline comparison with `--fail-on-regression` — 36 unchanged cases,
+  zero regressions.
+
+Baseline measurement on 2026-09-05: 31 answerable cases, 18 passed, 13
+failed, and 5 unanswerable. Any-required-evidence and all-required-evidence
+coverage were both 18/31 (58.06%). The report separates full-ranking latency
+from bounded top-five latency and records both response sizes. Timing uses
+high-resolution `date +%s%N` on this host; the evaluator documents a
+second-resolution fallback for platforms without that format.
+
+Remaining limitation: the evaluator measures retrieval coverage only. The
+manual protocol is documented but has no automatic answer-quality scorer or
+private answer set, by design.

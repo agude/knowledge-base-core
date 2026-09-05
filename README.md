@@ -161,6 +161,7 @@ Standard markdown content. Links use [normal syntax](other-page.md).
 | `commit -m "..."` | Commit curation work under the write lock |
 | `sync [--status]` | Pull and push the content repo |
 | `status` | Summary stats |
+| `evaluate-retrieval --fixture FILE` | Measure retrieval against a versioned question fixture |
 | `context` | Compact summary for session injection |
 | `session-context` | Produce context for a host adapter |
 | `session-init` | Create a session buffer |
@@ -200,6 +201,106 @@ contains `path`, `corpus`, `locator`, `freshness`, `provenance`, and `text`;
 `--files` returns one file result with `match_count` and a null locator.
 `section --json` returns one object with `path`, `corpus`, `locator`,
 `freshness`, `provenance`, and the multiline `content`.
+
+### Retrieval evaluation
+
+`evaluate-retrieval` measures whether `search` returns expected evidence. It
+uses a versioned JSON fixture and reports per-case status, distinct-section
+top-five evidence coverage, first relevant rank, response bytes, and search
+latency. The runner performs no model calls and does not modify the content
+repository.
+
+Run the public synthetic evaluation from the tooling repository:
+
+```bash
+scripts/evaluate-retrieval \
+  --fixture tests/fixtures/retrieval-v1/retrieval-v1.json \
+  --content-dir tests/fixtures/retrieval-v1/content \
+  --baseline tests/fixtures/retrieval-v1/retrieval-v1.baseline.json \
+  --json
+```
+
+The fixture format is `knowledge-base-retrieval-evaluation` version `1`. Each
+case contains `query`, `expected_sections` (content-relative `path` and search
+`section` locators), `requires_all_sections`, and `unanswerable`. Expected
+sections are required evidence: the report always records both whether any and
+whether all expected sections appear in the top five distinct sections. A case
+passes when any expected section is present, unless `requires_all_sections` is
+true. An unanswerable case is reported as `unanswerable` and is excluded from
+answerable retrieval scores.
+
+Before retrieval starts, every answerable expected path and section is checked
+against the selected corpus. A missing file or renamed heading is an invalid
+fixture, not a retrieval failure.
+
+The evaluator runs two searches per case. The full-ranking search uses
+`--limit 0 --per-file 0` to establish the distinct-section ranking and first
+relevant rank. The bounded search uses `--limit 5 --per-file 0` to measure the
+response an agent would consume. Full-ranking result count, response bytes,
+latency, and first relevant rank describe the first search. Bounded response
+bytes, latency, and raw result count describe the second. `top_five` and
+`top_five_section_count` are distinct `{path, section}` locators derived from
+the full ranking, while `bounded_raw_results` preserves the bounded search's
+raw snippets.
+
+The committed baseline contains ranked locators and outcome metrics from the
+pre-ranking-change implementation, including deterministic response-size
+metrics. Generate a replacement only after reviewing the corpus and fixture
+changes:
+
+```bash
+scripts/evaluate-retrieval \
+  --fixture tests/fixtures/retrieval-v1/retrieval-v1.json \
+  --content-dir tests/fixtures/retrieval-v1/content \
+  --write-baseline tests/fixtures/retrieval-v1/retrieval-v1.baseline.json
+```
+
+The report records `fixture_id`, `corpus_id`, and SHA-256 identities for the
+fixture and Markdown corpus. `--baseline` compares those identities and lists
+changed cases, regressions, and improvements. A regression is a pass-to-fail
+outcome, a loss of any/all evidence, a lower matched-evidence count, or a first
+relevant result moving to a higher-numbered rank. Use `--fail-on-regression` in
+a manual ranking experiment;
+it does not make evaluation part of the fast Bats suite.
+
+The public fixture is synthetic. Private question sets may be supplied with
+`--fixture` from a separately configured location and must not be committed to
+this public repository. When fixture articles change, update expected section
+locators in the same change, rerun the evaluator, and review the resulting
+baseline before replacing it.
+
+Retrieval metrics do not establish answer correctness. Perform answer
+evaluation manually using the retrieved sections:
+
+1. Record the answer generated from the case's top-five sections and cite each
+   supporting `path` and `section` locator.
+2. Mark answerable cases `correct`, `partially correct`, or `incorrect` after
+   checking the cited sections against the corpus.
+3. For `unanswerable` cases, mark whether the answer abstained and whether the
+   abstention was correct. An unsupported confident answer fails the case.
+4. Store private answers, annotations, and adjudication outside this tooling
+   repository. Do not infer answer quality from retrieval scores alone.
+
+Record each manual judgment with this schema in the separately configured
+private evaluation location:
+
+```json
+{
+  "case_id": "cross-article-01",
+  "correctness": "correct",
+  "supporting_citations": [
+    {"path": "knowledge/operations.md", "section": "Restart order"}
+  ],
+  "abstained": false,
+  "abstention_correct": null,
+  "notes": "The answer cites both required sections."
+}
+```
+
+Use `correctness` values `correct`, `partially correct`, or `incorrect` for
+answerable cases. For unanswerable cases, set `correctness` to `null`, record
+whether the answer abstained, and set `abstention_correct` to `true` or
+`false`.
 
 `sync` verifies a successful fetch and an available `origin/<branch>` tracking
 ref before reporting counts. Normal and `--status` runs return nonzero when

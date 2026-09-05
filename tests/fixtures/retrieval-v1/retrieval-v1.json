@@ -1,0 +1,327 @@
+{
+  "format": "knowledge-base-retrieval-evaluation",
+  "version": 1,
+  "fixture_id": "synthetic-retrieval-v1",
+  "corpus_id": "synthetic-corpus-v1",
+  "description": "Synthetic retrieval questions covering lexical and evidence-recovery behavior.",
+  "cases": [
+    {
+      "id": "exact-command-01",
+      "category": "exact_command_or_name",
+      "query": "systemctl restart kb-api",
+      "expected_sections": [{"path": "knowledge/operations.md", "section": "Deployment commands"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "exact-command-02",
+      "category": "exact_command_or_name",
+      "query": "scripts/search --json --limit 5",
+      "expected_sections": [{"path": "knowledge/operations.md", "section": "Deployment commands"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "exact-command-03",
+      "category": "exact_command_or_name",
+      "query": "--no-push",
+      "expected_sections": [{"path": "knowledge/operations.md", "section": "Deployment commands"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "exact-command-04",
+      "category": "exact_command_or_name",
+      "query": "music-tagger --rename",
+      "expected_sections": [{"path": "knowledge/tooling.md", "section": "Music tagger commands"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "exact-command-05",
+      "category": "exact_command_or_name",
+      "query": "KB_CONTENT_DIR",
+      "expected_sections": [{"path": "knowledge/tooling.md", "section": "Path configuration"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "exact-command-06",
+      "category": "exact_command_or_name",
+      "query": "wg-kb-prod",
+      "expected_sections": [{"path": "knowledge/network.md", "section": "WireGuard peers"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "exact-command-07",
+      "category": "exact_command_or_name",
+      "query": "Aurora",
+      "expected_sections": [{"path": "knowledge/tooling.md", "section": "Named hosts"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "exact-command-08",
+      "category": "exact_command_or_name",
+      "query": "/srv/backups/kb",
+      "expected_sections": [{"path": "knowledge/operations.md", "section": "Encrypted backups"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "paraphrase-01",
+      "category": "paraphrase",
+      "query": "how do I restart the api",
+      "expected_sections": [{"path": "knowledge/operations.md", "section": "Deployment commands"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "paraphrase-02",
+      "category": "paraphrase",
+      "query": "where are the backups kept",
+      "expected_sections": [{"path": "knowledge/operations.md", "section": "Encrypted backups"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "paraphrase-03",
+      "category": "paraphrase",
+      "query": "what starts before plex",
+      "expected_sections": [{"path": "knowledge/operations.md", "section": "Restart order"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "paraphrase-04",
+      "category": "paraphrase",
+      "query": "rename music tracks",
+      "expected_sections": [{"path": "knowledge/tooling.md", "section": "Music tagger commands"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "paraphrase-05",
+      "category": "paraphrase",
+      "query": "configure the knowledge root",
+      "expected_sections": [{"path": "knowledge/tooling.md", "section": "Path configuration"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "paraphrase-06",
+      "category": "paraphrase",
+      "query": "production tunnel peer",
+      "expected_sections": [{"path": "knowledge/network.md", "section": "WireGuard peers"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "paraphrase-07",
+      "category": "paraphrase",
+      "query": "who is on call",
+      "expected_sections": [{"path": "knowledge/people.md", "section": "On-call ownership"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "paraphrase-08",
+      "category": "paraphrase",
+      "query": "how long are backups retained",
+      "expected_sections": [{"path": "knowledge/storage.md", "section": "Current retention"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "cross-article-01",
+      "category": "cross_article",
+      "query": "media services startup order",
+      "expected_sections": [
+        {"path": "knowledge/operations.md", "section": "Restart order"},
+        {"path": "knowledge/media.md", "section": "Startup prerequisites"}
+      ],
+      "requires_all_sections": true,
+      "unanswerable": false
+    },
+    {
+      "id": "cross-article-02",
+      "category": "cross_article",
+      "query": "encrypted backup recovery",
+      "expected_sections": [
+        {"path": "knowledge/operations.md", "section": "Encrypted backups"},
+        {"path": "knowledge/people.md", "section": "Recovery ownership"}
+      ],
+      "requires_all_sections": true,
+      "unanswerable": false
+    },
+    {
+      "id": "cross-article-03",
+      "category": "cross_article",
+      "query": "current deploy target",
+      "expected_sections": [
+        {"path": "knowledge/operations.md", "section": "Deployment target"},
+        {"path": "knowledge/temporal.md", "section": "Current deploy target"}
+      ],
+      "requires_all_sections": true,
+      "unanswerable": false
+    },
+    {
+      "id": "cross-article-04",
+      "category": "cross_article",
+      "query": "pager owner",
+      "expected_sections": [
+        {"path": "knowledge/people.md", "section": "Pager owner"},
+        {"path": "knowledge/legacy.md", "section": "Historical pager record"}
+      ],
+      "requires_all_sections": true,
+      "unanswerable": false
+    },
+    {
+      "id": "cross-article-05",
+      "category": "cross_article",
+      "query": "current backup retention 35 days",
+      "expected_sections": [
+        {"path": "knowledge/storage.md", "section": "Current retention"},
+        {"path": "knowledge/temporal.md", "section": "Current backup retention"}
+      ],
+      "requires_all_sections": true,
+      "unanswerable": false
+    },
+    {
+      "id": "cross-article-06",
+      "category": "cross_article",
+      "query": "configure internal DNS resolver",
+      "expected_sections": [
+        {"path": "knowledge/operations.md", "section": "Network configuration"},
+        {"path": "knowledge/network.md", "section": "DNS resolution"}
+      ],
+      "requires_all_sections": true,
+      "unanswerable": false
+    },
+    {
+      "id": "changed-fact-01",
+      "category": "changed_fact",
+      "query": "deploy target kb-api-v2 as of 2026-09-01",
+      "expected_sections": [{"path": "knowledge/temporal.md", "section": "Current deploy target"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "changed-fact-02",
+      "category": "changed_fact",
+      "query": "current API hostname api.internal.example",
+      "expected_sections": [{"path": "knowledge/temporal.md", "section": "Current API hostname"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "changed-fact-03",
+      "category": "changed_fact",
+      "query": "current backup retention keeps snapshots 35 days",
+      "expected_sections": [{"path": "knowledge/storage.md", "section": "Current retention"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "changed-fact-04",
+      "category": "changed_fact",
+      "query": "current queue policy allows 200 records",
+      "expected_sections": [{"path": "knowledge/temporal.md", "section": "Current queue policy"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "changed-fact-05",
+      "category": "changed_fact",
+      "query": "current rollout label is green",
+      "expected_sections": [{"path": "knowledge/temporal.md", "section": "Current rollout label"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "conflict-01",
+      "category": "conflicting_evidence",
+      "query": "pager owner",
+      "expected_sections": [
+        {"path": "knowledge/people.md", "section": "Pager owner"},
+        {"path": "knowledge/legacy.md", "section": "Historical pager record"}
+      ],
+      "requires_all_sections": true,
+      "unanswerable": false
+    },
+    {
+      "id": "conflict-02",
+      "category": "conflicting_evidence",
+      "query": "canonical backup destination",
+      "expected_sections": [
+        {"path": "knowledge/storage.md", "section": "Canonical backup destination"},
+        {"path": "knowledge/conflicts.md", "section": "Backup destination conflict"}
+      ],
+      "requires_all_sections": true,
+      "unanswerable": false
+    },
+    {
+      "id": "conflict-03",
+      "category": "conflicting_evidence",
+      "query": "service owner Morgan Lee",
+      "expected_sections": [
+        {"path": "knowledge/people.md", "section": "Service owner"},
+        {"path": "knowledge/conflicts.md", "section": "Service owner conflict"}
+      ],
+      "requires_all_sections": true,
+      "unanswerable": false
+    },
+    {
+      "id": "conflict-04",
+      "category": "conflicting_evidence",
+      "query": "retention policy records 35 days",
+      "expected_sections": [
+        {"path": "knowledge/storage.md", "section": "Current retention"},
+        {"path": "knowledge/conflicts.md", "section": "Retention conflict"}
+      ],
+      "requires_all_sections": true,
+      "unanswerable": false
+    },
+    {
+      "id": "absent-01",
+      "category": "absent_answer",
+      "query": "quantum orchard scheduler",
+      "expected_sections": [],
+      "requires_all_sections": false,
+      "unanswerable": true
+    },
+    {
+      "id": "absent-02",
+      "category": "absent_answer",
+      "query": "blue comet retention",
+      "expected_sections": [],
+      "requires_all_sections": false,
+      "unanswerable": true
+    },
+    {
+      "id": "absent-03",
+      "category": "absent_answer",
+      "query": "unicorn database owner",
+      "expected_sections": [],
+      "requires_all_sections": false,
+      "unanswerable": true
+    },
+    {
+      "id": "absent-04",
+      "category": "absent_answer",
+      "query": "mars telemetry key",
+      "expected_sections": [],
+      "requires_all_sections": false,
+      "unanswerable": true
+    },
+    {
+      "id": "absent-05",
+      "category": "absent_answer",
+      "query": "saffron hyperdrive command",
+      "expected_sections": [],
+      "requires_all_sections": false,
+      "unanswerable": true
+    }
+  ]
+}

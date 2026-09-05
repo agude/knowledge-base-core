@@ -153,6 +153,7 @@ All scripts are at `$KNOWLEDGE_BASE/scripts/<name>`.
 | Script | Purpose |
 |---|---|
 | `search <term> [term ...] [--json\|--text-only]` | Search content, ranked, with metadata |
+| `evaluate-retrieval --fixture FILE [--baseline FILE]` | Measure retrieval against a versioned question fixture |
 | `toc [--depth N] [--path DIR] [--flat] [--dirs]` | List topics and sections |
 | `section --file FILE (--number N \| --heading TEXT) [--json\|--text-only]` | Extract a section with metadata |
 | `section --file FILE --references [--json]` | Return the complete provenance reference list |
