@@ -78,18 +78,22 @@ example.
 
 ## Workflow
 
-1. Run `$KNOWLEDGE_BASE/scripts/pending --count` to see how many pending
+1. Run `$KNOWLEDGE_BASE/scripts/sync` before selecting a curation batch. If it
+   exits nonzero, stop curation: remote state was not verified, so pending
+   observations may be incomplete. Do not treat a failed sync or a zero-count
+   status as successful synchronization.
+2. Run `$KNOWLEDGE_BASE/scripts/pending --count` to see how many pending
    observations you have to work on. If there are a lot, you'll need to handle
    them in batches to avoid running out of context.
-2. If there are only a small number of observations, run
+3. If there are only a small number of observations, run
    `$KNOWLEDGE_BASE/scripts/pending --full` to read them all. Otherwise
    use your READ tool to go through them one by one.
-3. Run `$KNOWLEDGE_BASE/scripts/toc --depth 2` to see the current knowledge structure.
-4. For each observation, decide what to do (see Decision Framework below).
-5. Execute your decisions --- edit knowledge articles directly. Find the
+4. Run `$KNOWLEDGE_BASE/scripts/toc --depth 2` to see the current knowledge structure.
+5. For each observation, decide what to do (see Decision Framework below).
+6. Execute your decisions --- edit knowledge articles directly. Find the
    content root with `$KNOWLEDGE_BASE/scripts/status`; do not assume
    it is `./content`.
-6. **Check what you wrote.** Run the linter over everything you touched.
+7. **Check what you wrote.** Run the linter over everything you touched.
    It reports oversized H2s, second H1s, missing or malformed `verified`
    dates, unclosed code fences, and duplicate H2 names. You will not
    notice any of these by eye; measure them.
@@ -100,7 +104,7 @@ example.
 
    Fix every error before committing. Fix oversized-H2 warnings by
    cutting first, splitting second (see "Cut before you split").
-7. Create a batch before processing with
+8. Create a batch before processing with
    `$KNOWLEDGE_BASE/scripts/batch start`. The command records the exact
    filenames and content hashes. Complete each incorporated, duplicate, or
    ephemeral item with an explicit command such as:
@@ -112,11 +116,11 @@ example.
    Use `batch status BATCH_ID` to resume after interruption. Never use
    `archive --all` during curation: observations arriving after batch
    selection are not part of the batch.
-8. Review open questions (see Open Questions below).
-9. Commit everything as one batch with
+9. Review open questions (see Open Questions below).
+10. Commit everything as one batch with
    `$KNOWLEDGE_BASE/scripts/commit -m "Curate: <summary>"`.
 
-If there are no pending observations, check open questions anyway (step 8),
+If there are no pending observations, check open questions anyway (step 9),
 then stop if there's nothing to do.
 
 ## Decision Framework
@@ -461,7 +465,7 @@ articles yet, or are cross-cutting.
 
 ### During curation
 
-After processing observations (step 8), run `$KNOWLEDGE_BASE/scripts/questions` to see all
+After processing observations (step 9), run `$KNOWLEDGE_BASE/scripts/questions` to see all
 open questions. For each topic area you touched during this curation run, also
 check `$KNOWLEDGE_BASE/scripts/questions --path <area>`.
 

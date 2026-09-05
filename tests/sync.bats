@@ -15,6 +15,9 @@ setup() {
 teardown() {
     teardown_content_dir
     [[ -n "${REMOTE:-}" ]] && rm -rf "$REMOTE"
+    if [[ -n "${SYNC_TEST_TMP:-}" ]]; then
+        rm -rf "$SYNC_TEST_TMP"
+    fi
 }
 
 # clone_and_commit - A second machine committing its own observation.
@@ -29,6 +32,14 @@ clone_and_commit() {
     git -C "$OTHER" commit -q -m "Observe: from another machine"
     git -C "$OTHER" push -q origin HEAD
     rm -rf "$OTHER"
+}
+
+content_git() {
+    ( cd "$TEST_CONTENT_DIR" && git "$@" )
+}
+
+other_git() {
+    ( cd "$OTHER" && git "$@" )
 }
 
 @test "sync reports being in sync" {
@@ -85,6 +96,112 @@ clone_and_commit() {
     run "$SCRIPTS/sync"
     [[ "$status" -ne 0 ]]
     [[ "$output" == *"No 'origin' remote"* ]]
+}
+
+@test "sync reports fetch failure instead of using cached state" {
+    content_git remote set-url origin "$REMOTE/unavailable"
+    run "$SCRIPTS/sync"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"remote state could not be verified"* ]]
+    [[ "$output" != *"Already in sync"* ]]
+}
+
+@test "sync --status reports fetch failure instead of using cached state" {
+    content_git remote set-url origin "$REMOTE/unavailable"
+    run "$SCRIPTS/sync" --status
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"remote state could not be verified"* ]]
+    [[ "$output" != *"In sync"* ]]
+}
+
+@test "sync rejects unavailable remote tracking information" {
+    content_git config --unset-all remote.origin.fetch
+    content_git update-ref -d "refs/remotes/origin/$BRANCH"
+    run "$SCRIPTS/sync" --status
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"remote state could not be verified"* ]]
+    [[ "$output" != *"In sync"* ]]
+}
+
+@test "sync rechecks for observations written during fetch" {
+    SYNC_TEST_TMP="$(mktemp -d)"
+    REAL_GIT="$(command -v git)"
+    export REAL_GIT
+    export SYNC_FETCH_STARTED="$SYNC_TEST_TMP/fetch-started"
+    export SYNC_FETCH_RELEASE="$SYNC_TEST_TMP/fetch-release"
+    cat > "$SYNC_TEST_TMP/git" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == fetch ]]; then
+    : > "$SYNC_FETCH_STARTED"
+    attempt=0
+    while [[ ! -f "$SYNC_FETCH_RELEASE" && "$attempt" -lt 100 ]]; do
+        attempt=$((attempt + 1))
+        sleep 0.05
+    done
+fi
+exec "$REAL_GIT" "$@"
+EOF
+    chmod +x "$SYNC_TEST_TMP/git"
+
+    PATH="$SYNC_TEST_TMP:$PATH" "$SCRIPTS/sync" \
+        > "$SYNC_TEST_TMP/output" 2>&1 &
+    sync_pid=$!
+    attempt=0
+    while [[ ! -f "$SYNC_FETCH_STARTED" && "$attempt" -lt 100 ]]; do
+        attempt=$((attempt + 1))
+        sleep 0.05
+    done
+    [[ -f "$SYNC_FETCH_STARTED" ]]
+
+    KNOWLEDGE_OBSERVE=1 "$SCRIPTS/observe" \
+        --title "Concurrent" --body "Written during sync" \
+        > "$SYNC_TEST_TMP/observer-output" 2>&1 &
+    observer_pid=$!
+    pending_path=""
+    attempt=0
+    while [[ -z "$pending_path" && "$attempt" -lt 100 ]]; do
+        pending_path="$(find "$TEST_CONTENT_DIR/observations/pending" \
+            -name '*.md' -type f -print -quit)"
+        attempt=$((attempt + 1))
+        sleep 0.05
+    done
+    [[ -n "$pending_path" ]]
+    touch "$SYNC_FETCH_RELEASE"
+
+    sync_status=0
+    wait "$sync_pid" || sync_status=$?
+    [[ "$sync_status" -ne 0 ]]
+    observer_status=0
+    wait "$observer_pid" || observer_status=$?
+    [[ "$observer_status" -eq 0 ]]
+    output="$(<"$SYNC_TEST_TMP/output")"
+    [[ "$output" == *"Uncommitted changes"* ]]
+}
+
+@test "sync leaves rebase conflicts for resolution" {
+    printf 'base\n' > "$TEST_CONTENT_DIR/knowledge/conflict.md"
+    content_git add knowledge/conflict.md
+    content_git commit -qm "Add conflict fixture"
+    content_git push -q origin "$BRANCH"
+
+    printf 'local\n' > "$TEST_CONTENT_DIR/knowledge/conflict.md"
+    content_git commit -qam "Local conflict"
+
+    OTHER="$(mktemp -d)"
+    git clone -q "$REMOTE" "$OTHER"
+    other_git config user.email "other@test.com"
+    other_git config user.name "Other"
+    printf 'remote\n' > "$OTHER/knowledge/conflict.md"
+    other_git commit -qam "Remote conflict"
+    other_git push -q origin HEAD
+    rm -rf "$OTHER"
+
+    run "$SCRIPTS/sync"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Rebase failed"* ]]
+    [[ -d "$TEST_CONTENT_DIR/.git/rebase-merge" || \
+        -d "$TEST_CONTENT_DIR/.git/rebase-apply" ]]
+    [[ ! -d "$TEST_CONTENT_DIR/.observe.lock" ]]
 }
 
 @test "sync --no-push pulls only" {

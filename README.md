@@ -169,6 +169,10 @@ Standard markdown content. Links use [normal syntax](other-page.md).
 
 All scripts support `--help`.
 
+`sync` verifies a successful fetch and an available `origin/<branch>` tracking
+ref before reporting counts. Normal and `--status` runs return nonzero when
+remote state cannot be verified; they do not report cached counts as current.
+
 ## Capture → curate pipeline
 
 1. **Capture.** Call `scripts/observe` during a session (or drop a markdown

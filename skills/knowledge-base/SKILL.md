@@ -152,3 +152,7 @@ All scripts are at `$KNOWLEDGE_BASE/scripts/<name>`.
 | `init [--path DIR]` | Initialize an empty content repo |
 | `status` | Summary stats |
 | `context` | Compact summary for session injection |
+
+`sync` verifies a successful fetch and an available `origin/<branch>` tracking
+ref before reporting counts. Normal and `--status` runs return nonzero when
+remote state cannot be verified; they do not report cached counts as current.

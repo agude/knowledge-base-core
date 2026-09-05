@@ -25,7 +25,8 @@
 #
 # Exit status:
 #   0  in sync (or successfully synced)
-#   1  could not sync — uncommitted work, no remote, or a failed rebase
+#   1  could not sync — uncommitted work, no remote, unverifiable remote,
+#      or a failed rebase
 #
 # Examples:
 #   sync              # pull, then push
@@ -59,31 +60,72 @@ fi
 
 cd "$CONTENT_DIR"
 
+stop_sync() {
+    release_lock
+    exit 1
+}
+
+abort_sync() {
+    echo "$1" >&2
+    stop_sync
+}
+
+assert_clean_worktree() {
+    local dirty
+
+    if ! dirty="$(git status --porcelain --untracked-files=all -- . \
+        ':(exclude).observe.lock')"; then
+        echo "Could not inspect the worktree in $CONTENT_DIR." >&2
+        return 1
+    fi
+
+    if [[ -n "$dirty" ]]; then
+        echo "Uncommitted changes in $CONTENT_DIR — commit or stash first:" >&2
+        printf '%s\n' "$dirty" | sed -n '1,10p' >&2
+        return 1
+    fi
+}
+
+# The lock covers fetch, history inspection, and the worktree operations. A
+# capture can write its pending file before it waits for this same lock, so
+# the clean-worktree check must also run after fetch.
+acquire_lock || exit 1
+
 if ! git remote get-url origin > /dev/null 2>&1; then
-    echo "No 'origin' remote on $CONTENT_DIR — nothing to sync." >&2
-    exit 1
+    abort_sync "No 'origin' remote on $CONTENT_DIR — nothing to sync."
 fi
 
-branch="$(git rev-parse --abbrev-ref HEAD)"
-
-# Uncommitted work means a curation run is in progress. Rebasing under it
-# would either fail or silently reorder someone's half-finished edits.
-dirty="$(git status --porcelain)"
-if [[ -n "$dirty" ]]; then
-    echo "Uncommitted changes in $CONTENT_DIR — commit or stash first:" >&2
-    printf '%s\n' "$dirty" | head -10 >&2
-    exit 1
+if ! branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"; then
+    abort_sync "Could not determine the current branch in $CONTENT_DIR."
 fi
 
-git fetch --quiet origin "$branch" 2>/dev/null || true
+if ! assert_clean_worktree; then
+    stop_sync
+fi
 
-ahead=0
-behind=0
-if git rev-parse --verify --quiet "origin/$branch" > /dev/null; then
-    read -r behind ahead < <(
-        git rev-list --left-right --count "origin/$branch...HEAD" 2>/dev/null \
-            || echo "0 0"
-    )
+if ! git fetch --quiet origin "$branch"; then
+    abort_sync "Fetch failed; remote state could not be verified for origin/$branch."
+fi
+
+remote_ref="refs/remotes/origin/$branch"
+if ! git rev-parse --verify --quiet "$remote_ref" > /dev/null; then
+    abort_sync "Remote branch origin/$branch is unavailable; remote state could not be verified."
+fi
+
+if ! counts="$(git rev-list --left-right --count "$remote_ref...HEAD" 2>/dev/null)"; then
+    abort_sync "Could not compare local and remote history; remote state could not be verified."
+fi
+if ! read -r behind ahead <<< "$counts"; then
+    abort_sync "Could not parse local and remote history; remote state could not be verified."
+fi
+if [[ ! "$behind" =~ ^[0-9]+$ || ! "$ahead" =~ ^[0-9]+$ ]]; then
+    abort_sync "Could not parse local and remote history; remote state could not be verified."
+fi
+
+# Recheck after fetch so an observation written while fetch was running is
+# never mistaken for a clean, in-sync worktree.
+if ! assert_clean_worktree; then
+    stop_sync
 fi
 
 if [[ "$STATUS_ONLY" == true ]]; then
@@ -92,20 +134,23 @@ if [[ "$STATUS_ONLY" == true ]]; then
     else
         echo "$ahead to push, $behind to pull (origin/$branch)."
     fi
+    release_lock
     exit 0
 fi
 
 if (( ahead == 0 && behind == 0 )); then
     echo "Already in sync with origin/$branch."
+    release_lock
     exit 0
 fi
 
-acquire_lock || exit 1
-
 rc=0
 if (( behind > 0 )); then
+    if ! assert_clean_worktree; then
+        stop_sync
+    fi
     echo "Pulling $behind commit(s)..."
-    git pull --rebase --quiet origin "$branch" || rc=$?
+    git rebase --quiet "$remote_ref" || rc=$?
     if (( rc != 0 )); then
         echo "Rebase failed. Resolve it in $CONTENT_DIR, then run sync again." >&2
         # Leave the rebase in place: aborting would discard the conflict
@@ -114,8 +159,15 @@ if (( behind > 0 )); then
 fi
 
 if (( rc == 0 )) && [[ "$DO_PUSH" == true ]]; then
-    pushing="$(git rev-list --count "origin/$branch..HEAD" 2>/dev/null || echo 0)"
-    if (( pushing > 0 )); then
+    if ! assert_clean_worktree; then
+        rc=1
+    elif ! pushing="$(git rev-list --count "$remote_ref..HEAD" 2>/dev/null)"; then
+        echo "Could not determine commits to push; remote state could not be verified." >&2
+        rc=1
+    elif [[ ! "$pushing" =~ ^[0-9]+$ ]]; then
+        echo "Could not determine commits to push; remote state could not be verified." >&2
+        rc=1
+    elif (( pushing > 0 )); then
         echo "Pushing $pushing commit(s)..."
         git push --quiet origin "$branch" || rc=$?
     fi
