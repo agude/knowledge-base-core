@@ -4,7 +4,7 @@
   "fixture_id": "synthetic-retrieval-v1",
   "corpus_id": "synthetic-corpus-v1",
   "fixture_sha256": "ca63e270b5f41f41d49479cab7bd91225683902db8ef0c6f550527f875363236",
-  "corpus_sha256": "cf18ce2aa29cdee938d8ba917cf9b8a5c5893c81aa682e8940ae95fee3161b2f",
+  "corpus_sha256": "d64b1145456d94ccdc2e42739dba5704a7913726c4b5c49830e680406e96dfe5",
   "top_k": 5,
   "cases": [
     {
@@ -24,7 +24,8 @@
           "path": "knowledge/operations.md",
           "section": "Deployment commands"
         }
-      ]
+      ],
+      "false_positive_retrieval": null
     },
     {
       "id": "exact-command-02",
@@ -43,7 +44,8 @@
           "path": "knowledge/operations.md",
           "section": "Deployment commands"
         }
-      ]
+      ],
+      "false_positive_retrieval": null
     },
     {
       "id": "exact-command-03",
@@ -62,7 +64,8 @@
           "path": "knowledge/operations.md",
           "section": "Deployment commands"
         }
-      ]
+      ],
+      "false_positive_retrieval": null
     },
     {
       "id": "exact-command-04",
@@ -81,7 +84,8 @@
           "path": "knowledge/tooling.md",
           "section": "Music tagger commands"
         }
-      ]
+      ],
+      "false_positive_retrieval": null
     },
     {
       "id": "exact-command-05",
@@ -100,7 +104,8 @@
           "path": "knowledge/tooling.md",
           "section": "Path configuration"
         }
-      ]
+      ],
+      "false_positive_retrieval": null
     },
     {
       "id": "exact-command-06",
@@ -119,7 +124,8 @@
           "path": "knowledge/network.md",
           "section": "WireGuard peers"
         }
-      ]
+      ],
+      "false_positive_retrieval": null
     },
     {
       "id": "exact-command-07",
@@ -138,7 +144,8 @@
           "path": "knowledge/tooling.md",
           "section": "Named hosts"
         }
-      ]
+      ],
+      "false_positive_retrieval": null
     },
     {
       "id": "exact-command-08",
@@ -157,7 +164,8 @@
           "path": "knowledge/operations.md",
           "section": "Encrypted backups"
         }
-      ]
+      ],
+      "false_positive_retrieval": null
     },
     {
       "id": "paraphrase-01",
@@ -171,7 +179,8 @@
       "top_five_raw_result_count": 0,
       "top_five_section_count": 0,
       "top_five_response_bytes": 78,
-      "top_five": []
+      "top_five": [],
+      "false_positive_retrieval": null
     },
     {
       "id": "paraphrase-02",
@@ -185,7 +194,8 @@
       "top_five_raw_result_count": 0,
       "top_five_section_count": 0,
       "top_five_response_bytes": 78,
-      "top_five": []
+      "top_five": [],
+      "false_positive_retrieval": null
     },
     {
       "id": "paraphrase-03",
@@ -199,7 +209,8 @@
       "top_five_raw_result_count": 0,
       "top_five_section_count": 0,
       "top_five_response_bytes": 78,
-      "top_five": []
+      "top_five": [],
+      "false_positive_retrieval": null
     },
     {
       "id": "paraphrase-04",
@@ -213,7 +224,8 @@
       "top_five_raw_result_count": 0,
       "top_five_section_count": 0,
       "top_five_response_bytes": 78,
-      "top_five": []
+      "top_five": [],
+      "false_positive_retrieval": null
     },
     {
       "id": "paraphrase-05",
@@ -227,7 +239,8 @@
       "top_five_raw_result_count": 0,
       "top_five_section_count": 0,
       "top_five_response_bytes": 78,
-      "top_five": []
+      "top_five": [],
+      "false_positive_retrieval": null
     },
     {
       "id": "paraphrase-06",
@@ -241,7 +254,8 @@
       "top_five_raw_result_count": 0,
       "top_five_section_count": 0,
       "top_five_response_bytes": 78,
-      "top_five": []
+      "top_five": [],
+      "false_positive_retrieval": null
     },
     {
       "id": "paraphrase-07",
@@ -255,7 +269,8 @@
       "top_five_raw_result_count": 0,
       "top_five_section_count": 0,
       "top_five_response_bytes": 78,
-      "top_five": []
+      "top_five": [],
+      "false_positive_retrieval": null
     },
     {
       "id": "paraphrase-08",
@@ -269,7 +284,8 @@
       "top_five_raw_result_count": 0,
       "top_five_section_count": 0,
       "top_five_response_bytes": 78,
-      "top_five": []
+      "top_five": [],
+      "false_positive_retrieval": null
     },
     {
       "id": "cross-article-01",
@@ -292,7 +308,8 @@
           "path": "knowledge/operations.md",
           "section": "Restart order"
         }
-      ]
+      ],
+      "false_positive_retrieval": null
     },
     {
       "id": "cross-article-02",
@@ -319,7 +336,8 @@
           "path": "knowledge/storage.md",
           "section": "Backup recovery"
         }
-      ]
+      ],
+      "false_positive_retrieval": null
     },
     {
       "id": "cross-article-03",
@@ -342,7 +360,8 @@
           "path": "knowledge/operations.md",
           "section": "Deployment target"
         }
-      ]
+      ],
+      "false_positive_retrieval": null
     },
     {
       "id": "cross-article-04",
@@ -365,7 +384,8 @@
           "path": "knowledge/legacy.md",
           "section": "Historical pager record"
         }
-      ]
+      ],
+      "false_positive_retrieval": null
     },
     {
       "id": "cross-article-05",
@@ -379,7 +399,8 @@
       "top_five_raw_result_count": 0,
       "top_five_section_count": 0,
       "top_five_response_bytes": 78,
-      "top_five": []
+      "top_five": [],
+      "false_positive_retrieval": null
     },
     {
       "id": "cross-article-06",
@@ -402,7 +423,8 @@
           "path": "knowledge/operations.md",
           "section": "Network configuration"
         }
-      ]
+      ],
+      "false_positive_retrieval": null
     },
     {
       "id": "changed-fact-01",
@@ -416,7 +438,8 @@
       "top_five_raw_result_count": 0,
       "top_five_section_count": 0,
       "top_five_response_bytes": 78,
-      "top_five": []
+      "top_five": [],
+      "false_positive_retrieval": null
     },
     {
       "id": "changed-fact-02",
@@ -430,7 +453,8 @@
       "top_five_raw_result_count": 0,
       "top_five_section_count": 0,
       "top_five_response_bytes": 78,
-      "top_five": []
+      "top_five": [],
+      "false_positive_retrieval": null
     },
     {
       "id": "changed-fact-03",
@@ -444,7 +468,8 @@
       "top_five_raw_result_count": 0,
       "top_five_section_count": 0,
       "top_five_response_bytes": 78,
-      "top_five": []
+      "top_five": [],
+      "false_positive_retrieval": null
     },
     {
       "id": "changed-fact-04",
@@ -463,7 +488,8 @@
           "path": "knowledge/temporal.md",
           "section": "Current queue policy"
         }
-      ]
+      ],
+      "false_positive_retrieval": null
     },
     {
       "id": "changed-fact-05",
@@ -482,7 +508,8 @@
           "path": "knowledge/temporal.md",
           "section": "Current rollout label"
         }
-      ]
+      ],
+      "false_positive_retrieval": null
     },
     {
       "id": "conflict-01",
@@ -505,7 +532,8 @@
           "path": "knowledge/legacy.md",
           "section": "Historical pager record"
         }
-      ]
+      ],
+      "false_positive_retrieval": null
     },
     {
       "id": "conflict-02",
@@ -528,7 +556,8 @@
           "path": "knowledge/conflicts.md",
           "section": "Backup destination conflict"
         }
-      ]
+      ],
+      "false_positive_retrieval": null
     },
     {
       "id": "conflict-03",
@@ -542,7 +571,8 @@
       "top_five_raw_result_count": 0,
       "top_five_section_count": 0,
       "top_five_response_bytes": 78,
-      "top_five": []
+      "top_five": [],
+      "false_positive_retrieval": null
     },
     {
       "id": "conflict-04",
@@ -565,7 +595,8 @@
           "path": "knowledge/storage.md",
           "section": "Current retention"
         }
-      ]
+      ],
+      "false_positive_retrieval": null
     },
     {
       "id": "absent-01",
@@ -579,21 +610,28 @@
       "top_five_raw_result_count": 0,
       "top_five_section_count": 0,
       "top_five_response_bytes": 78,
-      "top_five": []
+      "top_five": [],
+      "false_positive_retrieval": false
     },
     {
       "id": "absent-02",
-      "status": "unanswerable",
+      "status": "false_positive",
       "any_required_evidence": null,
       "all_required_evidence": null,
       "matched_required_evidence_count": null,
       "first_relevant_rank": null,
-      "full_ranking_result_count": 0,
-      "full_ranking_response_bytes": 78,
-      "top_five_raw_result_count": 0,
-      "top_five_section_count": 0,
-      "top_five_response_bytes": 78,
-      "top_five": []
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 645,
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 645,
+      "top_five": [
+        {
+          "path": "knowledge/legacy.md",
+          "section": "Blue Comet project note"
+        }
+      ],
+      "false_positive_retrieval": true
     },
     {
       "id": "absent-03",
@@ -607,7 +645,8 @@
       "top_five_raw_result_count": 0,
       "top_five_section_count": 0,
       "top_five_response_bytes": 78,
-      "top_five": []
+      "top_five": [],
+      "false_positive_retrieval": false
     },
     {
       "id": "absent-04",
@@ -621,7 +660,8 @@
       "top_five_raw_result_count": 0,
       "top_five_section_count": 0,
       "top_five_response_bytes": 78,
-      "top_five": []
+      "top_five": [],
+      "false_positive_retrieval": false
     },
     {
       "id": "absent-05",
@@ -635,7 +675,8 @@
       "top_five_raw_result_count": 0,
       "top_five_section_count": 0,
       "top_five_response_bytes": 78,
-      "top_five": []
+      "top_five": [],
+      "false_positive_retrieval": false
     }
   ]
 }

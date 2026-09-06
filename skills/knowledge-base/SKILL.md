@@ -103,8 +103,9 @@ $KNOWLEDGE_BASE/scripts/observe --title "<one-line summary>" --body "<details>"
 
 ### Rules
 
-- **Only observe if `KNOWLEDGE_OBSERVE=1`** is set in your environment.
-  Check before calling. Subagents do not get this variable.
+- **Observation capture is enabled when `KNOWLEDGE_OBSERVE` is unset or `1`;**
+  set it to `0` to disable automatic capture. Check the value before relying
+  on a host adapter. Subagents do not get this variable.
 - **Capture immediately.** Do not wait until the task is done.
 - **One observation per concept.** Three things learned = three calls.
 - **Be specific.** "Use uv + PEP 723 for standalone scripts" is good.
@@ -114,6 +115,18 @@ $KNOWLEDGE_BASE/scripts/observe --title "<one-line summary>" --body "<details>"
 - **Attribute when possible.** If the user says "Dana told me X," include
   Dana's name and role in the observation body. The curator preserves
   inline attribution in knowledge articles.
+
+The private content tree currently has 37 historical missing observation
+references across 11 articles. Keep strict reference validation enabled while
+migrating them: restore evidence from content Git history or review each
+article and replace or remove its stale `sources:` entry, then rerun the full
+knowledge-tree lint. Do not add a linter exception or edit private content as
+part of tooling changes.
+
+Host adapters retry a failed `session-append` once. The persistence contract is
+at least once, so a post-write failure can duplicate a raw transcript line;
+curation must treat the transcript as evidence rather than an idempotent event
+log.
 
 ### What to observe
 

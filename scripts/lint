@@ -101,6 +101,14 @@ for target in "${TARGETS[@]}"; do
         fi
     fi
 
+    # Constrain existing targets as well as paths resolved from content-relative
+    # names. The former path skipped this check, allowing an absolute file or
+    # an in-root symlink to an external file to be read below.
+    if ! path_is_contained "$target"; then
+        echo "Path outside content root: $target" >&2
+        exit 1
+    fi
+
     if [[ -d "$target" ]]; then
         while IFS= read -r -d '' f; do
             FILES+=("$f")

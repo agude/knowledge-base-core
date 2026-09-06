@@ -383,3 +383,31 @@ Content.'
     [[ "$status" -eq 0 ]]
     [[ "$output" == *"1 file(s)"* ]]
 }
+
+@test "lint rejects an existing file outside the content root before reading it" {
+    local external_file
+    external_file="$(mktemp)"
+    printf '%s\n' '# Not an article' > "$external_file"
+
+    run "$SCRIPTS/lint" --file "$external_file"
+    rm -f "$external_file"
+
+    [[ "$status" -eq 1 ]]
+    [[ "$output" == *"Path outside content root"* ]]
+    [[ "$output" != *"no H1"* ]]
+}
+
+@test "lint rejects an existing symlink that escapes the content root" {
+    local external_file escaped_link
+    external_file="$(mktemp)"
+    escaped_link="$TEST_CONTENT_DIR/knowledge/escaped.md"
+    printf '%s\n' '# External article' > "$external_file"
+    ln -s "$external_file" "$escaped_link"
+
+    run "$SCRIPTS/lint" --file "$escaped_link"
+    rm -f "$external_file"
+
+    [[ "$status" -eq 1 ]]
+    [[ "$output" == *"Path outside content root"* ]]
+    [[ "$output" != *"no H1"* ]]
+}

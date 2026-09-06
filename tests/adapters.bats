@@ -43,6 +43,23 @@ teardown() {
     [[ "$(find "$TEST_CONTENT_DIR/observations/pending" -name '*.md' -type f | wc -l)" -eq 1 ]]
 }
 
+@test "Codex capture is enabled when KNOWLEDGE_OBSERVE is unset" {
+    unset KNOWLEDGE_OBSERVE
+    export KNOWLEDGE_MIN_MESSAGES=0
+
+    run bash -c 'printf "%s\n" "{\"session_id\":\"$SESSION_ID\"}" | "$SCRIPTS/adapters/codex/session-start"'
+    [[ "$status" -eq 0 ]]
+    bash -c 'printf "%s\n" "{\"session_id\":\"$SESSION_ID\",\"prompt\":\"First\"}" | "$SCRIPTS/adapters/codex/session-prompt"' >/dev/null
+    bash -c 'printf "%s\n" "{\"session_id\":\"$SESSION_ID\",\"last_assistant_message\":\"Answer\"}" | "$SCRIPTS/adapters/codex/session-stop"' >/dev/null
+    bash -c 'printf "%s\n" "{\"session_id\":\"$SESSION_ID\"}" | "$SCRIPTS/adapters/codex/session-end"' >/dev/null
+
+    for _ in 1 2 3 4 5; do
+        [[ "$(find "$TEST_CONTENT_DIR/observations/pending" -name '*.md' -type f | wc -l)" -eq 1 ]] && break
+        sleep 1
+    done
+    [[ "$(find "$TEST_CONTENT_DIR/observations/pending" -name '*.md' -type f | wc -l)" -eq 1 ]]
+}
+
 @test "portable instruction file is the canonical source with Claude alias" {
     [[ -f "$BATS_TEST_DIRNAME/../AGENTS.md" ]]
     [[ -L "$BATS_TEST_DIRNAME/../CLAUDE.md" ]]

@@ -8,7 +8,7 @@ command -v jq > /dev/null 2>&1 || { echo '{}'; exit 0; }
 
 INPUT="$(cat)"
 SESSION_ID="$(echo "$INPUT" | jq -r '.session_id // empty')"
-if [[ "${KNOWLEDGE_OBSERVE:-}" == "1" && -n "$SESSION_ID" ]]; then
+if [[ "${KNOWLEDGE_OBSERVE:-}" != "0" && -n "$SESSION_ID" ]]; then
     "$KB/scripts/session-init" --session-id "$SESSION_ID" > /dev/null 2>&1 || true
 fi
 

@@ -5,6 +5,23 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { promisify } from "node:util"
+import type { Hooks as OpenCodeSdkHooks } from "@opencode-ai/plugin"
+import type {
+  Event as OpenCodeEvent,
+  Part as OpenCodePart,
+  UserMessage as OpenCodeUserMessage,
+} from "@opencode-ai/sdk"
+import type {
+  BeforeAgentStartEvent,
+  ExtensionAPI,
+  ExtensionContext,
+  ExtensionEvent,
+  ExtensionFactory,
+  ExtensionHandler,
+  MessageEndEvent,
+  SessionShutdownEvent,
+  SessionStartEvent,
+} from "@earendil-works/pi-coding-agent"
 import { test } from "node:test"
 import assert from "node:assert/strict"
 
@@ -26,30 +43,123 @@ type OpenCodeClient = {
 }
 
 type OpenCodeHooks = {
-  event: (input: { event: Record<string, unknown> }) => Promise<void>
-  "chat.message": (
-    input: { sessionID: string; messageID?: string },
-    output: { parts: unknown },
-  ) => Promise<void>
-  "experimental.chat.system.transform": (
-    input: unknown,
-    output: { system: string[] },
-  ) => Promise<void>
-  dispose: () => Promise<void>
+  event: NonNullable<OpenCodeSdkHooks["event"]>
+  "chat.message": NonNullable<OpenCodeSdkHooks["chat.message"]>
+  "experimental.chat.system.transform": NonNullable<
+    OpenCodeSdkHooks["experimental.chat.system.transform"]
+  >
+  dispose: NonNullable<OpenCodeSdkHooks["dispose"]>
 }
 
 type OpenCodePlugin = (input: { client: OpenCodeClient }) => Promise<OpenCodeHooks>
 
-type PiHandler = (event: unknown, context: PiContext) => Promise<unknown> | unknown
+type PiHandler = ExtensionHandler<ExtensionEvent>
 
-type PiContext = {
-  sessionManager: {
-    getSessionFile: () => string | undefined
-  }
-}
+type PiContext = ExtensionContext
 
 type PiMock = {
   on: (event: string, handler: PiHandler) => void
+}
+
+function openCodeSessionCreatedEvent(id: string): Extract<OpenCodeEvent, { type: "session.created" }> {
+  return {
+    type: "session.created",
+    properties: {
+      info: {
+        id,
+        projectID: "test-project",
+        directory: "/tmp/knowledge-adapter",
+        title: "Adapter test",
+        version: "1",
+        time: { created: 1, updated: 1 },
+      },
+    },
+  }
+}
+
+function openCodeAssistantUpdatedEvent(
+  sessionID: string,
+  messageID: string,
+): Extract<OpenCodeEvent, { type: "message.updated" }> {
+  return {
+    type: "message.updated",
+    properties: {
+      info: {
+        id: messageID,
+        sessionID,
+        role: "assistant",
+        time: { created: 1, completed: 2 },
+        parentID: "parent-message",
+        modelID: "test-model",
+        providerID: "test-provider",
+        mode: "primary",
+        path: { cwd: "/tmp/knowledge-adapter", root: "/tmp/knowledge-adapter" },
+        cost: 0,
+        tokens: {
+          input: 0,
+          output: 0,
+          reasoning: 0,
+          cache: { read: 0, write: 0 },
+        },
+      },
+    },
+  }
+}
+
+function openCodeTextPart(text: string): OpenCodePart {
+  return {
+    id: "text-part",
+    sessionID: "test-session",
+    messageID: "assistant-1",
+    type: "text",
+    text,
+  }
+}
+
+function openCodeUserMessage(id: string): OpenCodeUserMessage {
+  return {
+    id,
+    sessionID: "test-session",
+    role: "user",
+    time: { created: 1 },
+    agent: "default",
+    model: { providerID: "test-provider", modelID: "test-model" },
+  }
+}
+
+function piSessionStartEvent(
+  reason: SessionStartEvent["reason"] = "startup",
+  previousSessionFile?: string,
+): SessionStartEvent {
+  return { type: "session_start", reason, previousSessionFile }
+}
+
+function piMessageEndEvent(
+  role: "user" | "assistant",
+  timestamp: number | string,
+  content: string,
+): MessageEndEvent {
+  return {
+    type: "message_end",
+    message: { role, timestamp, content } as MessageEndEvent["message"],
+  }
+}
+
+function piShutdownEvent(
+  reason: SessionShutdownEvent["reason"] = "quit",
+  targetSessionFile?: string,
+): SessionShutdownEvent {
+  return { type: "session_shutdown", reason, targetSessionFile }
+}
+
+function piBeforeAgentStartEvent(): BeforeAgentStartEvent {
+  return {
+    type: "before_agent_start",
+    prompt: "test prompt",
+    images: undefined,
+    systemPrompt: "base",
+    systemPromptOptions: {} as BeforeAgentStartEvent["systemPromptOptions"],
+  }
 }
 
 async function createHarness(): Promise<Harness> {
@@ -74,7 +184,7 @@ async function createHarness(): Promise<Harness> {
 
 async function withEnvironment<T>(
   harness: Harness,
-  observe: "0" | "1",
+  observe: "0" | "1" | undefined,
   callback: () => Promise<T>,
 ): Promise<T> {
   const names = [
@@ -85,6 +195,7 @@ async function withEnvironment<T>(
     "KNOWLEDGE_MIN_MESSAGES",
     "ADAPTER_LOG_DIR",
     "FAIL_APPEND_ONCE",
+    "FAIL_APPEND_POST_WRITE_ONCE",
     "FAIL_FLUSH_ONCE",
     "REAL_KB",
   ]
@@ -93,7 +204,8 @@ async function withEnvironment<T>(
   process.env.KNOWLEDGE_BASE = repositoryRoot
   process.env.KB_CONTENT_DIR = harness.contentDir
   process.env.SESSION_DIR = harness.sessionDir
-  process.env.KNOWLEDGE_OBSERVE = observe
+  if (observe === undefined) delete process.env.KNOWLEDGE_OBSERVE
+  else process.env.KNOWLEDGE_OBSERVE = observe
   process.env.KNOWLEDGE_MIN_MESSAGES = "0"
   try {
     return await callback()
@@ -133,11 +245,13 @@ async function makePiHandlers(): Promise<{
       handlers.set(event, handler)
     },
   }
-  const extension = await loadAdapter<(api: PiMock) => void>("scripts/adapters/pi/knowledge.ts")
-  extension(pi)
+  const extension = await loadAdapter<ExtensionFactory>("scripts/adapters/pi/knowledge.ts")
+  extension(pi as unknown as ExtensionAPI)
   return {
     handlers,
-    context: { sessionManager: { getSessionFile: () => join(tmpdir(), "pi-session.jsonl") } },
+    context: {
+      sessionManager: { getSessionFile: () => join(tmpdir(), "pi-session.jsonl") },
+    } as unknown as PiContext,
   }
 }
 
@@ -172,6 +286,10 @@ if [[ "\${FAIL_APPEND_ONCE:-0}" == 1 && "$count" == 1 ]]; then
   set -e
   chmod u+w "$file"
   exit "$status"
+fi
+if [[ "\${FAIL_APPEND_POST_WRITE_ONCE:-0}" == 1 && "$count" == 1 ]]; then
+  "$REAL_KB/scripts/session-append" "$@"
+  exit 75
 fi
 exec "$REAL_KB/scripts/session-append" "$@"
 `)
@@ -220,40 +338,31 @@ test("OpenCode captures messages, deduplicates events, and injects context", asy
           session: {
             async message(input) {
               messageCalls.push(input.path.messageID)
-              return { data: { parts: [{ type: "text", text: "assistant answer" }] } }
+              return { data: { parts: [openCodeTextPart("assistant answer")] } }
             },
           },
         },
       })
       const sessionID = "opencode-lifecycle"
       await hooks.event({
-        event: { type: "session.created", properties: { info: { id: sessionID } } },
+        event: openCodeSessionCreatedEvent(sessionID),
       })
       await hooks["chat.message"](
         { sessionID, messageID: "user-1" },
-        { parts: [{ type: "text", text: "user question" }] },
+        { message: openCodeUserMessage("user-1"), parts: [openCodeTextPart("user question")] },
       )
       await hooks["chat.message"](
         { sessionID, messageID: "user-1" },
-        { parts: [{ type: "text", text: "user question" }] },
+        { message: openCodeUserMessage("user-1"), parts: [openCodeTextPart("user question")] },
       )
-      const assistantEvent = {
-        event: {
-          type: "message.updated",
-          properties: {
-            info: {
-              id: "assistant-1",
-              sessionID,
-              role: "assistant",
-              time: { completed: Date.now() },
-            },
-          },
-        },
-      }
+      const assistantEvent = { event: openCodeAssistantUpdatedEvent(sessionID, "assistant-1") }
       await hooks.event(assistantEvent)
       await hooks.event(assistantEvent)
       const system = ["base system prompt"]
-      await hooks["experimental.chat.system.transform"]({}, { system })
+      await hooks["experimental.chat.system.transform"](
+        {} as Parameters<NonNullable<OpenCodeSdkHooks["experimental.chat.system.transform"]>>[0],
+        { system },
+      )
       await hooks.dispose()
 
       assert.equal(messageCalls.length, 1)
@@ -282,17 +391,17 @@ test("Pi captures messages, deduplicates message_end, injects context, and flush
       assert.ok(beforeAgentStart)
       assert.ok(shutdown)
 
-      await sessionStart({}, context)
-      const userEvent = { message: { role: "user", timestamp: 1, content: "user prompt" } }
-      const assistantEvent = { message: { role: "assistant", timestamp: 2, content: "assistant reply" } }
+      await sessionStart(piSessionStartEvent(), context)
+      const userEvent = piMessageEndEvent("user", 1, "user prompt")
+      const assistantEvent = piMessageEndEvent("assistant", 2, "assistant reply")
       await messageEnd(userEvent, context)
       await messageEnd(userEvent, context)
       await messageEnd(assistantEvent, context)
       await messageEnd(assistantEvent, context)
-      const result = await beforeAgentStart({ systemPrompt: "base" }, context) as {
+      const result = await beforeAgentStart(piBeforeAgentStartEvent(), context) as unknown as {
         systemPrompt: string
       }
-      await shutdown({}, context)
+      await shutdown(piShutdownEvent(), context)
 
       assert.match(result.systemPrompt, /Topic areas/)
       assert.equal((await pendingFiles(harness)).length, 1)
@@ -310,7 +419,9 @@ test("Pi flushes each session across fresh replacement instances", async () => {
   try {
     await withEnvironment(harness, "1", async () => {
       let sessionFile = join(harness.root, "first.jsonl")
-      const context: PiContext = { sessionManager: { getSessionFile: () => sessionFile } }
+      const context = {
+        sessionManager: { getSessionFile: () => sessionFile },
+      } as unknown as PiContext
       const getHandlers = async (): Promise<{
         sessionStart: PiHandler
         messageEnd: PiHandler
@@ -329,33 +440,40 @@ test("Pi flushes each session across fresh replacement instances", async () => {
       let { sessionStart, messageEnd, shutdown } = await getHandlers()
 
       const addMessages = async (label: string, appendMessage: PiHandler) => {
-        for (const [index, role] of ["user", "assistant", "user"].entries()) {
+        const roles: Array<"user" | "assistant"> = ["user", "assistant", "user"]
+        for (const [index, role] of roles.entries()) {
           await appendMessage(
-            { message: { role, timestamp: label + index, content: label + " message " + index } },
+            piMessageEndEvent(role, label + index, label + " message " + index),
             context,
           )
         }
       }
 
-      await sessionStart({}, context)
+      await sessionStart(piSessionStartEvent(), context)
       await addMessages("first", messageEnd)
       sessionFile = join(harness.root, "second.jsonl")
-      await shutdown({ reason: "new", targetSessionFile: sessionFile }, context)
+      await shutdown(piShutdownEvent("new", sessionFile), context)
       const secondHandlers = await getHandlers()
       sessionStart = secondHandlers.sessionStart
       messageEnd = secondHandlers.messageEnd
       shutdown = secondHandlers.shutdown
-      await sessionStart({ reason: "new", previousSessionFile: join(harness.root, "first.jsonl") }, context)
+      await sessionStart(
+        piSessionStartEvent("new", join(harness.root, "first.jsonl")),
+        context,
+      )
       await addMessages("second", messageEnd)
       sessionFile = join(harness.root, "third.jsonl")
-      await shutdown({ reason: "fork", targetSessionFile: sessionFile }, context)
+      await shutdown(piShutdownEvent("fork", sessionFile), context)
       const thirdHandlers = await getHandlers()
       sessionStart = thirdHandlers.sessionStart
       messageEnd = thirdHandlers.messageEnd
       shutdown = thirdHandlers.shutdown
-      await sessionStart({ reason: "fork", previousSessionFile: join(harness.root, "second.jsonl") }, context)
+      await sessionStart(
+        piSessionStartEvent("fork", join(harness.root, "second.jsonl")),
+        context,
+      )
       await addMessages("third", messageEnd)
-      await shutdown({}, context)
+      await shutdown(piShutdownEvent(), context)
 
       assert.equal((await pendingFiles(harness)).length, 3)
     })
@@ -373,24 +491,54 @@ test("disabled observation does not create buffers or observations in either ada
         client: { session: { async message() { return { data: { parts: [] } } } } },
       })
       await openCodeHooks.event({
-        event: { type: "session.created", properties: { info: { id: "disabled-opencode" } } },
+        event: openCodeSessionCreatedEvent("disabled-opencode"),
       })
       await openCodeHooks["chat.message"](
         { sessionID: "disabled-opencode", messageID: "message-1" },
-        { parts: [{ type: "text", text: "not captured" }] },
+        { message: openCodeUserMessage("message-1"), parts: [openCodeTextPart("not captured")] },
       )
       await openCodeHooks.dispose()
 
       const { handlers, context } = await makePiHandlers()
-      await handlers.get("session_start")?.({}, context)
+      await handlers.get("session_start")?.(piSessionStartEvent(), context)
       await handlers.get("message_end")?.(
-        { message: { role: "user", timestamp: 1, content: "not captured" } },
+        piMessageEndEvent("user", 1, "not captured"),
         context,
       )
-      await handlers.get("session_shutdown")?.({}, context)
+      await handlers.get("session_shutdown")?.(piShutdownEvent(), context)
 
       assert.deepEqual(await pendingFiles(harness), [])
       assert.deepEqual(await readdir(harness.sessionDir), [])
+    })
+  } finally {
+    await rm(harness.root, { recursive: true, force: true })
+  }
+})
+
+test("unset observation flag enables capture in both TypeScript adapters", async () => {
+  const harness = await createHarness()
+  try {
+    await withEnvironment(harness, undefined, async () => {
+      const opencode = await loadAdapter<OpenCodePlugin>("scripts/adapters/opencode/knowledge.ts")
+      const openCodeHooks = await opencode({
+        client: { session: { async message() { return { data: { parts: [] } } } } },
+      })
+      await openCodeHooks.event({ event: openCodeSessionCreatedEvent("default-opencode") })
+      await openCodeHooks["chat.message"](
+        { sessionID: "default-opencode", messageID: "message-1" },
+        { message: openCodeUserMessage("message-1"), parts: [openCodeTextPart("default OpenCode")] },
+      )
+      await openCodeHooks.dispose()
+
+      const { handlers, context } = await makePiHandlers()
+      await handlers.get("session_start")?.(piSessionStartEvent(), context)
+      await handlers.get("message_end")?.(
+        piMessageEndEvent("user", 1, "default Pi"),
+        context,
+      )
+      await handlers.get("session_shutdown")?.(piShutdownEvent(), context)
+
+      assert.equal((await pendingFiles(harness)).length, 2)
     })
   } finally {
     await rm(harness.root, { recursive: true, force: true })
@@ -414,10 +562,13 @@ test("one-shot append and flush failures recover without host redelivery", async
       })
       const sessionID = "retry-opencode"
       await openCodeHooks.event({
-        event: { type: "session.created", properties: { info: { id: sessionID } } },
+        event: openCodeSessionCreatedEvent(sessionID),
       })
       const input = { sessionID, messageID: "retry-message" }
-      const output = { parts: [{ type: "text", text: "retry this append" }] }
+      const output = {
+        message: openCodeUserMessage("retry-message"),
+        parts: [openCodeTextPart("retry this append")],
+      }
       await openCodeHooks["chat.message"](input, output)
       await openCodeHooks.dispose()
       await openCodeHooks.dispose()
@@ -425,6 +576,39 @@ test("one-shot append and flush failures recover without host redelivery", async
       assert.equal(await readCounter(harness, "append.count"), 2)
       assert.equal(await readCounter(harness, "flush.count"), 2)
       assert.match(await onlyPendingBody(harness), /retry this append/)
+    })
+  } finally {
+    await rm(harness.root, { recursive: true, force: true })
+  }
+})
+
+test("post-write append failures are retried with at-least-once persistence", async () => {
+  const harness = await createHarness()
+  try {
+    const fakeCore = await createFakeCore(harness)
+    await withEnvironment(harness, "1", async () => {
+      process.env.KNOWLEDGE_BASE = fakeCore
+      process.env.REAL_KB = repositoryRoot
+      process.env.ADAPTER_LOG_DIR = join(harness.root, "adapter-log")
+      process.env.FAIL_APPEND_POST_WRITE_ONCE = "1"
+
+      const opencode = await loadAdapter<OpenCodePlugin>("scripts/adapters/opencode/knowledge.ts")
+      const openCodeHooks = await opencode({
+        client: { session: { async message() { return { data: { parts: [] } } } } },
+      })
+      await openCodeHooks.event({ event: openCodeSessionCreatedEvent("post-write-retry") })
+      await openCodeHooks["chat.message"](
+        { sessionID: "post-write-retry", messageID: "retry-message" },
+        {
+          message: openCodeUserMessage("retry-message"),
+          parts: [openCodeTextPart("post-write payload")],
+        },
+      )
+      await openCodeHooks.dispose()
+
+      assert.equal(await readCounter(harness, "append.count"), 2)
+      const body = await onlyPendingBody(harness)
+      assert.equal((body.match(/post-write payload/g) ?? []).length, 2)
     })
   } finally {
     await rm(harness.root, { recursive: true, force: true })
@@ -447,12 +631,12 @@ test("Pi retries a one-shot append without host redelivery", async () => {
       assert.ok(sessionStart)
       assert.ok(messageEnd)
       assert.ok(shutdown)
-      await sessionStart({}, context)
+      await sessionStart(piSessionStartEvent(), context)
       await messageEnd(
-        { message: { role: "user", timestamp: 1, content: "retry Pi append" } },
+        piMessageEndEvent("user", 1, "retry Pi append"),
         context,
       )
-      await shutdown({}, context)
+      await shutdown(piShutdownEvent(), context)
 
       assert.equal(await readCounter(harness, "append.count"), 2)
       assert.match(await onlyPendingBody(harness), /retry Pi append/)
@@ -472,7 +656,9 @@ test("Pi recovers a failed replacement flush in a fresh extension instance", asy
       process.env.ADAPTER_LOG_DIR = join(harness.root, "adapter-log")
       process.env.FAIL_FLUSH_ONCE = "1"
       let currentSessionFile = join(harness.root, "first.jsonl")
-      const oldContext: PiContext = { sessionManager: { getSessionFile: () => currentSessionFile } }
+      const oldContext = {
+        sessionManager: { getSessionFile: () => currentSessionFile },
+      } as unknown as PiContext
       const old = await makePiHandlers()
       const oldSessionStart = old.handlers.get("session_start")
       const oldMessageEnd = old.handlers.get("message_end")
@@ -480,16 +666,17 @@ test("Pi recovers a failed replacement flush in a fresh extension instance", asy
       assert.ok(oldSessionStart)
       assert.ok(oldMessageEnd)
       assert.ok(oldShutdown)
-      await oldSessionStart({ reason: "startup" }, oldContext)
-      for (const [index, role] of ["user", "assistant", "user"].entries()) {
+      await oldSessionStart(piSessionStartEvent(), oldContext)
+      const roles: Array<"user" | "assistant"> = ["user", "assistant", "user"]
+      for (const [index, role] of roles.entries()) {
         await oldMessageEnd(
-          { message: { role, timestamp: index, content: "old session message " + index } },
+          piMessageEndEvent(role, index, "old session message " + index),
           oldContext,
         )
       }
 
       currentSessionFile = join(harness.root, "second.jsonl")
-      await oldShutdown({ reason: "new", targetSessionFile: currentSessionFile }, oldContext)
+      await oldShutdown(piShutdownEvent("new", currentSessionFile), oldContext)
       assert.equal(await readCounter(harness, "flush.count"), 1)
 
       const fresh = await makePiHandlers()
@@ -499,18 +686,20 @@ test("Pi recovers a failed replacement flush in a fresh extension instance", asy
       assert.ok(freshSessionStart)
       assert.ok(freshMessageEnd)
       assert.ok(freshShutdown)
-      const freshContext: PiContext = { sessionManager: { getSessionFile: () => currentSessionFile } }
-      await freshSessionStart({
-        reason: "new",
-        previousSessionFile: join(harness.root, "first.jsonl"),
-      }, freshContext)
+      const freshContext = {
+        sessionManager: { getSessionFile: () => currentSessionFile },
+      } as unknown as PiContext
+      await freshSessionStart(
+        piSessionStartEvent("new", join(harness.root, "first.jsonl")),
+        freshContext,
+      )
       assert.equal(await readCounter(harness, "flush.count"), 2)
 
       await freshMessageEnd(
-        { message: { role: "user", timestamp: 4, content: "new session message" } },
+        piMessageEndEvent("user", 4, "new session message"),
         freshContext,
       )
-      await freshShutdown({ reason: "quit" }, freshContext)
+      await freshShutdown(piShutdownEvent(), freshContext)
 
       const bodies = await Promise.all(
         (await pendingFiles(harness)).map((name) =>

@@ -158,6 +158,15 @@ already referenced. Run lint again without `--batch` after archiving so the
 final content has no broken references. The linter does not mass-repair
 existing content; compatibility findings require a separate curation pass.
 
+The current private content tree has 37 historical missing observation
+references across 11 articles. This is a migration backlog, not a lint
+exception: strict lint continues to report every missing target. The content
+owner must resolve each entry by restoring the archived evidence from content
+Git history or by reviewing the article and replacing or removing the stale
+`sources:` entry, then run `KB_CONTENT_DIR=content scripts/lint --path
+content/knowledge` before committing the content-repo migration. Tooling
+changes do not edit or suppress these private references.
+
 ## Scripts
 
 | Script | Purpose |
@@ -280,7 +289,10 @@ sections are required evidence: the report always records both whether any and
 whether all expected sections appear in the top five distinct sections. A case
 passes when any expected section is present, unless `requires_all_sections` is
 true. An unanswerable case is reported as `unanswerable` and is excluded from
-answerable retrieval scores.
+answerable retrieval scores. If an unanswerable query still returns a ranked
+section, its status is `false_positive`, `false_positive_retrieval` is true,
+and the aggregate false-positive count/rate and failure entry are reported.
+This is a retrieval signal, not an answer-quality judgment.
 
 Before retrieval starts, every answerable expected path and section is checked
 against the selected corpus. A missing file or renamed heading is an invalid
@@ -312,8 +324,9 @@ scripts/evaluate-retrieval \
 The report records `fixture_id`, `corpus_id`, and SHA-256 identities for the
 fixture and Markdown corpus. `--baseline` compares those identities and lists
 changed cases, regressions, and improvements. A regression is a pass-to-fail
-outcome, a loss of any/all evidence, a lower matched-evidence count, or a first
-relevant result moving to a higher-numbered rank. Use `--fail-on-regression` in
+outcome, a new false-positive unanswerable retrieval, a loss of any/all
+evidence, a lower matched-evidence count, or a first relevant result moving to
+a higher-numbered rank. Use `--fail-on-regression` in
 a manual ranking experiment;
 it does not make evaluation part of the fast Bats suite.
 
@@ -423,6 +436,19 @@ repo hook; host plugin discovery remains host-specific.
 Run `scripts/portability-lint` to reject host-specific lifecycle, environment,
 and skill metadata from the shared surface. Run it with `--client NAME` to
 verify a host adapter exists.
+
+Automatic observation capture is enabled when `KNOWLEDGE_OBSERVE` is unset or
+set to `1`. Set `KNOWLEDGE_OBSERVE=0` to disable capture. This contract is
+shared by the Claude and Codex shell adapters and the OpenCode and Pi
+TypeScript adapters; an unset value is tested as the default-enabled case.
+The explicit `scripts/observe` command remains available when automatic
+capture is disabled.
+
+Host adapters retry a failed `session-append` once while they still own the
+event. Persistence is therefore at least once: if a core command writes the
+line and then reports failure, the retry can record the same message twice.
+The raw transcript remains evidence and the adapter lifecycle tests cover this
+post-write failure case.
 
 ## Testing
 

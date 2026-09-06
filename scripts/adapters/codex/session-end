@@ -5,7 +5,8 @@ set -euo pipefail
 INPUT="$(cat)"
 KB="${KNOWLEDGE_BASE:-}"
 [[ -z "$KB" ]] && { echo '{}'; exit 0; }
-[[ "${KNOWLEDGE_OBSERVE:-}" != "1" ]] && { echo '{}'; exit 0; }
+[[ "${KNOWLEDGE_OBSERVE:-}" == "0" ]] && { echo '{}'; exit 0; }
+export KNOWLEDGE_OBSERVE=1
 command -v jq > /dev/null 2>&1 || { echo '{}'; exit 0; }
 
 SESSION_ID="$(echo "$INPUT" | jq -r '.session_id // empty')"

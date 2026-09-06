@@ -376,9 +376,9 @@ session_file_path() {
 # Recreate instead. A swept session resumes into a second observation,
 # which is honest about what happened; capturing nothing is not.
 #
-# Only recreate when session-start actually ran for this session: it sets
-# both KNOWLEDGE_OBSERVE=1 and KNOWLEDGE_SESSION_FILE. Otherwise capture
-# stays off.
+# Recreate only when session-start initialized capture for this session: it
+# sets KNOWLEDGE_OBSERVE=1 or provides KNOWLEDGE_SESSION_FILE. An unset value
+# alone still means that capture was never initialized.
 #
 # Prints the path; returns 1 when capture should be skipped.
 #

@@ -53,9 +53,11 @@ teardown() { teardown_content_dir; }
         .summary.answerable_cases == 31 and
         .summary.unanswerable_cases == 5 and
         .summary.passed_cases == 18 and
-        .summary.failed_cases == 13 and
+        .summary.failed_cases == 14 and
         .summary.any_required_evidence_cases == 18 and
         .summary.all_required_evidence_cases == 18 and
+        .summary.false_positive_unanswerable_cases == 1 and
+        .summary.false_positive_unanswerable_rate == 0.2 and
         (.cases | length == 36) and
         (all(.cases[];
             (.id | type) == "string" and
@@ -76,7 +78,8 @@ teardown() { teardown_content_dir; }
             (.all_required_evidence | type) == "boolean"
         )) and
         (all(.cases[] | select(.unanswerable == true);
-            .status == "unanswerable" and
+            (.status == "unanswerable" or .status == "false_positive") and
+            (.false_positive_retrieval | type) == "boolean" and
             .any_required_evidence == null and
             .all_required_evidence == null
         )) and
@@ -90,6 +93,11 @@ teardown() { teardown_content_dir; }
             .id == "conflict-02"
         ))] | length == 4 and
             all(.[]; .top_five_raw_result_count == .top_five_section_count))
+        and
+        ((.cases[] | select(.id == "absent-02")) |
+            .status == "false_positive" and
+            .false_positive_retrieval == true and
+            .failure == "retrieval returned evidence for an unanswerable query")
     ' <<< "$report"
     [[ "$status" -eq 0 ]]
     run jq -e '
@@ -99,6 +107,27 @@ teardown() { teardown_content_dir; }
         (.baseline_comparison.regressions | length == 0) and
         (all(.cases[] | select(.id | startswith("exact-command-")); .status == "pass" and .first_relevant_rank == 1))
     ' <<< "$report"
+    [[ "$status" -eq 0 ]]
+}
+
+@test "fail-on-regression catches new false-positive retrieval" {
+    baseline="$TEST_CONTENT_DIR/false-positive-baseline.json"
+    run "$SCRIPTS/evaluate-retrieval" \
+        --fixture "$FIXTURE" --content-dir "$TEST_CONTENT_DIR" \
+        --write-baseline "$baseline" --json
+    [[ "$status" -eq 0 ]]
+
+    mutated_baseline="$TEST_CONTENT_DIR/mutated-false-positive-baseline.json"
+    jq '(.cases[] | select(.id == "absent-02") | .false_positive_retrieval) = false' \
+        "$baseline" > "$mutated_baseline"
+    run "$SCRIPTS/evaluate-retrieval" \
+        --fixture "$FIXTURE" --content-dir "$TEST_CONTENT_DIR" \
+        --baseline "$mutated_baseline" --fail-on-regression --json
+    [[ "$status" -ne 0 ]]
+    run jq -e '
+        ([.baseline_comparison.regression_details[] | select(.id == "absent-02") | .reasons[]]
+            | index("false_positive_retrieval")) != null
+    ' <<< "$output"
     [[ "$status" -eq 0 ]]
 }
 

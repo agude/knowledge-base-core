@@ -17,8 +17,8 @@
 #
 # The evaluator measures full-ranking and bounded search subprocesses. It
 # reports distinct-locator top-five coverage, first relevant rank, response
-# bytes, and wall-clock latency. It does not call a model or modify the
-# content repository.
+# bytes, wall-clock latency, and false-positive retrieval for unanswerable
+# cases. It does not call a model or modify the content repository.
 
 set -euo pipefail
 
@@ -393,6 +393,8 @@ while IFS= read -r case_json; do
                end
            )
        ) as $distinct_sections |
+       ($distinct_sections | length > 0) as $has_retrieved_evidence |
+       ($unanswerable and $has_retrieved_evidence) as $false_positive_retrieval |
        ($distinct_sections[:5] | map({path, section})) as $top_five |
        ([
            $expected[] as $expected_section |
@@ -417,11 +419,13 @@ while IFS= read -r case_json; do
             expected_sections: $expected,
             requires_all_sections: $requires_all,
             unanswerable: $unanswerable,
-            status: (if $unanswerable then "unanswerable"
+            status: (if $unanswerable and $has_retrieved_evidence then "false_positive"
+                     elif $unanswerable then "unanswerable"
                      elif $success then "pass"
                      else "fail" end),
             any_required_evidence: $any,
             all_required_evidence: $all,
+            false_positive_retrieval: (if $unanswerable then $has_retrieved_evidence else null end),
             matched_required_evidence_count: (if $unanswerable then null else $matched_count end),
             first_relevant_rank: $first_relevant_rank,
             full_ranking_result_count: ($all_results | length),
@@ -436,7 +440,9 @@ while IFS= read -r case_json; do
                       number: .locator.number, command: .locator.command,
                      line: .locator.line, text})),
             top_five: $top_five,
-            failure: (if $unanswerable or $success then null
+            failure: (if $false_positive_retrieval then
+                          "retrieval returned evidence for an unanswerable query"
+                      elif $unanswerable or $success then null
                       elif $requires_all then
                           "not all expected sections appear in the top five"
                       else "no expected section appears in the top five" end)
@@ -455,9 +461,10 @@ jq -s -c \
     --arg measured_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
     . as $cases |
     ([.[] | select(.unanswerable == false)]) as $answerable |
-    ([.[] | select(.status == "fail")]) as $failures |
+    ([.[] | select(.status == "fail" or .false_positive_retrieval == true)]) as $failures |
     ([.[] | select(.any_required_evidence == true)] | length) as $any_count |
     ([.[] | select(.all_required_evidence == true)] | length) as $all_count |
+    ([.[] | select(.false_positive_retrieval == true)] | length) as $false_positive_count |
     ($answerable | length) as $answerable_count |
     {
         format: "knowledge-base-retrieval-evaluation-report",
@@ -485,14 +492,21 @@ jq -s -c \
             failed_cases: ($failures | length),
             any_required_evidence_cases: $any_count,
             all_required_evidence_cases: $all_count,
+            false_positive_unanswerable_cases: $false_positive_count,
             any_required_evidence_rate: (if $answerable_count == 0 then null else ($any_count / $answerable_count) end),
             all_required_evidence_rate: (if $answerable_count == 0 then null else ($all_count / $answerable_count) end),
+            false_positive_unanswerable_rate: (
+                if (length - $answerable_count) == 0 then null
+                else ($false_positive_count / (length - $answerable_count))
+                end
+            ),
             full_ranking_response_bytes_total: ([.[] | .full_ranking_response_bytes] | add // 0),
             top_five_response_bytes_total: ([.[] | .top_five_response_bytes] | add // 0),
             full_ranking_latency_ms_total: ([.[] | .full_ranking_latency_ms] | add // 0),
             top_five_latency_ms_total: ([.[] | .top_five_latency_ms] | add // 0)
         },
-        failures: ($failures | map({id, category, query, expected_sections, status, failure, first_relevant_rank, top_five})),
+        failures: ($failures | map({id, category, query, expected_sections, status, failure,
+            false_positive_retrieval, first_relevant_rank, top_five})),
         cases: $cases
     }
 ' "$CASE_RECORDS" > "$REPORT_FILE"
@@ -517,6 +531,7 @@ if [[ -n "$WRITE_BASELINE" ]]; then
                 status,
                 any_required_evidence,
                 all_required_evidence,
+                false_positive_retrieval,
                 matched_required_evidence_count,
                 first_relevant_rank,
                 full_ranking_result_count,
@@ -569,6 +584,7 @@ if [[ -n "$BASELINE" ]]; then
                 $current_case.first_relevant_rank != $baseline_case.first_relevant_rank or
                 $current_case.any_required_evidence != $baseline_case.any_required_evidence or
                 $current_case.all_required_evidence != $baseline_case.all_required_evidence or
+                $current_case.false_positive_retrieval != $baseline_case.false_positive_retrieval or
                 $current_case.matched_required_evidence_count != $baseline_case.matched_required_evidence_count or
                 $current_case.full_ranking_result_count != $baseline_case.full_ranking_result_count or
                 $current_case.full_ranking_response_bytes != $baseline_case.full_ranking_response_bytes or
@@ -581,6 +597,7 @@ if [[ -n "$BASELINE" ]]; then
                 status: $current_case.status,
                 any_required_evidence: $current_case.any_required_evidence,
                 all_required_evidence: $current_case.all_required_evidence,
+                false_positive_retrieval: $current_case.false_positive_retrieval,
                 matched_required_evidence_count: $current_case.matched_required_evidence_count,
                 first_relevant_rank: $current_case.first_relevant_rank,
                 full_ranking_result_count: $current_case.full_ranking_result_count,
@@ -605,6 +622,9 @@ if [[ -n "$BASELINE" ]]; then
                 (if .baseline.all_required_evidence == true and
                     .current.all_required_evidence != true
                  then "all_required_evidence" else empty end),
+                (if .baseline.false_positive_retrieval != true and
+                    .current.false_positive_retrieval == true
+                 then "false_positive_retrieval" else empty end),
                 (if (.current.matched_required_evidence_count // 0) <
                     (.baseline.matched_required_evidence_count // 0)
                  then "matched_required_evidence_count" else empty end)

@@ -1,6 +1,6 @@
 # Knowledge Base Reliability and Retrieval Plan
 
-Created: 2026-09-04. Status: tasks 1–7 implemented; tasks 8–9 pending.
+Created: 2026-09-04. Status: tasks 1–8 and 8.5 implemented; task 9 pending.
 
 ## Objective
 
@@ -49,10 +49,11 @@ limitations in the implementation log at the end.
 | 6. Handle corrections and validate references | P2 | 1, 3 |
 | 7. Make the manual curation queue actionable | P2 | 1 |
 | 8. Correct documentation and test adapters | P2 | Align docs throughout; finish after 1–7 |
+| 8.5. Harden path safety, evaluation, and adapter contracts | P1 | 1–8 |
 | 9. Evaluate optional retrieval infrastructure | Conditional | 4, 5 |
 
-Implement tasks 1–8. Task 9 requires a documented decision; adopting additional
-infrastructure is conditional on measured failures and improvement.
+Implement tasks 1–8 and 8.5. Task 9 requires a documented decision; adopting
+additional infrastructure is conditional on measured failures and improvement.
 
 ## 1. Preserve Curation Batch Boundaries
 
@@ -271,6 +272,45 @@ not type-check or execute those TypeScript adapters.
 - [x] Identify stale repo-mechanics claims encountered in sampled KB articles for
   later curation; keep the repository as the authority for implementation details.
 
+## 8.5. Harden Path Safety, Evaluation, and Adapter Contracts
+
+**Findings:** The lint target loop skips path confinement for existing paths, so
+an existing file outside `KB_CONTENT_DIR` can be read. The real content tree has
+37 pre-existing missing source references across 11 articles and therefore does
+not pass strict lint. Retrieval evaluation records unanswerable cases but does
+not flag false-positive evidence. Adapter tests use hand-written host types,
+append retries can duplicate a post-write failure, and observation-enable
+semantics differ between adapters and documentation.
+
+**Start with:** `scripts/lint`, `tests/lint.bats`, `scripts/evaluate-retrieval`,
+`tests/adapters.test.ts`, both TypeScript adapters, the observation environment
+documentation, and the curation workflow for stale source references.
+
+**Acceptance criteria**
+
+- [x] Every lint target is resolved and confined beneath `KB_CONTENT_DIR`,
+  including existing absolute paths and symlinks; outside targets fail without
+  reading the file. Add regressions for an existing external file and an escaping
+  symlink.
+- [x] `KB_CONTENT_DIR=content scripts/lint --path content/knowledge` passes, or
+  a documented compatibility/migration policy covers all 37 missing source
+  references without weakening reference validation.
+- [x] The retrieval evaluator reports false-positive retrieval for unanswerable
+  cases and includes a fixture where related distractor evidence is returned.
+  That signal participates in regression checks.
+- [x] Adapter lifecycle tests use the pinned SDK event and context types, or a
+  compile-time contract fixture derived from those declarations, while retaining
+  runtime lifecycle coverage.
+- [x] Append retry behavior is explicit and tested: either make retries
+  idempotent/deduplicated or document and verify at-least-once persistence with
+  post-write failure coverage.
+- [x] `KNOWLEDGE_OBSERVE` semantics are consistent across TypeScript adapters,
+  shell adapters, skills, README, and tests, including the unset environment.
+- [x] Update this plan's status, completion checklist, and implementation log to
+  distinguish completed tasks 1–8 and 8.5, pending task 9, and the separate task 9
+  decision. Record current validation commands and any environment-specific
+  test workaround.
+
 ## 9. Decide Whether Additional Retrieval Infrastructure Is Needed
 
 Complete this decision after task 5. Do not assume corpus size alone justifies
@@ -309,13 +349,14 @@ improvement on this knowledge base.
 
 ## Completion and Handoff
 
-- [ ] Tasks 1–8 meet their acceptance criteria; task 9 has a recorded decision.
-- [ ] Run targeted checks as changes land, then the complete required suite.
+- [x] Tasks 1–8 and 8.5 meet their acceptance criteria; task 9 remains pending
+  its separate infrastructure decision.
+- [x] Run targeted checks as changes land, then the complete required suite.
   Record actual commands and results; do not reuse historical test counts.
-- [ ] Review the final diff for unrelated changes and private content leakage.
-- [ ] Document command compatibility changes and migration requirements.
-- [ ] Record any remaining limitations with evidence and affected task IDs.
-- [ ] Update this plan so another session can distinguish completed, deferred,
+- [x] Review the final diff for unrelated changes and private content leakage.
+- [x] Document command compatibility changes and migration requirements.
+- [x] Record any remaining limitations with evidence and affected task IDs.
+- [x] Update this plan so another session can distinguish completed, deferred,
   and genuinely blocked work without reconstructing the conversation.
 
 ## Implementation Log
@@ -715,3 +756,42 @@ Verification:
 
 - `just check` — ShellCheck and portability lint passed; TypeScript type-check
   passed; 344 Bats tests and 7 adapter lifecycle tests passed.
+
+### 2026-09-06 — Task 8.5
+
+Hardened lint target confinement before any target is read. Existing external
+files and symlinks escaping `KB_CONTENT_DIR` now fail, with regression tests for
+both cases. The real private content tree still has 37 historical missing
+observation references across 11 articles. Documented a strict migration policy
+that requires restoring evidence from content Git history or reviewing and
+replacing/removing each stale source; tooling does not weaken validation or edit
+private content.
+
+Updated retrieval evaluation to distinguish unanswerable cases from false
+positive retrieval, report aggregate false-positive metrics, and treat a new
+false positive as a baseline regression. Added a public fixture with related
+distractor evidence and regression coverage.
+
+Typed adapter lifecycle fixtures against the pinned OpenCode and Pi SDK event,
+part, message, handler, and context declarations. Documented at-least-once
+append persistence and covered a post-write append failure that duplicates the
+same transcript line after retry. Unified unset and `1` as enabled observation
+capture and `0` as disabled across shell adapters, TypeScript adapters, skills,
+README, and tests.
+
+Verification:
+
+- `just check` — ShellCheck and portability lint passed; pinned dependencies
+  installed cleanly; TypeScript type-check passed; 348 Bats tests and 9
+  adapter lifecycle tests passed.
+- `npm run type-check` — passed after reinstalling the pinned dependencies.
+- `npm test` — 9 adapter lifecycle tests passed. The adapter runner required
+  the sandbox IPC workaround.
+- `KB_CONTENT_DIR=content scripts/lint --path content/knowledge` — exit 1 as
+  expected: 153 files, 37 historical missing-source errors, and 0 warnings.
+- `git diff --check` — passed.
+
+Remaining limitation: strict lint of the real private content tree is expected
+to fail on the 37 documented historical references until a separate content
+migration resolves them. Task 9, optional retrieval infrastructure, remains
+pending and is not part of this implementation.
