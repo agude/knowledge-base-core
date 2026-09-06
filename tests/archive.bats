@@ -5,6 +5,13 @@ load test_helper
 setup() { setup_content_dir; }
 teardown() { teardown_content_dir; }
 
+content_git() {
+    (
+        cd "$TEST_CONTENT_DIR"
+        git "$@"
+    )
+}
+
 @test "archive moves file from pending to archived" {
     create_test_observation "obs1.md" "Test" "Body"
     git -C "$TEST_CONTENT_DIR" add observations/pending/obs1.md
@@ -66,4 +73,35 @@ teardown() { teardown_content_dir; }
     "$SCRIPTS/archive" obs1.md --no-commit
     grep -q "Critical body content" "$TEST_CONTENT_DIR/observations/archived/obs1.md"
     grep -q "Important" "$TEST_CONTENT_DIR/observations/archived/obs1.md"
+}
+
+@test "archive auto-commit ignores unrelated legacy broken references" {
+    create_test_observation "obs1.md" "Important" "Critical body content"
+    cat > "$TEST_CONTENT_DIR/knowledge/legacy.md" <<'EOF'
+---
+title: "Legacy"
+updated: 2020-01-01
+verified: 2020-01-01
+---
+
+# Legacy
+
+## Historical
+
+See [the missing article](missing.md).
+EOF
+    content_git add knowledge/legacy.md observations/pending/obs1.md
+    content_git commit -q -m "Seed legacy content"
+
+    mkdir -p "$TEST_CONTENT_DIR/.git/hooks"
+    ln -sfn "$SCRIPTS/hooks/pre-commit" \
+        "$TEST_CONTENT_DIR/.git/hooks/pre-commit"
+
+    run "$SCRIPTS/archive" obs1.md
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Archived: observations/pending/obs1.md"* ]]
+    [[ -f "$TEST_CONTENT_DIR/observations/archived/obs1.md" ]]
+
+    run content_git log -1 --format=%s
+    [[ "$output" == "Archive: 1 observation(s)" ]]
 }

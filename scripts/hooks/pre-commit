@@ -58,12 +58,12 @@ done < <(git diff --cached -z --name-only --diff-filter=ACMR -- knowledge/)
 # inbound link or source reference. Such changes require a full knowledge-tree
 # lint; ordinary edits retain the faster staged-file check.
 topology_changed=false
-if git diff --cached --quiet --diff-filter=DR -- '*.md'; then
+if git diff --cached --quiet --diff-filter=DR -- knowledge/ sources/; then
     :
 else
     diff_status=$?
     if [[ "$diff_status" -ne 1 ]]; then
-        echo "pre-commit: could not inspect staged knowledge paths." >&2
+        echo "pre-commit: could not inspect staged link-target paths." >&2
         exit 1
     fi
     topology_changed=true

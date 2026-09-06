@@ -541,13 +541,15 @@ batch-aware references.
 Added explicit `conflict: unresolved` frontmatter to the correction fixture and
 exposed it as `conflict.status` in `search` and `section` metadata, independently
 of freshness. Updated the pre-commit hook to lint the full knowledge tree when a
-staged Markdown path is renamed or deleted, catching unchanged inbound links;
-updated the curator workflow with the same full-tree check and added
-clean-fixture regressions for both operations.
+staged Markdown link target under `knowledge/` or `sources/` is renamed or
+deleted, catching unchanged inbound links without linting observation archive
+moves; updated the curator workflow with the same full-tree check and added
+clean-fixture regressions for both operations plus an installed-hook archive
+regression with an unrelated legacy broken reference.
 
 Verification:
 
-- `bats tests` — 333 tests passed.
+- `bats tests` — 334 tests passed.
 - `bash -n scripts/lint` — passed.
 - `shellcheck -x -P scripts -s bash scripts/lint` — passed.
 - `bash scripts/portability-lint` — passed.
