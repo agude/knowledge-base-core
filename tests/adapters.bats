@@ -60,6 +60,18 @@ teardown() {
     [[ "$(find "$TEST_CONTENT_DIR/observations/pending" -name '*.md' -type f | wc -l)" -eq 1 ]]
 }
 
+@test "Codex capture stays off when SessionStart never ran" {
+    unset KNOWLEDGE_OBSERVE
+    export KNOWLEDGE_MIN_MESSAGES=0
+
+    bash -c 'printf "%s\n" "{\"session_id\":\"$SESSION_ID\",\"prompt\":\"First\"}" | "$SCRIPTS/adapters/codex/session-prompt"' >/dev/null
+    bash -c 'printf "%s\n" "{\"session_id\":\"$SESSION_ID\",\"last_assistant_message\":\"Answer\"}" | "$SCRIPTS/adapters/codex/session-stop"' >/dev/null
+    bash -c 'printf "%s\n" "{\"session_id\":\"$SESSION_ID\"}" | "$SCRIPTS/adapters/codex/session-end"' >/dev/null
+
+    [[ ! -f "$SESSION_DIR/session-${SESSION_ID}.jsonl" ]]
+    [[ "$(find "$TEST_CONTENT_DIR/observations/pending" -name '*.md' -type f | wc -l)" -eq 0 ]]
+}
+
 @test "portable instruction file is the canonical source with Claude alias" {
     [[ -f "$BATS_TEST_DIRNAME/../AGENTS.md" ]]
     [[ -L "$BATS_TEST_DIRNAME/../CLAUDE.md" ]]

@@ -795,3 +795,21 @@ Remaining limitation: strict lint of the real private content tree is expected
 to fail on the 37 documented historical references until a separate content
 migration resolves them. Task 9, optional retrieval infrastructure, remains
 pending and is not part of this implementation.
+
+### 2026-09-06 — Task 8.5 lifecycle correction
+
+Removed the Codex shell adapters' forced `KNOWLEDGE_OBSERVE=1` export from
+prompt, stop, and end hooks. With the flag unset, `session-append` now requires
+the buffer that Codex `SessionStart` initialized; a prompt/stop/end sequence
+without `SessionStart` remains a no-op. Updated the README and knowledge-base
+skill to state the lifecycle prerequisite and added a Codex regression test.
+
+Verification:
+
+- `bats tests/adapters.bats tests/session_flow.bats tests/session_start.bats` —
+  31 tests passed.
+- `npm run type-check` — passed after restoring the pinned dependencies.
+- `npm test` — 9 adapter lifecycle tests passed.
+- `just check` — ShellCheck and portability lint passed; 349 Bats tests and 9
+  adapter lifecycle tests passed.
+- `git diff --check` — passed.

@@ -438,9 +438,12 @@ and skill metadata from the shared surface. Run it with `--client NAME` to
 verify a host adapter exists.
 
 Automatic observation capture is enabled when `KNOWLEDGE_OBSERVE` is unset or
-set to `1`. Set `KNOWLEDGE_OBSERVE=0` to disable capture. This contract is
-shared by the Claude and Codex shell adapters and the OpenCode and Pi
-TypeScript adapters; an unset value is tested as the default-enabled case.
+set to `1`, after the host's session-start lifecycle has initialized a buffer.
+Set `KNOWLEDGE_OBSERVE=0` to disable capture. The Claude and Codex shell
+adapters remain no-ops when their session-start hook was skipped; the
+OpenCode and Pi TypeScript adapters initialize their buffers from their own
+session-start events. An unset value is tested as the default-enabled case
+after initialization.
 The explicit `scripts/observe` command remains available when automatic
 capture is disabled.
 
