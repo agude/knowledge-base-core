@@ -86,6 +86,7 @@ async function withEnvironment<T>(
     "ADAPTER_LOG_DIR",
     "FAIL_APPEND_ONCE",
     "FAIL_FLUSH_ONCE",
+    "REAL_KB",
   ]
   const previous = new Map<string, string | undefined>()
   for (const name of names) previous.set(name, process.env[name])
@@ -163,6 +164,7 @@ count=0
 count=$((count + 1))
 printf '%s\\n' "$count" > "$count_file"
 if [[ "\${FAIL_APPEND_ONCE:-0}" == 1 && "$count" == 1 ]]; then exit 1; fi
+exec "$REAL_KB/scripts/session-append" "$@"
 `)
   await writeFile(join(scriptsDir, "session-flush"), `#!/usr/bin/env bash
 set -eu
@@ -172,9 +174,14 @@ count=0
 count=$((count + 1))
 printf '%s\\n' "$count" > "$count_file"
 if [[ "\${FAIL_FLUSH_ONCE:-0}" == 1 && "$count" == 1 ]]; then exit 1; fi
+exec "$REAL_KB/scripts/session-flush" "$@"
+`)
+  await writeFile(join(scriptsDir, "session-file"), `#!/usr/bin/env bash
+set -eu
+exec "$REAL_KB/scripts/session-file" "$@"
 `)
   await writeFile(join(scriptsDir, "session-context"), "#!/usr/bin/env bash\nprintf '%s\\n' 'fake context'\n")
-  for (const name of ["session-init", "session-append", "session-flush", "session-context"]) {
+  for (const name of ["session-init", "session-append", "session-flush", "session-file", "session-context"]) {
     await execFile("chmod", ["700", join(scriptsDir, name)])
   }
   return coreRoot
@@ -280,23 +287,32 @@ test("Pi captures messages, deduplicates message_end, injects context, and flush
   }
 })
 
-test("Pi flushes each session across switch and fork events", async () => {
+test("Pi flushes each session across fresh replacement instances", async () => {
   const harness = await createHarness()
   try {
     await withEnvironment(harness, "1", async () => {
-      const { handlers } = await makePiHandlers()
       let sessionFile = join(harness.root, "first.jsonl")
       const context: PiContext = { sessionManager: { getSessionFile: () => sessionFile } }
-      const sessionStart = handlers.get("session_start")
-      const messageEnd = handlers.get("message_end")
-      const shutdown = handlers.get("session_shutdown")
-      assert.ok(sessionStart)
-      assert.ok(messageEnd)
-      assert.ok(shutdown)
+      const getHandlers = async (): Promise<{
+        sessionStart: PiHandler
+        messageEnd: PiHandler
+        shutdown: PiHandler
+      }> => {
+        const { handlers } = await makePiHandlers()
+        const sessionStart = handlers.get("session_start")
+        const messageEnd = handlers.get("message_end")
+        const shutdown = handlers.get("session_shutdown")
+        if (!sessionStart || !messageEnd || !shutdown) {
+          throw new Error("Pi lifecycle handlers were not registered")
+        }
+        return { sessionStart, messageEnd, shutdown }
+      }
 
-      const addMessages = async (label: string) => {
+      let { sessionStart, messageEnd, shutdown } = await getHandlers()
+
+      const addMessages = async (label: string, appendMessage: PiHandler) => {
         for (const [index, role] of ["user", "assistant", "user"].entries()) {
-          await messageEnd(
+          await appendMessage(
             { message: { role, timestamp: label + index, content: label + " message " + index } },
             context,
           )
@@ -304,15 +320,23 @@ test("Pi flushes each session across switch and fork events", async () => {
       }
 
       await sessionStart({}, context)
-      await addMessages("first")
+      await addMessages("first", messageEnd)
       sessionFile = join(harness.root, "second.jsonl")
       await shutdown({ reason: "new", targetSessionFile: sessionFile }, context)
+      const secondHandlers = await getHandlers()
+      sessionStart = secondHandlers.sessionStart
+      messageEnd = secondHandlers.messageEnd
+      shutdown = secondHandlers.shutdown
       await sessionStart({ reason: "new", previousSessionFile: join(harness.root, "first.jsonl") }, context)
-      await addMessages("second")
+      await addMessages("second", messageEnd)
       sessionFile = join(harness.root, "third.jsonl")
       await shutdown({ reason: "fork", targetSessionFile: sessionFile }, context)
+      const thirdHandlers = await getHandlers()
+      sessionStart = thirdHandlers.sessionStart
+      messageEnd = thirdHandlers.messageEnd
+      shutdown = thirdHandlers.shutdown
       await sessionStart({ reason: "fork", previousSessionFile: join(harness.root, "second.jsonl") }, context)
-      await addMessages("third")
+      await addMessages("third", messageEnd)
       await shutdown({}, context)
 
       assert.equal((await pendingFiles(harness)).length, 3)
@@ -355,12 +379,13 @@ test("disabled observation does not create buffers or observations in either ada
   }
 })
 
-test("failed append and flush operations are retried on later lifecycle events", async () => {
+test("one-shot append and flush failures recover without host redelivery", async () => {
   const harness = await createHarness()
   try {
     const fakeCore = await createFakeCore(harness)
     await withEnvironment(harness, "1", async () => {
       process.env.KNOWLEDGE_BASE = fakeCore
+      process.env.REAL_KB = repositoryRoot
       process.env.ADAPTER_LOG_DIR = join(harness.root, "adapter-log")
       process.env.FAIL_APPEND_ONCE = "1"
       process.env.FAIL_FLUSH_ONCE = "1"
@@ -376,26 +401,27 @@ test("failed append and flush operations are retried on later lifecycle events",
       const input = { sessionID, messageID: "retry-message" }
       const output = { parts: [{ type: "text", text: "retry this append" }] }
       await openCodeHooks["chat.message"](input, output)
-      await openCodeHooks["chat.message"](input, output)
       await openCodeHooks.dispose()
       await openCodeHooks.dispose()
 
       assert.equal(await readCounter(harness, "append.count"), 2)
       assert.equal(await readCounter(harness, "flush.count"), 2)
+      assert.match(await onlyPendingBody(harness), /retry this append/)
     })
   } finally {
     await rm(harness.root, { recursive: true, force: true })
   }
 })
 
-test("Pi retains a failed flush for shutdown recovery", async () => {
+test("Pi retries a one-shot append without host redelivery", async () => {
   const harness = await createHarness()
   try {
     const fakeCore = await createFakeCore(harness)
     await withEnvironment(harness, "1", async () => {
       process.env.KNOWLEDGE_BASE = fakeCore
+      process.env.REAL_KB = repositoryRoot
       process.env.ADAPTER_LOG_DIR = join(harness.root, "adapter-log")
-      process.env.FAIL_FLUSH_ONCE = "1"
+      process.env.FAIL_APPEND_ONCE = "1"
       const { handlers, context } = await makePiHandlers()
       const sessionStart = handlers.get("session_start")
       const messageEnd = handlers.get("message_end")
@@ -405,12 +431,76 @@ test("Pi retains a failed flush for shutdown recovery", async () => {
       assert.ok(shutdown)
       await sessionStart({}, context)
       await messageEnd(
-        { message: { role: "user", timestamp: 1, content: "keep this buffer" } },
+        { message: { role: "user", timestamp: 1, content: "retry Pi append" } },
         context,
       )
       await shutdown({}, context)
-      await shutdown({}, context)
+
+      assert.equal(await readCounter(harness, "append.count"), 2)
+      assert.match(await onlyPendingBody(harness), /retry Pi append/)
+    })
+  } finally {
+    await rm(harness.root, { recursive: true, force: true })
+  }
+})
+
+test("Pi recovers a failed replacement flush in a fresh extension instance", async () => {
+  const harness = await createHarness()
+  try {
+    const fakeCore = await createFakeCore(harness)
+    await withEnvironment(harness, "1", async () => {
+      process.env.KNOWLEDGE_BASE = fakeCore
+      process.env.REAL_KB = repositoryRoot
+      process.env.ADAPTER_LOG_DIR = join(harness.root, "adapter-log")
+      process.env.FAIL_FLUSH_ONCE = "1"
+      let currentSessionFile = join(harness.root, "first.jsonl")
+      const oldContext: PiContext = { sessionManager: { getSessionFile: () => currentSessionFile } }
+      const old = await makePiHandlers()
+      const oldSessionStart = old.handlers.get("session_start")
+      const oldMessageEnd = old.handlers.get("message_end")
+      const oldShutdown = old.handlers.get("session_shutdown")
+      assert.ok(oldSessionStart)
+      assert.ok(oldMessageEnd)
+      assert.ok(oldShutdown)
+      await oldSessionStart({ reason: "startup" }, oldContext)
+      for (const [index, role] of ["user", "assistant", "user"].entries()) {
+        await oldMessageEnd(
+          { message: { role, timestamp: index, content: "old session message " + index } },
+          oldContext,
+        )
+      }
+
+      currentSessionFile = join(harness.root, "second.jsonl")
+      await oldShutdown({ reason: "new", targetSessionFile: currentSessionFile }, oldContext)
+      assert.equal(await readCounter(harness, "flush.count"), 1)
+
+      const fresh = await makePiHandlers()
+      const freshSessionStart = fresh.handlers.get("session_start")
+      const freshMessageEnd = fresh.handlers.get("message_end")
+      const freshShutdown = fresh.handlers.get("session_shutdown")
+      assert.ok(freshSessionStart)
+      assert.ok(freshMessageEnd)
+      assert.ok(freshShutdown)
+      const freshContext: PiContext = { sessionManager: { getSessionFile: () => currentSessionFile } }
+      await freshSessionStart({
+        reason: "new",
+        previousSessionFile: join(harness.root, "first.jsonl"),
+      }, freshContext)
       assert.equal(await readCounter(harness, "flush.count"), 2)
+
+      await freshMessageEnd(
+        { message: { role: "user", timestamp: 4, content: "new session message" } },
+        freshContext,
+      )
+      await freshShutdown({ reason: "quit" }, freshContext)
+
+      const bodies = await Promise.all(
+        (await pendingFiles(harness)).map((name) =>
+          readFile(join(harness.contentDir, "observations", "pending", name), "utf8")),
+      )
+      assert.equal(bodies.length, 2)
+      assert.ok(bodies.some((body) => body.includes("old session message 0")))
+      assert.equal(await readCounter(harness, "flush.count"), 3)
     })
   } finally {
     await rm(harness.root, { recursive: true, force: true })

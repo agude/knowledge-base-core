@@ -671,3 +671,30 @@ Verification:
   `scripts/hooks/pre-commit` layout as a `hook.script` warning because no
   `bin/pre-commit.sh` exists.
 - `git diff --check` — passed.
+
+### 2026-09-05 — Task 8 review corrections
+
+Corrected the recovery gaps found in the first Task 8 implementation. Pi now
+uses the durable previous host session path supplied to a fresh
+`session_start` instance to resolve and flush the old knowledge buffer before
+initializing the replacement session. Reloads also recover the current session
+buffer before reinitialization. The one-hour orphan sweep remains a fallback,
+not the primary replacement path.
+
+Both TypeScript adapters retry a failed `session-append` immediately with the
+same payload, so a one-shot transient failure does not require host event
+redelivery. The adapter tests now use the real core append and flush scripts
+behind failure-injecting wrappers, invoke each failed message exactly once,
+and instantiate a fresh Pi adapter between failed shutdown and replacement
+startup. The Pi replacement test covers the durable observation produced by
+the recovered buffer.
+
+Raised the declared Node engine floor in `package.json`, `package-lock.json`,
+and the README to `>=22.19.0`, matching the pinned Pi SDK.
+
+Verification:
+
+- `npm run type-check` — passed.
+- `npm test` — 7 adapter lifecycle tests passed.
+- `just check` — ShellCheck and portability lint passed; TypeScript type-check
+  passed; 342 Bats tests and 7 adapter lifecycle tests passed.

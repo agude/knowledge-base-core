@@ -77,8 +77,13 @@ export default (async ({ client }) => {
     if (!OBSERVE || !value || children.has(id)) return true
     const file = await buffer(id)
     if (!file) return false
-    const result = await run("session-append", ["--file", file, "--role", role, "--message", value])
-    return result.ok
+    const args = ["--file", file, "--role", role, "--message", value]
+    const result = await run("session-append", args)
+    if (result.ok) return true
+
+    // The host does not promise to redeliver a failed hook. Retry the same
+    // payload here while the adapter still owns it.
+    return (await run("session-append", args)).ok
   }
 
   async function flush(id: string): Promise<boolean> {

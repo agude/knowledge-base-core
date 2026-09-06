@@ -413,6 +413,7 @@ Claude and Codex shell adapters under `scripts/adapters/`, plus TypeScript
 plugins for OpenCode and Pi. The TypeScript adapters use the exact SDK
 versions in `package.json` and `package-lock.json`; run `npm ci` before
 type-checking or testing them.
+The pinned Pi SDK requires Node 22.19.0 or newer.
 
 OpenCode loads a plugin placed in `.opencode/plugins/` or its global plugin
 directory. Pi loads an extension placed in `.pi/extensions/` or its global

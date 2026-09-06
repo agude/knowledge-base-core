@@ -22,6 +22,10 @@ function script(name: string): string {
   return KB + "/scripts/" + name
 }
 
+function sessionIDFromFile(sessionFile: string): string {
+  return basename(sessionFile, extname(sessionFile))
+}
+
 type CommandResult = { ok: boolean; output: string }
 
 async function run(name: string, args: string[], timeout = 10000): Promise<CommandResult> {
@@ -65,6 +69,16 @@ export default function knowledge(pi: ExtensionAPI): void {
     file = result.ok && result.output ? result.output : undefined
   }
 
+  async function recoverSession(sessionFile: string | undefined): Promise<void> {
+    if (!OBSERVE || !sessionFile) return
+    const previousSessionID = sessionIDFromFile(sessionFile)
+    if (!previousSessionID) return
+
+    const result = await run("session-file", ["--session-id", previousSessionID])
+    if (!result.ok || !result.output || !existsSync(result.output)) return
+    await run("session-flush", [result.output], 15000)
+  }
+
   async function flush(): Promise<void> {
     if (!OBSERVE || !file || !existsSync(file)) return
     const current = file
@@ -82,13 +96,21 @@ export default function knowledge(pi: ExtensionAPI): void {
     if (!OBSERVE || !value) return true
     if (!file || !existsSync(file)) await init()
     if (!file) return false
-    const result = await run("session-append", ["--file", file, "--role", role, "--message", value])
-    return result.ok
+    const args = ["--file", file, "--role", role, "--message", value]
+    const result = await run("session-append", args)
+    if (result.ok) return true
+
+    // The host does not promise to redeliver a failed event. Retry the same
+    // payload here while the adapter still owns it.
+    return (await run("session-append", args)).ok
   }
 
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", async (event, ctx) => {
     if (!OBSERVE) return
-    await startSession(ctx.sessionManager.getSessionFile())
+    const currentSessionFile = ctx.sessionManager.getSessionFile()
+    await recoverSession(event.previousSessionFile)
+    if (event.reason === "reload") await recoverSession(currentSessionFile)
+    await startSession(currentSessionFile)
   })
 
   pi.on("message_end", async (event) => {
