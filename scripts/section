@@ -7,7 +7,7 @@
 # same or higher level.
 #
 # Usage:
-#   section --file FILE (--number N | --heading TEXT) [--exact]
+#   section --file FILE (--number N | --heading TEXT | --top | --title) [--exact]
 #           [--json | --text-only]
 #   section --file FILE --references [--json]
 #
@@ -15,6 +15,8 @@
 #   --file FILE      Markdown file to read (required)
 #   --number N       H2 section number, or N.M for H3 under H2 N (from toc output)
 #   --heading TEXT   Heading text to match (case-insensitive substring)
+#   --top            Retrieve the prose before the first H2
+#   --title          Retrieve the frontmatter title
 #   --exact          Require exact heading match instead of substring
 #   --json           Return one structured JSON object
 #   --text-only      Return the historical section body without metadata
@@ -25,6 +27,8 @@
 #   section --file knowledge/networking.md --number 2     # 2nd H2 section
 #   section --file knowledge/networking.md --number 2.1   # 1st H3 under 2nd H2
 #   section --file knowledge/networking.md --heading 'DNS'  # any heading level
+#   section --file knowledge/networking.md --top            # preamble and H1
+#   section --file knowledge/networking.md --title          # frontmatter title
 #
 # Notes:
 #   --number N targets H2s. --number N.M targets the Mth H3 under the Nth H2.
@@ -40,6 +44,8 @@ source "$SCRIPT_DIR/_lib.sh"
 FILE=""
 NUMBER=""
 HEADING=""
+TOP=false
+TITLE_ONLY=false
 EXACT=false
 JSON=false
 TEXT_ONLY=false
@@ -50,6 +56,8 @@ while [[ $# -gt 0 ]]; do
         --file)    need_arg "$1" $#; FILE="$2"; shift 2 ;;
         --number)  need_arg "$1" $#; NUMBER="$2"; shift 2 ;;
         --heading) need_arg "$1" $#; HEADING="$2"; shift 2 ;;
+        --top)     TOP=true; shift ;;
+        --title)   TITLE_ONLY=true; shift ;;
         --exact)   EXACT=true; shift ;;
         --json)    JSON=true; shift ;;
         --text-only) TEXT_ONLY=true; shift ;;
@@ -72,16 +80,27 @@ if [[ -z "$FILE" ]]; then
     exit 1
 fi
 
+selector_count=0
+[[ -n "$NUMBER" ]] && selector_count=$((selector_count + 1))
+[[ -n "$HEADING" ]] && selector_count=$((selector_count + 1))
+[[ "$TOP" == true ]] && selector_count=$((selector_count + 1))
+[[ "$TITLE_ONLY" == true ]] && selector_count=$((selector_count + 1))
+if (( selector_count > 1 )); then
+    echo "Error: section selectors are mutually exclusive" >&2
+    exit 1
+fi
+
 if [[ "$REFERENCES_ONLY" == true ]] && {
-    [[ -n "$NUMBER" ]] || [[ -n "$HEADING" ]] || [[ "$EXACT" == true ]] \
+    [[ -n "$NUMBER" ]] || [[ -n "$HEADING" ]] || [[ "$TOP" == true ]] \
+        || [[ "$TITLE_ONLY" == true ]] || [[ "$EXACT" == true ]] \
         || [[ "$TEXT_ONLY" == true ]];
 }; then
     echo "Error: --references cannot be combined with section selectors or --text-only" >&2
     exit 1
 fi
 
-if [[ "$REFERENCES_ONLY" == false ]] && [[ -z "$NUMBER" ]] && [[ -z "$HEADING" ]]; then
-    echo "Error: provide --number N or --heading TEXT" >&2
+if [[ "$REFERENCES_ONLY" == false ]] && (( selector_count == 0 )); then
+    echo "Error: provide --number N, --heading TEXT, --top, or --title" >&2
     exit 1
 fi
 
@@ -146,8 +165,38 @@ if [[ -n "$HEADING" ]]; then
     heading_lower="$(printf '%s' "$HEADING" | tr '[:upper:]' '[:lower:]')"
 fi
 
-md_heading_reset
-while IFS= read -r line; do
+if [[ "$TITLE_ONLY" == true ]]; then
+    if ! match_heading="$(frontmatter_field title "$FILE")" || [[ -z "$match_heading" ]]; then
+        echo "Title not found" >&2
+        exit 1
+    fi
+    found=true
+    printf '%s\n' "$match_heading" >> "$BODY_FILE"
+elif [[ "$TOP" == true ]]; then
+    in_frontmatter=false
+    first_line=true
+    md_heading_reset
+    while IFS= read -r line; do
+        if [[ "$first_line" == true ]] && [[ "$line" == "---" ]]; then
+            in_frontmatter=true
+            first_line=false
+            continue
+        fi
+        first_line=false
+        if [[ "$in_frontmatter" == true ]]; then
+            [[ "$line" == "---" ]] && in_frontmatter=false
+            continue
+        fi
+        if md_heading "$line" && (( MD_HEADING_LEVEL == 2 )); then
+            break
+        fi
+        printf '%s\n' "$line" >> "$BODY_FILE"
+    done < "$FILE"
+    found=true
+    match_heading="top"
+else
+    md_heading_reset
+    while IFS= read -r line; do
     if md_heading "$line"; then
         title="$MD_HEADING_TEXT"
         level="$MD_HEADING_LEVEL"
@@ -210,7 +259,8 @@ while IFS= read -r line; do
             printf '%s\n' "$line" >> "$BODY_FILE"
         fi
     fi
-done < "$FILE"
+    done < "$FILE"
+fi
 
 if [[ "$found" == false ]]; then
     if [[ -n "$TARGET_H2" ]]; then
@@ -241,7 +291,14 @@ if [[ "$JSON" == true ]]; then
     fi
     printf ',"heading":'
     json_quote "$match_heading"
-    printf ',"level":%s},"freshness":' "$match_level_number"
+    if [[ "$TOP" == true ]]; then
+        printf ',"command":"--top"'
+    elif [[ "$TITLE_ONLY" == true ]]; then
+        printf ',"command":"--title"'
+    fi
+    printf ',"level":'
+    if [[ -n "$match_level_number" ]]; then printf '%s' "$match_level_number"; else printf 'null'; fi
+    printf '},"freshness":'
     json_freshness
     printf ',"provenance":'
     json_provenance
@@ -251,13 +308,22 @@ if [[ "$JSON" == true ]]; then
     exit 0
 fi
 
-if [[ -n "$match_number" ]]; then
+if [[ "$TOP" == true ]]; then
+    locator="--top"
+elif [[ "$TITLE_ONLY" == true ]]; then
+    locator="--title"
+elif [[ -n "$match_number" ]]; then
     locator="$match_number"
 else
     locator="heading"
 fi
-printf 'Metadata: path=%s; corpus=%s; locator=%s "%s" (H%s)\n' \
-    "$resolved" "$RESULT_CORPUS" "$locator" "$match_heading" "$match_level_number"
+if [[ -n "$match_level_number" ]]; then
+    printf 'Metadata: path=%s; corpus=%s; locator=%s "%s" (H%s)\n' \
+        "$resolved" "$RESULT_CORPUS" "$locator" "$match_heading" "$match_level_number"
+else
+    printf 'Metadata: path=%s; corpus=%s; locator=%s "%s"\n' \
+        "$resolved" "$RESULT_CORPUS" "$locator" "$match_heading"
+fi
 printf 'Freshness: '
 freshness_metadata_text
 printf '\n'

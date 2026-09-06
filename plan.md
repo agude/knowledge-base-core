@@ -442,6 +442,7 @@ Verification:
 - Public baseline comparison with `--fail-on-regression` — 36 unchanged cases,
   zero regressions.
 
+
 Baseline measurement on 2026-09-05: 31 answerable cases, 18 passed, 13
 failed, and 5 unanswerable. Any-required-evidence and all-required-evidence
 coverage were both 18/31 (58.06%). The report separates full-ranking latency
@@ -483,3 +484,34 @@ Verification:
 - `shellcheck -x -P scripts -s bash scripts/search` — passed.
 - `bash scripts/portability-lint` — passed.
 - `git diff --check` — passed.
+
+### 2026-09-05 — Task 5 review follow-up
+
+Made complete term coverage a primary ranking tier for actual sections, so a
+section containing every query term outranks a partial section whose score is
+inflated by title and heading evidence. Exact frontmatter-title results remain
+the strongest synthetic title result to preserve the title-ranking contract.
+Fixed file-only aggregation so multiple candidates from one file still
+produce one file result.
+
+Added numeric H2 locators to search JSON and normal output. Duplicate H2
+headings can now be retrieved with `section --number N`. Added `section
+--top` and `section --title` for direct retrieval of search's top and
+frontmatter-title results, including JSON command locators. Updated the
+retrieval evaluator to distinguish numeric and command locators.
+
+Added regression coverage for title-plus-heading fallback ranking, duplicate
+H2 locators, and top/title retrieval. Updated the README and portable
+knowledge-base skill with the locator and ranking contracts.
+
+Verification:
+
+- `bats tests` — 323 tests passed.
+- `shellcheck -x -P scripts -s bash scripts/search scripts/section scripts/evaluate-retrieval` — passed.
+- `bash scripts/portability-lint` — passed.
+- `git diff --check` — passed.
+- Frozen retrieval comparison — 36 cases, zero regressions, zero exact-command failures.
+
+Current frozen-evaluation totals under the same fixture are 16,407 full/top
+response bytes and 2,270/2,309 ms full/top latency. The remaining baseline
+changes are the existing 18 section-level consolidation changes.

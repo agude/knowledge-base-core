@@ -151,7 +151,7 @@ Standard markdown content. Links use [normal syntax](other-page.md).
 | `batch start|status|defer` | Persist and resume a curation batch |
 | `search <term> [term ...] [--json\|--text-only] [--path PATH] [--topic NAME] [--corpus TYPE]` | Search ranked sections with freshness and provenance |
 | `toc [--depth N] [--path DIR] [--flat] [--dirs]` | List topics and sections |
-| `section --file FILE (--number N \| --heading TEXT) [--json\|--text-only]` | Extract a section with freshness and provenance |
+| `section --file FILE (--number N \| --heading TEXT \| --top \| --title) [--json\|--text-only]` | Extract a section or search fallback with freshness and provenance |
 | `section --file FILE --references [--json]` | Return the complete provenance reference list |
 | `ask --title "..." [--context FILE] [--body "..."]` | Record a question |
 | `questions [--path DIR] [--file F] [--full] [--all]` | List open questions |
@@ -204,11 +204,20 @@ lines count once. `--files` returns one file result with the number of matching
 sections in `match_count` and a null locator. `--limit` bounds result sections,
 and `--per-file` bounds sections from each file.
 
-Search terms must occur somewhere in the same file. A section containing all
-terms ranks above sections that provide only file-level fallback evidence when
-terms are split across sections. Title and heading evidence receives more
-weight than body evidence. Repeated evidence is capped, and excerpts contain
-up to two highest-value matching lines.
+Search terms must occur somewhere in the same file. Complete term coverage is
+the primary ranking tier for actual sections, so a section containing all terms
+ranks above sections that provide only file-level fallback evidence when terms
+are split across sections. An exact frontmatter-title result remains the
+strongest title result. Title and heading evidence receives more weight than
+body evidence within a coverage tier. Repeated evidence is capped, and
+excerpts contain up to two highest-value matching lines.
+
+Search section locators are directly usable with `section`: H2 results expose
+`locator.number` in JSON and append `[section-number=N]` in normal output.
+Duplicate H2 headings are therefore unambiguous. Results for prose before the
+first H2 use `locator.command: "--top"` and results synthesized from
+frontmatter use `locator.command: "--title"`; retrieve them with
+`section --top` or `section --title`.
 
 The default search corpora are `knowledge`, `sources`, and `pending`.
 `--archive` adds `archive` and `questions`. `--corpus TYPE` selects one or more
@@ -217,7 +226,9 @@ flag to combine them. `--path PATH` accepts a content-relative file or
 directory. `--topic NAME` is a directory under `knowledge/`, such as
 `--topic projects`; both filters can be combined and are intersected.
 `section --json` returns one object with `path`, `corpus`, `locator`,
-`freshness`, `provenance`, and the multiline `content`.
+`freshness`, `provenance`, and the multiline `content`. Its `locator.number`
+is null for `--top` and `--title`, and its `locator.level` is also null for
+those synthetic results.
 
 ### Retrieval evaluation
 
@@ -255,8 +266,9 @@ The evaluator runs two section searches per case. The full-ranking search uses
 relevant rank. The bounded search uses `--limit 5 --per-file 0` to measure the
 response an agent would consume. Full-ranking section count, response bytes,
 latency, and first relevant rank describe the first search. Bounded response
-bytes, latency, and raw section result count describe the second. `top_five` and
-`top_five_section_count` are distinct `{path, section}` locators derived from
+`top_five_section_count` are distinct `{path, section}` display values derived from
+the full-ranking search locators, which also include numeric H2 or command
+selectors when required for disambiguation. `top_five` is kept compact,
 the full ranking, while `bounded_raw_results` preserves the bounded search's
 raw section excerpts.
 

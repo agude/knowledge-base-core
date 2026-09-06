@@ -46,7 +46,7 @@ teardown() { teardown_content_dir; }
         .format == "knowledge-base-retrieval-evaluation-report" and
         .version == 1 and
         .measurement.top_k == 5 and
-        .measurement.coverage_unit == "distinct {path, section} locators from the full ranking" and
+        .measurement.coverage_unit == "distinct search locators (path, section, number/command) from the full ranking" and
         .measurement.full_ranking_command == "search --json --limit 0 --per-file 0 QUERY" and
         .measurement.top_five_command == "search --json --limit 5 --per-file 0 QUERY" and
         .summary.total_cases == 36 and

@@ -58,6 +58,9 @@ Start by searching, not browsing.
      `--archive` adds the archive and question corpora.
    - Use `--text-only` for metadata-free section text or `--json` for
      structured output. The two modes cannot be combined.
+     H2 search results include the numeric locator needed by
+     `section --number`; `top` and frontmatter-title results include
+     direct `--top` and `--title` commands.
 
 2. **Narrow with toc.** If search gives too many results or you need to
    explore a topic area, use `$KNOWLEDGE_BASE/scripts/toc` to scan section names.
@@ -69,8 +72,9 @@ Start by searching, not browsing.
 
 3. **Load a section.** `$KNOWLEDGE_BASE/scripts/section --file <path> --number N` loads one
    H2. Use `--number N.M` for an H3 subsection. Use `--heading "text"` for
-   a case-insensitive substring match on any heading level. Normal output
-   includes the content-relative path, locator, corpus, freshness, and
+   a case-insensitive substring match on any heading level. Use `--top` for
+   prose before the first H2 and `--title` for a frontmatter title. Normal
+   output includes the content-relative path, locator, corpus, freshness, and
    provenance. Use `--text-only` for only the section body or `--json` for one
    structured object. Use `--references` to retrieve the complete provenance
    list from frontmatter; combine it with `--json` for structured output.
@@ -163,7 +167,7 @@ All scripts are at `$KNOWLEDGE_BASE/scripts/<name>`.
 | `search <term> [term ...] [--json\|--text-only] [--path PATH] [--topic NAME] [--corpus TYPE]` | Search ranked sections with metadata |
 | `evaluate-retrieval --fixture FILE [--baseline FILE]` | Measure retrieval against a versioned question fixture |
 | `toc [--depth N] [--path DIR] [--flat] [--dirs]` | List topics and sections |
-| `section --file FILE (--number N \| --heading TEXT) [--json\|--text-only]` | Extract a section with metadata |
+| `section --file FILE (--number N \| --heading TEXT \| --top \| --title) [--json\|--text-only]` | Extract a section or search fallback with metadata |
 | `section --file FILE --references [--json]` | Return the complete provenance reference list |
 | `observe --title "..." --body "..."` | Record an observation |
 | `pending [--full] [--count]` | List uncurated observations |

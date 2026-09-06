@@ -166,8 +166,17 @@ title: \"Matched in frontmatter\"
 # Topic
 
 Preamble with target_word here."
+    run "$SCRIPTS/search" --json "target_word"
+    [[ "$status" -eq 0 ]]
+    run jq -e '.results[0].locator.section == "top" and .results[0].locator.number == null and .results[0].locator.command == "--top"' <<<"$output"
+    [[ "$status" -eq 0 ]]
+    run "$SCRIPTS/section" --text-only --file knowledge/topic.md --top
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Preamble with target_word here."* ]]
+
     run "$SCRIPTS/search" "target_word"
     [[ "$output" == *"| top |"* ]]
+    [[ "$output" == *"section-command=--top"* ]]
 }
 
 @test "search ranks a title match above a body match" {
@@ -217,8 +226,15 @@ bind mounts
 bind mounts'
     run "$SCRIPTS/search" --json --limit 2 --per-file 0 "bind mounts"
     [[ "$status" -eq 0 ]]
-    run jq -e '.results[0].path == "knowledge/exact.md" and .results[0].locator.section == "title"' <<<"$output"
+    run jq -e '.results[0].path == "knowledge/exact.md" and .results[0].locator.section == "title" and .results[0].locator.number == null and .results[0].locator.command == "--title"' <<<"$output"
     [[ "$status" -eq 0 ]]
+
+    run "$SCRIPTS/section" --text-only --file knowledge/exact.md --title
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == "Bind Mounts" ]]
+
+    run "$SCRIPTS/search" --limit 1 "bind mounts"
+    [[ "$output" == *"section-command=--title"* ]]
 }
 
 @test "search counts repeated identical evidence once" {
@@ -254,6 +270,55 @@ alpha beta'
     [[ "$status" -eq 0 ]]
     run jq -e '.results[0].path == "knowledge/complete.md" and .results[0].locator.section == "All terms"' <<<"$output"
     [[ "$status" -eq 0 ]]
+}
+
+@test "search ranks complete coverage above title and heading fallback" {
+    create_test_article "title-heading-fallback.md" '---
+title: "alpha"
+---
+
+# Notes
+
+## beta
+
+The terms are split between the title and heading.'
+    create_test_article "complete.md" '# Complete
+
+## Unrelated
+
+alpha beta'
+    run "$SCRIPTS/search" --json --limit 0 --per-file 0 alpha beta
+    [[ "$status" -eq 0 ]]
+    run jq -e '.results[0].path == "knowledge/complete.md" and .results[0].locator.section == "Unrelated"' <<<"$output"
+    [[ "$status" -eq 0 ]]
+}
+
+@test "search exposes H2 numbers for duplicate headings" {
+    create_test_article "duplicate.md" '# Duplicate
+
+## Same heading
+
+first needle
+
+## Same heading
+
+second needle'
+    run "$SCRIPTS/search" --json --limit 0 --per-file 0 needle
+    [[ "$status" -eq 0 ]]
+    run jq -e '(.results | length == 2) and
+        .results[0].locator.section == "Same heading" and
+        .results[0].locator.number == "1" and
+        .results[1].locator.number == "2"' <<<"$output"
+    [[ "$status" -eq 0 ]]
+
+    run "$SCRIPTS/search" --limit 0 --per-file 0 needle
+    [[ "$output" == *"[section-number=1]"* ]]
+    [[ "$output" == *"[section-number=2]"* ]]
+
+    run "$SCRIPTS/section" --text-only --file knowledge/duplicate.md --number 2
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"second needle"* ]]
+    [[ "$output" != *"first needle"* ]]
 }
 
 @test "search excerpt selects the strongest evidence line" {
@@ -521,7 +586,7 @@ needle inside
     run "$SCRIPTS/search" --json needle
     [[ "$status" -eq 0 ]]
     json="$output"
-    run jq -e '.results[0].path == "knowledge/résumé notes.md" and .results[0].text == "Needle \"quoted\"." and .results[0].freshness.status == "invalid" and .results[0].locator.section == "Cité" and .truncated == false' <<<"$json"
+    run jq -e '.results[0].path == "knowledge/résumé notes.md" and .results[0].text == "Needle \"quoted\"." and .results[0].freshness.status == "invalid" and .results[0].locator.section == "Cité" and .results[0].locator.number == "1" and .truncated == false' <<<"$json"
     [[ "$status" -eq 0 ]]
 
     run "$SCRIPTS/search" --json absent

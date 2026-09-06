@@ -16,7 +16,7 @@
 #   --json                  Accepted for consistency; JSON is always returned
 #
 # The evaluator measures full-ranking and bounded search subprocesses. It
-# reports distinct-section top-five coverage, first relevant rank, response
+# reports distinct-locator top-five coverage, first relevant rank, response
 # bytes, and wall-clock latency. It does not call a model or modify the
 # content repository.
 
@@ -114,7 +114,9 @@ if [[ ! -x "$SECTION_SCRIPT" ]]; then
 fi
 
 # The fixture schema is deliberately small and explicit. Expected sections
-# use the same path and section locator returned by `search --json`.
+# use the same path and section locator returned by search --json. The
+# optional number and command fields disambiguate duplicate H2s and synthetic
+# top/title results.
 if ! jq -e '
     (.format == "knowledge-base-retrieval-evaluation") and
     (.version == 1) and
@@ -138,7 +140,10 @@ if ! jq -e '
             ((.path | type) == "string") and
             ((.path | length) > 0) and
             ((.section | type) == "string") and
-            ((.section | length) > 0)
+            ((.section | length) > 0) and
+            ((.number? == null) or ((.number | type) == "string" and (.number | length) > 0)) and
+            ((.command? == null) or ((.command | type) == "string" and (.command | IN("--top", "--title")))) and
+            ((.number? == null) or (.command? == null))
         ) and
         ((.unanswerable and (.expected_sections | length) == 0) or
          ((.unanswerable | not) and (.expected_sections | length) > 0))
@@ -172,13 +177,16 @@ trap cleanup EXIT
 
 validate_expected_locators() {
     local question_json case_id expected_json expected_path expected_section
-    local resolved_path section_output section_error actual_section
+    local expected_number expected_command
+    local resolved_path section_output section_error actual_section actual_number actual_command
 
     while IFS= read -r question_json; do
         case_id="$(printf '%s\n' "$question_json" | jq -r '.id')"
         while IFS= read -r expected_json; do
             expected_path="$(printf '%s\n' "$expected_json" | jq -r '.path')"
             expected_section="$(printf '%s\n' "$expected_json" | jq -r '.section')"
+            expected_number="$(printf '%s\n' "$expected_json" | jq -r '.number // empty')"
+            expected_command="$(printf '%s\n' "$expected_json" | jq -r '.command // empty')"
 
             if ! resolved_path="$(resolve_path "$expected_path")"; then
                 echo "Invalid retrieval fixture: case '$case_id' expected locator path not found: $expected_path" >&2
@@ -204,8 +212,17 @@ validate_expected_locators() {
             # `top` is the search locator for prose before the first H2. A
             # file existence check validates it; headings use section's
             # parser so fenced headings and exact text follow core behavior.
-            if [[ "$expected_section" == "top" ]]; then
+            if [[ "$expected_section" == "top" && -z "$expected_number" && -z "$expected_command" ]]; then
                 continue
+            fi
+
+            section_selector=(--heading "$expected_section" --exact)
+            if [[ -n "$expected_number" ]]; then
+                section_selector=(--number "$expected_number")
+            elif [[ "$expected_command" == "--top" ]]; then
+                section_selector=(--top)
+            elif [[ "$expected_command" == "--title" ]]; then
+                section_selector=(--title)
             fi
 
             # Reuse fixed temporary paths so a valid case ID cannot become a
@@ -213,10 +230,14 @@ validate_expected_locators() {
             section_output="$TEMP_DIR/locator.json"
             section_error="$TEMP_DIR/locator.stderr"
             if KB_CONTENT_DIR="$CONTENT_DIR" "$SECTION_SCRIPT" \
-                --json --file "$expected_path" --heading "$expected_section" --exact \
+                --json --file "$expected_path" "${section_selector[@]}" \
                 > "$section_output" 2> "$section_error"; then
                 actual_section="$(jq -r '.locator.heading' "$section_output")"
-                if [[ "$actual_section" != "$expected_section" ]]; then
+                actual_number="$(jq -r '.locator.number // empty' "$section_output")"
+                actual_command="$(jq -r '.locator.command // empty' "$section_output")"
+                if [[ -n "$expected_number" && "$actual_number" != "$expected_number" ]] || \
+                    [[ -n "$expected_command" && "$actual_command" != "$expected_command" ]] || \
+                    [[ -z "$expected_number" && -z "$expected_command" && "$actual_section" != "$expected_section" ]]; then
                     echo "Invalid retrieval fixture: case '$case_id' locator section does not match corpus heading: $expected_path | $expected_section (actual: $actual_section)" >&2
                     return 1
                 fi
@@ -348,32 +369,38 @@ while IFS= read -r case_json; do
         ($search_result[0].results // []) as $all_results |
         ($bounded_result[0].results // []) as $bounded_results |
         ($question.expected_sections // []) as $expected |
-        ($question.unanswerable == true) as $unanswerable |
-        ($question.requires_all_sections == true) as $requires_all |
-        ($all_results |
-            reduce .[] as $result
-            ([ ];
-                ($result.path) as $result_path |
-                ($result.locator.section // "top") as $result_section |
-                ($result_path + "\u0000" + $result_section) as $result_key |
-                if any(.[]; .key == $result_key) then .
-                else . + [{key: $result_key, path: $result_path, section: $result_section}]
-                end
-            )
-        ) as $distinct_sections |
-        ($distinct_sections[:5] | map({path, section})) as $top_five |
-        ([
-            $expected[] as $expected_section |
-            select(any($top_five[];
-                .path == $expected_section.path and
-                .section == $expected_section.section
-            ))
-        ] | length) as $matched_count |
-        ([
-            $distinct_sections | to_entries[] | . as $entry |
-            select(any($expected[];
-                .path == $entry.value.path and .section == $entry.value.section
-            )) |
+       ($question.unanswerable == true) as $unanswerable |
+       ($question.requires_all_sections == true) as $requires_all |
+        def locator_matches($actual; $expected):
+            ($actual.path == $expected.path) and
+            (if ($expected.number // null) != null then
+                 $actual.number == $expected.number
+             elif ($expected.command // null) != null then
+                 $actual.command == $expected.command
+             else
+                 $actual.section == $expected.section
+             end);
+       ($all_results |
+           reduce .[] as $result
+           ([ ];
+               ($result.path) as $result_path |
+               ($result.locator.section // "top") as $result_section |
+                ($result.locator.number // "") as $result_number |
+                ($result.locator.command // "") as $result_command |
+                ($result_path + "\u0000" + $result_section + "\u0000" + $result_number + "\u0000" + $result_command) as $result_key |
+               if any(.[]; .key == $result_key) then .
+                else . + [{key: $result_key, path: $result_path, section: $result_section, number: $result_number, command: $result_command}]
+               end
+           )
+       ) as $distinct_sections |
+       ($distinct_sections[:5] | map({path, section})) as $top_five |
+       ([
+           $expected[] as $expected_section |
+            select(any($distinct_sections[:5][]; locator_matches(.; $expected_section)))
+       ] | length) as $matched_count |
+       ([
+           $distinct_sections | to_entries[] | . as $entry |
+            select(any($expected[]; locator_matches($entry.value; .))) |
             (.key + 1)
         ]) as $relevant_ranks |
         ($relevant_ranks[0] // null) as $first_relevant_rank |
@@ -404,9 +431,10 @@ while IFS= read -r case_json; do
             top_five_section_count: ($top_five | length),
             top_five_response_bytes: ($bounded_response_bytes | tonumber),
             top_five_latency_ms: ($bounded_latency_ms | tonumber),
-            bounded_raw_results: ($bounded_results
-                | map({path, section: (.locator.section // "top"),
-                      line: .locator.line, text})),
+           bounded_raw_results: ($bounded_results
+               | map({path, section: (.locator.section // "top"),
+                      number: .locator.number, command: .locator.command,
+                     line: .locator.line, text})),
             top_five: $top_five,
             failure: (if $unanswerable or $success then null
                       elif $requires_all then
@@ -440,7 +468,7 @@ jq -s -c \
         corpus_sha256: $corpus_sha256,
         measurement: {
             top_k: 5,
-            coverage_unit: "distinct {path, section} locators from the full ranking",
+            coverage_unit: "distinct search locators (path, section, number/command) from the full ranking",
             full_ranking_command: "search --json --limit 0 --per-file 0 QUERY",
             top_five_command: "search --json --limit 5 --per-file 0 QUERY",
             full_ranking_latency_scope: "wall-clock time for the full-ranking search subprocess",

@@ -116,6 +116,48 @@ TLS overview.'
     [[ "$output" != *"Metadata:"* ]]
 }
 
+@test "section --top retrieves the preamble before the first H2" {
+    create_test_article "top.md" '---
+title: "Top"
+---
+
+# Top
+
+Preamble text.
+
+## Details
+
+H2 text.'
+    run "$SCRIPTS/section" --text-only --file knowledge/top.md --top
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"# Top"* ]]
+    [[ "$output" == *"Preamble text."* ]]
+    [[ "$output" != *"## Details"* ]]
+
+    run "$SCRIPTS/section" --json --file knowledge/top.md --top
+    [[ "$status" -eq 0 ]]
+    run jq -e '.locator.number == null and .locator.heading == "top" and .locator.command == "--top" and .locator.level == null and (.content | contains("Preamble text."))' <<<"$output"
+    [[ "$status" -eq 0 ]]
+}
+
+@test "section --title retrieves the frontmatter title" {
+    create_test_article "title.md" '---
+title: "A quoted title"
+---
+
+# Heading
+
+Body.'
+    run "$SCRIPTS/section" --text-only --file knowledge/title.md --title
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == "A quoted title" ]]
+
+    run "$SCRIPTS/section" --json --file knowledge/title.md --title
+    [[ "$status" -eq 0 ]]
+    run jq -e '.locator.number == null and .locator.heading == "A quoted title" and .locator.command == "--title" and .locator.level == null and .content == "A quoted title\n"' <<<"$output"
+    [[ "$status" -eq 0 ]]
+}
+
 @test "section JSON includes locator, freshness, provenance, and multiline content" {
     create_test_article "résumé notes.md" $'---\ntitle: "Résumé Notes"\nverified: 2020-01-01\nttl: people\nsources:\n  - "observations/archived/evidence file.md"\n---\n\n# Résumé Notes\n\n## Cité\n\nLine "one".\nLine two.'
     run "$SCRIPTS/section" --json --file "knowledge/résumé notes.md" --heading Cité

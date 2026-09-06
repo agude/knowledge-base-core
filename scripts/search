@@ -21,7 +21,8 @@
 # Results are ranked sections. A section containing every query term outranks
 # file-level fallback sections whose terms are split across the file. Title
 # and heading matches outrank body evidence, and duplicate evidence lines
-# count once.
+# count once. H2 results include their `section --number` value; `top` and
+# frontmatter-title results include direct `--top` and `--title` selectors.
 
 set -euo pipefail
 
@@ -212,12 +213,18 @@ json_search_file() {
 }
 
 json_search_section() {
-    local line_number="$1" section_name="$2" line_text="$3" evidence_count="$4"
+    local line_number="$1" section_name="$2" section_number="$3"
+    local section_command="$4" line_text="$5" evidence_count="$6"
     printf '{"path":'; json_quote "$path"
     printf ',"corpus":'; json_quote "$RESULT_CORPUS"
     printf ',"title":'; json_quote "$title"
     printf ',"match_count":%s,"locator":{"section":' "$evidence_count"
     json_quote "${section_name:-top}"
+    printf ',"number":'
+    if [[ -n "$section_number" ]]; then json_quote "$section_number"; else printf 'null'; fi
+    if [[ -n "$section_command" ]]; then
+        printf ',"command":'; json_quote "$section_command"
+    fi
     printf ',"line":%s},"freshness":' "$line_number"
     json_freshness
     printf ',"provenance":'; json_provenance display
@@ -333,20 +340,16 @@ function reset() {
     in_fm = 0; in_fence = 0; fence_ch = ""; fence_len = 0
     title = ""; path = FILENAME
     if (substr(path, 1, plen) == prefix) path = substr(path, plen + 1)
-    section_count = 1; section_name[1] = "top"; current_section = 1
+    section_count = 1; section_name[1] = "top"; section_number[1] = ""
+    current_section = 1; h2_count = 0
 }
-function emit(   i, s, matched, title_matches, title_all, all_sections,
-                 candidate_count, best_score, evidence_count, excerpt, output) {
+function emit(   i, s, matched, title_matches, title_all,
+                 candidate_count, best_tier, best_score, evidence_count,
+                 excerpt, output, section_command) {
     for (i = 1; i <= nterms; i++) if (!file_hit[i]) return
     title_matches = 0
     for (i = 1; i <= nterms; i++) if (title_hit[i]) title_matches++
     title_all = (title_matches == nterms)
-    all_sections = 0
-    for (s = 1; s <= section_count; s++) {
-        matched = 0
-        for (i = 1; i <= nterms; i++) if (section_hit[s, i]) matched++
-        if (matched == nterms) all_sections++
-    }
     candidate_count = 0
     for (s = 1; s <= section_count; s++) {
         matched = 0
@@ -354,31 +357,42 @@ function emit(   i, s, matched, title_matches, title_all, all_sections,
         if (matched == 0) continue
         candidate_count++
         candidate_score[candidate_count] = section_score(s)
+        candidate_tier[candidate_count] = (matched == nterms ? 1 : 0)
         candidate_section[candidate_count] = s
     }
-    if (title_all && all_sections == 0) {
+    if (title_all) {
         candidate_count++
         candidate_score[candidate_count] = title_matches * 100 + 80
+        # An exact title is a synthetic file-level result, but remains the
+        # strongest title evidence for the existing exact-title contract.
+        candidate_tier[candidate_count] = 2
         candidate_section[candidate_count] = 0
     }
     if (candidate_count == 0) return
     if (files_only == 1) {
         best_score = -1000000000
-        for (i = 1; i <= candidate_count; i++)
-            if (candidate_score[i] > best_score) best_score = candidate_score[i]
-        print best_score US path US 0 US candidate_count US title US candidate_count
+        best_tier = -1
+        for (i = 1; i <= candidate_count; i++) {
+            if (candidate_tier[i] > best_tier ||
+                (candidate_tier[i] == best_tier && candidate_score[i] > best_score)) {
+                best_tier = candidate_tier[i]; best_score = candidate_score[i]
+            }
+        }
+        print best_tier US best_score US path US 0 US "-" US "-" US "-" US title US candidate_count US candidate_count
         return
     }
     for (i = 1; i <= candidate_count; i++) {
         s = candidate_section[i]
         if (s == 0) {
             evidence_count = 1; excerpt = title
-            output = candidate_score[i] US path US 0 US "title" US title US candidate_count US evidence_count
+            output = candidate_tier[i] US candidate_score[i] US path US 0 US "title" US "" US "--title" US title US candidate_count US evidence_count
             output = output US "1" RS_ excerpt
         } else {
             evidence_count = unique_line_count[s]
             excerpt = section_excerpt(s)
-            output = candidate_score[i] US path US s US section_name[s] US title US candidate_count US evidence_count
+            if (s == 1) section_command = "--top"
+            else section_command = ""
+            output = candidate_tier[i] US candidate_score[i] US path US s US section_name[s] US section_number[s] US section_command US title US candidate_count US evidence_count
             output = output US section_excerpt_line(s) RS_ excerpt
         }
         print output
@@ -387,7 +401,7 @@ function emit(   i, s, matched, title_matches, title_all, all_sections,
 BEGIN {
     US = ENVIRON["KB_US"]; RS_ = ENVIRON["KB_RS"]
     prefix = ENVIRON["KB_PREFIX"]; plen = length(prefix)
-    files_only = ENVIRON["KB_FILES_ONLY"] + 0
+    files_only = (ENVIRON["KB_FILES_ONLY"] == "true" ? 1 : 0)
     BACKTICK = sprintf("%c", 96)
     nterms = split(ENVIRON["KB_TERMS"], term, US)
     for (i = 1; i <= nterms; i++) term[i] = tolower(term[i])
@@ -413,8 +427,10 @@ FNR == 1 { if (NR > 1) emit(); reset() }
         heading_text = trim(substr(line, hash_count + 1))
         sub(/[[:space:]]*#+$/, "", heading_text)
         if (hash_count == 2) {
+            h2_count++
             section_count++; current_section = section_count
             section_name[current_section] = heading_text
+            section_number[current_section] = h2_count
         } else if (hash_count == 1) current_section = 1
     }
     matched = 0; line_score = is_heading ? 40 : 20; line_term_count = 0
@@ -436,7 +452,7 @@ if ! results="$(
     | LC_ALL=C sort -z \
     | KB_TERMS="$TERM_STR" KB_US="$US" KB_RS="$RS" KB_FILES_ONLY="$FILES_ONLY" \
       KB_PREFIX="$CONTENT_DIR/" xargs -0 awk "$AWK_PROG" \
-    | LC_ALL=C sort -t"$US" -k1,1nr -k2,2 -k3,3n
+    | LC_ALL=C sort -t"$US" -k1,1nr -k2,2nr -k3,3 -k4,4n
 )"; then
     echo "Search failed while reading the selected content." >&2
     exit 1
@@ -453,8 +469,8 @@ declare -A shown_per_file=()
 printed=0; files_total=0; lines_total=0; json_first=true
 if [[ "$JSON" == true ]]; then printf '{"results":['; fi
 
-# shellcheck disable=SC2034  # score and section_order are sort keys.
-while IFS="$US" read -r score path section_order section title match_count evidence_count rest; do
+# shellcheck disable=SC2034  # ranking fields are sort keys.
+while IFS="$US" read -r coverage_tier score path section_order section section_number section_command title match_count evidence_count rest; do
     [[ -n "$path" ]] || continue
     if [[ -z "${all_files[$path]+present}" ]]; then
         all_files["$path"]=1; files_total=$((files_total + 1))
@@ -484,12 +500,22 @@ while IFS="$US" read -r score path section_order section title match_count evide
         [[ -n "$line_number" ]] || continue
         if [[ "$JSON" == true ]]; then
             [[ "$json_first" == false ]] && printf ','
-            json_search_section "$line_number" "$section" "$excerpt_text" "$evidence_count"
+            json_search_section "$line_number" "$section" "$section_number" "$section_command" "$excerpt_text" "$evidence_count"
             json_first=false
         elif [[ "$TEXT_ONLY" == true ]]; then
             printf "%s | %s | %s\n" "$path" "${section:-top}" "$excerpt_text"
         else
-            printf "%s | %s | %s [%s]\n" "$path" "${section:-top}" "$excerpt_text" "$metadata"
+            locator_metadata=""
+            if [[ -n "$section_number" ]]; then
+                locator_metadata="section-number=$section_number"
+            elif [[ -n "$section_command" ]]; then
+                locator_metadata="section-command=$section_command"
+            fi
+            if [[ -n "$locator_metadata" ]]; then
+                printf "%s | %s | %s [%s] [%s]\n" "$path" "${section:-top}" "$excerpt_text" "$locator_metadata" "$metadata"
+            else
+                printf "%s | %s | %s [%s]\n" "$path" "${section:-top}" "$excerpt_text" "$metadata"
+            fi
         fi
         printed=$((printed + 1))
         shown_per_file["$path"]=$((${shown_per_file[$path]:-0} + 1))
