@@ -605,11 +605,14 @@ top-level pending-file discovery rule. Preview metadata reads are capped at
 64 KiB per file, topic samples at 8 KiB, and article metadata at 256 files;
 file sizes use filesystem metadata when available instead of scanning full
 transcripts. Topic matching uses an inverted word index and retains only the
-best eight ranked hints for output.
+best eight ranked hints for output. Regular `pending` listing, counting, and
+full display remain recursive; only `pending --preview` and `batch start` use
+the top-level batch-selection rule.
 
 Added regression coverage for corrupt manifests and nested observations, plus
 a 320-article and 256 KiB transcript preview fixture. The topic corpus cap is
-reported in the preview when reached.
+reported in the preview when reached. Added coverage for escaped YAML topic
+labels and recursive non-preview access to nested observations.
 
 Verification:
 

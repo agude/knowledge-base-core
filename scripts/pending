@@ -53,7 +53,14 @@ fi
 files=()
 while IFS= read -r -d '' f; do
     files+=("$f")
-done < <(find "$PENDING_DIR" -maxdepth 1 -name '*.md' -type f -print0 2>/dev/null | sort -z)
+done < <(find "$PENDING_DIR" -name '*.md' -type f -print0 2>/dev/null | sort -z)
+
+preview_files=()
+if [[ "$PREVIEW" == true ]]; then
+    while IFS= read -r -d '' f; do
+        preview_files+=("$f")
+    done < <(find "$PENDING_DIR" -maxdepth 1 -name '*.md' -type f -print0 2>/dev/null | sort -z)
+fi
 
 if [[ "$COUNT_ONLY" == true ]]; then
     echo "${#files[@]}"
@@ -140,8 +147,8 @@ set_pending_metadata_field() {
 
     if [[ "$value" =~ ^\"(.*)\"$ ]]; then
         value="${BASH_REMATCH[1]}"
-        value="${value//\\\\\"/\"}"
-        value="${value//\\\\\\\\/\\\\}"
+        value="${value//\\\"/\"}"
+        value="${value//\\\\/\\}"
     fi
 
     case "$field" in
@@ -218,7 +225,7 @@ preview_queue() {
         done < <(find "$CONTENT_DIR/knowledge" -name '*.md' -type f -print0 | sort -z)
     fi
 
-    for file in "${files[@]}"; do
+    for file in "${preview_files[@]}"; do
         size="$(file_size "$file")"
         read_pending_metadata "$file"
         source="$PENDING_SOURCE"
@@ -283,7 +290,7 @@ preview_queue() {
     done
 
     echo "Pending queue preview"
-    echo "Pending items: ${#files[@]}"
+    echo "Pending items: ${#preview_files[@]}"
     if [[ -n "$oldest_epoch" ]]; then
         local age_seconds=$((today_epoch - oldest_epoch))
         local age_days=$((age_seconds / 86400))

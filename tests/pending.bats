@@ -93,7 +93,7 @@ EOF
     [[ "${#output}" -lt 2000 ]]
 }
 
-@test "pending --preview uses batch's top-level discovery rule" {
+@test "pending keeps recursive listing and bounds preview selection" {
     create_test_observation "top-level.md" "Top-level observation" "Body"
     mkdir -p "$TEST_CONTENT_DIR/observations/pending/nested"
     cat > "$TEST_CONTENT_DIR/observations/pending/nested/hidden.md" <<'EOF'
@@ -106,10 +106,35 @@ created: 2025-01-01T00:00:00Z
 Body
 EOF
 
+    run "$SCRIPTS/pending" --count
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == "2" ]]
+    run "$SCRIPTS/pending" --full
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Nested observation"* ]]
+
     run "$SCRIPTS/pending" --preview
     [[ "$status" -eq 0 ]]
     [[ "$output" == *"Pending items: 1"* ]]
     [[ "$output" == *"Oldest pending age: 147 day(s) (2026-04-12; top-level.md)"* ]]
+}
+
+@test "pending --preview decodes escaped topic labels" {
+    cat > "$TEST_CONTENT_DIR/observations/pending/escaped.md" <<'EOF'
+---
+title: "Escaped topic"
+source: session
+created: 2026-04-12T00:00:00Z
+topic: "Team \"Core\""
+---
+
+Body
+EOF
+
+    run "$SCRIPTS/pending" --preview
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *'Team "Core" (1 pending item(s))'* ]]
+    [[ "$output" != *'Team \\"Core\\"'* ]]
 }
 
 @test "pending --preview caps metadata and topic corpus work" {
