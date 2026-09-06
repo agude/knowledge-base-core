@@ -4,6 +4,7 @@
 #
 # Usage:
 #   batch start
+#   batch start --files FILENAME [FILENAME ...]
 #   batch status BATCH_ID
 #   batch defer BATCH_ID FILENAME
 
@@ -19,6 +20,11 @@ MAX_BATCH_REPORT_ITEMS=8
 
 die() { echo "Error: $*" >&2; exit 1; }
 
+fail_locked() {
+    release_lock
+    die "$*"
+}
+
 batch_file() {
     local id="$1"
     [[ "$id" != */* && "$id" == *.tsv ]] || die "invalid batch id: $id"
@@ -26,24 +32,58 @@ batch_file() {
 }
 
 start_batch() {
+    local explicit=false
+    local -a selected=()
+    local name seen path
+
+    if (( $# == 0 )); then
+        :
+    elif [[ "$1" == --files ]]; then
+        shift
+        (( $# > 0 )) || die "--files requires at least one filename"
+        explicit=true
+        for name in "$@"; do
+            [[ "$name" != */* ]] || die "not a pending filename: $name"
+            [[ "$name" == *.md ]] || die "not a markdown filename: $name"
+            for seen in "${selected[@]}"; do
+                [[ "$seen" != "$name" ]] || die "duplicate filename: $name"
+            done
+            selected+=("$name")
+        done
+    else
+        die "usage: batch start [--files FILENAME [FILENAME ...]]"
+    fi
+
     acquire_lock || exit 1
     mkdir -p "$BATCH_DIR"
     local id
     id="$(date -u +%Y%m%dT%H%M%S)-$$.tsv"
     local file="$BATCH_DIR/$id"
-    {
-        echo $'filename\toriginal_sha256\tstatus\tdisposition\tdestination'
+
+    if [[ "$explicit" == true ]]; then
+        for name in "${selected[@]}"; do
+            path="$PENDING_DIR/$name"
+            [[ -f "$path" ]] || fail_locked "pending observation not found: $name"
+        done
+    else
         while IFS= read -r -d '' path; do
-            local name
-            name="$(basename "$path")"
-            printf '%s\t%s\tpending\t\t\n' "$name" "$(sha256sum "$path" | awk '{print $1}')"
+            selected+=("$(basename "$path")")
         done < <(find "$PENDING_DIR" -maxdepth 1 -name '*.md' -type f -print0 | sort -z)
-    } > "$file"
-    if [[ "$(wc -l < "$file")" -le 1 ]]; then
+    fi
+
+    if (( ${#selected[@]} == 0 )); then
         rm -f "$file"
         release_lock
         die "no pending observations"
     fi
+
+    {
+        echo $'filename\toriginal_sha256\tstatus\tdisposition\tdestination'
+        for name in "${selected[@]}"; do
+            path="$PENDING_DIR/$name"
+            printf '%s\t%s\tpending\t\t\n' "$name" "$(sha256sum "$path" | awk '{print $1}')"
+        done
+    } > "$file"
     echo "Created batch: $id"
     echo "Selected: $(( $(wc -l < "$file") - 1 )) observation(s)"
     release_lock
@@ -164,7 +204,7 @@ defer_item() {
 }
 
 case "${1:-}" in
-    start) shift; [[ $# -eq 0 ]] || die "start takes no arguments"; start_batch ;;
+    start) shift; start_batch "$@" ;;
     status) shift; [[ $# -eq 1 ]] || die "usage: batch status BATCH_ID"; status_batch "$(batch_file "$1")" ;;
     defer) shift; [[ $# -eq 2 ]] || die "usage: batch defer BATCH_ID FILENAME"; defer_item "$(batch_file "$1")" "$2" ;;
     -h|--help) show_help "$0" ;;

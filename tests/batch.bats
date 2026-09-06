@@ -27,6 +27,41 @@ commit_observations() {
     grep -q 'disposition: ephemeral' "$TEST_CONTENT_DIR/observations/archived/a.md"
 }
 
+@test "batch snapshots an explicit selected subset" {
+    create_test_observation a.md "A" "Body A"
+    create_test_observation b.md "B" "Body B"
+    create_test_observation c.md "C" "Body C"
+    commit_observations
+
+    run "$SCRIPTS/batch" start --files c.md a.md
+    [[ "$status" -eq 0 ]]
+    batch_id="$(sed -n 's/^Created batch: //p' <<< "$output")"
+    batch_file="$TEST_CONTENT_DIR/observations/batches/$batch_id"
+
+    [[ "$(awk -F '\t' 'NR > 1 { print $1 }' "$batch_file" | tr '\n' ' ')" == "c.md a.md " ]]
+    ! grep -q $'^b.md\t' "$batch_file"
+    run "$SCRIPTS/batch" status "$batch_id"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"0 complete, 2 pending, 0 deferred"* ]]
+}
+
+@test "batch rejects invalid explicit selections" {
+    create_test_observation a.md "A" "Body A"
+    commit_observations
+
+    run "$SCRIPTS/batch" start --files a.md missing.md
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"pending observation not found: missing.md"* ]]
+
+    run "$SCRIPTS/batch" start --files a.md a.md
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"duplicate filename: a.md"* ]]
+
+    run "$SCRIPTS/batch" start --files ../a.md
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"not a pending filename: ../a.md"* ]]
+}
+
 @test "batch detects changed input and supports deferral" {
     create_test_observation a.md "A" "Body A"
     commit_observations

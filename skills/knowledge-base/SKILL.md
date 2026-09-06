@@ -198,7 +198,7 @@ All scripts are at `$KNOWLEDGE_BASE/scripts/<name>`.
 | `section --file FILE --references [--json]` | Return the complete provenance reference list |
 | `observe --title "..." --body "..."` | Record an observation |
 | `pending [--full] [--count] [--preview]` | List observations or preview the curation queue |
-| `batch start|status|defer` | Persist and resume a curation batch |
+| `batch start [--files FILENAME ...]|status|defer` | Persist and resume a curator-selected batch |
 | `ask --title "..." [--context FILE] [--body "..."]` | Record a question |
 | `questions [--path DIR] [--file F] [--full] [--all]` | List open questions |
 | `resolve --file F [--answer "..."]` | Resolve a question |
@@ -224,7 +224,10 @@ generation makes no LLM calls. Empty queues and invalid metadata are reported
 without printing observation bodies, so large transcripts do not expand the
 preview.
 
-After processing a persisted batch, run
+The curator agent selects a bounded filename list, then starts it with
+`batch start --files FILENAME ...`. `batch start` without `--files` retains
+the compatibility behavior of selecting every top-level pending file. After
+processing a persisted batch, run
 `$KNOWLEDGE_BASE/scripts/batch status BATCH_ID`. Its report reads the manifest's
 dispositions and destinations, lists bounded deferred work, and retains the
 existing pending/complete/deferred counts. Newly arrived observations are not

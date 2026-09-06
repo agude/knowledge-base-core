@@ -86,17 +86,22 @@ example.
    observations you have to work on. If there are a lot, run
    `$KNOWLEDGE_BASE/scripts/pending --preview` explicitly for bounded
    batch-selectable age, observation/transcript, byte-volume,
-   metadata-warning, and lexical topic-hint metrics before choosing the batch
-   size. Preview and `batch start` select top-level pending files; normal
-   `pending` listing, counting, and `--full` access remain recursive. Topic
-   hints are suggestions only; preview generation makes no LLM calls.
+   metadata-warning, and lexical topic-hint metrics. The curator agent uses
+   those metrics and the observation contents to choose a bounded filename
+   list; topic hints are suggestions only, and preview generation makes no LLM
+   calls. Preview and `batch start --files FILENAME ...` operate on top-level
+   pending files; normal `pending` listing, counting, and `--full` access remain
+   recursive.
 3. If there are only a small number of observations, run
    `$KNOWLEDGE_BASE/scripts/pending --full` to read them all. Otherwise
    use your READ tool to go through them one by one.
 4. Run `$KNOWLEDGE_BASE/scripts/toc --depth 2` to see the current knowledge structure.
 5. Create a batch before processing with
-   `$KNOWLEDGE_BASE/scripts/batch start`. The command records the exact
-   filenames and content hashes.
+   `$KNOWLEDGE_BASE/scripts/batch start --files FILENAME ...`. The command
+   records exactly the filenames selected by the curator and their content
+   hashes. With no `--files` argument, the command selects every top-level
+   pending file for compatibility; use that mode only when a full queue pass
+   is intentional.
 6. For each observation, decide what to do (see Decision Framework below).
 7. Execute your decisions --- edit knowledge articles directly. Find the
    content root with `$KNOWLEDGE_BASE/scripts/status`; do not assume

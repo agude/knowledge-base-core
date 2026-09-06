@@ -176,7 +176,7 @@ changes do not edit or suppress these private references.
 | `pending [--full] [--count] [--preview]` | List observations or preview the curation queue |
 | `archive FILENAME [FILENAME ...]` | Archive explicit observations |
 | `archive --batch ID --disposition TYPE [--destination PATH] FILENAME` | Complete one persisted batch member |
-| `batch start|status|defer` | Persist and resume a curation batch |
+| `batch start [--files FILENAME ...]|status|defer` | Persist and resume a curator-selected batch |
 | `search <term> [term ...] [--json\|--text-only] [--path PATH] [--topic NAME] [--corpus TYPE]` | Search ranked sections with freshness and provenance |
 | `toc [--depth N] [--path DIR] [--flat] [--dirs]` | List topics and sections |
 | `section --file FILE (--number N \| --heading TEXT \| --top \| --title) [--json\|--text-only]` | Extract a section or search fallback with freshness and provenance |
@@ -379,15 +379,18 @@ remote state cannot be verified; they do not report cached counts as current.
    file into `observations/pending/`). Observations are timestamped and
    auto-committed.
 
-2. **Curate.** Create a batch with `scripts/batch start`, review its selected
-   observations, and merge them into knowledge articles. Use
+2. **Curate.** Have the curator select a bounded set of observations, then
+   create its manifest with `scripts/batch start --files FILENAME ...`, review
+   them, and merge them into knowledge articles. With no `--files` argument,
+   `scripts/batch start` retains its compatibility behavior and selects every
+   top-level pending file. Use
    `scripts/pending --preview` for an explicit, bounded view of the
    batch-selectable queue showing age, observation/transcript counts, byte
    volume, metadata warnings, and lexical topic hints. Preview and
-   `scripts/batch start` select top-level pending files; normal `pending`
+   `scripts/batch start` operate on top-level pending files; normal `pending`
    listing, counting, and `--full` access remains recursive. Topic hints are
-   suggestions only and do not call an LLM.
-   Complete items with explicit `scripts/archive --batch ... FILENAME`
+   suggestions only and do not call an LLM; the curator agent makes the
+   selection. Complete items with explicit `scripts/archive --batch ... FILENAME`
    commands; deferred and newly arrived observations remain pending.
    `scripts/batch status BATCH_ID` reports disposition totals, incorporated
    destinations, and deferred filenames from the persisted batch manifest.
