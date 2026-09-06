@@ -91,6 +91,27 @@ teardown() {
     [[ "$(find "$TEST_CONTENT_DIR/observations/pending" -name '*.md' -type f | wc -l)" -eq 1 ]]
 }
 
+@test "Codex SessionEnd clears a marker after the orphan sweep removes its buffer" {
+    unset KNOWLEDGE_OBSERVE
+    export OLD_SESSION_ID="${SESSION_ID}-old"
+
+    bash -c 'printf "%s\n" "{\"session_id\":\"$OLD_SESSION_ID\"}" | "$SCRIPTS/adapters/codex/session-start"' >/dev/null
+    old_file="$SESSION_DIR/session-${OLD_SESSION_ID}.jsonl"
+    old_marker="$SESSION_DIR/session-${OLD_SESSION_ID}.initialized"
+    touch -d '2 hours ago' "$old_file" 2>/dev/null || touch -A -020000 "$old_file"
+
+    bash -c 'printf "%s\n" "{\"session_id\":\"$SESSION_ID\"}" | "$SCRIPTS/adapters/codex/session-start"' >/dev/null
+    [[ ! -e "$old_file" ]]
+    [[ -e "$old_marker" ]]
+
+    bash -c 'printf "%s\n" "{\"session_id\":\"$OLD_SESSION_ID\"}" | "$SCRIPTS/adapters/codex/session-end"' >/dev/null
+    for _ in 1 2 3 4 5; do
+        [[ ! -e "$old_marker" ]] && break
+        sleep 1
+    done
+    [[ ! -e "$old_marker" ]]
+}
+
 @test "portable instruction file is the canonical source with Claude alias" {
     [[ -f "$BATS_TEST_DIRNAME/../AGENTS.md" ]]
     [[ -L "$BATS_TEST_DIRNAME/../CLAUDE.md" ]]
