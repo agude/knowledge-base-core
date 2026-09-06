@@ -107,7 +107,9 @@ $KNOWLEDGE_BASE/scripts/observe --title "<one-line summary>" --body "<details>"
   after the host's session-start lifecycle has initialized a buffer; set it to
   `0` to disable automatic capture. Claude and Codex shell adapters remain
   no-ops if session-start was skipped. Check the value before relying on a
-  host adapter. Subagents do not get this variable.
+  host adapter. Codex keeps a private per-session initialization marker so a
+  swept buffer can be recreated; normal flush clears the marker. Subagents do
+  not get this variable.
 - **Capture immediately.** Do not wait until the task is done.
 - **One observation per concept.** Three things learned = three calls.
 - **Be specific.** "Use uv + PEP 723 for standalone scripts" is good.

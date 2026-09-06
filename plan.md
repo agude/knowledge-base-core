@@ -813,3 +813,25 @@ Verification:
 - `just check` — ShellCheck and portability lint passed; 349 Bats tests and 9
   adapter lifecycle tests passed.
 - `git diff --check` — passed.
+
+### 2026-09-06 — Task 8.5 durable Codex session state
+
+Added a private per-session initialization marker for Codex. `SessionStart`
+creates the marker, `session_buffer_path` uses it to recreate a swept buffer in
+later hook processes, orphan sweeps preserve it, and normal `session-flush`
+clears it. This preserves both lifecycle invariants: a prompt without
+`SessionStart` remains a no-op, while an initialized default-enabled session
+continues capturing after its buffer is swept.
+
+Added core marker persistence/cleanup tests and a Codex unset-flag swept-buffer
+test. Updated the README and knowledge-base skill to document the durable state.
+
+Verification:
+
+- `bats tests/session_core.bats tests/adapters.bats tests/session_flow.bats` —
+  50 tests passed.
+- `bash -n` on changed shell scripts — passed.
+- Targeted ShellCheck and `scripts/portability-lint` — passed.
+- `just check` — ShellCheck and portability lint passed; TypeScript type-check
+  passed; 352 Bats tests and 9 adapter lifecycle tests passed.
+- `git diff --check` — passed.

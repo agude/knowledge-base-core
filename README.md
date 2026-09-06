@@ -442,7 +442,9 @@ set to `1`, after the host's session-start lifecycle has initialized a buffer.
 Set `KNOWLEDGE_OBSERVE=0` to disable capture. The Claude and Codex shell
 adapters remain no-ops when their session-start hook was skipped; the
 OpenCode and Pi TypeScript adapters initialize their buffers from their own
-session-start events. An unset value is tested as the default-enabled case
+session-start events. Codex persists a private per-session initialization
+marker so a swept buffer can be recreated in later hook processes; normal
+flush clears that marker. An unset value is tested as the default-enabled case
 after initialization.
 The explicit `scripts/observe` command remains available when automatic
 capture is disabled.

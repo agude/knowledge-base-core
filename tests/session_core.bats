@@ -90,6 +90,30 @@ Content."
     [[ -f "$path1" ]]
 }
 
+@test "session-init can persist initialization after a buffer sweep" {
+    run "$SCRIPTS/session-init" --session-id "persistent" --persist-initialization
+    local path="$output"
+    rm "$path"
+
+    run env -u KNOWLEDGE_OBSERVE "$SCRIPTS/session-append" \
+        --session-id "persistent" --role user --message "Recovered"
+    [[ "$status" -eq 0 ]]
+    [[ -f "$path" ]]
+    run cat "$path"
+    [[ "$output" == *"Recovered"* ]]
+}
+
+@test "session-flush clears persisted initialization after normal completion" {
+    run "$SCRIPTS/session-init" --session-id "clear-marker" --persist-initialization
+    local path="$output"
+    echo '{"role":"user","message":"Q1"}' > "$path"
+    echo '{"role":"assistant","message":"A1"}' >> "$path"
+
+    run env KNOWLEDGE_MIN_MESSAGES=0 "$SCRIPTS/session-flush" "$path"
+    [[ "$status" -eq 0 ]]
+    [[ ! -e "$SESSION_DIR/session-clear-marker.initialized" ]]
+}
+
 @test "session-init with no --session-id fails" {
     run "$SCRIPTS/session-init"
     [[ "$status" -ne 0 ]]

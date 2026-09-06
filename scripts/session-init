@@ -6,7 +6,7 @@
 # path to stdout. Idempotent: a second call with the same ID returns
 # the existing path. Also sweeps orphaned buffers older than 1 hour.
 #
-# Usage: session-init --session-id ID
+# Usage: session-init --session-id ID [--persist-initialization]
 #
 # Environment:
 #   SESSION_DIR  Override buffer directory (default: per-user runtime dir)
@@ -18,10 +18,12 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/_lib.sh"
 
 SESSION_ID=""
+PERSIST_INITIALIZATION=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --session-id) need_arg "$1" "$#"; SESSION_ID="$2"; shift 2 ;;
+        --persist-initialization) PERSIST_INITIALIZATION=true; shift ;;
         --help|-h) show_help "$0"; exit 0 ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
@@ -46,7 +48,7 @@ for orphan in "$DIR"/session-*.jsonl; do
     [[ -O "$orphan" ]] || continue
     [[ "$orphan" == "$DIR/session-${SESSION_ID}.jsonl" ]] && continue
     if [[ "$(find "$orphan" -mmin +60 2>/dev/null)" ]]; then
-        "$SCRIPT_DIR/session-flush" "$orphan" 2>/dev/null || true
+        "$SCRIPT_DIR/session-flush" --preserve-initialization "$orphan" 2>/dev/null || true
     fi
 done
 
@@ -56,5 +58,12 @@ SESSION_FILE="$(session_file_path "$DIR" "$SESSION_ID")" || {
 }
 touch "$SESSION_FILE"
 chmod 600 "$SESSION_FILE" 2>/dev/null || true
+
+if [[ "$PERSIST_INITIALIZATION" == true ]]; then
+    session_mark_initialized "$DIR" "$SESSION_ID" || {
+        echo "session-init: cannot persist initialization state" >&2
+        exit 1
+    }
+fi
 
 echo "$SESSION_FILE"

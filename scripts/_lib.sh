@@ -364,6 +364,52 @@ session_file_path() {
     printf '%s/session-%s.jsonl\n' "$dir" "$id"
 }
 
+# session_initialization_path - Return the durable initialization marker.
+#
+# Hosts such as Codex run each lifecycle hook in a fresh process, so an
+# enabled environment variable cannot survive a swept buffer. Keep the
+# initialization decision beside the session buffer instead.
+session_initialization_path() {
+    local dir="$1" id="$2"
+
+    [[ "$id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || return 1
+    printf '%s/session-%s.initialized\n' "$dir" "$id"
+}
+
+session_mark_initialized() {
+    local dir="$1" id="$2" marker
+
+    ensure_session_dir "$dir" || return 1
+    marker="$(session_initialization_path "$dir" "$id")" || return 1
+    touch "$marker" 2>/dev/null || return 1
+    chmod 600 "$marker" 2>/dev/null || true
+}
+
+session_is_initialized() {
+    local dir="$1" id="$2" marker
+
+    marker="$(session_initialization_path "$dir" "$id")" || return 1
+    [[ -f "$marker" && ! -L "$marker" && -O "$marker" ]]
+}
+
+# Clear only markers derived from the private session-buffer path. Arbitrary
+# files passed to session-flush must never select a neighboring state file.
+session_clear_initialization_for_file() {
+    local dir file_name id marker
+    dir="$(session_dir)"
+    file_name="${1##*/}"
+
+    case "$1" in
+        "$dir"/session-*.jsonl) ;;
+        *) return 0 ;;
+    esac
+
+    id="${file_name#session-}"
+    id="${id%.jsonl}"
+    marker="$(session_initialization_path "$dir" "$id")" || return 0
+    rm -f -- "$marker"
+}
+
 # session_buffer_path - Path to a session's buffer, recreating it if gone.
 #
 # The buffer's existence used to gate capture: session-prompt and
@@ -377,8 +423,9 @@ session_file_path() {
 # which is honest about what happened; capturing nothing is not.
 #
 # Recreate only when session-start initialized capture for this session: it
-# sets KNOWLEDGE_OBSERVE=1 or provides KNOWLEDGE_SESSION_FILE. An unset value
-# alone still means that capture was never initialized.
+# sets KNOWLEDGE_OBSERVE=1, provides KNOWLEDGE_SESSION_FILE, or leaves the
+# durable marker used by hosts whose hook processes do not share environment.
+# An unset value alone still means that capture was never initialized.
 #
 # Prints the path; returns 1 when capture should be skipped.
 #
@@ -396,7 +443,8 @@ session_buffer_path() {
     fi
 
     if [[ "${KNOWLEDGE_OBSERVE:-}" != "1" ]] \
-        && [[ -z "${KNOWLEDGE_SESSION_FILE:-}" ]]; then
+        && [[ -z "${KNOWLEDGE_SESSION_FILE:-}" ]] \
+        && ! session_is_initialized "$dir" "$id"; then
         return 1
     fi
 
