@@ -5,4 +5,5 @@ content/
 
 node_modules/
 
+# Used for temporary work
 plan.md
