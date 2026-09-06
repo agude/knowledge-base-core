@@ -357,9 +357,12 @@ remote state cannot be verified; they do not report cached counts as current.
 
 2. **Curate.** Create a batch with `scripts/batch start`, review its selected
    observations, and merge them into knowledge articles. Use
-   `scripts/pending --preview` for an explicit, bounded queue view showing age,
-   observation/transcript counts, byte volume, metadata warnings, and lexical
-   topic hints. Topic hints are suggestions only and do not call an LLM.
+   `scripts/pending --preview` for an explicit, bounded view of the
+   batch-selectable queue showing age, observation/transcript counts, byte
+   volume, metadata warnings, and lexical topic hints. Preview and
+   `scripts/batch start` select top-level pending files; normal `pending`
+   listing, counting, and `--full` access remains recursive. Topic hints are
+   suggestions only and do not call an LLM.
    Complete items with explicit `scripts/archive --batch ... FILENAME`
    commands; deferred and newly arrived observations remain pending.
    `scripts/batch status BATCH_ID` reports disposition totals, incorporated

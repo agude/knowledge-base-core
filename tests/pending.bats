@@ -59,7 +59,7 @@ EOF
 
     run env FRESHNESS_TODAY_EPOCH=1788566400 "$SCRIPTS/pending" --preview
     [[ "$status" -eq 0 ]]
-    [[ "$output" == *"Pending items: 2"* ]]
+    [[ "$output" == *"Batch-selectable items: 2"* ]]
     [[ "$output" == *"Oldest pending age: 146 day(s) (2026-04-12; a.md)"* ]]
     [[ "$output" == *"Observation items: 1 ("* ]]
     [[ "$output" == *"Transcript items: 1 ("* ]]
@@ -84,7 +84,7 @@ EOF
 
     run env FRESHNESS_TODAY_EPOCH=1788566400 "$SCRIPTS/pending" --preview
     [[ "$status" -eq 0 ]]
-    [[ "$output" == *"Pending items: 2"* ]]
+    [[ "$output" == *"Batch-selectable items: 2"* ]]
     [[ "$output" == *"Oldest pending age: 127 day(s)"* ]]
     [[ "$output" == *"Transcript items: 1 ("* ]]
     [[ "$output" == *"Metadata warnings: 1 malformed file(s)"* ]]
@@ -115,7 +115,7 @@ EOF
 
     run "$SCRIPTS/pending" --preview
     [[ "$status" -eq 0 ]]
-    [[ "$output" == *"Pending items: 1"* ]]
+    [[ "$output" == *"Batch-selectable items: 1"* ]]
     [[ "$output" == *"Oldest pending age: 147 day(s) (2026-04-12; top-level.md)"* ]]
 }
 
@@ -154,7 +154,7 @@ EOF
 
     run env FRESHNESS_TODAY_EPOCH=1788566400 "$SCRIPTS/pending" --preview
     [[ "$status" -eq 0 ]]
-    [[ "$output" == *"Pending items: 1"* ]]
+    [[ "$output" == *"Batch-selectable items: 1"* ]]
     [[ "$output" == *"Transcript items: 1 ("* ]]
     [[ "$output" == *"Topic hints (hints only; no LLM):"* ]]
     [[ "$output" == *"topic article metadata capped at 256 file(s)"* ]]
@@ -167,7 +167,7 @@ EOF
 @test "pending --preview reports an empty queue without warnings" {
     run "$SCRIPTS/pending" --preview
     [[ "$status" -eq 0 ]]
-    [[ "$output" == *"Pending items: 0"* ]]
+    [[ "$output" == *"Batch-selectable items: 0"* ]]
     [[ "$output" == *"Oldest pending age: unknown"* ]]
     [[ "$output" == *"Topic hints (hints only; no LLM):"* ]]
     [[ "$output" == *"none available"* ]]

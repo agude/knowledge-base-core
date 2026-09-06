@@ -12,7 +12,7 @@
 # Options:
 #   --full    Show full observation content, not just titles
 #   --count   Just print the count
-#   --preview Show queue metrics and lexical topic hints
+#   --preview Show batch-selectable queue metrics and lexical topic hints
 
 set -euo pipefail
 
@@ -51,15 +51,15 @@ if [[ "$PREVIEW" == true ]] && [[ "$FULL" == true || "$COUNT_ONLY" == true ]]; t
 fi
 
 files=()
-while IFS= read -r -d '' f; do
-    files+=("$f")
-done < <(find "$PENDING_DIR" -name '*.md' -type f -print0 2>/dev/null | sort -z)
-
-preview_files=()
 if [[ "$PREVIEW" == true ]]; then
+    preview_files=()
     while IFS= read -r -d '' f; do
         preview_files+=("$f")
     done < <(find "$PENDING_DIR" -maxdepth 1 -name '*.md' -type f -print0 2>/dev/null | sort -z)
+else
+    while IFS= read -r -d '' f; do
+        files+=("$f")
+    done < <(find "$PENDING_DIR" -name '*.md' -type f -print0 2>/dev/null | sort -z)
 fi
 
 if [[ "$COUNT_ONLY" == true ]]; then
@@ -289,8 +289,8 @@ preview_queue() {
         fi
     done
 
-    echo "Pending queue preview"
-    echo "Pending items: ${#preview_files[@]}"
+    echo "Batch-selectable queue preview"
+    echo "Batch-selectable items: ${#preview_files[@]}"
     if [[ -n "$oldest_epoch" ]]; then
         local age_seconds=$((today_epoch - oldest_epoch))
         local age_days=$((age_seconds / 86400))

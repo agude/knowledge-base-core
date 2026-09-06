@@ -612,12 +612,15 @@ the top-level batch-selection rule.
 Added regression coverage for corrupt manifests and nested observations, plus
 a 320-article and 256 KiB transcript preview fixture. The topic corpus cap is
 reported in the preview when reached. Added coverage for escaped YAML topic
-labels and recursive non-preview access to nested observations.
+labels and recursive non-preview access to nested observations. The preview
+enumerates only batch-selectable top-level files and labels that scope in its
+report. Updated the README and portable workflow skills to document the
+distinction.
 
 Verification:
 
-- `bats tests/pending.bats tests/batch.bats` — 21 tests passed.
-- `bats tests` — 342 tests passed.
+- `bats tests/pending.bats tests/batch.bats` — 22 tests passed.
+- `bats tests` — 343 tests passed.
 - `bash -n scripts/pending scripts/batch` — passed.
 - `shellcheck -x -P scripts -s bash scripts/pending scripts/batch` — passed.
 - `bash scripts/portability-lint` — passed.

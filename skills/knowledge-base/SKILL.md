@@ -187,12 +187,14 @@ All scripts are at `$KNOWLEDGE_BASE/scripts/<name>`.
 ### Curation queue preview
 
 Run `$KNOWLEDGE_BASE/scripts/pending --preview` explicitly when starting a
-manual curation pass. It produces a bounded report containing the oldest valid
-pending age, observation and `session-transcript` counts, byte volume, metadata
-warnings, and deterministic lexical topic hints. The hints are suggestions,
-not assignments, and preview generation makes no LLM calls. Empty queues and
-invalid metadata are reported without printing observation bodies, so large
-transcripts do not expand the preview.
+manual curation pass. It produces a bounded report for the batch-selectable,
+top-level pending files, containing the oldest valid age, observation and
+`session-transcript` counts, byte volume, metadata warnings, and deterministic
+lexical topic hints. Normal `pending` listing, counting, and `--full` access
+remain recursive. The hints are suggestions, not assignments, and preview
+generation makes no LLM calls. Empty queues and invalid metadata are reported
+without printing observation bodies, so large transcripts do not expand the
+preview.
 
 After processing a persisted batch, run
 `$KNOWLEDGE_BASE/scripts/batch status BATCH_ID`. Its report reads the manifest's

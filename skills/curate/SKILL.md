@@ -84,10 +84,12 @@ example.
    status as successful synchronization.
 2. Run `$KNOWLEDGE_BASE/scripts/pending --count` to see how many pending
    observations you have to work on. If there are a lot, run
-   `$KNOWLEDGE_BASE/scripts/pending --preview` explicitly for bounded age,
-   observation/transcript, byte-volume, metadata-warning, and lexical topic-hint
-   metrics before choosing the batch size. Topic hints are suggestions only;
-   preview generation makes no LLM calls.
+   `$KNOWLEDGE_BASE/scripts/pending --preview` explicitly for bounded
+   batch-selectable age, observation/transcript, byte-volume,
+   metadata-warning, and lexical topic-hint metrics before choosing the batch
+   size. Preview and `batch start` select top-level pending files; normal
+   `pending` listing, counting, and `--full` access remain recursive. Topic
+   hints are suggestions only; preview generation makes no LLM calls.
 3. If there are only a small number of observations, run
    `$KNOWLEDGE_BASE/scripts/pending --full` to read them all. Otherwise
    use your READ tool to go through them one by one.
