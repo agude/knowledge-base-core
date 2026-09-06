@@ -15,6 +15,7 @@ source "$SCRIPT_DIR/_lib.sh"
 
 BATCH_DIR="$CONTENT_DIR/observations/batches"
 PENDING_DIR="$CONTENT_DIR/observations/pending"
+MAX_BATCH_REPORT_ITEMS=8
 
 die() { echo "Error: $*" >&2; exit 1; }
 
@@ -27,12 +28,14 @@ batch_file() {
 start_batch() {
     acquire_lock || exit 1
     mkdir -p "$BATCH_DIR"
-    local id="$(date -u +%Y%m%dT%H%M%S)-$$.tsv"
+    local id
+    id="$(date -u +%Y%m%dT%H%M%S)-$$.tsv"
     local file="$BATCH_DIR/$id"
     {
         echo $'filename\toriginal_sha256\tstatus\tdisposition\tdestination'
         while IFS= read -r -d '' path; do
-            local name="$(basename "$path")"
+            local name
+            name="$(basename "$path")"
             printf '%s\t%s\tpending\t\t\n' "$name" "$(sha256sum "$path" | awk '{print $1}')"
         done < <(find "$PENDING_DIR" -maxdepth 1 -name '*.md' -type f -print0 | sort -z)
     } > "$file"
@@ -46,9 +49,26 @@ start_batch() {
     release_lock
 }
 
+record_destination() {
+    local destination="$1" index
+
+    for index in "${!destination_names[@]}"; do
+        if [[ "${destination_names[index]}" == "$destination" ]]; then
+            destination_counts[index]=$((destination_counts[index] + 1))
+            return 0
+        fi
+    done
+    destination_names+=("$destination")
+    destination_counts+=(1)
+}
+
 status_batch() {
     acquire_lock || exit 1
     local file="$1" line name hash status disposition destination path actual
+    local incorporated=0 duplicate=0 ephemeral=0 invalid_disposition=0
+    local -a destination_names=()
+    local -a destination_counts=()
+    local -a deferred_names=()
     [[ -f "$file" ]] || die "batch not found: $(basename "$file")"
     local pending=0 complete=0 deferred=0 invalid=0
     while IFS=$'\t' read -r name hash status disposition destination; do
@@ -67,7 +87,23 @@ status_batch() {
             elif [[ "$status" == deferred && ! -f "$path" ]]; then
                 echo "MISSING DEFERRED INPUT: observations/pending/$name"; invalid=$((invalid + 1))
             else
-                [[ "$status" == complete ]] && complete=$((complete + 1)) || deferred=$((deferred + 1))
+                if [[ "$status" == complete ]]; then
+                    complete=$((complete + 1))
+                    case "$disposition" in
+                        incorporated)
+                            incorporated=$((incorporated + 1))
+                            [[ -n "$destination" ]] && record_destination "$destination"
+                            ;;
+                        duplicate) duplicate=$((duplicate + 1)) ;;
+                        ephemeral) ephemeral=$((ephemeral + 1)) ;;
+                        *) invalid_disposition=$((invalid_disposition + 1)) ;;
+                    esac
+                else
+                    deferred=$((deferred + 1))
+                    if (( ${#deferred_names[@]} < MAX_BATCH_REPORT_ITEMS )); then
+                        deferred_names+=("$name")
+                    fi
+                fi
             fi
         else
             echo "INVALID STATUS: $name ($status)"; invalid=$((invalid + 1))
@@ -75,11 +111,40 @@ status_batch() {
     done < "$file"
     release_lock
     echo "Batch $(basename "$file"): $complete complete, $pending pending, $deferred deferred"
+    echo "  Dispositions: incorporated=$incorporated, duplicate=$duplicate, ephemeral=$ephemeral"
+    if (( invalid_disposition > 0 )); then
+        echo "  Dispositions not recognized: $invalid_disposition"
+    fi
+    if (( ${#destination_names[@]} == 0 )); then
+        echo "  Destinations: none"
+    else
+        echo "  Destinations:"
+        local index displayed=0
+        for index in "${!destination_names[@]}"; do
+            printf "    %s (%d item(s))\n" "${destination_names[index]}" "${destination_counts[index]}"
+            displayed=$((displayed + 1))
+            (( displayed >= MAX_BATCH_REPORT_ITEMS )) && break
+        done
+        if (( ${#destination_names[@]} > MAX_BATCH_REPORT_ITEMS )); then
+            echo "    ... $(( ${#destination_names[@]} - MAX_BATCH_REPORT_ITEMS )) more destination(s)"
+        fi
+    fi
+    if (( deferred == 0 )); then
+        echo "  Deferred work: none"
+    else
+        echo "  Deferred work: $deferred item(s)"
+        for index in "${!deferred_names[@]}"; do
+            echo "    - ${deferred_names[index]}"
+        done
+        if (( deferred > ${#deferred_names[@]} )); then
+            echo "    ... $((deferred - ${#deferred_names[@]})) more deferred item(s)"
+        fi
+    fi
     (( invalid == 0 )) || { echo "Batch requires attention: $invalid invalid item(s)." >&2; return 1; }
 }
 
 defer_item() {
-    local file="$1" name="$2" tmp row hash status actual found
+    local file="$1" name="$2" tmp row hash status actual
     [[ "$name" != */* ]] || die "not a pending filename: $name"
     acquire_lock || exit 1
     row="$(awk -F '\t' -v n="$name" '$1 == n { print; found=1 } END { if (!found) exit 1 }' "$file")" || die "item is not a member of batch: $name"

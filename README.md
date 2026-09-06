@@ -154,7 +154,7 @@ existing content; compatibility findings require a separate curation pass.
 |---|---|
 | `init [--path DIR]` | Initialize a content repo |
 | `observe --title "..." --body "..."` | Capture an observation to observations/pending/ |
-| `pending [--full] [--count]` | List uncurated observations |
+| `pending [--full] [--count] [--preview]` | List observations or preview the curation queue |
 | `archive FILENAME [--all]` | Move observations to observations/archived/ |
 | `batch start|status|defer` | Persist and resume a curation batch |
 | `search <term> [term ...] [--json\|--text-only] [--path PATH] [--topic NAME] [--corpus TYPE]` | Search ranked sections with freshness and provenance |
@@ -356,14 +356,26 @@ remote state cannot be verified; they do not report cached counts as current.
    auto-committed.
 
 2. **Curate.** Create a batch with `scripts/batch start`, review its selected
-   observations, and merge them into knowledge articles. Complete items with
-   explicit `scripts/archive --batch ... FILENAME` commands; deferred and
-   newly arrived observations remain pending.
+   observations, and merge them into knowledge articles. Use
+   `scripts/pending --preview` for an explicit, bounded queue view showing age,
+   observation/transcript counts, byte volume, metadata warnings, and lexical
+   topic hints. Topic hints are suggestions only and do not call an LLM.
+   Complete items with explicit `scripts/archive --batch ... FILENAME`
+   commands; deferred and newly arrived observations remain pending.
+   `scripts/batch status BATCH_ID` reports disposition totals, incorporated
+   destinations, and deferred filenames from the persisted batch manifest.
    The `curate` skill handles this, or do it manually.
 
 3. **Archive.** Processed items move to `observations/archived/` for
    provenance. **Never delete an observation** — the archive is the complete
    record of everything the base has ever seen.
+
+For stale articles, prioritize a stale article that the current curation run
+just retrieved when it is related to a pending topic hint or an incorporated
+batch destination. Keep a short working list of those paths because the core
+does not record access telemetry. Run `scripts/stale` to check the article's
+freshness, review the claims that need verification, and change `verified` only
+after that review; retrieval alone never refreshes it.
 
 ## Host integration
 

@@ -121,3 +121,24 @@ commit_observations() {
     [[ "$output" == *"original hash does not match"* ]]
     grep -q $'a.md\t.*\tpending' "$TEST_CONTENT_DIR/observations/batches/$batch_id"
 }
+
+@test "batch status reports dispositions, destinations, and deferred work" {
+    create_test_observation a.md "A" "Body A"
+    create_test_observation b.md "B" "Body B"
+    create_test_observation c.md "C" "Body C"
+    commit_observations
+    batch_id="$($SCRIPTS/batch start | sed -n 's/^Created batch: //p')"
+
+    "$SCRIPTS/archive" --batch "$batch_id" --disposition incorporated \
+        --destination knowledge/topic.md#Section a.md --no-commit
+    "$SCRIPTS/archive" --batch "$batch_id" --disposition duplicate c.md --no-commit
+    "$SCRIPTS/batch" defer "$batch_id" b.md
+
+    run "$SCRIPTS/batch" status "$batch_id"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"2 complete, 0 pending, 1 deferred"* ]]
+    [[ "$output" == *"Dispositions: incorporated=1, duplicate=1, ephemeral=0"* ]]
+    [[ "$output" == *"knowledge/topic.md#Section (1 item(s))"* ]]
+    [[ "$output" == *"Deferred work: 1 item(s)"* ]]
+    [[ "$output" == *"- b.md"* ]]
+}

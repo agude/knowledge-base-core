@@ -43,3 +43,62 @@ teardown() { teardown_content_dir; }
     run "$SCRIPTS/pending" --full
     [[ "$output" == *"Full body text here"* ]]
 }
+
+@test "pending --preview reports age, type counts, volume, and topic hints" {
+    create_test_article "networking.md" "# Networking Setup"
+    create_test_observation "a.md" "Networking failure" "The Networking Setup needs attention."
+    cat > "$TEST_CONTENT_DIR/observations/pending/transcript.md" <<'EOF'
+---
+title: "Session transcript"
+source: session-transcript
+created: 2026-05-01T00:00:00Z
+---
+
+Transcript body.
+EOF
+
+    run env FRESHNESS_TODAY_EPOCH=1788566400 "$SCRIPTS/pending" --preview
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Pending items: 2"* ]]
+    [[ "$output" == *"Oldest pending age: 146 day(s) (2026-04-12; a.md)"* ]]
+    [[ "$output" == *"Observation items: 1 ("* ]]
+    [[ "$output" == *"Transcript items: 1 ("* ]]
+    [[ "$output" == *"Input volume: "*" bytes)"* ]]
+    [[ "$output" == *"Topic hints (hints only; no LLM):"* ]]
+    [[ "$output" == *"Networking Setup (1 pending item(s))"* ]]
+    [[ "$output" == *"Metadata warnings: none"* ]]
+}
+
+@test "pending --preview is bounded for malformed and large inputs" {
+    printf '%s\n' 'title: Broken metadata' 'created: not-a-date' > \
+        "$TEST_CONTENT_DIR/observations/pending/broken.md"
+    {
+        echo '---'
+        echo 'title: "Large transcript"'
+        echo 'source: session-transcript'
+        echo 'created: 2026-05-01T00:00:00Z'
+        echo '---'
+        awk 'BEGIN { for (i = 0; i < 20000; i++) printf "x" }'
+        echo
+    } > "$TEST_CONTENT_DIR/observations/pending/large.md"
+
+    run env FRESHNESS_TODAY_EPOCH=1788566400 "$SCRIPTS/pending" --preview
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Pending items: 2"* ]]
+    [[ "$output" == *"Oldest pending age: 127 day(s)"* ]]
+    [[ "$output" == *"Transcript items: 1 ("* ]]
+    [[ "$output" == *"Metadata warnings: 1 malformed file(s)"* ]]
+    [[ "$output" == *"broken.md: malformed frontmatter"* ]]
+    [[ "$output" != *"xxxxxxxxxx"* ]]
+    [[ "${#output}" -lt 2000 ]]
+}
+
+@test "pending --preview reports an empty queue without warnings" {
+    run "$SCRIPTS/pending" --preview
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Pending items: 0"* ]]
+    [[ "$output" == *"Oldest pending age: unknown"* ]]
+    [[ "$output" == *"Topic hints (hints only; no LLM):"* ]]
+    [[ "$output" == *"none available"* ]]
+    [[ "$output" == *"Metadata warnings: none"* ]]
+}

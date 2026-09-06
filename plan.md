@@ -1,6 +1,6 @@
 # Knowledge Base Reliability and Retrieval Plan
 
-Created: 2026-09-04. Status: tasks 1–6 implemented; tasks 7–9 pending.
+Created: 2026-09-04. Status: tasks 1–7 implemented; tasks 8–9 pending.
 
 ## Objective
 
@@ -228,19 +228,19 @@ how much transcript review produces durable knowledge.
 
 **Acceptance criteria**
 
-- [ ] Add an explicit preview command or mode showing oldest pending age,
+- [x] Add an explicit preview command or mode showing oldest pending age,
   observation versus transcript counts, input volume, and available topic hints.
-- [ ] Topic hints are identified as hints; generating the preview needs no LLM.
-- [ ] Batch completion reports disposition totals, destinations, and deferred
+- [x] Topic hints are identified as hints; generating the preview needs no LLM.
+- [x] Batch completion reports disposition totals, destinations, and deferred
   work using task 1's persisted state.
-- [ ] Empty queues, malformed metadata, and large transcripts have bounded,
+- [x] Empty queues, malformed metadata, and large transcripts have bounded,
   understandable output and tests.
-- [ ] Detailed previews are requested explicitly rather than injected into every
+- [x] Detailed previews are requested explicitly rather than injected into every
   session. Existing compact startup counts remain available.
-- [ ] Document how to prioritize stale articles that were recently retrieved.
+- [x] Document how to prioritize stale articles that were recently retrieved.
   Access telemetry is optional: if added, keep it local, bounded, separate from
   content Git history, and independent of `verified` dates.
-- [ ] No unattended curation or scheduled model calls are introduced.
+- [x] No unattended curation or scheduled model calls are introduced.
 
 ## 8. Correct Documentation and Test Adapters
 
@@ -563,3 +563,35 @@ Verification:
   compatibility failure: 37 pre-existing missing source references across 11
   articles; no body-link failures after inline-code exclusion. Real content was
   not edited.
+
+### 2026-09-05 — Task 7
+
+Added the explicit `scripts/pending --preview` queue report. It shows pending
+age from valid `created` metadata, observation versus `session-transcript`
+counts, exact and human-readable byte volume, bounded metadata warnings, and
+lexical topic hints derived from article headings or optional `topic:` metadata.
+The report labels hints as suggestions, samples at most 8 KiB per item for
+lexical matching, and never prints observation bodies. Existing `--count`,
+default listing, and compact session-start counts remain unchanged.
+
+Extended `scripts/batch status` to report incorporated, duplicate, and
+ephemeral totals; grouped incorporated destinations; and bounded deferred work
+from the persisted TSV manifest. Added tests for mixed queue previews, empty
+and malformed inputs, large transcripts, and completed/deferred batch reports.
+Documented manual stale-article prioritization in the README and both portable
+workflow skills. No access telemetry, unattended curation, or scheduled model
+calls were introduced.
+
+Verification:
+
+- `bats tests/pending.bats tests/batch.bats` — 18 tests passed.
+- `bats tests` — 339 tests passed.
+- `bash -n scripts/pending scripts/batch` — passed.
+- `shellcheck -x -P scripts -s bash scripts/pending scripts/batch` — passed.
+- `bash scripts/portability-lint` — passed.
+- `git diff --check` — passed.
+
+Remaining limitation: topic hints are lexical suggestions, not curation
+assignments, and recent retrieval access is not persisted. Stale-article
+prioritization therefore uses the current run's working notes and queue or
+batch paths.

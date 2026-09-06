@@ -83,8 +83,11 @@ example.
    observations may be incomplete. Do not treat a failed sync or a zero-count
    status as successful synchronization.
 2. Run `$KNOWLEDGE_BASE/scripts/pending --count` to see how many pending
-   observations you have to work on. If there are a lot, you'll need to handle
-   them in batches to avoid running out of context.
+   observations you have to work on. If there are a lot, run
+   `$KNOWLEDGE_BASE/scripts/pending --preview` explicitly for bounded age,
+   observation/transcript, byte-volume, metadata-warning, and lexical topic-hint
+   metrics before choosing the batch size. Topic hints are suggestions only;
+   preview generation makes no LLM calls.
 3. If there are only a small number of observations, run
    `$KNOWLEDGE_BASE/scripts/pending --full` to read them all. Otherwise
    use your READ tool to go through them one by one.
@@ -128,7 +131,9 @@ example.
    Batch dispositions are limited to `incorporated`, `duplicate`, and
    `ephemeral`; `deferred` is recorded by `batch defer` and is not archived.
    Defer an item with `batch defer BATCH_ID FILENAME`; it remains pending.
-   Use `batch status BATCH_ID` to resume after interruption. Never use
+   Use `batch status BATCH_ID` to resume after interruption and to report
+   disposition totals, incorporated destinations, and deferred work from the
+   manifest. Never use
    `archive --all` during curation: observations arriving after batch
    selection are not part of the batch.
 10. Run the linter again without `--batch` after all archive moves. This is
@@ -142,6 +147,14 @@ example.
 11. Review open questions (see Open Questions below).
 12. Commit everything as one batch with
    `$KNOWLEDGE_BASE/scripts/commit -m "Curate: <summary>"`.
+
+### Prioritize stale articles
+
+If a stale article was retrieved during this curation pass, prioritize it when
+its path matches a pending topic hint or an incorporated batch destination.
+Keep the path in working notes; the core does not record access telemetry. Run
+`$KNOWLEDGE_BASE/scripts/stale` and inspect the affected claims before changing
+`verified`. Reading an article never refreshes its verification date.
 
 If there are no pending observations, check open questions anyway (step 11),
 then stop if there's nothing to do.

@@ -170,7 +170,7 @@ All scripts are at `$KNOWLEDGE_BASE/scripts/<name>`.
 | `section --file FILE (--number N \| --heading TEXT \| --top \| --title) [--json\|--text-only]` | Extract a section or search fallback with metadata |
 | `section --file FILE --references [--json]` | Return the complete provenance reference list |
 | `observe --title "..." --body "..."` | Record an observation |
-| `pending [--full] [--count]` | List uncurated observations |
+| `pending [--full] [--count] [--preview]` | List observations or preview the curation queue |
 | `batch start|status|defer` | Persist and resume a curation batch |
 | `ask --title "..." [--context FILE] [--body "..."]` | Record a question |
 | `questions [--path DIR] [--file F] [--full] [--all]` | List open questions |
@@ -183,6 +183,28 @@ All scripts are at `$KNOWLEDGE_BASE/scripts/<name>`.
 | `init [--path DIR]` | Initialize an empty content repo |
 | `status` | Summary stats |
 | `context` | Compact summary for session injection |
+
+### Curation queue preview
+
+Run `$KNOWLEDGE_BASE/scripts/pending --preview` explicitly when starting a
+manual curation pass. It produces a bounded report containing the oldest valid
+pending age, observation and `session-transcript` counts, byte volume, metadata
+warnings, and deterministic lexical topic hints. The hints are suggestions,
+not assignments, and preview generation makes no LLM calls. Empty queues and
+invalid metadata are reported without printing observation bodies, so large
+transcripts do not expand the preview.
+
+After processing a persisted batch, run
+`$KNOWLEDGE_BASE/scripts/batch status BATCH_ID`. Its report reads the manifest's
+dispositions and destinations, lists bounded deferred work, and retains the
+existing pending/complete/deferred counts. Newly arrived observations are not
+part of that report unless a new batch selects them.
+
+When a stale article was retrieved during the current curation pass, prioritize
+it when its path matches a queue topic hint or an incorporated destination.
+Keep that path in the working notes because access telemetry is not stored.
+Use `stale` and inspect the affected claims before changing `verified`.
+Reading or retrieving an article does not refresh its verification date.
 
 `sync` verifies a successful fetch and an available `origin/<branch>` tracking
 ref before reporting counts. Normal and `--status` runs return nonzero when

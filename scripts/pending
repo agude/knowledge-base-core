@@ -4,13 +4,15 @@
 #
 # Shows pending observations with their titles and dates.
 # Use --full to include the body text.
+# Use --preview for bounded queue metrics without body text.
 #
 # Usage:
-#   pending [--full] [--count]
+#   pending [--full] [--count] [--preview]
 #
 # Options:
 #   --full    Show full observation content, not just titles
 #   --count   Just print the count
+#   --preview Show queue metrics and lexical topic hints
 
 set -euo pipefail
 
@@ -21,11 +23,18 @@ PENDING_DIR="$CONTENT_DIR/observations/pending"
 
 FULL=false
 COUNT_ONLY=false
+PREVIEW=false
+
+MAX_TOPIC_HINTS=8
+MAX_METADATA_WARNINGS=8
+MAX_TOPIC_HINT_LENGTH=120
+TOPIC_SAMPLE_BYTES=8192
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --full)  FULL=true; shift ;;
         --count) COUNT_ONLY=true; shift ;;
+        --preview) PREVIEW=true; shift ;;
         -h|--help)
             show_help "$0"
             exit 0
@@ -34,6 +43,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if [[ "$PREVIEW" == true ]] && [[ "$FULL" == true || "$COUNT_ONLY" == true ]]; then
+    echo "--preview cannot be combined with --full or --count" >&2
+    exit 1
+fi
+
 files=()
 while IFS= read -r -d '' f; do
     files+=("$f")
@@ -41,6 +55,245 @@ done < <(find "$PENDING_DIR" -name '*.md' -type f -print0 2>/dev/null | sort -z)
 
 if [[ "$COUNT_ONLY" == true ]]; then
     echo "${#files[@]}"
+    exit 0
+fi
+
+human_bytes() {
+    local bytes="$1"
+
+    if (( bytes < 1024 )); then
+        printf "%d B" "$bytes"
+    elif (( bytes < 1024 * 1024 )); then
+        awk -v bytes="$bytes" 'BEGIN { printf "%.1f KiB", bytes / 1024 }'
+    elif (( bytes < 1024 * 1024 * 1024 )); then
+        awk -v bytes="$bytes" 'BEGIN { printf "%.1f MiB", bytes / 1048576 }'
+    else
+        awk -v bytes="$bytes" 'BEGIN { printf "%.1f GiB", bytes / 1073741824 }'
+    fi
+}
+
+normalise_text() {
+    printf '%s' "$1" | tr '[:upper:]' '[:lower:]' |
+        tr -cs '[:alnum:]' ' ' | tr -s ' '
+}
+
+topic_hint_matches() {
+    local label="$1" sample="$2" normalized_label normalized_sample
+    local word word_count=0 matched_words=0
+
+    normalized_label="$(normalise_text "$label")"
+    normalized_sample="$(normalise_text "$sample")"
+    [[ -n "$normalized_label" ]] || return 1
+
+    if [[ " $normalized_sample " == *" $normalized_label "* ]]; then
+        return 0
+    fi
+
+    # A phrase is useful when present, but a title such as "Networking"
+    # should also hint at an article titled "Networking Setup". Ignore
+    # short connector words so generic prose does not produce every topic.
+    for word in $normalized_label; do
+        case "$word" in
+            an|and|for|from|into|of|on|the|this|with|knowledge|article|setup)
+                continue
+                ;;
+        esac
+        (( ${#word} >= 4 )) || continue
+        word_count=$((word_count + 1))
+        if [[ " $normalized_sample " == *" $word "* ]]; then
+            matched_words=$((matched_words + 1))
+        fi
+    done
+
+    (( word_count > 0 && matched_words > 0 ))
+}
+
+article_topic_label() {
+    local file="$1" line
+
+    md_heading_reset
+    while IFS= read -r line; do
+        if md_heading "$line" && (( MD_HEADING_LEVEL == 1 )); then
+            printf '%s\n' "$MD_HEADING_TEXT"
+            return 0
+        fi
+    done < "$file"
+
+    frontmatter_field title "$file" 2>/dev/null || basename "$file" .md
+}
+
+add_topic_hint() {
+    local label="$1" index
+
+    [[ -n "$label" ]] || return 0
+    if (( ${#label} > MAX_TOPIC_HINT_LENGTH )); then
+        label="${label:0:117}..."
+    fi
+    for index in "${!topic_hint_labels[@]}"; do
+        if [[ "${topic_hint_labels[$index]}" == "$label" ]]; then
+            topic_hint_counts[index]=$((topic_hint_counts[index] + 1))
+            return 0
+        fi
+    done
+    topic_hint_labels+=("$label")
+    topic_hint_counts+=(1)
+}
+
+preview_queue() {
+    local file title source created created_date created_epoch size sample
+    local today_epoch oldest_epoch="" oldest_date="" oldest_name=""
+    local total_bytes=0 observation_count=0 transcript_count=0
+    local observation_bytes=0 transcript_bytes=0
+    local first_line delimiter_count issue_text topic_hint
+    local metadata_warning_count=0
+    local -a metadata_warning_names=()
+    local -a metadata_warning_details=()
+    local -a topic_hint_labels=()
+    local -a topic_hint_counts=()
+    local -a topic_labels=()
+    local article label
+
+    today_epoch="${FRESHNESS_TODAY_EPOCH:-$(date -u +%s)}"
+
+    if [[ -d "$CONTENT_DIR/knowledge" ]]; then
+        while IFS= read -r -d '' article; do
+            label="$(article_topic_label "$article")"
+            [[ -n "$label" ]] || continue
+            topic_labels+=("$label")
+        done < <(find "$CONTENT_DIR/knowledge" -name '*.md' -type f -print0 | sort -z)
+    fi
+
+    for file in "${files[@]}"; do
+        title="$(frontmatter_field title "$file" 2>/dev/null || true)"
+        source="$(frontmatter_field source "$file" 2>/dev/null || true)"
+        created="$(frontmatter_field created "$file" 2>/dev/null || true)"
+        size="$(wc -c < "$file" | awk '{print $1}')"
+        total_bytes=$((total_bytes + size))
+
+        if [[ "$source" == "session-transcript" ]]; then
+            transcript_count=$((transcript_count + 1))
+            transcript_bytes=$((transcript_bytes + size))
+        else
+            observation_count=$((observation_count + 1))
+            observation_bytes=$((observation_bytes + size))
+        fi
+
+        issue_text=""
+        first_line="$(sed -n '1p' "$file")"
+        delimiter_count="$(awk 'BEGIN { count=0 } $0 == "---" { count++ } END { print count }' "$file")"
+        [[ "$first_line" == "---" && "$delimiter_count" -ge 2 ]] || issue_text="malformed frontmatter"
+        [[ -n "$title" ]] || issue_text="${issue_text:+$issue_text, }missing title"
+        [[ -n "$source" ]] || issue_text="${issue_text:+$issue_text, }missing source"
+
+        created_epoch=""
+        if [[ -z "$created" ]]; then
+            issue_text="${issue_text:+$issue_text, }missing created"
+        else
+            created_date="${created%%T*}"
+            created_date="${created_date%% *}"
+            if [[ ! "$created_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+                issue_text="${issue_text:+$issue_text, }invalid created"
+            else
+                created_epoch="$(date_to_epoch "$created_date")"
+                [[ -n "$created_epoch" ]] || issue_text="${issue_text:+$issue_text, }invalid created"
+            fi
+        fi
+
+        if [[ -n "$issue_text" ]]; then
+            metadata_warning_count=$((metadata_warning_count + 1))
+            if (( ${#metadata_warning_names[@]} < MAX_METADATA_WARNINGS )); then
+                metadata_warning_names+=("$(basename "$file")")
+                metadata_warning_details+=("$issue_text")
+            fi
+        fi
+
+        if [[ -n "$created_epoch" ]]; then
+            if [[ -z "$oldest_epoch" ]] || (( created_epoch < oldest_epoch )); then
+                oldest_epoch="$created_epoch"
+                oldest_date="$created_date"
+                oldest_name="$(basename "$file")"
+            fi
+        fi
+
+        topic_hint="$(frontmatter_field topic "$file" 2>/dev/null || true)"
+        if [[ -n "$topic_hint" ]]; then
+            add_topic_hint "$topic_hint"
+        elif (( ${#topic_labels[@]} > 0 )); then
+            sample="$(head -c "$TOPIC_SAMPLE_BYTES" "$file")"
+            for label in "${topic_labels[@]}"; do
+                if topic_hint_matches "$label" "$sample"; then
+                    add_topic_hint "$label"
+                fi
+            done
+        fi
+    done
+
+    echo "Pending queue preview"
+    echo "Pending items: ${#files[@]}"
+    if [[ -n "$oldest_epoch" ]]; then
+        local age_seconds=$((today_epoch - oldest_epoch))
+        local age_days=$((age_seconds / 86400))
+        if (( age_seconds < 0 )); then
+            local future_days=$(((-age_seconds + 86399) / 86400))
+            echo "Oldest pending age: created in $future_days day(s) ($oldest_date; $oldest_name)"
+        else
+            echo "Oldest pending age: $age_days day(s) ($oldest_date; $oldest_name)"
+        fi
+    else
+        echo "Oldest pending age: unknown (no valid created date)"
+    fi
+    printf "Observation items: %d (%s; %d bytes)\n" \
+        "$observation_count" "$(human_bytes "$observation_bytes")" "$observation_bytes"
+    printf "Transcript items: %d (%s; %d bytes)\n" \
+        "$transcript_count" "$(human_bytes "$transcript_bytes")" "$transcript_bytes"
+    printf "Input volume: %s (%d bytes)\n" "$(human_bytes "$total_bytes")" "$total_bytes"
+
+    echo "Topic hints (hints only; no LLM):"
+    if (( ${#topic_hint_labels[@]} == 0 )); then
+        echo "  none available"
+    else
+        local -a hint_order=()
+        local index other_index swap displayed=0
+        for index in "${!topic_hint_labels[@]}"; do
+            hint_order+=("$index")
+        done
+        for index in "${!hint_order[@]}"; do
+            for other_index in "${!hint_order[@]}"; do
+                if (( topic_hint_counts[hint_order[other_index]] > topic_hint_counts[hint_order[index]] )) || \
+                    { (( topic_hint_counts[hint_order[other_index]] == topic_hint_counts[hint_order[index]] )) && \
+                      [[ "${topic_hint_labels[hint_order[other_index]]}" < "${topic_hint_labels[hint_order[index]]}" ]]; }; then
+                    swap="${hint_order[index]}"
+                    hint_order[index]="${hint_order[other_index]}"
+                    hint_order[other_index]="$swap"
+                fi
+            done
+        done
+        for index in "${hint_order[@]}"; do
+            printf "  %s (%d pending item(s))\n" \
+                "${topic_hint_labels[index]}" "${topic_hint_counts[index]}"
+            displayed=$((displayed + 1))
+            (( displayed >= MAX_TOPIC_HINTS )) && break
+        done
+        if (( ${#hint_order[@]} > MAX_TOPIC_HINTS )); then
+            echo "  ... $(( ${#hint_order[@]} - MAX_TOPIC_HINTS )) more hint(s)"
+        fi
+    fi
+
+    if (( ${#metadata_warning_names[@]} == 0 )); then
+        echo "Metadata warnings: none"
+    else
+        echo "Metadata warnings: $metadata_warning_count malformed file(s)"
+        for index in "${!metadata_warning_names[@]}"; do
+            printf "  %s: %s\n" "${metadata_warning_names[index]}" "${metadata_warning_details[index]}"
+        done
+        if (( metadata_warning_count > ${#metadata_warning_names[@]} )); then
+            echo "  ... $((metadata_warning_count - ${#metadata_warning_names[@]})) more malformed file(s)"
+        fi
+    fi
+}
+
+if [[ "$PREVIEW" == true ]]; then
+    preview_queue
     exit 0
 fi
 
