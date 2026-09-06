@@ -9,7 +9,9 @@
 #
 # 1. Lint them. A second H1, a missing or malformed `verified`, or an
 #    unclosed code fence corrupts retrieval, and none of it is visible by
-#    eye. Errors reject the commit; warnings print and let it through.
+#    eye. Errors reject the commit; warnings print and let it through. When
+#    an article is moved or deleted, lint all knowledge articles so unchanged
+#    inbound links to the old path are checked too.
 #
 # 2. Stamp `updated:` to today on every staged knowledge article. If the
 #    content changed, the edit date is today; that is a fact. It is NOT
@@ -20,8 +22,8 @@
 # leaves the author holding modified, staged files and a "rejected"
 # message that never mentions them.
 #
-# Commits that stage no knowledge articles — every observe, ask, resolve,
-# and archive — exit immediately.
+# Commits that stage no knowledge changes — every observe, ask, resolve, and
+# archive — exit immediately.
 
 set -uo pipefail
 
@@ -52,13 +54,34 @@ while IFS= read -r -d '' file; do
     esac
 done < <(git diff --cached -z --name-only --diff-filter=ACMR -- knowledge/)
 
-if [[ ${#STAGED[@]} -eq 0 ]]; then
+# A staged Markdown rename or deletion can invalidate an unchanged article's
+# inbound link or source reference. Such changes require a full knowledge-tree
+# lint; ordinary edits retain the faster staged-file check.
+topology_changed=false
+if git diff --cached --quiet --diff-filter=DR -- '*.md'; then
+    :
+else
+    diff_status=$?
+    if [[ "$diff_status" -ne 1 ]]; then
+        echo "pre-commit: could not inspect staged knowledge paths." >&2
+        exit 1
+    fi
+    topology_changed=true
+fi
+
+if [[ ${#STAGED[@]} -eq 0 && "$topology_changed" == false ]]; then
     exit 0
 fi
 
 # --- 1. Lint, before touching anything ---
 
-if ! "$SCRIPTS_DIR/lint" "${STAGED[@]}"; then
+if [[ "$topology_changed" == true ]]; then
+    lint_args=(--path "$KB_CONTENT_DIR/knowledge")
+else
+    lint_args=("${STAGED[@]}")
+fi
+
+if ! "$SCRIPTS_DIR/lint" "${lint_args[@]}"; then
     echo "" >&2
     echo "pre-commit: lint errors — commit rejected, nothing modified." >&2
     exit 1

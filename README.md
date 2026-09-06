@@ -194,6 +194,10 @@ knowledge gaps or question records, not evidence. Curated articles use
 dates are `unknown`, malformed dates are `invalid`, and neither is reported as
 fresh. Stale results remain available and are labeled `stale`.
 
+Articles with an unresolved contradiction must set `conflict: unresolved` in
+frontmatter. Retrieval exposes this independently as `conflict.status`, so a
+recently verified article cannot make an unresolved conflict appear settled.
+
 Curated article `sources` are exposed as article-level references. They identify
 the evidence associated with the article and are not claim-level citations.
 The default output displays at most five references and reports
@@ -206,7 +210,8 @@ are labeled uncurated or archived evidence. Source documents expose their
 `search --json` returns an object with a bounded `results` array plus
 `total_files`, `total_lines`, `returned`, and `truncated`. Each result is one
 ranked Markdown section and contains `path`, `corpus`, `locator`, `freshness`,
-`provenance`, `match_count`, and a query-focused `text` excerpt. `match_count`
+`conflict`, `provenance`, `match_count`, and a query-focused `text` excerpt.
+`match_count`
 is the number of distinct evidence lines retained for that section; identical
 lines count once. `--files` returns one file result with the number of matching
 sections in `match_count` and a null locator. `--limit` bounds result sections,
@@ -234,7 +239,8 @@ flag to combine them. `--path PATH` accepts a content-relative file or
 directory. `--topic NAME` is a directory under `knowledge/`, such as
 `--topic projects`; both filters can be combined and are intersected.
 `section --json` returns one object with `path`, `corpus`, `locator`,
-`freshness`, `provenance`, and the multiline `content`. Its `locator.number`
+`freshness`, `conflict`, `provenance`, and the multiline `content`. Its
+`locator.number`
 is null for `--top` and `--title`, and its `locator.level` is also null for
 those synthetic results.
 

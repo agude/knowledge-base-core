@@ -108,6 +108,24 @@ TLS overview.'
     [[ "$output" == *"refs=observations/archived/evidence.md (article)"* ]]
 }
 
+@test "section exposes unresolved conflicts separately from freshness" {
+    fixture="$BATS_TEST_DIRNAME/fixtures/lint/corrections"
+    cp -R "$fixture/knowledge/." "$TEST_CONTENT_DIR/knowledge/"
+    cp -R "$fixture/observations/." "$TEST_CONTENT_DIR/observations/"
+
+    run "$SCRIPTS/section" --json --file knowledge/corrections.md \
+        --heading "Unresolved conflict"
+    [[ "$status" -eq 0 ]]
+    run jq -e '.freshness.status == "fresh" and .conflict.status == "unresolved"' <<<"$output"
+    [[ "$status" -eq 0 ]]
+
+    run "$SCRIPTS/section" --file knowledge/corrections.md \
+        --heading "Unresolved conflict"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Freshness: curated article; verified=2026-09-05; ttl=60d; freshness=fresh"* ]]
+    [[ "$output" == *"Conflict: status=unresolved"* ]]
+}
+
 @test "section text-only preserves the body without metadata" {
     create_test_article "net.md" "$ARTICLE"
     run "$SCRIPTS/section" --text-only --file knowledge/net.md --number 1

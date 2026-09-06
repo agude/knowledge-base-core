@@ -573,6 +573,22 @@ needle inside
     [[ "$output" == *"pending observation; uncurated evidence"* ]]
 }
 
+@test "search exposes unresolved conflicts separately from freshness" {
+    fixture="$BATS_TEST_DIRNAME/fixtures/lint/corrections"
+    cp -R "$fixture/knowledge/." "$TEST_CONTENT_DIR/knowledge/"
+    cp -R "$fixture/observations/." "$TEST_CONTENT_DIR/observations/"
+
+    run "$SCRIPTS/search" --json --limit 1 "team message"
+    [[ "$status" -eq 0 ]]
+    run jq -e '.results[0].freshness.status == "fresh" and .results[0].conflict.status == "unresolved"' <<<"$output"
+    [[ "$status" -eq 0 ]]
+
+    run "$SCRIPTS/search" --limit 1 "team message"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"freshness=fresh"* ]]
+    [[ "$output" == *"conflict=unresolved"* ]]
+}
+
 @test "search text-only omits retrieval metadata" {
     create_test_article "old.md" $'---\ntitle: "Old"\nverified: 2020-01-01\n---\n\n# Old\n\nneedle'
     run "$SCRIPTS/search" --text-only needle

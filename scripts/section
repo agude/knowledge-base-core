@@ -124,6 +124,8 @@ if [[ "$REFERENCES_ONLY" == true ]]; then
         json_quote "$RESULT_CORPUS"
         printf ',"freshness":'
         json_freshness
+        printf ',"conflict":'
+        json_conflict
         printf ',"provenance":'
         json_provenance all
         printf '}\n'
@@ -300,6 +302,8 @@ if [[ "$JSON" == true ]]; then
     if [[ -n "$match_level_number" ]]; then printf '%s' "$match_level_number"; else printf 'null'; fi
     printf '},"freshness":'
     json_freshness
+    printf ',"conflict":'
+    json_conflict
     printf ',"provenance":'
     json_provenance
     printf ',"content":'
@@ -327,6 +331,7 @@ fi
 printf 'Freshness: '
 freshness_metadata_text
 printf '\n'
+conflict_metadata_text
 printf 'Provenance: scope=%s; %s\n' "$PROVENANCE_SCOPE" \
     "$(provenance_metadata_text)"
 printf -- '---\n'

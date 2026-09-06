@@ -99,7 +99,9 @@ example.
 8. **Check what you wrote.** Run the linter over everything you touched.
    It reports oversized H2s, second H1s, missing or malformed `verified`
    dates, unclosed code fences, duplicate H2 names, and broken local
-   references. You will not notice all of these by eye; measure them.
+   references. You will not notice all of these by eye; measure them. If a
+   Markdown article or source is moved or deleted, run the linter over the
+   entire knowledge tree as well so unchanged inbound links are checked.
 
    Before an observation is archived, a source reference to its future
    archive path can be checked with the batch manifest:
@@ -114,7 +116,7 @@ example.
    After the archive moves, use the no-option command for the final check:
 
    ```bash
-   $KNOWLEDGE_BASE/scripts/lint --path knowledge/<dir>
+   $KNOWLEDGE_BASE/scripts/lint
    ```
 
    Fix every error before committing. Fix oversized-H2 warnings by
@@ -201,6 +203,11 @@ If authority or effective date is unresolved, retain both claims under an
 explicit `Unresolved conflict` heading. Describe the disagreement and what
 would resolve it. Do not manufacture agreement, select a canonical claim by
 capture recency alone, or mark conflicting claims verified.
+
+Set `conflict: unresolved` in the article frontmatter while the disagreement
+remains open. Retrieval exposes this as `conflict.status`, independently of the
+article's `verified` freshness metadata. Remove or update the field only after
+the conflicting claims are resolved and the article is reviewed accordingly.
 
 An article's `verified` date describes the claims that were actually checked.
 Editing one section does not reverify unrelated sections. Leave `verified`

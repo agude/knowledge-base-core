@@ -663,6 +663,21 @@ freshness_for_file() {
     fi
 }
 
+# conflict_status_for_file - Populate the explicit conflict metadata.
+#
+# Knowledge articles may set `conflict: unresolved` while claims are still
+# being compared. This status is separate from freshness: an article can be
+# recently verified and still contain an unresolved contradiction.
+conflict_status_for_file() {
+    local relpath="$1" file="$2"
+
+    CONFLICT_STATUS="none"
+    [[ "$relpath" == knowledge/* ]] || return 0
+
+    CONFLICT_STATUS="$(frontmatter_field conflict "$file" 2>/dev/null || true)"
+    [[ -n "$CONFLICT_STATUS" ]] || CONFLICT_STATUS="none"
+}
+
 # corpus_type_for_path - Classify a content-relative path for retrieval.
 corpus_type_for_path() {
     case "$1" in
@@ -790,6 +805,7 @@ retrieval_metadata_for_file() {
 
     RESULT_CORPUS="$(corpus_type_for_path "$relpath")"
     freshness_for_file "$relpath" "$file"
+    conflict_status_for_file "$relpath" "$file"
     provenance_for_file "$relpath" "$file"
 }
 
@@ -932,6 +948,12 @@ json_freshness() {
     printf '}'
 }
 
+json_conflict() {
+    printf '{"status":'
+    json_quote "$CONFLICT_STATUS"
+    printf '}'
+}
+
 freshness_metadata_text() {
     local date_display ttl_display
 
@@ -974,6 +996,15 @@ retrieval_metadata_text() {
         printf '; disposition=%s' "$PROVENANCE_DISPOSITION"
     [[ -n "$PROVENANCE_DESTINATION" ]] && \
         printf '; destination=%s' "$PROVENANCE_DESTINATION"
+    [[ "$CONFLICT_STATUS" != "none" ]] && \
+        printf '; conflict=%s' "$CONFLICT_STATUS"
+    return 0
+}
+
+conflict_metadata_text() {
+    if [[ "$CONFLICT_STATUS" != "none" ]]; then
+        printf 'Conflict: status=%s\n' "$CONFLICT_STATUS"
+    fi
     return 0
 }
 

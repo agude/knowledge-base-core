@@ -13,6 +13,13 @@ setup() {
 }
 teardown() { teardown_content_dir; }
 
+content_git() {
+    (
+        cd "$TEST_CONTENT_DIR"
+        git "$@"
+    )
+}
+
 good_article() {
     cat <<EOF
 ---
@@ -131,6 +138,58 @@ EOF
 
     committed="$(git -C "$TEST_CONTENT_DIR" show HEAD:knowledge/net.md)"
     [[ "$committed" == *"updated: 2020-01-01"* ]]
+}
+
+@test "pre-commit rejects a target rename with an unchanged inbound link" {
+    good_article "Target content." > "$TEST_CONTENT_DIR/knowledge/b.md"
+    cat > "$TEST_CONTENT_DIR/knowledge/a.md" <<'EOF'
+---
+title: "Inbound Link"
+updated: 2020-01-01
+verified: 2026-08-08
+---
+
+# Inbound Link
+
+## Reference
+
+See [the target](b.md).
+EOF
+    content_git add -A knowledge
+    content_git commit -q -m "Add linked articles"
+
+    mv "$TEST_CONTENT_DIR/knowledge/b.md" "$TEST_CONTENT_DIR/knowledge/c.md"
+    content_git add -A knowledge
+    run content_git commit -q -m "Rename target"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"missing local Markdown link target: b.md"* ]]
+    [[ "$output" == *"commit rejected"* ]]
+}
+
+@test "pre-commit rejects a target deletion with an unchanged inbound link" {
+    good_article "Target content." > "$TEST_CONTENT_DIR/knowledge/b.md"
+    cat > "$TEST_CONTENT_DIR/knowledge/a.md" <<'EOF'
+---
+title: "Inbound Link"
+updated: 2020-01-01
+verified: 2026-08-08
+---
+
+# Inbound Link
+
+## Reference
+
+See [the target](b.md).
+EOF
+    content_git add -A knowledge
+    content_git commit -q -m "Add linked articles"
+
+    rm "$TEST_CONTENT_DIR/knowledge/b.md"
+    content_git add -A knowledge
+    run content_git commit -q -m "Delete target"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"missing local Markdown link target: b.md"* ]]
+    [[ "$output" == *"commit rejected"* ]]
 }
 
 # --- regressions found by review ---

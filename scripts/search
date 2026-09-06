@@ -208,6 +208,8 @@ json_search_file() {
     printf ',"title":'; json_quote "$title"
     printf ',"match_count":%s,"locator":null,"freshness":' "$match_count"
     json_freshness
+    printf ',"conflict":'
+    json_conflict
     printf ',"provenance":'; json_provenance display
     printf '}'
 }
@@ -227,6 +229,8 @@ json_search_section() {
     fi
     printf ',"line":%s},"freshness":' "$line_number"
     json_freshness
+    printf ',"conflict":'
+    json_conflict
     printf ',"provenance":'; json_provenance display
     printf ',"text":'; json_quote "$line_text"
     printf '}'

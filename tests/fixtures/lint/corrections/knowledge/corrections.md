@@ -2,6 +2,7 @@
 title: "Correction Record"
 updated: 2026-09-05
 verified: 2026-09-05
+conflict: unresolved
 sources:
   - observations/archived/old-claim.md
   - observations/archived/new-claim.md

@@ -1,6 +1,6 @@
 # Knowledge Base Reliability and Retrieval Plan
 
-Created: 2026-09-04. Status: tasks 1–4 implemented; tasks 5–9 pending.
+Created: 2026-09-04. Status: tasks 1–6 implemented; tasks 7–9 pending.
 
 ## Objective
 
@@ -538,9 +538,16 @@ evidence, effective date, reason, and explicit unresolved conflict. Added tests
 for relative, moved, anchored, fenced, inline-code, external, missing, and
 batch-aware references.
 
+Added explicit `conflict: unresolved` frontmatter to the correction fixture and
+exposed it as `conflict.status` in `search` and `section` metadata, independently
+of freshness. Updated the pre-commit hook to lint the full knowledge tree when a
+staged Markdown path is renamed or deleted, catching unchanged inbound links;
+updated the curator workflow with the same full-tree check and added
+clean-fixture regressions for both operations.
+
 Verification:
 
-- `bats tests` — 329 tests passed.
+- `bats tests` — 333 tests passed.
 - `bash -n scripts/lint` — passed.
 - `shellcheck -x -P scripts -s bash scripts/lint` — passed.
 - `bash scripts/portability-lint` — passed.
