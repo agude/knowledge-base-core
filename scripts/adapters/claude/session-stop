@@ -7,15 +7,20 @@ KB="${KNOWLEDGE_BASE:-}"
 [[ -z "$KB" ]] && exit 0
 command -v jq > /dev/null 2>&1 || exit 0
 
+append_message() {
+    "$KB/scripts/session-append" "$@" && return 0
+    "$KB/scripts/session-append" "$@"
+}
+
 INPUT="$(cat)"
 SESSION_ID="$(echo "$INPUT" | jq -r '.session_id // empty')"
 MESSAGE="$(echo "$INPUT" | jq -r '.last_assistant_message // empty')"
 [[ -z "$SESSION_ID" || -z "$MESSAGE" ]] && exit 0
 
 if [[ -n "${KNOWLEDGE_SESSION_FILE:-}" ]]; then
-    "$KB/scripts/session-append" --file "$KNOWLEDGE_SESSION_FILE" \
-        --role assistant --message "$MESSAGE" 2>/dev/null || true
+    append_message --file "$KNOWLEDGE_SESSION_FILE" \
+        --role assistant --message "$MESSAGE"
 else
-    "$KB/scripts/session-append" --session-id "$SESSION_ID" \
-        --role assistant --message "$MESSAGE" 2>/dev/null || true
+    append_message --session-id "$SESSION_ID" \
+        --role assistant --message "$MESSAGE"
 fi

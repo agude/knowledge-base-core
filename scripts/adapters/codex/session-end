@@ -12,11 +12,16 @@ SESSION_ID="$(echo "$INPUT" | jq -r '.session_id // empty')"
 if [[ -n "$SESSION_ID" ]]; then
     FILE="$("$KB/scripts/session-file" --session-id "$SESSION_ID" 2>/dev/null || echo "")"
     if [[ -n "$FILE" ]]; then
-        # Run even when the buffer was swept: session-flush clears the durable
-        # initialization marker before exiting on a missing file. Some hosts
-        # impose a short shutdown deadline, so keep the flush asynchronous.
-        "$KB/scripts/session-flush" "$FILE" </dev/null > /dev/null 2>&1 &
-        disown 2>/dev/null || true
+        # Keep shutdown synchronous so a failed flush remains visible and the
+        # session buffer stays available for a later lifecycle.
+        flush_status=0
+        if "$KB/scripts/session-flush" "$FILE" </dev/null > /dev/null 2>&1; then
+            flush_status=0
+        else
+            flush_status=$?
+        fi
+        echo '{}'
+        exit "$flush_status"
     fi
 fi
 echo '{}'

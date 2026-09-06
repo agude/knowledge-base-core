@@ -127,10 +127,16 @@ article and replace or remove its stale `sources:` entry, then rerun the full
 knowledge-tree lint. Do not add a linter exception or edit private content as
 part of tooling changes.
 
-Host adapters retry a failed `session-append` once. The persistence contract is
-at least once, so a post-write failure can duplicate a raw transcript line;
-curation must treat the transcript as evidence rather than an idempotent event
-log.
+Host adapters retry a failed `session-append` once. If both attempts fail, the
+shell adapter reports failure; Codex still returns its required `{}` response.
+The persistence contract is at least once, so a post-write failure can
+duplicate a raw transcript line. Repeated prompt or stop hook deliveries are
+also retained as separate records because these payloads provide no stable
+event identity for deduplication. Curation must treat the transcript as
+evidence rather than an idempotent event log. The shell adapter's shutdown
+hook flushes synchronously and returns failure while preserving the buffer when
+the flush fails; this favors recoverability over a shorter host shutdown
+deadline.
 
 ### What to observe
 

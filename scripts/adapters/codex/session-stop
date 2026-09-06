@@ -8,10 +8,17 @@ KB="${KNOWLEDGE_BASE:-}"
 [[ "${KNOWLEDGE_OBSERVE:-}" == "0" ]] && { echo '{}'; exit 0; }
 command -v jq > /dev/null 2>&1 || { echo '{}'; exit 0; }
 
+append_message() {
+    "$KB/scripts/session-append" "$@" && return 0
+    "$KB/scripts/session-append" "$@"
+}
+
 SESSION_ID="$(echo "$INPUT" | jq -r '.session_id // empty')"
 MESSAGE="$(echo "$INPUT" | jq -r '.last_assistant_message // empty')"
+append_status=0
 if [[ -n "$SESSION_ID" && -n "$MESSAGE" ]]; then
-    "$KB/scripts/session-append" --session-id "$SESSION_ID" \
-        --role assistant --message "$MESSAGE" 2>/dev/null || true
+    append_message --session-id "$SESSION_ID" \
+        --role assistant --message "$MESSAGE" || append_status=$?
 fi
 echo '{}'
+exit "$append_status"

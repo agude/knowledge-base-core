@@ -441,10 +441,16 @@ The explicit `scripts/observe` command remains available when automatic
 capture is disabled.
 
 Host adapters retry a failed `session-append` once while they still own the
-event. Persistence is therefore at least once: if a core command writes the
-line and then reports failure, the retry can record the same message twice.
-The raw transcript remains evidence and the adapter lifecycle tests cover this
-post-write failure case.
+event. If both attempts fail, the shell adapter reports failure; Codex still
+returns its required `{}` response. Persistence is therefore at least once:
+if a core command writes the line and then reports failure, the retry can
+record the same message twice. Repeated prompt or stop hook deliveries are
+also retained as separate raw transcript records. The adapters do not claim
+deduplication because these payloads provide no stable event identity.
+The raw transcript remains evidence rather than an idempotent event log.
+Codex `SessionEnd` flushes synchronously and returns failure while preserving
+the buffer when the flush fails; this favors recoverability over a shorter host
+shutdown deadline.
 
 ## Testing
 

@@ -265,8 +265,9 @@ retained shell adapter and neutral-core contract.
 - [x] Validate the retained Claude and Codex shell adapters against their
   documented host payloads and the neutral session API.
 - [x] Execute adapter lifecycle tests with temporary storage: start, capture,
-  duplicate events, disabled observation, failed capture, and shutdown/flush
-  recovery.
+  one append retry, pre- and post-persistence append failures, repeated hook
+  delivery as retained duplicate records, disabled observation, and
+  shutdown/flush recovery.
 - [x] Tests establish behavior rather than merely checking adapter source text.
 - [x] Preserve shell-adapter behavior and core session tests.
 - [x] CI runs the shell-adapter checks, Bats suite, ShellCheck, and portability
@@ -305,7 +306,9 @@ references.
   contracts while retaining runtime lifecycle coverage.
 - [x] Append retry behavior is explicit and tested: either make retries
   idempotent/deduplicated or document and verify at-least-once persistence with
-  post-write failure coverage.
+  pre- and post-write failure coverage. The retained shell adapters retry once,
+  report failure after both attempts fail, and retain repeated hook deliveries
+  because no stable event identity is available for deduplication.
 - [x] `KNOWLEDGE_OBSERVE` semantics are consistent across shell adapters, skills,
   README, and tests, including the unset environment.
 - [x] Update this plan's status, completion checklist, and implementation log to
@@ -350,6 +353,10 @@ adapters; the neutral session core remains unchanged.
 
 Complete this decision after task 5. Do not assume corpus size alone justifies
 embeddings or proves that lexical retrieval is sufficient.
+
+Do not start task 9 until the adapter and core-session follow-up for tasks
+1–8.75 is complete and its validation is recorded below. This follow-up does
+not classify retrieval failures or evaluate new retrieval infrastructure.
 
 **Acceptance criteria**
 
@@ -411,7 +418,7 @@ Verification:
 
 - `bash -n scripts/batch scripts/archive` — passed.
 - `bats tests` — 282 tests passed.
-- `git diff --check` — passed.
+
 
 Remaining limitation: batch manifests are working-tree state until the normal
 curation commit; the manifest and archive changes are committed together by
@@ -895,4 +902,35 @@ Verification:
 - `rg -n -i -g '!content/**' -g '!plan.md' '\b(opencode|pi|typescript|npm|node|tsx|package-lock|tsconfig|pi-coding-agent|opencode-ai)\b' .`
   — no live optional-host or JavaScript toolchain references outside this
   removal plan and historical implementation log.
+- `git diff --check` — passed.
+
+### 2026-09-06 — Adapter contract review follow-up
+
+Reconciled the retained shell adapter contract across code, tests, README, and
+the portable knowledge-base skill. Claude and Codex prompt and stop paths retry
+`session-append` once and report failure if both attempts fail. A failure after
+the core writes can produce a duplicate transcript line on retry. Repeated
+prompt and stop hook deliveries are also retained as separate records because
+the supported payloads provide no stable event identity for safe
+deduplication. The raw transcript is therefore at-least-once evidence, not an
+idempotent event log.
+
+Changed Codex shutdown flushing to synchronous execution. The adapter preserves
+the required `{}` response and returns failure when `session-flush` fails; the
+core leaves the buffer and initialization marker available for a later
+lifecycle. This favors recoverability over a shorter shutdown deadline.
+
+No files under `content/` were edited. Strict lint remains a separate curation
+migration limitation: `KB_CONTENT_DIR=content scripts/lint --path
+content/knowledge` exits with 37 historical missing-source errors across the
+private tree. Task 9 remains pending; this follow-up did not classify retrieval
+failures or evaluate new retrieval infrastructure.
+
+Verification:
+
+- `bats tests/adapters.bats tests/session_flow.bats tests/session_core.bats tests/session_start.bats` — 72 tests passed.
+- `bash -n` and targeted ShellCheck for all changed adapters — passed.
+- `scripts/evaluate-retrieval --fixture tests/fixtures/retrieval-v1/retrieval-v1.json --content-dir tests/fixtures/retrieval-v1/content --baseline tests/fixtures/retrieval-v1/retrieval-v1.baseline.json --fail-on-regression --json` — 36 cases, zero baseline regressions.
+- `just check` — ShellCheck and portability lint passed; 360 Bats tests passed.
+- `KB_CONTENT_DIR=content scripts/lint --path content/knowledge` — expected exit 1 with 37 historical missing-source errors; no content changes.
 - `git diff --check` — passed.
