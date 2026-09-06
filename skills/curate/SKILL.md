@@ -133,7 +133,12 @@ example.
    selection are not part of the batch.
 10. Run the linter again without `--batch` after all archive moves. This is
     the final-reference check; it rejects a source path that will not exist
-    in the committed content repository.
+    in the committed content repository. The pre-commit hook applies the same
+    full-tree check to staged moves or deletions whose old path is under
+    `knowledge/`, `sources/`, or `observations/archived/`. A normal
+    pending-to-archived addition does not trigger that check, so archiving does
+    not revalidate unrelated legacy errors; removing or moving archived
+    evidence does trigger it.
 11. Review open questions (see Open Questions below).
 12. Commit everything as one batch with
    `$KNOWLEDGE_BASE/scripts/commit -m "Curate: <summary>"`.

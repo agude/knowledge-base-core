@@ -105,3 +105,40 @@ EOF
     run content_git log -1 --format=%s
     [[ "$output" == "Archive: 1 observation(s)" ]]
 }
+
+@test "archived observation removal rejects a broken source reference" {
+    mkdir -p "$TEST_CONTENT_DIR/observations/archived"
+    printf '%s\n' 'Archived evidence.' \
+        > "$TEST_CONTENT_DIR/observations/archived/evidence.md"
+    cat > "$TEST_CONTENT_DIR/knowledge/legacy.md" <<'EOF'
+---
+title: "Legacy"
+updated: 2020-01-01
+verified: 2020-01-01
+sources:
+  - observations/archived/evidence.md
+---
+
+# Legacy
+
+## Historical
+
+This article retains an archived source reference.
+EOF
+    content_git add knowledge/legacy.md observations/archived/evidence.md
+    content_git commit -q -m "Seed archived evidence"
+
+    mkdir -p "$TEST_CONTENT_DIR/.git/hooks"
+    ln -sfn "$SCRIPTS/hooks/pre-commit" \
+        "$TEST_CONTENT_DIR/.git/hooks/pre-commit"
+
+    rm "$TEST_CONTENT_DIR/observations/archived/evidence.md"
+    content_git add -u observations/archived/evidence.md
+    run content_git commit -q -m "Remove archived evidence"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"missing local source reference"* ]]
+    [[ "$output" == *"commit rejected"* ]]
+
+    run content_git log -1 --format=%s
+    [[ "$output" == "Seed archived evidence" ]]
+}

@@ -547,9 +547,14 @@ moves; updated the curator workflow with the same full-tree check and added
 clean-fixture regressions for both operations plus an installed-hook archive
 regression with an unrelated legacy broken reference.
 
+Scoped archive handling so pending-to-archived additions remain compatible with
+the installed hook, while removals or moves out of `observations/archived/`
+trigger full-tree validation. Added an installed-hook regression proving an
+unchanged `sources:` reference blocks archived evidence deletion.
+
 Verification:
 
-- `bats tests` — 334 tests passed.
+- `bats tests` — 335 tests passed.
 - `bash -n scripts/lint` — passed.
 - `shellcheck -x -P scripts -s bash scripts/lint` — passed.
 - `bash scripts/portability-lint` — passed.

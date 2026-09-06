@@ -56,7 +56,9 @@ done < <(git diff --cached -z --name-only --diff-filter=ACMR -- knowledge/)
 
 # A staged Markdown rename or deletion can invalidate an unchanged article's
 # inbound link or source reference. Such changes require a full knowledge-tree
-# lint; ordinary edits retain the faster staged-file check.
+# lint; ordinary edits retain the faster staged-file check. A pending-to-
+# archived addition is intentionally excluded, but a removal or move of an
+# existing archive path must still be checked.
 topology_changed=false
 if git diff --cached --quiet --diff-filter=DR -- knowledge/ sources/; then
     :
@@ -66,6 +68,29 @@ else
         echo "pre-commit: could not inspect staged link-target paths." >&2
         exit 1
     fi
+    topology_changed=true
+fi
+
+# The archive path also matches the destination of a pending-to-archived
+# rename, so inspect old and new names to distinguish additions from removals.
+archived_removal=false
+while IFS= read -r -d '' change && IFS= read -r -d '' old_path; do
+    case "$change" in
+        D*)
+            [[ "$old_path" == observations/archived/*.md ]] && \
+                archived_removal=true
+            ;;
+        R*)
+            new_path=""
+            IFS= read -r -d '' new_path || continue
+            if [[ "$old_path" == observations/archived/*.md && \
+                "$new_path" != "$old_path" ]]; then
+                archived_removal=true
+            fi
+            ;;
+    esac
+done < <(git diff --cached --name-status -z --diff-filter=DR --)
+if [[ "$archived_removal" == true ]]; then
     topology_changed=true
 fi
 
