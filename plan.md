@@ -698,3 +698,20 @@ Verification:
 - `npm test` — 7 adapter lifecycle tests passed.
 - `just check` — ShellCheck and portability lint passed; TypeScript type-check
   passed; 342 Bats tests and 7 adapter lifecycle tests passed.
+
+### 2026-09-06 — Task 8 core failure propagation correction
+
+Fixed the failure boundary missed by the adapter recovery tests. `session-append`
+now returns nonzero when JSONL persistence fails, and `session-flush` returns
+nonzero when `observe` fails while retaining the buffer. The adapter fixture now
+uses temporary permission changes to trigger those failures inside the real core
+scripts, so retries are tested against actual persistence outcomes.
+
+Added core-script regression tests for failed buffer writes and failed
+observation writes. Existing OpenCode and Pi one-shot recovery tests now verify
+the same real failure path through the adapter wrappers.
+
+Verification:
+
+- `just check` — ShellCheck and portability lint passed; TypeScript type-check
+  passed; 344 Bats tests and 7 adapter lifecycle tests passed.

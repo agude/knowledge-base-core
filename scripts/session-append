@@ -69,13 +69,19 @@ fi
 
 # jq for proper JSON escaping of the message text.
 if command -v jq > /dev/null 2>&1; then
-    jq -nc --arg role "$ROLE" --arg msg "$MESSAGE" \
-        '{role: $role, message: $msg, timestamp: now}' >> "$FILE" 2>/dev/null || true
+    if ! jq -nc --arg role "$ROLE" --arg msg "$MESSAGE" \
+        '{role: $role, message: $msg, timestamp: now}' >> "$FILE" 2>/dev/null; then
+        echo "session-append: could not write $FILE" >&2
+        exit 1
+    fi
 else
     # Fallback: basic escaping for common characters.
     escaped="$MESSAGE"
     escaped="${escaped//\\/\\\\}"
     escaped="${escaped//\"/\\\"}"
-    printf '{"role":"%s","message":"%s","timestamp":%s}\n' \
-        "$ROLE" "$escaped" "$(date +%s)" >> "$FILE" 2>/dev/null || true
+    if ! printf '{"role":"%s","message":"%s","timestamp":%s}\n' \
+        "$ROLE" "$escaped" "$(date +%s)" >> "$FILE" 2>/dev/null; then
+        echo "session-append: could not write $FILE" >&2
+        exit 1
+    fi
 fi

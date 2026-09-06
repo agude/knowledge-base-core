@@ -202,6 +202,16 @@ Content."
     [[ ! -s "$file" ]]
 }
 
+@test "session-append returns failure when the buffer cannot be written" {
+    local file="$SESSION_DIR/read-only.jsonl"
+    touch "$file"
+    chmod u-w "$file"
+    run "$SCRIPTS/session-append" --file "$file" --role user --message "blocked"
+    chmod u+w "$file"
+    [[ "$status" -ne 0 ]]
+    [[ ! -s "$file" ]]
+}
+
 # ── session-flush (already exists, verify contract) ──────────────────
 
 @test "session-flush with >=3 messages creates observation" {
@@ -241,4 +251,21 @@ Content."
 @test "session-flush with nonexistent file exits 0" {
     run "$SCRIPTS/session-flush" "/nonexistent/buffer.jsonl"
     [[ "$status" -eq 0 ]]
+}
+
+@test "session-flush returns failure and keeps the buffer when observe fails" {
+    local file="$SESSION_DIR/observe-failure.jsonl"
+    echo '{"role":"user","message":"Q1"}' > "$file"
+    echo '{"role":"assistant","message":"A1"}' >> "$file"
+    echo '{"role":"user","message":"Q2"}' >> "$file"
+    local pending_dir="$TEST_CONTENT_DIR/observations/pending"
+    chmod u-w "$pending_dir"
+    run env KNOWLEDGE_MIN_MESSAGES=0 "$SCRIPTS/session-flush" "$file"
+    chmod u+w "$pending_dir"
+    [[ "$status" -ne 0 ]]
+    [[ -f "$file" ]]
+
+    run env KNOWLEDGE_MIN_MESSAGES=0 "$SCRIPTS/session-flush" "$file"
+    [[ "$status" -eq 0 ]]
+    [[ ! -f "$file" ]]
 }

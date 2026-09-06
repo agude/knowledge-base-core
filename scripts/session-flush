@@ -87,4 +87,5 @@ if "$SCRIPT_DIR/observe" \
     rm -f "$SESSION_FILE"
 else
     echo "session-flush: observe failed, keeping $SESSION_FILE" >&2
+    exit 1
 fi

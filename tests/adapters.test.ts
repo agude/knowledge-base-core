@@ -163,7 +163,16 @@ count=0
 [[ -f "$count_file" ]] && count="$(<"$count_file")"
 count=$((count + 1))
 printf '%s\\n' "$count" > "$count_file"
-if [[ "\${FAIL_APPEND_ONCE:-0}" == 1 && "$count" == 1 ]]; then exit 1; fi
+if [[ "\${FAIL_APPEND_ONCE:-0}" == 1 && "$count" == 1 ]]; then
+  file="$2"
+  chmod u-w "$file"
+  set +e
+  "$REAL_KB/scripts/session-append" "$@"
+  status=$?
+  set -e
+  chmod u+w "$file"
+  exit "$status"
+fi
 exec "$REAL_KB/scripts/session-append" "$@"
 `)
   await writeFile(join(scriptsDir, "session-flush"), `#!/usr/bin/env bash
@@ -173,7 +182,16 @@ count=0
 [[ -f "$count_file" ]] && count="$(<"$count_file")"
 count=$((count + 1))
 printf '%s\\n' "$count" > "$count_file"
-if [[ "\${FAIL_FLUSH_ONCE:-0}" == 1 && "$count" == 1 ]]; then exit 1; fi
+if [[ "\${FAIL_FLUSH_ONCE:-0}" == 1 && "$count" == 1 ]]; then
+  pending_dir="$KB_CONTENT_DIR/observations/pending"
+  chmod u-w "$pending_dir"
+  set +e
+  "$REAL_KB/scripts/session-flush" "$@"
+  status=$?
+  set -e
+  chmod u+w "$pending_dir"
+  exit "$status"
+fi
 exec "$REAL_KB/scripts/session-flush" "$@"
 `)
   await writeFile(join(scriptsDir, "session-file"), `#!/usr/bin/env bash
