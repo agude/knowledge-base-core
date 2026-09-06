@@ -5,9 +5,13 @@ description: Search and record durable facts a future agent session would need -
 
 # Knowledge Base
 
-You have access to a knowledge base at `$KNOWLEDGE_BASE`. It contains curated
-articles, source documents, and pending observations. All interaction goes
-through scripts in `$KNOWLEDGE_BASE/scripts/`.
+The tooling checkout is at `$KNOWLEDGE_BASE`; it contains the scripts used to
+access the content repo. `KB_CONTENT_DIR` selects the content repo and defaults
+to `$KNOWLEDGE_BASE/content`. It contains curated articles, source documents,
+and pending observations. All interaction goes through scripts in
+`$KNOWLEDGE_BASE/scripts/`.
+
+Keep these roots separate. Do not set `KNOWLEDGE_BASE` to the content repo.
 
 ## Which system is this
 
@@ -175,11 +179,12 @@ All scripts are at `$KNOWLEDGE_BASE/scripts/<name>`.
 | `ask --title "..." [--context FILE] [--body "..."]` | Record a question |
 | `questions [--path DIR] [--file F] [--full] [--all]` | List open questions |
 | `resolve --file F [--answer "..."]` | Resolve a question |
-| `archive FILENAME [--all]` | Move observations to archived |
+| `archive FILENAME [FILENAME ...]` | Archive explicit observations |
+| `archive --batch ID --disposition TYPE [--destination PATH] FILENAME` | Complete one persisted batch member |
 | `stale [--days N] [--path DIR]` | List articles needing re-verification |
-| `lint [--path DIR] [--strict]` | Check articles against the structural conventions |
+| `lint [--path DIR] [--strict] [--batch ID]` | Check articles against the structural conventions |
 | `commit -m "..."` | Commit curation work under the write lock |
-| `sync [--status]` | Pull and push the content repo |
+| `sync [--status] [--no-push]` | Pull and push the content repo |
 | `init [--path DIR]` | Initialize an empty content repo |
 | `status` | Summary stats |
 | `context` | Compact summary for session injection |
@@ -201,6 +206,10 @@ After processing a persisted batch, run
 dispositions and destinations, lists bounded deferred work, and retains the
 existing pending/complete/deferred counts. Newly arrived observations are not
 part of that report unless a new batch selects them.
+
+Archive only completed members with explicit filenames. `archive --all` is a
+manual bulk-maintenance operation, not a curation command: it can archive
+observations that arrived after the batch was selected.
 
 When a stale article was retrieved during the current curation pass, prioritize
 it when its path matches a queue topic hint or an incorporated destination.

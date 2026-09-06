@@ -8,6 +8,12 @@
 # Usage:
 #   install
 #
+# Environment:
+#   KNOWLEDGE_BASE   Tooling checkout used by host adapters (optional when
+#                    running this script directly).
+#   KB_CONTENT_DIR   Content repository that receives the git hook; defaults
+#                    to <tooling checkout>/content.
+#
 # Locations:
 #   Skills:     ~/.agents/skills/<name>  (shared agent location)
 #   Git hooks:  <content>/.git/hooks/pre-commit

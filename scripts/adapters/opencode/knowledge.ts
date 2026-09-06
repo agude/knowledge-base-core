@@ -24,24 +24,29 @@ function script(name: string): string {
   return KB + "/scripts/" + name
 }
 
-async function run(name: string, args: string[], timeout = 10000): Promise<string> {
+type CommandResult = { ok: boolean; output: string }
+
+async function run(name: string, args: string[], timeout = 10000): Promise<CommandResult> {
   try {
     const result = await execFile(script(name), args, {
       timeout,
       encoding: "utf-8",
     })
-    return result.stdout.trim()
+    return { ok: true, output: result.stdout.trim() }
   } catch (error) {
     const failure = error as { stderr?: string; message?: string }
     warn(name, name + " failed: " + (failure.stderr || failure.message || "unknown error"))
-    return ""
+    return { ok: false, output: "" }
   }
 }
 
-function text(parts: Array<{ type: string; text?: string }>): string {
+function text(parts: unknown): string {
+  if (!Array.isArray(parts)) return ""
   return parts
     .filter((part): part is { type: "text"; text: string } =>
-      part.type === "text" && typeof part.text === "string")
+      typeof part === "object" && part !== null &&
+      (part as { type?: unknown }).type === "text" &&
+      typeof (part as { text?: unknown }).text === "string")
     .map((part) => part.text)
     .join("\n")
 }
@@ -56,8 +61,8 @@ export default (async ({ client }) => {
 
   async function init(id: string): Promise<void> {
     if (!OBSERVE || children.has(id) || files.has(id)) return
-    const file = await run("session-init", ["--session-id", id])
-    if (file) files.set(id, file)
+    const result = await run("session-init", ["--session-id", id])
+    if (result.ok && result.output) files.set(id, result.output)
   }
 
   async function buffer(id: string): Promise<string | undefined> {
@@ -68,17 +73,24 @@ export default (async ({ client }) => {
     return files.get(id)
   }
 
-  async function append(id: string, role: "user" | "assistant", value: string): Promise<void> {
-    if (!OBSERVE || !value || children.has(id)) return
+  async function append(id: string, role: "user" | "assistant", value: string): Promise<boolean> {
+    if (!OBSERVE || !value || children.has(id)) return true
     const file = await buffer(id)
-    if (file) await run("session-append", ["--file", file, "--role", role, "--message", value])
+    if (!file) return false
+    const result = await run("session-append", ["--file", file, "--role", role, "--message", value])
+    return result.ok
   }
 
-  async function flush(id: string): Promise<void> {
-    if (!OBSERVE) return
+  async function flush(id: string): Promise<boolean> {
+    if (!OBSERVE) return true
     const file = files.get(id)
-    files.delete(id)
-    if (file && existsSync(file)) await run("session-flush", [file], 15000)
+    if (!file || !existsSync(file)) {
+      files.delete(id)
+      return true
+    }
+    const result = await run("session-flush", [file], 15000)
+    if (result.ok) files.delete(id)
+    return result.ok
   }
 
   async function flushAll(): Promise<void> {
@@ -99,28 +111,33 @@ export default (async ({ client }) => {
         const message = event.properties.info
         if (message.role !== "assistant" || !message.time.completed) return
 
-        const key = message.sessionID + ":" + message.id
+        const key = "assistant:" + message.sessionID + ":" + message.id
         if (appended.has(key)) return
-        appended.add(key)
         if (!files.has(message.sessionID)) return
 
         const result = await client.session.message({
           path: { id: message.sessionID, messageID: message.id },
         })
         if (result.data) {
-          await append(message.sessionID, "assistant", text(result.data.parts))
+          if (await append(message.sessionID, "assistant", text(result.data.parts))) {
+            appended.add(key)
+          }
         }
       } catch (error) {
         warn("event", "event handler failed: " + String(error))
       }
     },
 
-    "chat.message": async ({ sessionID }, { parts }) => {
-      await append(sessionID, "user", text(parts))
+    "chat.message": async ({ sessionID, messageID }, { parts }) => {
+      const key = messageID ? "user:" + sessionID + ":" + messageID : ""
+      if (key && appended.has(key)) return
+      if (await append(sessionID, "user", text(parts)) && key) {
+        appended.add(key)
+      }
     },
 
     "experimental.chat.system.transform": async (_input, { system }) => {
-      if (context === undefined) context = await run("session-context", [])
+      if (context === undefined) context = (await run("session-context", [])).output
       if (context) system.push(context)
     },
 

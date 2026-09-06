@@ -5,32 +5,27 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  shellcheck:
+  check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Install shellcheck
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: extractions/setup-just@v4
+
+      - name: Install Bats and ShellCheck
         run: |
           sudo apt-get update
-          sudo apt-get install -y shellcheck
+          sudo apt-get install -y bats shellcheck
 
-      # -x follows `source`, -P finds _lib.sh from any script's directory.
-      - name: Lint shell scripts
-        run: |
-          mapfile -t files < <(find scripts -type f ! -name '*.ts')
-          shellcheck -x -P scripts -s bash "${files[@]}"
-
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install bats
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bats
-
-      - name: Run tests
-        run: bats tests/*.bats
+      - name: Run check gate
+        run: just check

@@ -6,16 +6,24 @@
 #
 # Usage:
 #   archive FILENAME [FILENAME ...]
+#   archive [--batch BATCH_ID --disposition TYPE [--destination PATH]] FILENAME
 #   archive --all
 #
 # Options:
 #   --all         Archive all pending observations
 #   --no-commit   Skip the auto-commit
+#   --batch       Complete one persisted batch member
+#   --disposition processed|incorporated|duplicate|ephemeral
+#                 Record the curation result; incorporated requires a destination
+#   --destination Article path and optional #Heading for incorporated evidence
 #
 # Examples:
 #   archive 20260412T000000-abcd.md
 #   archive 20260412T000000-abcd.md 20260412T000000-efgh.md
 #   archive --all
+#
+# `--all` is a manual bulk-maintenance operation. Curation batches must use
+# explicit filenames and the persisted batch manifest.
 #
 # Batch completion:
 #   archive --batch BATCH_ID --disposition incorporated --destination knowledge/x.md#Heading FILENAME

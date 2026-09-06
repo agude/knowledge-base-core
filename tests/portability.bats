@@ -33,22 +33,7 @@ teardown() { teardown_content_dir; }
     [[ "$status" -ne 0 ]]
 }
 
-@test "OpenCode adapter maps lifecycle events to the core API" {
-    local adapter="$SCRIPTS/adapters/opencode/knowledge.ts"
-    [[ -f "$adapter" ]]
-    grep -q 'session.created' "$adapter"
-    grep -q 'chat.message' "$adapter"
-    grep -q 'session-append' "$adapter"
-    grep -q 'session-flush' "$adapter"
-}
-
-@test "Pi adapter maps lifecycle events to the core API" {
-    local adapter="$SCRIPTS/adapters/pi/knowledge.ts"
-    [[ -f "$adapter" ]]
-    grep -q 'session_start' "$adapter"
-    grep -q 'message_end' "$adapter"
-    grep -q 'session_switch' "$adapter"
-    grep -q 'session_fork' "$adapter"
-    grep -q 'session-append' "$adapter"
-    grep -q 'session-flush' "$adapter"
+@test "host adapters are present for executable lifecycle tests" {
+    [[ -f "$SCRIPTS/adapters/opencode/knowledge.ts" ]]
+    [[ -f "$SCRIPTS/adapters/pi/knowledge.ts" ]]
 }

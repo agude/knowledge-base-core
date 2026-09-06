@@ -14,11 +14,14 @@ preferences, and tooling that the LLM learns as it goes.
 git clone https://github.com/agude/knowledge-base-core.git
 cd knowledge-base-core
 
-# Initialize a content repo
-scripts/init --path ~/my-knowledge-base
+# The tooling checkout is the script and adapter root
+export KNOWLEDGE_BASE="$PWD"
 
-# Or point at an existing one
-export KNOWLEDGE_BASE=~/my-knowledge-base
+# Point the tooling at a separate content repo
+export KB_CONTENT_DIR="$HOME/my-knowledge-base"
+
+# Initialize that content repo and install its hook
+scripts/init --path "$KB_CONTENT_DIR"
 
 # Capture something
 scripts/observe --title "NAS restart order" --body "Traefik first, then Syncthing, then Plex"
@@ -58,9 +61,11 @@ content/                # separate git repo, gitignored by this one
 └── sources/            # local copies of external reference documents
 ```
 
-The content repo can live anywhere. Set `KNOWLEDGE_BASE` to point at it,
-or let it default to `./content` within the knowledge-base-core directory.
-`content/` is gitignored here so the two git repos coexist in one tree.
+The content repo can live anywhere. `KNOWLEDGE_BASE` identifies this tooling
+checkout so adapters can find its scripts. `KB_CONTENT_DIR` selects the
+content repo; when it is unset, content defaults to `./content` inside this
+checkout. Do not set `KNOWLEDGE_BASE` to the content repo. `content/` is
+gitignored here so the two git repos can coexist in one tree.
 
 ### The two-root pattern
 
@@ -73,6 +78,11 @@ public while the data stays private:
   lock-file placement, and `locked_commit`, which cds in and runs git there.
   Set by `_lib.sh`; defaults to `$REPO_ROOT/content`, overridable with
   `KB_CONTENT_DIR`.
+
+The environment names map to those roots as follows:
+
+- **`KNOWLEDGE_BASE`** — the tooling checkout used by host adapters.
+- **`KB_CONTENT_DIR`** — the content repo selected by `_lib.sh`.
 
 Output paths strip `$CONTENT_DIR/`, so users see and pass relative paths like
 `knowledge/topic.md`. **Every commit made by a script goes to the content
@@ -155,7 +165,8 @@ existing content; compatibility findings require a separate curation pass.
 | `init [--path DIR]` | Initialize a content repo |
 | `observe --title "..." --body "..."` | Capture an observation to observations/pending/ |
 | `pending [--full] [--count] [--preview]` | List observations or preview the curation queue |
-| `archive FILENAME [--all]` | Move observations to observations/archived/ |
+| `archive FILENAME [FILENAME ...]` | Archive explicit observations |
+| `archive --batch ID --disposition TYPE [--destination PATH] FILENAME` | Complete one persisted batch member |
 | `batch start|status|defer` | Persist and resume a curation batch |
 | `search <term> [term ...] [--json\|--text-only] [--path PATH] [--topic NAME] [--corpus TYPE]` | Search ranked sections with freshness and provenance |
 | `toc [--depth N] [--path DIR] [--flat] [--dirs]` | List topics and sections |
@@ -167,7 +178,7 @@ existing content; compatibility findings require a separate curation pass.
 | `stale [--days N] [--path DIR]` | List articles needing re-verification |
 | `lint [--path DIR] [--strict] [--batch ID]` | Check articles, links, source references, and structural conventions |
 | `commit -m "..."` | Commit curation work under the write lock |
-| `sync [--status]` | Pull and push the content repo |
+| `sync [--status] [--no-push]` | Pull and push the content repo |
 | `status` | Summary stats |
 | `evaluate-retrieval --fixture FILE` | Measure retrieval against a versioned question fixture |
 | `context` | Compact summary for session injection |
@@ -398,8 +409,15 @@ host adapter.
 The neutral core exposes `session-context`, `session-init`, `session-file`,
 `session-append`, and `session-flush`. Adapters translate each host's event
 payload and output protocol into those commands. This repository includes
-Claude and Codex shell adapters under `scripts/adapters/`; OpenCode and Pi
-integrations can use the same API from their plugin systems.
+Claude and Codex shell adapters under `scripts/adapters/`, plus TypeScript
+plugins for OpenCode and Pi. The TypeScript adapters use the exact SDK
+versions in `package.json` and `package-lock.json`; run `npm ci` before
+type-checking or testing them.
+
+OpenCode loads a plugin placed in `.opencode/plugins/` or its global plugin
+directory. Pi loads an extension placed in `.pi/extensions/` or its global
+extension directory. `scripts/install` installs shared skills and the content
+repo hook; host plugin discovery remains host-specific.
 
 Run `scripts/portability-lint` to reject host-specific lifecycle, environment,
 and skill metadata from the shared surface. Run it with `--client NAME` to
@@ -408,7 +426,15 @@ verify a host adapter exists.
 ## Testing
 
 ```bash
-bats tests/
+npm ci
+npm run type-check
+npm test
+bats tests/*.bats
+scripts/portability-lint
 ```
 
-Tests run in CI via GitHub Actions on push and PR to main.
+`npm run type-check` checks the OpenCode and Pi adapters against the pinned
+SDK declarations. `npm test` executes their mocked-host lifecycle tests,
+including disabled capture and retry recovery. `bats tests/*.bats` covers the
+shell adapters and core scripts. CI installs Bats and ShellCheck, then runs
+the complete `just check` gate on pushes and pull requests.

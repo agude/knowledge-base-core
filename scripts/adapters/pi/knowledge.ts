@@ -22,17 +22,19 @@ function script(name: string): string {
   return KB + "/scripts/" + name
 }
 
-async function run(name: string, args: string[], timeout = 10000): Promise<string> {
+type CommandResult = { ok: boolean; output: string }
+
+async function run(name: string, args: string[], timeout = 10000): Promise<CommandResult> {
   try {
     const result = await execFile(script(name), args, {
       timeout,
       encoding: "utf-8",
     })
-    return result.stdout.trim()
+    return { ok: true, output: result.stdout.trim() }
   } catch (error) {
     const failure = error as { stderr?: string; message?: string }
     warn(name, name + " failed: " + (failure.stderr || failure.message || "unknown error"))
-    return ""
+    return { ok: false, output: "" }
   }
 }
 
@@ -51,7 +53,7 @@ function text(content: MessageContent): string {
 export default function knowledge(pi: ExtensionAPI): void {
   if (!KB || !existsSync(script("session-init"))) return
 
-  let sessionID = randomUUID()
+  let sessionID: string = randomUUID()
   let file: string | undefined
   const appended = new Set<string>()
   let context: string | undefined
@@ -59,14 +61,15 @@ export default function knowledge(pi: ExtensionAPI): void {
   async function init(id?: string): Promise<void> {
     if (id) sessionID = id
     if (file && existsSync(file)) return
-    file = (await run("session-init", ["--session-id", sessionID])) || undefined
+    const result = await run("session-init", ["--session-id", sessionID])
+    file = result.ok && result.output ? result.output : undefined
   }
 
   async function flush(): Promise<void> {
     if (!OBSERVE || !file || !existsSync(file)) return
     const current = file
-    file = undefined
-    await run("session-flush", [current], 15000)
+    const result = await run("session-flush", [current], 15000)
+    if (result.ok) file = undefined
   }
 
   async function startSession(sessionFile?: string): Promise<void> {
@@ -75,26 +78,16 @@ export default function knowledge(pi: ExtensionAPI): void {
     await init()
   }
 
-  async function append(role: "user" | "assistant", value: string): Promise<void> {
-    if (!OBSERVE || !value) return
+  async function append(role: "user" | "assistant", value: string): Promise<boolean> {
+    if (!OBSERVE || !value) return true
     if (!file || !existsSync(file)) await init()
-    if (file) await run("session-append", ["--file", file, "--role", role, "--message", value])
+    if (!file) return false
+    const result = await run("session-append", ["--file", file, "--role", role, "--message", value])
+    return result.ok
   }
 
   pi.on("session_start", async (_event, ctx) => {
     if (!OBSERVE) return
-    await startSession(ctx.sessionManager.getSessionFile())
-  })
-
-  pi.on("session_switch", async (_event, ctx) => {
-    if (!OBSERVE) return
-    await flush()
-    await startSession(ctx.sessionManager.getSessionFile())
-  })
-
-  pi.on("session_fork", async (_event, ctx) => {
-    if (!OBSERVE) return
-    await flush()
     await startSession(ctx.sessionManager.getSessionFile())
   })
 
@@ -104,10 +97,9 @@ export default function knowledge(pi: ExtensionAPI): void {
       if (role !== "user" && role !== "assistant") return
       const timestamp = event.message.timestamp
       if (timestamp === undefined) return
-      const key = role + ":" + timestamp
+      const key = sessionID + ":" + role + ":" + timestamp
       if (appended.has(key)) return
-      appended.add(key)
-      await append(role, text(event.message.content))
+      if (await append(role, text(event.message.content))) appended.add(key)
     } catch (error) {
       warn("message_end", "message_end handler failed: " + String(error))
     }
@@ -115,7 +107,7 @@ export default function knowledge(pi: ExtensionAPI): void {
 
   pi.on("before_agent_start", async (event) => {
     try {
-      if (context === undefined) context = await run("session-context", [])
+      if (context === undefined) context = (await run("session-context", [])).output
       if (context) return { systemPrompt: event.systemPrompt + "\n\n" + context }
     } catch (error) {
       warn("before_agent_start", "context injection failed: " + String(error))

@@ -3,4 +3,6 @@ content/
 .extract.lock
 .claude/settings.local.json
 
+node_modules/
+
 plan.md

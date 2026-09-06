@@ -255,20 +255,20 @@ not type-check or execute those TypeScript adapters.
 
 **Acceptance criteria**
 
-- [ ] README examples distinguish tooling root from content root and work in a
+- [x] README examples distinguish tooling root from content root and work in a
   temporary installation with content outside the tooling checkout.
-- [ ] Skills, help, and README agree on search corpora, output metadata, sync
+- [x] Skills, help, and README agree on search corpora, output metadata, sync
   failures, batch archiving, and correction handling.
-- [ ] Type-check OpenCode and Pi adapters against documented, reproducibly
+- [x] Type-check OpenCode and Pi adapters against documented, reproducibly
   installed SDK versions. Verify current host contracts against primary sources.
-- [ ] Execute adapter lifecycle tests with mocked host events and temporary
+- [x] Execute adapter lifecycle tests with mocked host events and temporary
   storage: start, capture, duplicate events, switch/fork where supported,
   disabled observation, failed capture, and shutdown/flush recovery.
-- [ ] Tests establish behavior rather than merely checking event names in source.
-- [ ] Preserve existing shell-adapter behavior and core session tests.
-- [ ] CI runs the adapter checks, Bats suite, ShellCheck, and portability lint.
+- [x] Tests establish behavior rather than merely checking event names in source.
+- [x] Preserve existing shell-adapter behavior and core session tests.
+- [x] CI runs the adapter checks, Bats suite, ShellCheck, and portability lint.
   Load project-standards and readable-code skills before tooling/code changes.
-- [ ] Identify stale repo-mechanics claims encountered in sampled KB articles for
+- [x] Identify stale repo-mechanics claims encountered in sampled KB articles for
   later curation; keep the repository as the authority for implementation details.
 
 ## 9. Decide Whether Additional Retrieval Infrastructure Is Needed
@@ -624,4 +624,50 @@ Verification:
 - `bash -n scripts/pending scripts/batch` — passed.
 - `shellcheck -x -P scripts -s bash scripts/pending scripts/batch` — passed.
 - `bash scripts/portability-lint` — passed.
+- `git diff --check` — passed.
+
+### 2026-09-05 — Task 8
+
+Separated the tooling root from the content root throughout the README,
+knowledge-base skill, installer help, and executable examples. The tooling
+checkout is selected by `KNOWLEDGE_BASE`; `KB_CONTENT_DIR` selects content and
+defaults to the checkout's `content/` directory. Documented search corpora,
+retrieval metadata, sync failure semantics, explicit batch archiving, and
+correction handling consistently. Updated `sync` and `archive` help text to
+match the documented command forms.
+
+Added exact SDK pins and a Node/TypeScript check runner. OpenCode is checked
+against `@opencode-ai/plugin` 1.18.29 and Pi against
+`@earendil-works/pi-coding-agent` 0.85.0. The adapters now retain failed
+append/flush work for retry and use the current Pi shutdown/start lifecycle
+for session replacement. The lifecycle tests use mocked host events, a
+temporary content Git repository, temporary session storage, and injected
+core-command failures. They verify capture, duplicate suppression, context
+injection, disabled mode, append retry, flush retry, and Pi new/fork session
+replacement.
+
+Replaced source-string checks for TypeScript host events with executable
+adapter tests. Added the `just check` CI gate for ShellCheck, portability lint,
+TypeScript type-checking, the Bats suite, and adapter tests. Existing shell
+tests remain in the gate.
+
+Sampled repo-mechanics claims for later curation; the repository remains the
+implementation authority. `knowledge/projects/knowledge-base.md` §3 says the
+content repository must be cloned at `~/Knowledge/content`, which conflicts
+with the supported external `KB_CONTENT_DIR` layout. `knowledge/projects/claude-hooks.md`
+§2 says the installer creates lifecycle symlinks when
+`~/Knowledge` exists, but the current installer only migrates legacy links,
+installs shared skills, and installs the content-repo hook. Both claims need a
+future content curation pass; no curated article was edited in this task.
+
+Verification:
+
+- `just check` — ShellCheck and portability lint passed; `npm ci` installed 169
+  packages with 0 vulnerabilities; TypeScript type-check passed; 342 Bats
+  tests passed; 6 adapter lifecycle tests passed.
+- `bash /home/agude/.agents/skills/project-standards/scripts/audit.sh
+  /home/agude/Knowledge` — all required runner, CI, README, license, and
+  canonical AGENTS checks passed; it reports the repository's existing
+  `scripts/hooks/pre-commit` layout as a `hook.script` warning because no
+  `bin/pre-commit.sh` exists.
 - `git diff --check` — passed.

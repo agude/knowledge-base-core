@@ -17,7 +17,7 @@
 # commit an observation in the middle of a rebase.
 #
 # Usage:
-#   sync [--status]
+#   sync [--status] [--no-push]
 #
 # Options:
 #   --status     Report what is ahead or behind; change nothing
@@ -31,6 +31,7 @@
 # Examples:
 #   sync              # pull, then push
 #   sync --status     # what would it do?
+#   sync --no-push    # pull, but leave local commits unpushed
 
 set -euo pipefail
 
