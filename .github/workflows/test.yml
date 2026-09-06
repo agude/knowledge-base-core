@@ -15,11 +15,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
       - uses: extractions/setup-just@v4
 
       - name: Install Bats and ShellCheck

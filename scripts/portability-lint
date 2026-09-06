@@ -48,6 +48,13 @@ error() {
 }
 
 if [[ -n "$CLIENT" ]]; then
+    case "$CLIENT" in
+        claude|codex) ;;
+        *)
+            error "scripts/adapters" 1 "no adapter for unsupported client '$CLIENT'"
+            exit 1
+            ;;
+    esac
     ADAPTER_DIR="$REPO_ROOT/scripts/adapters/$CLIENT"
     if [[ ! -d "$ADAPTER_DIR" ]]; then
         error "scripts/adapters" 1 "no adapter for client '$CLIENT'"

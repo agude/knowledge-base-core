@@ -1,6 +1,6 @@
 # Knowledge Base Reliability and Retrieval Plan
 
-Created: 2026-09-04. Status: tasks 1–8 and 8.5 implemented; task 9 pending.
+Created: 2026-09-04. Status: tasks 1–8, 8.5, and 8.75 implemented; task 9 pending.
 
 ## Objective
 
@@ -50,10 +50,12 @@ limitations in the implementation log at the end.
 | 7. Make the manual curation queue actionable | P2 | 1 |
 | 8. Correct documentation and test adapters | P2 | Align docs throughout; finish after 1–7 |
 | 8.5. Harden path safety, evaluation, and adapter contracts | P1 | 1–8 |
+| 8.75. Remove optional host adapter toolchains | P1 | 8, 8.5 |
 | 9. Evaluate optional retrieval infrastructure | Conditional | 4, 5 |
 
-Implement tasks 1–8 and 8.5. Task 9 requires a documented decision; adopting
-additional infrastructure is conditional on measured failures and improvement.
+Implement tasks 1–8, 8.5, and 8.75. Task 9 requires a documented decision;
+adopting additional infrastructure is conditional on measured failures and
+improvement.
 
 ## 1. Preserve Curation Batch Boundaries
 
@@ -247,8 +249,8 @@ how much transcript review produces durable knowledge.
 
 **Findings:** README setup conflates tooling and content roots. The knowledge-base
 skill says default search covers curated articles only, although code includes
-sources and pending observations. OpenCode/Pi tests check source strings; CI does
-not type-check or execute those TypeScript adapters.
+sources and pending observations. Adapter checks were not aligned with the
+retained shell adapter and neutral-core contract.
 
 **Start with:** `README.md`, both portable skills, `scripts/install`,
 `scripts/adapters/`, `tests/adapters.bats`, `tests/portability.bats`, and
@@ -260,14 +262,15 @@ not type-check or execute those TypeScript adapters.
   temporary installation with content outside the tooling checkout.
 - [x] Skills, help, and README agree on search corpora, output metadata, sync
   failures, batch archiving, and correction handling.
-- [x] Type-check OpenCode and Pi adapters against documented, reproducibly
-  installed SDK versions. Verify current host contracts against primary sources.
-- [x] Execute adapter lifecycle tests with mocked host events and temporary
-  storage: start, capture, duplicate events, switch/fork where supported,
-  disabled observation, failed capture, and shutdown/flush recovery.
-- [x] Tests establish behavior rather than merely checking event names in source.
-- [x] Preserve existing shell-adapter behavior and core session tests.
-- [x] CI runs the adapter checks, Bats suite, ShellCheck, and portability lint.
+- [x] Validate the retained Claude and Codex shell adapters against their
+  documented host payloads and the neutral session API.
+- [x] Execute adapter lifecycle tests with temporary storage: start, capture,
+  duplicate events, disabled observation, failed capture, and shutdown/flush
+  recovery.
+- [x] Tests establish behavior rather than merely checking adapter source text.
+- [x] Preserve shell-adapter behavior and core session tests.
+- [x] CI runs the shell-adapter checks, Bats suite, ShellCheck, and portability
+  lint.
   Load project-standards and readable-code skills before tooling/code changes.
 - [x] Identify stale repo-mechanics claims encountered in sampled KB articles for
   later curation; keep the repository as the authority for implementation details.
@@ -278,13 +281,13 @@ not type-check or execute those TypeScript adapters.
 an existing file outside `KB_CONTENT_DIR` can be read. The real content tree has
 37 pre-existing missing source references across 11 articles and therefore does
 not pass strict lint. Retrieval evaluation records unanswerable cases but does
-not flag false-positive evidence. Adapter tests use hand-written host types,
-append retries can duplicate a post-write failure, and observation-enable
-semantics differ between adapters and documentation.
+not flag false-positive evidence. The retained shell adapters need explicit
+append-retry and observation-enable contracts across adapters and documentation.
 
 **Start with:** `scripts/lint`, `tests/lint.bats`, `scripts/evaluate-retrieval`,
-`tests/adapters.test.ts`, both TypeScript adapters, the observation environment
-documentation, and the curation workflow for stale source references.
+`tests/adapters.bats`, the Claude and Codex adapters, the observation
+environment documentation, and the curation workflow for stale source
+references.
 
 **Acceptance criteria**
 
@@ -298,18 +301,50 @@ documentation, and the curation workflow for stale source references.
 - [x] The retrieval evaluator reports false-positive retrieval for unanswerable
   cases and includes a fixture where related distractor evidence is returned.
   That signal participates in regression checks.
-- [x] Adapter lifecycle tests use the pinned SDK event and context types, or a
-  compile-time contract fixture derived from those declarations, while retaining
-  runtime lifecycle coverage.
+- [x] Adapter lifecycle tests use the documented Claude and Codex payload
+  contracts while retaining runtime lifecycle coverage.
 - [x] Append retry behavior is explicit and tested: either make retries
   idempotent/deduplicated or document and verify at-least-once persistence with
   post-write failure coverage.
-- [x] `KNOWLEDGE_OBSERVE` semantics are consistent across TypeScript adapters,
-  shell adapters, skills, README, and tests, including the unset environment.
+- [x] `KNOWLEDGE_OBSERVE` semantics are consistent across shell adapters, skills,
+  README, and tests, including the unset environment.
 - [x] Update this plan's status, completion checklist, and implementation log to
-  distinguish completed tasks 1–8 and 8.5, pending task 9, and the separate task 9
-  decision. Record current validation commands and any environment-specific
+  distinguish completed tasks 1–8, 8.5, and 8.75, pending task 9, and the separate
+  task 9 decision. Record current validation commands and any environment-specific
   test workaround.
+
+## 8.75. Remove Optional Host Adapter Toolchains
+
+**Decision:** Remove Pi and OpenCode support from this repository. Their
+TypeScript adapters and SDK checks add a Node/npm dependency for hosts that are
+rarely used. The supported adapter surface becomes the Claude and Codex shell
+adapters; the neutral session core remains unchanged.
+
+**Start with:** `scripts/adapters/opencode/`, `scripts/adapters/pi/`,
+`tests/adapters.test.ts`, `package.json`, `package-lock.json`, `tsconfig.json`,
+`justfile`, `.github/workflows/test.yml`, `README.md`, `scripts/install`,
+`scripts/portability-lint`, and adapter-related tests and documentation.
+
+**Acceptance criteria**
+
+- [x] Remove the Pi and OpenCode adapter source, lifecycle tests, pinned SDK
+  dependencies, TypeScript configuration, npm scripts, and Node engine floor.
+- [x] Remove Pi/OpenCode discovery and installation paths from `scripts/install`
+  and portability checks. No operational documentation claims those hosts are
+  supported; historical implementation-log entries may remain as history.
+- [x] Rewrite Task 8's acceptance criteria and implementation summary so they
+  describe the retained Claude/Codex shell adapters and no longer require
+  TypeScript checks or host SDK validation.
+- [x] The default check gate and CI run without Node, npm, TypeScript, or
+  host-specific SDK installation. ShellCheck, portability lint, and the Bats
+  suite remain required.
+- [x] Claude and Codex adapter behavior, session lifecycle handling, observation
+  opt-out semantics, path confinement, and core session commands remain covered
+  by tests with no functional regressions.
+- [x] Repository-wide searches find no live Pi/OpenCode/TypeScript integration
+  references outside the removal plan and historical implementation log.
+- [x] Record the removal, validation commands, and any migration note for users
+  who previously installed the Pi or OpenCode adapters.
 
 ## 9. Decide Whether Additional Retrieval Infrastructure Is Needed
 
@@ -349,8 +384,8 @@ improvement on this knowledge base.
 
 ## Completion and Handoff
 
-- [x] Tasks 1–8 and 8.5 meet their acceptance criteria; task 9 remains pending
-  its separate infrastructure decision.
+- [x] Tasks 1–8, 8.5, and 8.75 meet their acceptance criteria; task 9 remains
+  pending its separate infrastructure decision.
 - [x] Run targeted checks as changes land, then the complete required suite.
   Record actual commands and results; do not reuse historical test counts.
 - [x] Review the final diff for unrelated changes and private content leakage.
@@ -834,4 +869,30 @@ Verification:
 - Targeted ShellCheck and `scripts/portability-lint` — passed.
 - `just check` — ShellCheck and portability lint passed; TypeScript type-check
   passed; 352 Bats tests and 9 adapter lifecycle tests passed.
+- `git diff --check` — passed.
+
+### 2026-09-06 — Task 8.75
+
+Removed the optional TypeScript host toolchain. Deleted the Pi and OpenCode
+adapters, lifecycle tests, SDK package metadata, lockfile, and TypeScript
+configuration. The supported adapter surface is now the Claude and Codex shell
+adapters plus the neutral session core.
+
+Restricted portability checks to the retained Claude and Codex clients. The
+installer has no optional host installation path; its documented scope remains
+shared skills and the content-repository hook. Updated the README, Task 8
+acceptance criteria, check runner, CI workflow, and portability tests so the
+repository no longer requires a JavaScript runtime or host SDK installation.
+
+Migration note: users with prior optional-host plugin or extension files must
+remove those host-managed files themselves. This repository no longer installs,
+tests, or documents those integrations.
+
+Verification:
+
+- `just check` — ShellCheck and portability lint passed; 353 Bats tests passed.
+- `bash -n scripts/portability-lint scripts/install` — passed.
+- `rg -n -i -g '!content/**' -g '!plan.md' '\b(opencode|pi|typescript|npm|node|tsx|package-lock|tsconfig|pi-coding-agent|opencode-ai)\b' .`
+  — no live optional-host or JavaScript toolchain references outside this
+  removal plan and historical implementation log.
 - `git diff --check` — passed.

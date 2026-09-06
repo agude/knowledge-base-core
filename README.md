@@ -422,30 +422,21 @@ host adapter.
 The neutral core exposes `session-context`, `session-init`, `session-file`,
 `session-append`, and `session-flush`. Adapters translate each host's event
 payload and output protocol into those commands. This repository includes
-Claude and Codex shell adapters under `scripts/adapters/`, plus TypeScript
-plugins for OpenCode and Pi. The TypeScript adapters use the exact SDK
-versions in `package.json` and `package-lock.json`; run `npm ci` before
-type-checking or testing them.
-The pinned Pi SDK requires Node 22.19.0 or newer.
-
-OpenCode loads a plugin placed in `.opencode/plugins/` or its global plugin
-directory. Pi loads an extension placed in `.pi/extensions/` or its global
-extension directory. `scripts/install` installs shared skills and the content
-repo hook; host plugin discovery remains host-specific.
+Claude and Codex shell adapters under `scripts/adapters/`. Host-specific hook
+registration remains outside `scripts/install`, which installs shared skills
+and the content-repository hook.
 
 Run `scripts/portability-lint` to reject host-specific lifecycle, environment,
-and skill metadata from the shared surface. Run it with `--client NAME` to
-verify a host adapter exists.
+and skill metadata from the shared surface. Run it with `--client claude` or
+`--client codex` to verify a retained host adapter exists.
 
 Automatic observation capture is enabled when `KNOWLEDGE_OBSERVE` is unset or
 set to `1`, after the host's session-start lifecycle has initialized a buffer.
 Set `KNOWLEDGE_OBSERVE=0` to disable capture. The Claude and Codex shell
-adapters remain no-ops when their session-start hook was skipped; the
-OpenCode and Pi TypeScript adapters initialize their buffers from their own
-session-start events. Codex persists a private per-session initialization
-marker so a swept buffer can be recreated in later hook processes; normal
-flush clears that marker. An unset value is tested as the default-enabled case
-after initialization.
+adapters remain no-ops when their session-start hook was skipped. Codex
+persists a private per-session initialization marker so a swept buffer can be
+recreated in later hook processes; normal flush clears that marker. An unset
+value is tested as the default-enabled case after initialization.
 The explicit `scripts/observe` command remains available when automatic
 capture is disabled.
 
@@ -458,15 +449,11 @@ post-write failure case.
 ## Testing
 
 ```bash
-npm ci
-npm run type-check
-npm test
-bats tests/*.bats
-scripts/portability-lint
+just check
 ```
 
-`npm run type-check` checks the OpenCode and Pi adapters against the pinned
-SDK declarations. `npm test` executes their mocked-host lifecycle tests,
-including disabled capture and retry recovery. `bats tests/*.bats` covers the
-shell adapters and core scripts. CI installs Bats and ShellCheck, then runs
-the complete `just check` gate on pushes and pull requests.
+The check gate runs ShellCheck, portability lint, and the Bats suite. The Bats
+suite covers the shell adapters and core scripts, including disabled capture,
+retry recovery, path confinement, and session lifecycle handling. CI installs
+Bats and ShellCheck, then runs the same `just check` gate on pushes and pull
+requests.
