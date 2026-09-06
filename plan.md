@@ -175,24 +175,24 @@ at file level and displayed excerpts are the first matching lines.
 
 **Acceptance criteria**
 
-- [ ] Rank retrievable sections, retaining file/title context. An exact-title
+- [x] Rank retrievable sections, retaining file/title context. An exact-title
   match beats an unrelated section containing repeated body mentions in the
   regression fixture.
-- [ ] Repeated identical lines cannot increase relevance without bound.
-- [ ] A section containing all query terms ranks above unrelated sections whose
+- [x] Repeated identical lines cannot increase relevance without bound.
+- [x] A section containing all query terms ranks above unrelated sections whose
   parent file happens to contain the terms elsewhere. Document any file-level
   fallback used to preserve discovery.
-- [ ] Excerpts select useful query evidence rather than always taking the first
+- [x] Excerpts select useful query evidence rather than always taking the first
   matching lines; results give an unambiguous locator for `section`.
-- [ ] Add documented path/topic and corpus filters. Preserve default coverage of
+- [x] Add documented path/topic and corpus filters. Preserve default coverage of
   knowledge, sources, and pending observations; archive access remains explicit.
-- [ ] Preserve literal command/identifier searches, fence handling, deterministic
+- [x] Preserve literal command/identifier searches, fence handling, deterministic
   ties, bounded results, and path confinement.
-- [ ] Distinguish search execution failures from successful zero-result queries.
-- [ ] Compare against the frozen baseline: fix the demonstrated repetition and
+- [x] Distinguish search execution failures from successful zero-result queries.
+- [x] Compare against the frozen baseline: fix the demonstrated repetition and
   excerpt failures, introduce no exact-command regressions, and record any other
   per-case regressions with their resolution or explicit tradeoff.
-- [ ] Record latency and output-size changes under the same evaluation conditions.
+- [x] Record latency and output-size changes under the same evaluation conditions.
 
 ## 6. Handle Corrections and Validate References
 
@@ -452,3 +452,34 @@ second-resolution fallback for platforms without that format.
 Remaining limitation: the evaluator measures retrieval coverage only. The
 manual protocol is documented but has no automatic answer-quality scorer or
 private answer set, by design.
+
+### 2026-09-05 — Task 5
+
+Reworked `scripts/search` to rank Markdown sections instead of individual
+matching lines. Section scores retain title and file context, reward complete
+term coverage, penalize file-level fallback sections, cap repeated evidence,
+and use up to two highest-value distinct lines as excerpts. Results retain
+content-relative paths, titles, section locators, metadata, and bounded output.
+Search execution failures now return nonzero instead of being masked by the
+pipeline.
+
+Added `--path`, `--topic`, and repeatable `--corpus` filters. Default coverage
+remains knowledge articles, source documents, and pending observations;
+`--archive` remains the explicit addition of archived observations and
+questions. Updated the README and portable knowledge-base skill with the
+section ranking, fallback, excerpt, limit, and filter contracts.
+
+Added regression tests for exact-title ranking over repeated body mentions,
+duplicate-line saturation, complete-section ranking over file-level fallback,
+useful excerpts, path/topic filters, and corpus filters. Updated evaluator
+tests for section-level raw result counts and the frozen-baseline comparison.
+
+Verification:
+
+- `bats tests` — 319 tests passed.
+- `scripts/evaluate-retrieval --fixture tests/fixtures/retrieval-v1/retrieval-v1.json --content-dir tests/fixtures/retrieval-v1/content --baseline tests/fixtures/retrieval-v1/retrieval-v1.baseline.json --fail-on-regression --json` — 36 cases, zero regressions, zero exact-command failures.
+- Frozen baseline comparison: 18 cases changed because section-level output consolidates repeated line results; no ranking, evidence, or status regressions.
+- Evaluation response bytes under the same corpus and commands: frozen baseline full/top totals 19,046/18,575; current section retrieval 16,056/16,056. Current measured full/top search latency was 2,315/2,281 ms.
+- `shellcheck -x -P scripts -s bash scripts/search` — passed.
+- `bash scripts/portability-lint` — passed.
+- `git diff --check` — passed.

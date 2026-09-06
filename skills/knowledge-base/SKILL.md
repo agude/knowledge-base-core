@@ -38,18 +38,26 @@ Start by searching, not browsing.
    returns matches across knowledge articles, source documents, and pending
    observations. Output format: `<file> | <section> | <matched line>` followed
    by freshness and provenance metadata.
-   - Several terms are ANDed: the file must contain all of them.
-   - Results are ranked; a term in the title outranks one in a heading,
-     which outranks one in the body.
-   - Output is capped at 20 lines. Use `--limit N`, or `--files` to see
-     just which articles matched.
+   - Several terms are ANDed at file level. A section containing all terms
+     outranks sections that only provide file-level fallback evidence.
+   - Results are ranked sections; title and heading evidence outrank body
+     evidence. Repeated identical lines count once, and excerpts select up to
+     two useful matching lines.
+   - Output is capped at 20 sections. Use `--limit N`, `--per-file N`, or
+     `--files` to see just which files matched.
    - `--archive` widens the search to archived observations and open
      questions. The default corpora are knowledge articles, source documents,
      and pending observations.
      Open and resolved questions are returned as the `question` corpus with
      their state; they are knowledge gaps or question records, not evidence.
-   - Use `--text-only` for the historical output or `--json` for structured
-     output. The two modes cannot be combined.
+   - Use `--path PATH` for a content-relative file or directory,
+     `--topic NAME` for a knowledge topic directory, and
+     `--corpus TYPE` for one or more of `knowledge`, `sources`,
+     `pending`, `archive`, or `questions`. The default
+     corpora are `knowledge`, `sources`, and `pending`;
+     `--archive` adds the archive and question corpora.
+   - Use `--text-only` for metadata-free section text or `--json` for
+     structured output. The two modes cannot be combined.
 
 2. **Narrow with toc.** If search gives too many results or you need to
    explore a topic area, use `$KNOWLEDGE_BASE/scripts/toc` to scan section names.
@@ -152,7 +160,7 @@ All scripts are at `$KNOWLEDGE_BASE/scripts/<name>`.
 
 | Script | Purpose |
 |---|---|
-| `search <term> [term ...] [--json\|--text-only]` | Search content, ranked, with metadata |
+| `search <term> [term ...] [--json\|--text-only] [--path PATH] [--topic NAME] [--corpus TYPE]` | Search ranked sections with metadata |
 | `evaluate-retrieval --fixture FILE [--baseline FILE]` | Measure retrieval against a versioned question fixture |
 | `toc [--depth N] [--path DIR] [--flat] [--dirs]` | List topics and sections |
 | `section --file FILE (--number N \| --heading TEXT) [--json\|--text-only]` | Extract a section with metadata |

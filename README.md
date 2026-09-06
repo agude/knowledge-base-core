@@ -149,7 +149,7 @@ Standard markdown content. Links use [normal syntax](other-page.md).
 | `pending [--full] [--count]` | List uncurated observations |
 | `archive FILENAME [--all]` | Move observations to observations/archived/ |
 | `batch start|status|defer` | Persist and resume a curation batch |
-| `search <term> [term ...] [--json\|--text-only]` | Search content, ranked, with freshness and provenance |
+| `search <term> [term ...] [--json\|--text-only] [--path PATH] [--topic NAME] [--corpus TYPE]` | Search ranked sections with freshness and provenance |
 | `toc [--depth N] [--path DIR] [--flat] [--dirs]` | List topics and sections |
 | `section --file FILE (--number N \| --heading TEXT) [--json\|--text-only]` | Extract a section with freshness and provenance |
 | `section --file FILE --references [--json]` | Return the complete provenance reference list |
@@ -174,9 +174,9 @@ All scripts support `--help`.
 ### Retrieval output
 
 `search` and `section` include retrieval metadata by default. `--text-only`
-preserves the historical body/line output for callers that cannot consume
-metadata. `--json` returns structured output and keeps diagnostics on stderr.
-The two modes cannot be combined.
+returns metadata-free text output for callers that cannot consume metadata;
+search results remain one line per ranked section. `--json` returns structured
+output and keeps diagnostics on stderr. The two modes cannot be combined.
 
 Metadata classifies each result as a curated article, source document, pending
 observation, question, or archive. Open and resolved questions use the
@@ -196,9 +196,26 @@ are labeled uncurated or archived evidence. Source documents expose their
 `canonical` reference when present.
 
 `search --json` returns an object with a bounded `results` array plus
-`total_files`, `total_lines`, `returned`, and `truncated`. Each line result
-contains `path`, `corpus`, `locator`, `freshness`, `provenance`, and `text`;
-`--files` returns one file result with `match_count` and a null locator.
+`total_files`, `total_lines`, `returned`, and `truncated`. Each result is one
+ranked Markdown section and contains `path`, `corpus`, `locator`, `freshness`,
+`provenance`, `match_count`, and a query-focused `text` excerpt. `match_count`
+is the number of distinct evidence lines retained for that section; identical
+lines count once. `--files` returns one file result with the number of matching
+sections in `match_count` and a null locator. `--limit` bounds result sections,
+and `--per-file` bounds sections from each file.
+
+Search terms must occur somewhere in the same file. A section containing all
+terms ranks above sections that provide only file-level fallback evidence when
+terms are split across sections. Title and heading evidence receives more
+weight than body evidence. Repeated evidence is capped, and excerpts contain
+up to two highest-value matching lines.
+
+The default search corpora are `knowledge`, `sources`, and `pending`.
+`--archive` adds `archive` and `questions`. `--corpus TYPE` selects one or more
+of `knowledge`, `sources`, `pending`, `archive`, or `questions`; repeat the
+flag to combine them. `--path PATH` accepts a content-relative file or
+directory. `--topic NAME` is a directory under `knowledge/`, such as
+`--topic projects`; both filters can be combined and are intersected.
 `section --json` returns one object with `path`, `corpus`, `locator`,
 `freshness`, `provenance`, and the multiline `content`.
 
@@ -233,15 +250,15 @@ Before retrieval starts, every answerable expected path and section is checked
 against the selected corpus. A missing file or renamed heading is an invalid
 fixture, not a retrieval failure.
 
-The evaluator runs two searches per case. The full-ranking search uses
+The evaluator runs two section searches per case. The full-ranking search uses
 `--limit 0 --per-file 0` to establish the distinct-section ranking and first
 relevant rank. The bounded search uses `--limit 5 --per-file 0` to measure the
-response an agent would consume. Full-ranking result count, response bytes,
+response an agent would consume. Full-ranking section count, response bytes,
 latency, and first relevant rank describe the first search. Bounded response
-bytes, latency, and raw result count describe the second. `top_five` and
+bytes, latency, and raw section result count describe the second. `top_five` and
 `top_five_section_count` are distinct `{path, section}` locators derived from
 the full ranking, while `bounded_raw_results` preserves the bounded search's
-raw snippets.
+raw section excerpts.
 
 The committed baseline contains ranked locators and outcome metrics from the
 pre-ranking-change implementation, including deterministic response-size

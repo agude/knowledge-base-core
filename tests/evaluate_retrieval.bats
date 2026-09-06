@@ -81,20 +81,23 @@ teardown() { teardown_content_dir; }
             .all_required_evidence == null
         )) and
         (.failures | length) == .summary.failed_cases and
-        (any(.cases[]; .full_ranking_response_bytes > .top_five_response_bytes)) and
+        (all(.cases[]; .full_ranking_response_bytes >= .top_five_response_bytes)) and
+        (any(.cases[]; .full_ranking_response_bytes == .top_five_response_bytes)) and
         ([(.cases[] | select(
             .id == "cross-article-03" or
             .id == "cross-article-04" or
             .id == "conflict-01" or
             .id == "conflict-02"
         ))] | length == 4 and
-            all(.[]; .top_five_raw_result_count > .top_five_section_count))
+            all(.[]; .top_five_raw_result_count == .top_five_section_count))
     ' <<< "$report"
     [[ "$status" -eq 0 ]]
     run jq -e '
         .baseline_comparison.fixture_match and
         .baseline_comparison.corpus_match and
-        (.baseline_comparison.changed_cases | length == 0)
+        (.baseline_comparison.changed_cases | length > 0) and
+        (.baseline_comparison.regressions | length == 0) and
+        (all(.cases[] | select(.id | startswith("exact-command-")); .status == "pass" and .first_relevant_rank == 1))
     ' <<< "$report"
     [[ "$status" -eq 0 ]]
 }

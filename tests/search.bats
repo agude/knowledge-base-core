@@ -50,6 +50,19 @@ Some content."
     [[ -z "$output" ]]
 }
 
+@test "search reports a parser failure instead of a false zero result" {
+    create_test_article "topic.md" "# Topic
+
+needle"
+    fake_bin="$TEST_CONTENT_DIR/fake-bin"
+    mkdir -p "$fake_bin"
+    printf '#!/bin/sh\nprintf "forced parser failure\\n" >&2\nexit 42\n' > "$fake_bin/awk"
+    chmod +x "$fake_bin/awk"
+    run env PATH="$fake_bin:$PATH" "$SCRIPTS/search" needle
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Search failed while reading"* ]]
+}
+
 @test "search handles empty content directories" {
     run "$SCRIPTS/search" "anything"
     [[ "$status" -eq 0 ]]
@@ -185,6 +198,79 @@ One line mentions bind mounts in passing.'
     [[ "${lines[1]}" == *"passing.md"* ]]
 }
 
+@test "search ranks an exact title above repeated body mentions" {
+    create_test_article "exact.md" '---
+title: "Bind Mounts"
+---
+
+# Notes
+
+Documentation.'
+    create_test_article "repeated.md" '# Repeated
+
+## Notes
+
+bind mounts
+bind mounts
+bind mounts
+bind mounts
+bind mounts'
+    run "$SCRIPTS/search" --json --limit 2 --per-file 0 "bind mounts"
+    [[ "$status" -eq 0 ]]
+    run jq -e '.results[0].path == "knowledge/exact.md" and .results[0].locator.section == "title"' <<<"$output"
+    [[ "$status" -eq 0 ]]
+}
+
+@test "search counts repeated identical evidence once" {
+    create_test_article "repeated.md" '# Repeated
+
+## Notes
+
+same evidence
+same evidence
+same evidence'
+    run "$SCRIPTS/search" --json --per-file 0 "same evidence"
+    [[ "$status" -eq 0 ]]
+    run jq -e '(.results[0].match_count == 1) and (.results | length == 1)' <<<"$output"
+    [[ "$status" -eq 0 ]]
+}
+
+@test "search ranks a section containing all terms above file-level fallback" {
+    create_test_article "split.md" '# Split
+
+## First
+
+alpha
+
+## Second
+
+beta'
+    create_test_article "complete.md" '# Complete
+
+## All terms
+
+alpha beta'
+    run "$SCRIPTS/search" --json --limit 0 --per-file 0 alpha beta
+    [[ "$status" -eq 0 ]]
+    run jq -e '.results[0].path == "knowledge/complete.md" and .results[0].locator.section == "All terms"' <<<"$output"
+    [[ "$status" -eq 0 ]]
+}
+
+@test "search excerpt selects the strongest evidence line" {
+    create_test_article "excerpt.md" '# Excerpt
+
+## Notes
+
+relevant
+context
+relevant context is the useful evidence
+other relevant line'
+    run "$SCRIPTS/search" --json --per-file 0 relevant context
+    [[ "$status" -eq 0 ]]
+    run jq -e '.results[0].text | contains("relevant context is the useful evidence")' <<<"$output"
+    [[ "$status" -eq 0 ]]
+}
+
 @test "search ranks a heading match above a body match" {
     create_test_article "heading.md" "# A
 
@@ -234,9 +320,8 @@ A fourth widgets line."
         [[ "$l" == *" | "* ]] && matches=$((matches + 1))
     done
     [[ "$matches" -eq 5 ]]
-    # 8 files x 4 matching lines = 32; 5 shown, so 27 hidden. The count
-    # has to be right, not merely present.
-    [[ "$output" == *"27 more line(s)"* ]]
+    # Each file now contributes one ranked section result.
+    [[ "$output" == *"3 more result section(s)"* ]]
 }
 
 @test "search --limit 0 prints everything" {
@@ -255,17 +340,21 @@ A line about widgets here."
     [[ "$matches" -eq 8 ]]
 }
 
-@test "search caps lines from a single file with --per-file" {
+@test "search caps sections from a single file with --per-file" {
     create_test_article "many.md" "# Many
 
-## Section
+## First
 
 widgets one
+
+## Second
+
 widgets two
-widgets three
-widgets four
-widgets five"
-    run "$SCRIPTS/search" --per-file 2 widgets
+
+## Third
+
+widgets three"
+    run "$SCRIPTS/search" --per-file 2 --limit 0 widgets
     matches=0
     for l in "${lines[@]}"; do
         [[ "$l" == *" | "* ]] && matches=$((matches + 1))
@@ -378,7 +467,7 @@ zebra here"
 needle here"
     done
     run "$SCRIPTS/search" --limit 4 needle
-    [[ "$output" == *"6 more line(s)"* ]]
+    [[ "$output" == *"6 more result section(s)"* ]]
     [[ "$output" == *"6 unshown file(s)"* ]]
 }
 
@@ -504,4 +593,56 @@ EOF
     [[ "$status" -eq 0 ]]
     run jq -e '.results[0].corpus == "question" and .results[0].provenance.state == "open" and .results[0].provenance.label == "unresolved knowledge gap"' <<<"$output"
     [[ "$status" -eq 0 ]]
+}
+
+@test "search path and topic filters scope knowledge results" {
+    create_test_article "projects/tool.md" '# Tool
+
+## Build
+
+project-only needle'
+    create_test_article "home.md" '# Home
+
+## Notes
+
+other needle'
+
+    run "$SCRIPTS/search" --path knowledge/projects needle
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"knowledge/projects/tool.md"* ]]
+    [[ "$output" != *"knowledge/home.md"* ]]
+
+    run "$SCRIPTS/search" --topic projects needle
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"knowledge/projects/tool.md"* ]]
+    [[ "$output" != *"knowledge/home.md"* ]]
+}
+
+@test "search corpus filter selects only the requested corpus" {
+    create_test_article "article.md" '# Article
+
+needle'
+    cat > "$TEST_CONTENT_DIR/sources/manual.md" <<'EOF'
+---
+title: "Manual"
+synced: 2026-09-05
+---
+
+# Manual
+
+needle
+EOF
+    run "$SCRIPTS/search" --corpus sources needle
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"sources/manual.md"* ]]
+    [[ "$output" != *"knowledge/article.md"* ]]
+}
+
+@test "search normalizes a relative content root" {
+    create_test_article "relative.md" '# Relative
+
+needle'
+    run sh -c 'cd "$1" && KB_CONTENT_DIR="$2" "$3" needle' sh "$(dirname "$TEST_CONTENT_DIR")" "$(basename "$TEST_CONTENT_DIR")" "$SCRIPTS/search"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"knowledge/relative.md"* ]]
 }
