@@ -89,14 +89,29 @@ example.
    `$KNOWLEDGE_BASE/scripts/pending --full` to read them all. Otherwise
    use your READ tool to go through them one by one.
 4. Run `$KNOWLEDGE_BASE/scripts/toc --depth 2` to see the current knowledge structure.
-5. For each observation, decide what to do (see Decision Framework below).
-6. Execute your decisions --- edit knowledge articles directly. Find the
+5. Create a batch before processing with
+   `$KNOWLEDGE_BASE/scripts/batch start`. The command records the exact
+   filenames and content hashes.
+6. For each observation, decide what to do (see Decision Framework below).
+7. Execute your decisions --- edit knowledge articles directly. Find the
    content root with `$KNOWLEDGE_BASE/scripts/status`; do not assume
    it is `./content`.
-7. **Check what you wrote.** Run the linter over everything you touched.
+8. **Check what you wrote.** Run the linter over everything you touched.
    It reports oversized H2s, second H1s, missing or malformed `verified`
-   dates, unclosed code fences, and duplicate H2 names. You will not
-   notice any of these by eye; measure them.
+   dates, unclosed code fences, duplicate H2 names, and broken local
+   references. You will not notice all of these by eye; measure them.
+
+   Before an observation is archived, a source reference to its future
+   archive path can be checked with the batch manifest:
+
+   ```bash
+   $KNOWLEDGE_BASE/scripts/lint --batch BATCH_ID --path knowledge/<dir>
+   ```
+
+   This temporary allowance applies only to an unchanged observation selected
+   by that batch. It does not apply to deferred or unselected observations.
+
+   After the archive moves, use the no-option command for the final check:
 
    ```bash
    $KNOWLEDGE_BASE/scripts/lint --path knowledge/<dir>
@@ -104,10 +119,8 @@ example.
 
    Fix every error before committing. Fix oversized-H2 warnings by
    cutting first, splitting second (see "Cut before you split").
-8. Create a batch before processing with
-   `$KNOWLEDGE_BASE/scripts/batch start`. The command records the exact
-   filenames and content hashes. Complete each incorporated, duplicate, or
-   ephemeral item with an explicit command such as:
+9. Complete each incorporated, duplicate, or ephemeral item with an explicit
+   command such as:
    `$KNOWLEDGE_BASE/scripts/archive --batch BATCH_ID --disposition incorporated
    --destination knowledge/topic.md#Heading FILENAME --no-commit`.
    Batch dispositions are limited to `incorporated`, `duplicate`, and
@@ -116,11 +129,14 @@ example.
    Use `batch status BATCH_ID` to resume after interruption. Never use
    `archive --all` during curation: observations arriving after batch
    selection are not part of the batch.
-9. Review open questions (see Open Questions below).
-10. Commit everything as one batch with
+10. Run the linter again without `--batch` after all archive moves. This is
+    the final-reference check; it rejects a source path that will not exist
+    in the committed content repository.
+11. Review open questions (see Open Questions below).
+12. Commit everything as one batch with
    `$KNOWLEDGE_BASE/scripts/commit -m "Curate: <summary>"`.
 
-If there are no pending observations, check open questions anyway (step 9),
+If there are no pending observations, check open questions anyway (step 11),
 then stop if there's nothing to do.
 
 ## Decision Framework
@@ -151,6 +167,45 @@ single coherent addition rather than adding each verbatim.
 
 The observation is purely ephemeral or an exact duplicate. Still archive it
 --- never delete observations.
+
+### Corrections and conflicts
+
+When new evidence contradicts an existing claim, identify the old claim and
+compare three separate properties before editing the article:
+
+- **Source authority:** how authoritative is each source for this particular
+  claim? A newer capture is not automatically a more authoritative source.
+- **Observation date:** when was the evidence captured? For observations, use
+  the `created` date or the date stated in the observation.
+- **Effective date:** when did the claim or underlying event apply? Preserve an
+  explicit `effective` or `as of` date when the evidence provides one.
+
+Choose a canonical claim only when the authority, observation date, and
+effective date support that choice. State the reason and effective date next
+to the replacement, for example:
+
+```markdown
+## Canonical claim
+
+**Effective 2026-09-01:** Platform Operations owns the service. This
+supersedes the 2026-08-01 claim. Reason: the authoritative ownership roster
+lists Platform Operations as the owner.
+
+## Retained old evidence
+
+The 2026-08-01 observation said Infrastructure owned the service. It remains
+in the archive as historical evidence.
+```
+
+If authority or effective date is unresolved, retain both claims under an
+explicit `Unresolved conflict` heading. Describe the disagreement and what
+would resolve it. Do not manufacture agreement, select a canonical claim by
+capture recency alone, or mark conflicting claims verified.
+
+An article's `verified` date describes the claims that were actually checked.
+Editing one section does not reverify unrelated sections. Leave `verified`
+unchanged unless the whole article was reviewed, and use claim-level effective
+dates and source references when the history of a partial correction matters.
 
 ## Knowledge Domains
 
@@ -395,6 +450,24 @@ to fetch the current version.
 
 Knowledge articles that reference source documents should list the local
 path in their `sources:` frontmatter (e.g., `sources/incident-response-runbook.md`).
+
+## Reference validation
+
+The linter validates these local Markdown references:
+
+- Inline links in the form `[label](relative/path.md)` or
+  `[label](<relative/path.md>)`, with an optional `#heading-slug` fragment.
+  A fragment-only link checks a heading in the current article. Heading
+  anchors use lowercase ASCII punctuation-stripped slugs, with whitespace
+  converted to hyphens.
+- `sources:` frontmatter list items that are relative to the content root and
+  end in `.md`, with an optional heading fragment.
+
+Absolute local paths and paths outside the content root fail. External URLs
+with a URI scheme, protocol-relative URLs, and prose source descriptions are
+not fetched or treated as local files. Links inside fenced or inline code are
+examples, not references, and are ignored. A moved or deleted local article
+or source observation therefore fails lint until its reference is corrected.
 
 ## Archiving Observations
 

@@ -11,12 +11,14 @@
 # Run during curation and after bulk edits.
 #
 # Usage:
-#   lint [PATH ...] [--max-lines N] [--strict]
+#   lint [PATH ...] [--max-lines N] [--strict] [--batch BATCH_ID]
 #
 # Options:
 #   --path PATH     Directory or file to check (repeatable; also positional)
 #   --max-lines N   Warn when an H2 exceeds N lines (default: 50)
 #   --strict        Treat warnings as errors
+#   --batch ID      During curation, allow a source reference to an archived
+#                   observation selected by this batch while it is pending
 #
 # With no path, checks knowledge/.
 #
@@ -25,6 +27,8 @@
 #   error    frontmatter missing title, updated, or verified
 #   error    verified is not a YYYY-MM-DD date
 #   error    a code fence is left open at end of file
+#   error    a local Markdown link or source reference is missing
+#   error    a local Markdown link's heading anchor is missing
 #   warning  an H2 exceeds --max-lines
 #   warning  two H2s in one file share the same text (--heading picks the
 #            first silently)
@@ -48,12 +52,14 @@ source "$SCRIPT_DIR/_lib.sh"
 TARGETS=()
 MAX_LINES=50
 STRICT=false
+BATCH=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --path|--file) need_arg "$1" $#; TARGETS+=("$2"); shift 2 ;;
         --max-lines)   need_arg "$1" $#; MAX_LINES="$2"; shift 2 ;;
         --strict)      STRICT=true; shift ;;
+        --batch)       need_arg "$1" $#; BATCH="$2"; shift 2 ;;
         -h|--help)
             show_help "$0"
             exit 0
@@ -66,6 +72,19 @@ done
 if [[ ! "$MAX_LINES" =~ ^[0-9]+$ ]]; then
     echo "Error: --max-lines takes a number" >&2
     exit 1
+fi
+
+BATCH_FILE=""
+if [[ -n "$BATCH" ]]; then
+    if [[ "$BATCH" == */* || "$BATCH" != *.tsv ]]; then
+        echo "Invalid batch id: $BATCH" >&2
+        exit 1
+    fi
+    BATCH_FILE="$CONTENT_DIR/observations/batches/$BATCH"
+    if [[ ! -f "$BATCH_FILE" ]]; then
+        echo "Batch not found: $BATCH" >&2
+        exit 1
+    fi
 fi
 
 if [[ ${#TARGETS[@]} -eq 0 ]]; then
@@ -105,6 +124,241 @@ err() {
 warn() {
     warnings=$((warnings + 1))
     printf "  warning  %s:%s  %s\n" "$1" "$2" "$3"
+}
+
+is_external_url() {
+    local target="$1"
+
+    [[ "$target" == //* ]] \
+        || [[ "$target" =~ ^[A-Za-z][A-Za-z0-9+.-]*: ]]
+}
+
+trim_whitespace() {
+    local value="$1"
+
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    printf '%s' "$value"
+}
+
+link_destination() {
+    local value
+
+    value="$(trim_whitespace "$1")"
+    if [[ "$value" == \<* ]]; then
+        value="${value#<}"
+        value="${value%%>*}"
+    else
+        value="${value%%[[:space:]]*}"
+    fi
+    printf '%s' "$value"
+}
+
+heading_slug() {
+    # Anchors use the supported ASCII GitHub-style heading slug: lowercase,
+    # punctuation removed, whitespace converted to hyphens.
+    printf '%s' "$1" \
+        | LC_ALL=C tr '[:upper:]' '[:lower:]' \
+        | LC_ALL=C sed -E \
+            's/[^a-z0-9 _-]//g; s/[[:space:]]+/-/g; s/-+/-/g; s/^-+//; s/-+$//'
+}
+
+heading_has_anchor() {
+    local file="$1" expected="$2" line
+
+    md_heading_reset
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        md_heading "$line" || continue
+        [[ "$(heading_slug "$MD_HEADING_TEXT")" == "$expected" ]] \
+            && return 0
+    done < "$file"
+    return 1
+}
+
+batch_has_pending_observation() {
+    local name="$1" row original_sha status pending_file actual_sha
+
+    [[ -n "$BATCH_FILE" && "$name" != */* ]] || return 1
+    row="$(awk -F '\t' -v n="$name" \
+        '$1 == n { print; found=1 } END { if (!found) exit 1 }' \
+        "$BATCH_FILE")" || return 1
+    IFS=$'\t' read -r _ original_sha status _ _ <<< "$row"
+    [[ "$status" == pending ]] || return 1
+
+    pending_file="$CONTENT_DIR/observations/pending/$name"
+    [[ -f "$pending_file" ]] || return 1
+    actual_sha="$(sha256sum "$pending_file" | awk '{print $1}')"
+    [[ "$actual_sha" == "$original_sha" ]]
+}
+
+source_reference_can_be_pending() {
+    local source_path="$1" name
+
+    [[ "$source_path" == observations/archived/*.md ]] || return 1
+    name="${source_path#observations/archived/}"
+    batch_has_pending_observation "$name"
+}
+
+check_source_reference() {
+    local file="$1" rel="$2" line_number="$3" reference="$4"
+    local source_path fragment target
+
+    is_external_url "$reference" && return 0
+    [[ "$reference" == *.md || "$reference" == *.md#* ]] || return 0
+
+    source_path="${reference%%#*}"
+    fragment=""
+    [[ "$reference" == *#* ]] && fragment="${reference#*#}"
+
+    if [[ "$source_path" == /* ]]; then
+        err "$rel" "$line_number" \
+            "absolute local source reference is unsupported: $reference"
+        return 0
+    fi
+
+    target="$CONTENT_DIR/$source_path"
+    if ! path_is_contained "$target"; then
+        err "$rel" "$line_number" \
+            "local source reference escapes content root: $reference"
+        return 0
+    fi
+
+    if [[ ! -f "$target" ]]; then
+        if source_reference_can_be_pending "$source_path"; then
+            return 0
+        fi
+        err "$rel" "$line_number" "missing local source reference: $reference"
+        return 0
+    fi
+
+    if [[ -n "$fragment" && "$target" == *.md ]]; then
+        fragment="$(printf '%s' "$fragment" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+        if ! heading_has_anchor "$target" "$fragment"; then
+            err "$rel" "$line_number" \
+                "missing source reference anchor '#$fragment': $reference"
+        fi
+    fi
+}
+
+# shellcheck disable=SC2094  # anchor validation may reread the input file
+check_source_references() {
+    local file="$1" rel="$2"
+    local line lineno=0 in_frontmatter=false in_sources=false value
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        lineno=$((lineno + 1))
+        if [[ "$line" == "---" ]]; then
+            if [[ "$in_frontmatter" == false ]]; then
+                in_frontmatter=true
+            else
+                break
+            fi
+            continue
+        fi
+        [[ "$in_frontmatter" == true ]] || continue
+
+        if [[ "$line" =~ ^sources:[[:space:]]*$ ]]; then
+            in_sources=true
+            continue
+        fi
+        if [[ "$in_sources" == true ]]; then
+            if [[ "$line" =~ ^[[:space:]]*-[[:space:]]+(.*)$ ]]; then
+                value="${BASH_REMATCH[1]}"
+                if [[ "$value" =~ ^\"(.*)\"$ ]]; then
+                    value="${BASH_REMATCH[1]}"
+                    value="${value//\\\"/\"}"
+                    value="${value//\\\\/\\}"
+                fi
+                # The anchor check may read this same file for a self-reference.
+                # shellcheck disable=SC2094
+                check_source_reference "$file" "$rel" "$lineno" "$value"
+                continue
+            fi
+            in_sources=false
+        fi
+    done < "$file"
+}
+
+check_local_link() {
+    local file="$1" rel="$2" line_number="$3" raw_destination="$4"
+    local destination path fragment target
+
+    destination="$(link_destination "$raw_destination")"
+    [[ -n "$destination" ]] || return 0
+    is_external_url "$destination" && return 0
+
+    path="${destination%%#*}"
+    fragment=""
+    [[ "$destination" == *#* ]] && fragment="${destination#*#}"
+
+    if [[ "$path" == /* ]]; then
+        err "$rel" "$line_number" \
+            "absolute local Markdown link is unsupported: $destination"
+        return 0
+    fi
+
+    if [[ -n "$path" ]]; then
+        target="$(dirname "$file")/$path"
+    else
+        target="$file"
+    fi
+
+    if ! path_is_contained "$target"; then
+        err "$rel" "$line_number" \
+            "local Markdown link escapes content root: $destination"
+        return 0
+    fi
+    if [[ ! -f "$target" ]]; then
+        err "$rel" "$line_number" "missing local Markdown link target: $destination"
+        return 0
+    fi
+
+    if [[ -n "$fragment" && "$target" == *.md ]]; then
+        fragment="$(printf '%s' "$fragment" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+        if ! heading_has_anchor "$target" "$fragment"; then
+            err "$rel" "$line_number" \
+                "missing local Markdown link anchor '#$fragment': $destination"
+        fi
+    fi
+}
+
+# shellcheck disable=SC2094  # anchor validation may reread the input file
+check_local_links() {
+    local file="$1" rel="$2"
+    local line lineno=0 in_frontmatter=false frontmatter_done=false
+    local remaining match raw_destination
+    local link_pattern='\[[^]]+\]\(([^)]*)\)'
+
+    md_heading_reset
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        lineno=$((lineno + 1))
+        if [[ "$line" == "---" && "$frontmatter_done" == false ]]; then
+            if [[ "$in_frontmatter" == false ]]; then
+                in_frontmatter=true
+            else
+                in_frontmatter=false
+                frontmatter_done=true
+            fi
+            continue
+        fi
+        [[ "$frontmatter_done" == true ]] || continue
+
+        _md_fence_track "$line" && continue
+        [[ "$MD_FENCE_OPEN" == false ]] || continue
+
+        # Inline code is not rendered as a link. This also keeps examples such
+        # as `[text](page.md)` from being treated as repository references.
+        # shellcheck disable=SC2016  # backticks are literal sed syntax
+        remaining="$(printf '%s' "$line" | sed -E 's/`+[^`]*`+//g')"
+        while [[ "$remaining" =~ $link_pattern ]]; do
+            match="${BASH_REMATCH[0]}"
+            raw_destination="${BASH_REMATCH[1]}"
+            # The anchor check may read this same file for a self-reference.
+            # shellcheck disable=SC2094
+            check_local_link "$file" "$rel" "$lineno" "$raw_destination"
+            remaining="${remaining#*"$match"}"
+        done
+    done < "$file"
 }
 
 check_frontmatter() {
@@ -179,6 +433,8 @@ for file in "${FILES[@]}"; do
     rel="${file#"$CONTENT_DIR/"}"
     check_frontmatter "$file" "$rel"
     check_headings "$file" "$rel"
+    check_source_references "$file" "$rel"
+    check_local_links "$file" "$rel"
 done
 
 echo ""

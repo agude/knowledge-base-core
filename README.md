@@ -140,6 +140,14 @@ Standard markdown content. Links use [normal syntax](other-page.md).
   means 60.
 - `sources` — the observation files that fed the article. Append on update.
 
+`lint` validates relative Markdown links and `.md` entries in `sources:`.
+External URLs and examples inside fenced or inline code are ignored; external
+URLs are never fetched. Use `lint --batch BATCH_ID` while a selected
+observation is still pending but its future `observations/archived/` path is
+already referenced. Run lint again without `--batch` after archiving so the
+final content has no broken references. The linter does not mass-repair
+existing content; compatibility findings require a separate curation pass.
+
 ## Scripts
 
 | Script | Purpose |
@@ -157,7 +165,7 @@ Standard markdown content. Links use [normal syntax](other-page.md).
 | `questions [--path DIR] [--file F] [--full] [--all]` | List open questions |
 | `resolve --file F [--answer "..."]` | Resolve a question |
 | `stale [--days N] [--path DIR]` | List articles needing re-verification |
-| `lint [--path DIR] [--strict]` | Check articles against the structural conventions |
+| `lint [--path DIR] [--strict] [--batch ID]` | Check articles, links, source references, and structural conventions |
 | `commit -m "..."` | Commit curation work under the write lock |
 | `sync [--status]` | Pull and push the content repo |
 | `status` | Summary stats |

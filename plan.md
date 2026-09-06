@@ -204,21 +204,21 @@ local evidence chain.
 
 **Acceptance criteria**
 
-- [ ] Document comparison of source authority, observation date, and effective
+- [x] Document comparison of source authority, observation date, and effective
   date when a new observation contradicts an existing claim. Newer capture alone
   does not automatically establish authority.
-- [ ] A worked fixture shows a corrected canonical claim, retained old evidence,
+- [x] A worked fixture shows a corrected canonical claim, retained old evidence,
   and a recorded reason/effective date for supersession.
-- [ ] An unresolved conflict remains explicitly labeled; curation does not
+- [x] An unresolved conflict remains explicitly labeled; curation does not
   manufacture agreement or mark conflicting claims verified.
-- [ ] Partial article updates do not imply unrelated claims were reverified.
-- [ ] Lint checks local Markdown links and `sources` references for missing files
+- [x] Partial article updates do not imply unrelated claims were reverified.
+- [x] Lint checks local Markdown links and `sources` references for missing files
   and, where supported, missing anchors. Define supported Markdown link forms.
-- [ ] Relative links, moved articles, fenced examples, and external URLs have
+- [x] Relative links, moved articles, fenced examples, and external URLs have
   tests. Structural lint does not fetch external URLs.
-- [ ] Batch validation accommodates references to observations being archived
+- [x] Batch validation accommodates references to observations being archived
   within the same curation transaction and rejects broken final references.
-- [ ] Real content is not mass-edited to satisfy the new checks; document any
+- [x] Real content is not mass-edited to satisfy the new checks; document any
   compatibility findings for a separate curation pass.
 
 ## 7. Make the Manual Curation Queue Actionable
@@ -515,3 +515,37 @@ Verification:
 Current frozen-evaluation totals under the same fixture are 16,407 full/top
 response bytes and 2,270/2,309 ms full/top latency. The remaining baseline
 changes are the existing 18 section-level consolidation changes.
+
+### 2026-09-05 — Task 6
+
+Documented correction handling in `skills/curate/SKILL.md`. Contradictory
+evidence is compared by source authority, observation date, and effective date;
+capture recency alone does not select the canonical claim. The workflow now
+requires a supersession reason and effective date, retains old evidence, labels
+unresolved conflicts explicitly, and leaves article-level `verified` unchanged
+when an edit did not recheck unrelated claims.
+
+Extended `scripts/lint` to validate supported relative Markdown links and
+content-root-relative `.md` entries in `sources:`. It checks heading fragments
+against ASCII heading slugs, ignores external URLs and fenced or inline-code
+examples, rejects absolute or escaping paths, and reports missing targets and
+anchors. `lint --batch BATCH_ID` temporarily accepts an unchanged selected
+observation at its future `observations/archived/` path; a final lint after
+archiving remains strict.
+
+Added a correction fixture containing a canonical replacement, superseded
+evidence, effective date, reason, and explicit unresolved conflict. Added tests
+for relative, moved, anchored, fenced, inline-code, external, missing, and
+batch-aware references.
+
+Verification:
+
+- `bats tests` — 329 tests passed.
+- `bash -n scripts/lint` — passed.
+- `shellcheck -x -P scripts -s bash scripts/lint` — passed.
+- `bash scripts/portability-lint` — passed.
+- `git diff --check` — passed.
+- `KB_CONTENT_DIR=content scripts/lint --path content/knowledge` — expected
+  compatibility failure: 37 pre-existing missing source references across 11
+  articles; no body-link failures after inline-code exclusion. Real content was
+  not edited.
