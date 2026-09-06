@@ -96,7 +96,10 @@ status_batch() {
                             ;;
                         duplicate) duplicate=$((duplicate + 1)) ;;
                         ephemeral) ephemeral=$((ephemeral + 1)) ;;
-                        *) invalid_disposition=$((invalid_disposition + 1)) ;;
+                        *)
+                            invalid_disposition=$((invalid_disposition + 1))
+                            invalid=$((invalid + 1))
+                            ;;
                     esac
                 else
                     deferred=$((deferred + 1))

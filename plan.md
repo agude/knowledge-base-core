@@ -595,3 +595,27 @@ Remaining limitation: topic hints are lexical suggestions, not curation
 assignments, and recent retrieval access is not persisted. Stale-article
 prioritization therefore uses the current run's working notes and queue or
 batch paths.
+
+### 2026-09-05 — Task 7 review corrections
+
+Corrected the review findings in the queue preview and batch report. Unknown
+persisted dispositions now increment the batch's invalid-item count and make
+`batch status` return nonzero. `pending` and `batch start` now use the same
+top-level pending-file discovery rule. Preview metadata reads are capped at
+64 KiB per file, topic samples at 8 KiB, and article metadata at 256 files;
+file sizes use filesystem metadata when available instead of scanning full
+transcripts. Topic matching uses an inverted word index and retains only the
+best eight ranked hints for output.
+
+Added regression coverage for corrupt manifests and nested observations, plus
+a 320-article and 256 KiB transcript preview fixture. The topic corpus cap is
+reported in the preview when reached.
+
+Verification:
+
+- `bats tests/pending.bats tests/batch.bats` — 21 tests passed.
+- `bats tests` — 342 tests passed.
+- `bash -n scripts/pending scripts/batch` — passed.
+- `shellcheck -x -P scripts -s bash scripts/pending scripts/batch` — passed.
+- `bash scripts/portability-lint` — passed.
+- `git diff --check` — passed.

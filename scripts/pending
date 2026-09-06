@@ -28,6 +28,8 @@ PREVIEW=false
 MAX_TOPIC_HINTS=8
 MAX_METADATA_WARNINGS=8
 MAX_TOPIC_HINT_LENGTH=120
+MAX_METADATA_BYTES=65536
+MAX_TOPIC_ARTICLES=256
 TOPIC_SAMPLE_BYTES=8192
 
 while [[ $# -gt 0 ]]; do
@@ -51,7 +53,7 @@ fi
 files=()
 while IFS= read -r -d '' f; do
     files+=("$f")
-done < <(find "$PENDING_DIR" -name '*.md' -type f -print0 2>/dev/null | sort -z)
+done < <(find "$PENDING_DIR" -maxdepth 1 -name '*.md' -type f -print0 2>/dev/null | sort -z)
 
 if [[ "$COUNT_ONLY" == true ]]; then
     echo "${#files[@]}"
@@ -72,103 +74,157 @@ human_bytes() {
     fi
 }
 
+file_size() {
+    local file="$1" size
+
+    if size="$(stat -c '%s' "$file" 2>/dev/null)" && [[ "$size" =~ ^[0-9]+$ ]]; then
+        printf '%s\n' "$size"
+    elif size="$(stat -f '%z' "$file" 2>/dev/null)" && [[ "$size" =~ ^[0-9]+$ ]]; then
+        printf '%s\n' "$size"
+    else
+        wc -c < "$file" | awk '{print $1}'
+    fi
+}
+
 normalise_text() {
     printf '%s' "$1" | tr '[:upper:]' '[:lower:]' |
         tr -cs '[:alnum:]' ' ' | tr -s ' '
 }
 
-topic_hint_matches() {
-    local label="$1" sample="$2" normalized_label normalized_sample
-    local word word_count=0 matched_words=0
-
-    normalized_label="$(normalise_text "$label")"
-    normalized_sample="$(normalise_text "$sample")"
-    [[ -n "$normalized_label" ]] || return 1
-
-    if [[ " $normalized_sample " == *" $normalized_label "* ]]; then
-        return 0
-    fi
-
-    # A phrase is useful when present, but a title such as "Networking"
-    # should also hint at an article titled "Networking Setup". Ignore
-    # short connector words so generic prose does not produce every topic.
-    for word in $normalized_label; do
-        case "$word" in
-            an|and|for|from|into|of|on|the|this|with|knowledge|article|setup)
-                continue
-                ;;
-        esac
-        (( ${#word} >= 4 )) || continue
-        word_count=$((word_count + 1))
-        if [[ " $normalized_sample " == *" $word "* ]]; then
-            matched_words=$((matched_words + 1))
-        fi
-    done
-
-    (( word_count > 0 && matched_words > 0 ))
-}
-
 article_topic_label() {
-    local file="$1" line
+    local file="$1" line fallback_label=""
+    local in_frontmatter=false
 
     md_heading_reset
     while IFS= read -r line; do
+        if [[ "$line" == "---" ]]; then
+            if [[ "$in_frontmatter" == false ]]; then
+                in_frontmatter=true
+            else
+                in_frontmatter=false
+            fi
+            continue
+        fi
         if md_heading "$line" && (( MD_HEADING_LEVEL == 1 )); then
             printf '%s\n' "$MD_HEADING_TEXT"
             return 0
         fi
-    done < "$file"
+        if [[ "$in_frontmatter" == true && "$line" =~ ^title:[[:space:]]*(.*)$ ]]; then
+            fallback_label="${BASH_REMATCH[1]}"
+            if [[ "$fallback_label" =~ ^\"(.*)\"$ ]]; then
+                fallback_label="${BASH_REMATCH[1]}"
+                fallback_label="${fallback_label//\\\\\"/\"}"
+                fallback_label="${fallback_label//\\\\\\\\/\\\\}"
+            fi
+        fi
+    done < <(head -c "$MAX_METADATA_BYTES" "$file")
 
-    frontmatter_field title "$file" 2>/dev/null || basename "$file" .md
+    if [[ -n "$fallback_label" ]]; then
+        printf '%s\n' "$fallback_label"
+        return 0
+    fi
+    basename "$file" .md
 }
 
-add_topic_hint() {
-    local label="$1" index
+bounded_topic_label() {
+    local label="$1"
 
-    [[ -n "$label" ]] || return 0
     if (( ${#label} > MAX_TOPIC_HINT_LENGTH )); then
         label="${label:0:117}..."
     fi
-    for index in "${!topic_hint_labels[@]}"; do
-        if [[ "${topic_hint_labels[$index]}" == "$label" ]]; then
-            topic_hint_counts[index]=$((topic_hint_counts[index] + 1))
-            return 0
+    printf '%s' "$label"
+}
+
+set_pending_metadata_field() {
+    local field="$1" value="$2"
+
+    if [[ "$value" =~ ^\"(.*)\"$ ]]; then
+        value="${BASH_REMATCH[1]}"
+        value="${value//\\\\\"/\"}"
+        value="${value//\\\\\\\\/\\\\}"
+    fi
+
+    case "$field" in
+        title)   PENDING_TITLE="$value" ;;
+        source)  PENDING_SOURCE="$value" ;;
+        created) PENDING_CREATED="$value" ;;
+        topic)   PENDING_TOPIC="$value" ;;
+    esac
+}
+
+read_pending_metadata() {
+    local file="$1" line field value
+    local in_frontmatter=false
+    local metadata
+
+    PENDING_TITLE=""
+    PENDING_SOURCE=""
+    PENDING_CREATED=""
+    PENDING_TOPIC=""
+    PENDING_FIRST_LINE=""
+    PENDING_FRONTMATTER_COMPLETE=false
+
+    metadata="$(head -c "$MAX_METADATA_BYTES" "$file")"
+    PENDING_FIRST_LINE="${metadata%%$'\n'*}"
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$line" == "---" ]]; then
+            if [[ "$in_frontmatter" == false ]]; then
+                in_frontmatter=true
+            else
+                PENDING_FRONTMATTER_COMPLETE=true
+                break
+            fi
+            continue
         fi
-    done
-    topic_hint_labels+=("$label")
-    topic_hint_counts+=(1)
+        [[ "$in_frontmatter" == true ]] || continue
+
+        if [[ "$line" =~ ^(title|source|created|topic):[[:space:]]*(.*)$ ]]; then
+            field="${BASH_REMATCH[1]}"
+            value="${BASH_REMATCH[2]}"
+            set_pending_metadata_field "$field" "$value"
+        fi
+    done <<< "$metadata"
 }
 
 preview_queue() {
-    local file title source created created_date created_epoch size sample
+    local file source created created_date created_epoch size sample
     local today_epoch oldest_epoch="" oldest_date="" oldest_name=""
     local total_bytes=0 observation_count=0 transcript_count=0
     local observation_bytes=0 transcript_bytes=0
-    local first_line delimiter_count issue_text topic_hint
+    local issue_text topic_hint normalized_topic
     local metadata_warning_count=0
     local -a metadata_warning_names=()
     local -a metadata_warning_details=()
-    local -a topic_hint_labels=()
-    local -a topic_hint_counts=()
-    local -a topic_labels=()
-    local article label
+    local -a topic_input_records=()
+    local article label normalized_label pending_item_index=0
+    local topic_article_count=0 topic_article_limit_reached=false
 
     today_epoch="${FRESHNESS_TODAY_EPOCH:-$(date -u +%s)}"
 
     if [[ -d "$CONTENT_DIR/knowledge" ]]; then
         while IFS= read -r -d '' article; do
+            if (( topic_article_count >= MAX_TOPIC_ARTICLES )); then
+                topic_article_limit_reached=true
+                break
+            fi
+            topic_article_count=$((topic_article_count + 1))
             label="$(article_topic_label "$article")"
             [[ -n "$label" ]] || continue
-            topic_labels+=("$label")
+            label="$(bounded_topic_label "$label")"
+            normalized_label="$(normalise_text "$label")"
+            [[ -n "$normalized_label" ]] || continue
+            topic_input_records+=($'topic\t'"$normalized_label"$'\t'"$label")
         done < <(find "$CONTENT_DIR/knowledge" -name '*.md' -type f -print0 | sort -z)
     fi
 
     for file in "${files[@]}"; do
-        title="$(frontmatter_field title "$file" 2>/dev/null || true)"
-        source="$(frontmatter_field source "$file" 2>/dev/null || true)"
-        created="$(frontmatter_field created "$file" 2>/dev/null || true)"
-        size="$(wc -c < "$file" | awk '{print $1}')"
+        size="$(file_size "$file")"
+        read_pending_metadata "$file"
+        source="$PENDING_SOURCE"
+        created="$PENDING_CREATED"
         total_bytes=$((total_bytes + size))
+        pending_item_index=$((pending_item_index + 1))
 
         if [[ "$source" == "session-transcript" ]]; then
             transcript_count=$((transcript_count + 1))
@@ -179,10 +235,9 @@ preview_queue() {
         fi
 
         issue_text=""
-        first_line="$(sed -n '1p' "$file")"
-        delimiter_count="$(awk 'BEGIN { count=0 } $0 == "---" { count++ } END { print count }' "$file")"
-        [[ "$first_line" == "---" && "$delimiter_count" -ge 2 ]] || issue_text="malformed frontmatter"
-        [[ -n "$title" ]] || issue_text="${issue_text:+$issue_text, }missing title"
+        [[ "$PENDING_FIRST_LINE" == "---" && "$PENDING_FRONTMATTER_COMPLETE" == true ]] ||
+            issue_text="malformed frontmatter"
+        [[ -n "$PENDING_TITLE" ]] || issue_text="${issue_text:+$issue_text, }missing title"
         [[ -n "$source" ]] || issue_text="${issue_text:+$issue_text, }missing source"
 
         created_epoch=""
@@ -215,16 +270,15 @@ preview_queue() {
             fi
         fi
 
-        topic_hint="$(frontmatter_field topic "$file" 2>/dev/null || true)"
+        topic_hint="$PENDING_TOPIC"
         if [[ -n "$topic_hint" ]]; then
-            add_topic_hint "$topic_hint"
-        elif (( ${#topic_labels[@]} > 0 )); then
+            topic_hint="$(bounded_topic_label "$topic_hint")"
+            normalized_topic="$(normalise_text "$topic_hint")"
+            [[ -n "$normalized_topic" ]] &&
+                topic_input_records+=($'direct\t'"$normalized_topic"$'\t'"$topic_hint"$'\t'"$pending_item_index")
+        else
             sample="$(head -c "$TOPIC_SAMPLE_BYTES" "$file")"
-            for label in "${topic_labels[@]}"; do
-                if topic_hint_matches "$label" "$sample"; then
-                    add_topic_hint "$label"
-                fi
-            done
+            topic_input_records+=($'pending\t'"$pending_item_index"$'\t'"$(normalise_text "$sample")")
         fi
     done
 
@@ -249,34 +303,133 @@ preview_queue() {
     printf "Input volume: %s (%d bytes)\n" "$(human_bytes "$total_bytes")" "$total_bytes"
 
     echo "Topic hints (hints only; no LLM):"
-    if (( ${#topic_hint_labels[@]} == 0 )); then
+    if [[ "$topic_article_limit_reached" == true ]]; then
+        echo "  topic article metadata capped at $MAX_TOPIC_ARTICLES file(s)"
+    fi
+    topic_hint_output="$(
+        printf '%s\n' "${topic_input_records[@]}" |
+            awk -F '\t' -v max="$MAX_TOPIC_HINTS" '
+                function ignored_word(word) {
+                    return word ~ /^(an|and|for|from|into|of|on|the|this|with|knowledge|article|setup)$/
+                }
+                function add_hint(label, display, item_id, key) {
+                    if (label == "") {
+                        return
+                    }
+                    key = label SUBSEP item_id
+                    if (!(key in matched_items)) {
+                        matched_items[key] = 1
+                        file_count[label]++
+                    }
+                    score[label]++
+                    if (!(label in display_name)) {
+                        display_name[label] = display
+                    }
+                }
+                function is_better(left_files, left_score, left_label, right_files, right_score, right_label) {
+                    return left_files > right_files ||
+                        (left_files == right_files &&
+                            (left_score > right_score ||
+                                (left_score == right_score && left_label < right_label)))
+                }
+                function consider(label, worst, i) {
+                    if (top_count < max) {
+                        top_count++
+                        top_label[top_count] = label
+                        top_files[top_count] = file_count[label]
+                        top_score[top_count] = score[label]
+                        return
+                    }
+
+                    worst = 1
+                    for (i = 2; i <= top_count; i++) {
+                        if (is_better(top_files[worst], top_score[worst], top_label[worst],
+                                      top_files[i], top_score[i], top_label[i])) {
+                            worst = i
+                        }
+                    }
+                    if (is_better(file_count[label], score[label], label,
+                                  top_files[worst], top_score[worst], top_label[worst])) {
+                        top_label[worst] = label
+                        top_files[worst] = file_count[label]
+                        top_score[worst] = score[label]
+                    }
+                }
+                $1 == "topic" {
+                    label = $2
+                    display_by_label[label] = $3
+                    if (!(label in topic_seen)) {
+                        topic_seen[label] = 1
+                        word_count = split(label, words, / +/)
+                        for (i = 1; i <= word_count; i++) {
+                            word = words[i]
+                            if (length(word) >= 4 && !ignored_word(word) &&
+                                !((word SUBSEP label) in topic_words)) {
+                                topic_words[word SUBSEP label] = 1
+                                if (word in labels_by_word) {
+                                    labels_by_word[word] = labels_by_word[word] SUBSEP label
+                                } else {
+                                    labels_by_word[word] = label
+                                }
+                            }
+                        }
+                    }
+                    next
+                }
+                $1 == "direct" {
+                    add_hint($2, $3, $4)
+                    next
+                }
+                $1 == "pending" {
+                    item_id = $2
+                    delete seen_words
+                    word_count = split($3, words, / +/)
+                    for (i = 1; i <= word_count; i++) {
+                        word = words[i]
+                        if (word != "" && length(word) >= 4 &&
+                            !(word in seen_words) && (word in labels_by_word)) {
+                            seen_words[word] = 1
+                            label_count = split(labels_by_word[word], labels, SUBSEP)
+                            for (j = 1; j <= label_count; j++) {
+                                add_hint(labels[j], display_by_label[labels[j]], item_id)
+                            }
+                        }
+                    }
+                    next
+                }
+                END {
+                    for (label in file_count) {
+                        consider(label)
+                    }
+                    for (i = 1; i <= top_count; i++) {
+                        for (j = i + 1; j <= top_count; j++) {
+                            if (is_better(top_files[j], top_score[j], top_label[j],
+                                          top_files[i], top_score[i], top_label[i])) {
+                                swap = top_label[i]
+                                top_label[i] = top_label[j]
+                                top_label[j] = swap
+                                swap = top_files[i]
+                                top_files[i] = top_files[j]
+                                top_files[j] = swap
+                                swap = top_score[i]
+                                top_score[i] = top_score[j]
+                                top_score[j] = swap
+                            }
+                        }
+                    }
+                    for (i = 1; i <= top_count; i++) {
+                        printf "%d\t%d\t%s\n", top_files[i], top_score[i], display_name[top_label[i]]
+                    }
+                }
+            '
+    )"
+    if [[ -z "$topic_hint_output" ]]; then
         echo "  none available"
     else
-        local -a hint_order=()
-        local index other_index swap displayed=0
-        for index in "${!topic_hint_labels[@]}"; do
-            hint_order+=("$index")
-        done
-        for index in "${!hint_order[@]}"; do
-            for other_index in "${!hint_order[@]}"; do
-                if (( topic_hint_counts[hint_order[other_index]] > topic_hint_counts[hint_order[index]] )) || \
-                    { (( topic_hint_counts[hint_order[other_index]] == topic_hint_counts[hint_order[index]] )) && \
-                      [[ "${topic_hint_labels[hint_order[other_index]]}" < "${topic_hint_labels[hint_order[index]]}" ]]; }; then
-                    swap="${hint_order[index]}"
-                    hint_order[index]="${hint_order[other_index]}"
-                    hint_order[other_index]="$swap"
-                fi
-            done
-        done
-        for index in "${hint_order[@]}"; do
-            printf "  %s (%d pending item(s))\n" \
-                "${topic_hint_labels[index]}" "${topic_hint_counts[index]}"
-            displayed=$((displayed + 1))
-            (( displayed >= MAX_TOPIC_HINTS )) && break
-        done
-        if (( ${#hint_order[@]} > MAX_TOPIC_HINTS )); then
-            echo "  ... $(( ${#hint_order[@]} - MAX_TOPIC_HINTS )) more hint(s)"
-        fi
+        while IFS=$'\t' read -r pending_count _ topic_label; do
+            [[ -n "$topic_label" ]] || continue
+            printf "  %s (%d pending item(s))\n" "$topic_label" "$pending_count"
+        done <<< "$topic_hint_output"
     fi
 
     if (( ${#metadata_warning_names[@]} == 0 )); then

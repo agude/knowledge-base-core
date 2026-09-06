@@ -93,6 +93,52 @@ EOF
     [[ "${#output}" -lt 2000 ]]
 }
 
+@test "pending --preview uses batch's top-level discovery rule" {
+    create_test_observation "top-level.md" "Top-level observation" "Body"
+    mkdir -p "$TEST_CONTENT_DIR/observations/pending/nested"
+    cat > "$TEST_CONTENT_DIR/observations/pending/nested/hidden.md" <<'EOF'
+---
+title: "Nested observation"
+source: session
+created: 2025-01-01T00:00:00Z
+---
+
+Body
+EOF
+
+    run "$SCRIPTS/pending" --preview
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Pending items: 1"* ]]
+    [[ "$output" == *"Oldest pending age: 147 day(s) (2026-04-12; top-level.md)"* ]]
+}
+
+@test "pending --preview caps metadata and topic corpus work" {
+    for ((i = 1; i <= 320; i++)); do
+        create_test_article "topics/topic-$i.md" "# Topic $i"
+    done
+    {
+        echo '---'
+        echo 'title: "Large transcript"'
+        echo 'source: session-transcript'
+        echo 'created: 2026-05-01T00:00:00Z'
+        echo '---'
+        echo 'Topic'
+        awk 'BEGIN { for (i = 0; i < 262144; i++) printf "x" }'
+        echo
+    } > "$TEST_CONTENT_DIR/observations/pending/large.md"
+
+    run env FRESHNESS_TODAY_EPOCH=1788566400 "$SCRIPTS/pending" --preview
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Pending items: 1"* ]]
+    [[ "$output" == *"Transcript items: 1 ("* ]]
+    [[ "$output" == *"Topic hints (hints only; no LLM):"* ]]
+    [[ "$output" == *"topic article metadata capped at 256 file(s)"* ]]
+    [[ "$output" == *"Topic 1 (1 pending item(s))"* ]]
+    [[ "$(grep -c 'pending item(s))' <<< "$output")" -eq 8 ]]
+    [[ "$output" != *"xxxxxxxxxx"* ]]
+    [[ "${#output}" -lt 2000 ]]
+}
+
 @test "pending --preview reports an empty queue without warnings" {
     run "$SCRIPTS/pending" --preview
     [[ "$status" -eq 0 ]]

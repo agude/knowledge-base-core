@@ -142,3 +142,19 @@ commit_observations() {
     [[ "$output" == *"Deferred work: 1 item(s)"* ]]
     [[ "$output" == *"- b.md"* ]]
 }
+
+@test "batch status rejects an invalid persisted disposition" {
+    create_test_observation a.md "A" "Body A"
+    commit_observations
+    batch_id="$($SCRIPTS/batch start | sed -n 's/^Created batch: //p')"
+    "$SCRIPTS/archive" --batch "$batch_id" --disposition duplicate a.md --no-commit
+    batch_file="$TEST_CONTENT_DIR/observations/batches/$batch_id"
+    awk -F '\t' -v OFS='\t' 'NR == 1 { print; next } { $3="complete"; $4="corrupt"; print }' \
+        "$batch_file" > "$batch_file.tmp"
+    mv "$batch_file.tmp" "$batch_file"
+
+    run "$SCRIPTS/batch" status "$batch_id"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"Dispositions not recognized: 1"* ]]
+    [[ "$output" == *"Batch requires attention: 1 invalid item(s)."* ]]
+}
