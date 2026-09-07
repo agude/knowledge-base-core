@@ -158,14 +158,12 @@ already referenced. Run lint again without `--batch` after archiving so the
 final content has no broken references. The linter does not mass-repair
 existing content; compatibility findings require a separate curation pass.
 
-The current private content tree has 37 historical missing observation
-references across 11 articles. This is a migration backlog, not a lint
-exception: strict lint continues to report every missing target. The content
-owner must resolve each entry by restoring the archived evidence from content
-Git history or by reviewing the article and replacing or removing the stale
-`sources:` entry, then run `KB_CONTENT_DIR=content scripts/lint --path
-content/knowledge` before committing the content-repo migration. Tooling
-changes do not edit or suppress these private references.
+When a source reference is missing, search both pending and archived paths in
+content Git history. Restore the original evidence when available. Otherwise
+review the affected claims before replacing or removing the reference, and
+record any unresolved evidence gap. Passing lint confirms reference validity;
+it does not establish that a source supports a claim. Keep strict validation
+enabled and run full content lint after the repair.
 
 ## Scripts
 
@@ -399,6 +397,12 @@ remote state cannot be verified; they do not report cached counts as current.
 3. **Archive.** Processed items move to `observations/archived/` for
    provenance. **Never delete an observation** — the archive is the complete
    record of everything the base has ever seen.
+
+Topic preview matches explicit `topic:` metadata directly. Otherwise it samples
+the title and at most 8 KiB of file content, excluding frontmatter, numeric-only
+tokens, and generic words. A topic with multiple meaningful words needs two
+distinct matches; a one-word topic needs one. Hints remain suggestions, not
+batch selections.
 
 For stale articles, prioritize a stale article that the current curation run
 just retrieved when it is related to a pending topic hint or an incorporated

@@ -120,12 +120,12 @@ $KNOWLEDGE_BASE/scripts/observe --title "<one-line summary>" --body "<details>"
   Dana's name and role in the observation body. The curator preserves
   inline attribution in knowledge articles.
 
-The private content tree currently has 37 historical missing observation
-references across 11 articles. Keep strict reference validation enabled while
-migrating them: restore evidence from content Git history or review each
-article and replace or remove its stale `sources:` entry, then rerun the full
-knowledge-tree lint. Do not add a linter exception or edit private content as
-part of tooling changes.
+When a source reference is missing, search both pending and archived paths in
+content Git history. Restore the original evidence when available. Otherwise
+review the affected claims before replacing or removing the reference, and
+record any unresolved evidence gap. Passing lint confirms reference validity;
+it does not establish that a source supports a claim. Keep strict validation
+enabled and run full content lint after the repair.
 
 Host adapters retry a failed `session-append` once. If both attempts fail, the
 shell adapter reports failure; Codex still returns its required `{}` response.
@@ -223,6 +223,12 @@ remain recursive. The hints are suggestions, not assignments, and preview
 generation makes no LLM calls. Empty queues and invalid metadata are reported
 without printing observation bodies, so large transcripts do not expand the
 preview.
+
+Topic preview matches explicit `topic:` metadata directly. Otherwise it samples
+the title and at most 8 KiB of file content, excluding frontmatter, numeric-only
+tokens, and generic words. A topic with multiple meaningful words needs two
+distinct matches; a one-word topic needs one. Hints remain suggestions, not
+batch selections.
 
 The curator agent selects a bounded filename list, then starts it with
 `batch start --files FILENAME ...`. `batch start` without `--files` retains

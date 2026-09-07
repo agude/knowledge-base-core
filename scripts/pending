@@ -284,7 +284,14 @@ preview_queue() {
             [[ -n "$normalized_topic" ]] &&
                 topic_input_records+=($'direct\t'"$normalized_topic"$'\t'"$topic_hint"$'\t'"$pending_item_index")
         else
-            sample="$(head -c "$TOPIC_SAMPLE_BYTES" "$file")"
+            # Dates and metadata keys are not topic evidence. Keep the bounded
+            # title/body sample, even when the body is a large transcript.
+            sample="$(head -c "$TOPIC_SAMPLE_BYTES" "$file" | awk '
+                NR == 1 && $0 == "---" { frontmatter=1; next }
+                frontmatter && $0 == "---" { frontmatter=0; next }
+                !frontmatter { print }
+            ')"
+            sample="$PENDING_TITLE $sample"
             topic_input_records+=($'pending\t'"$pending_item_index"$'\t'"$(normalise_text "$sample")")
         fi
     done
@@ -317,7 +324,7 @@ preview_queue() {
         printf '%s\n' "${topic_input_records[@]}" |
             awk -F '\t' -v max="$MAX_TOPIC_HINTS" '
                 function ignored_word(word) {
-                    return word ~ /^(an|and|for|from|into|of|on|the|this|with|knowledge|article|setup)$/
+                    return word ~ /^(an|and|for|from|into|of|on|the|this|with|knowledge|article|setup|session|transcript|skill|system|guide)$/
                 }
                 function add_hint(label, display, item_id, key) {
                     if (label == "") {
@@ -370,9 +377,10 @@ preview_queue() {
                         word_count = split(label, words, / +/)
                         for (i = 1; i <= word_count; i++) {
                             word = words[i]
-                            if (length(word) >= 4 && !ignored_word(word) &&
+                            if (length(word) >= 3 && word !~ /^[0-9]+$/ && !ignored_word(word) &&
                                 !((word SUBSEP label) in topic_words)) {
                                 topic_words[word SUBSEP label] = 1
+                                topic_word_count[label]++
                                 if (word in labels_by_word) {
                                     labels_by_word[word] = labels_by_word[word] SUBSEP label
                                 } else {
@@ -390,16 +398,23 @@ preview_queue() {
                 $1 == "pending" {
                     item_id = $2
                     delete seen_words
+                    delete label_matches
                     word_count = split($3, words, / +/)
                     for (i = 1; i <= word_count; i++) {
                         word = words[i]
-                        if (word != "" && length(word) >= 4 &&
+                        if (word != "" && length(word) >= 3 &&
                             !(word in seen_words) && (word in labels_by_word)) {
                             seen_words[word] = 1
                             label_count = split(labels_by_word[word], labels, SUBSEP)
                             for (j = 1; j <= label_count; j++) {
-                                add_hint(labels[j], display_by_label[labels[j]], item_id)
+                                label_matches[labels[j]]++
                             }
+                        }
+                    }
+                    for (label in label_matches) {
+                        required = topic_word_count[label] > 1 ? 2 : 1
+                        if (label_matches[label] >= required) {
+                            add_hint(label, display_by_label[label], item_id)
                         }
                     }
                     next

@@ -173,3 +173,19 @@ EOF
     [[ "$output" == *"none available"* ]]
     [[ "$output" == *"Metadata warnings: none"* ]]
 }
+
+@test "preview ignores metadata years and isolated common topic words" {
+    create_test_article "bike.md" "# Canyon Neuron 6 (2026)"
+    create_test_article "handoff.md" "# Handing a Claude Code Session Between Machines"
+    create_test_article "pdf.md" "# PDF Skill"
+    create_test_observation "a.md" "Unrelated skill" "A session captured a tooling change."
+    create_test_observation "b.md" "Canyon Neuron ride" "The descent felt stable."
+    create_test_observation "c.md" "PDF extraction" "Extract the document text."
+    sed -i 's/2026-04-12/2026-09-06/' "$TEST_CONTENT_DIR"/observations/pending/*.md
+
+    run "$SCRIPTS/pending" --preview
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Canyon Neuron 6 (2026) (1 pending item(s))"* ]]
+    [[ "$output" == *"PDF Skill (1 pending item(s))"* ]]
+    [[ "$output" != *"Handing a Claude"* ]]
+}
