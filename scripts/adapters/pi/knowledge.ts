@@ -74,7 +74,7 @@ function handlerError(category: string, error: unknown): void {
 export default function knowledge(pi: ExtensionAPI): void {
   if (!KNOWLEDGE_BASE || !existsSync(commandPath("session-init"))) return
 
-  let sessionID = randomUUID()
+  let sessionID: string = randomUUID()
   let currentSessionFile: string | undefined
   let bufferFile: string | undefined
   let sessionActive = false
