@@ -429,44 +429,97 @@ host adapter.
 The neutral core exposes `session-context`, `session-init`, `session-file`,
 `session-append`, and `session-flush`. Adapters translate each host's event
 payload and output protocol into those commands. This repository includes
-Claude and Codex shell adapters under `scripts/adapters/`. Host-specific hook
-registration remains outside `scripts/install`, which installs shared skills
-and the content-repository hook.
+Claude and Codex shell adapters under `scripts/adapters/` and a Pi TypeScript
+extension at `scripts/adapters/pi/`.
 
-Run `scripts/portability-lint` to reject host-specific lifecycle, environment,
-and skill metadata from the shared surface. Run it with `--client claude` or
-`--client codex` to verify a retained host adapter exists.
+Host-specific registration remains outside `scripts/install`. That command
+installs shared skills and the content-repository hook; it does not install or
+configure the Pi extension. Run `scripts/portability-lint` to reject
+host-specific details from the shared surface. Use `--client claude`,
+`--client codex`, or `--client pi` to verify an adapter exists.
 
-Automatic observation capture is enabled when `KNOWLEDGE_OBSERVE` is unset or
-set to `1`, after the host's session-start lifecycle has initialized a buffer.
-Set `KNOWLEDGE_OBSERVE=0` to disable capture. The Claude and Codex shell
-adapters remain no-ops when their session-start hook was skipped. Codex
-persists a private per-session initialization marker so a swept buffer can be
-recreated in later hook processes; normal flush clears that marker. An unset
-value is tested as the default-enabled case after initialization.
-The explicit `scripts/observe` command remains available when automatic
-capture is disabled.
+#### Pi installation
 
-Host adapters retry a failed `session-append` once while they still own the
-event. If both attempts fail, the shell adapter reports failure; Codex still
-returns its required `{}` response. Persistence is therefore at least once:
-if a core command writes the line and then reports failure, the retry can
-record the same message twice. Repeated prompt or stop hook deliveries are
-also retained as separate raw transcript records. The adapters do not claim
-deduplication because these payloads provide no stable event identity.
-The raw transcript remains evidence rather than an idempotent event log.
-Codex `SessionEnd` flushes synchronously and returns failure while preserving
-the buffer when the flush fails; this favors recoverability over a shorter host
-shutdown deadline.
+Pi support uses the official `@earendil-works/pi-coding-agent` extension API.
+Install the local package with Pi:
+
+```bash
+export KNOWLEDGE_BASE="$HOME/src/knowledge-base-core"
+pi install "$KNOWLEDGE_BASE/scripts/adapters/pi"
+```
+
+Pi records the local package path in its settings; no copying or symlinking is
+required. `KNOWLEDGE_BASE` must be exported in the environment that launches
+Pi so the extension can find the neutral-core commands. The current Pi
+package and the adapter package require Node.js `>=22.19.0`. Running the
+optional adapter development checks additionally requires npm; the shell core
+and `just check` remain independent of them.
+
+The Pi adapter maps its lifecycle to the neutral core as follows:
+
+| Pi event | Adapter behavior |
+|---|---|
+| `session_start` | Initializes a buffer. `new`, `resume`, and `fork` recover `previousSessionFile`; `reload` recovers the current session file before starting a new buffer. Persistent sessions use stable identities, while ephemeral sessions use generated identities. |
+| `message_end` | Appends textual user and assistant messages only. Tool results, unsupported roles, image-only content, and empty text are ignored. A failed append is retried once. |
+| `before_agent_start` | Loads `session-context` lazily, caches successful output, and appends it to the current system prompt. |
+| `session_shutdown` | Awaits `session-flush`. In-memory state is cleared only after success, so a failed flush leaves the durable buffer available for recovery. |
+
+Pi replaces the extension instance during session replacement and reload
+flows. The recovery rules above allow `new`, `resume`, `fork`, and `/reload` to
+retain eligible transcripts without depending on in-memory state from the old
+instance.
+
+Automatic Pi capture is enabled when `KNOWLEDGE_OBSERVE` is unset or set to
+`1`. Set `KNOWLEDGE_OBSERVE=0` to disable capture; the adapter then creates no
+buffer and makes no capture calls. A successful duplicate `message_end`
+delivery is ignored within one extension instance. Append persistence remains
+at least once: if `session-append` writes a line and then reports failure, the
+adapter's retry can create a duplicate raw transcript line. A failed shutdown
+flush retains the buffer for a later extension instance.
+
+#### Pi development and SDK updates
+
+The Pi checks are optional. From the repository root, use:
+
+```bash
+just check       # ShellCheck, portability lint, and Bats; no Node/npm
+just pi-check    # Clean Pi dependency install, type-check, and tests
+just check-all   # Both independent gates
+```
+
+To update the pinned Pi SDK, first confirm the release and its engine
+requirement. Inspect the candidate package's extension documentation and
+exported declarations before changing `package-lock.json`:
+
+```bash
+npm view @earendil-works/pi-coding-agent version engines --json
+candidate_dir="$(mktemp -d)"
+npm pack --pack-destination "$candidate_dir" \
+  "@earendil-works/pi-coding-agent@<version>"
+tar -xzf "$candidate_dir"/*.tgz -C "$candidate_dir"
+grep -nE 'ExtensionAPI|session_start|message_end|before_agent_start|session_shutdown|previousSessionFile|targetSessionFile' \
+  "$candidate_dir/package/dist/core/extensions/types.d.ts" \
+  "$candidate_dir/package/docs/extensions.md"
+rm -rf "$candidate_dir"
+
+cd scripts/adapters/pi
+npm install --save-dev --save-exact @earendil-works/pi-coding-agent@<version>
+npm ci
+npm run check
+```
+
+Review the inspection output before running `npm install`. Stop if the
+lifecycle or context contracts have changed; update the adapter and tests
+first. The install command then updates the exact development pin and the
+lockfile.
+
+Review and commit both `scripts/adapters/pi/package.json` and
+`scripts/adapters/pi/package-lock.json`. Do not add npm metadata at the
+repository root. The SDK pin must be checked against the current Pi extension
+API before the lockfile is updated.
 
 ## Testing
 
-```bash
-just check
-```
-
-The check gate runs ShellCheck, portability lint, and the Bats suite. The Bats
-suite covers the shell adapters and core scripts, including disabled capture,
-retry recovery, path confinement, and session lifecycle handling. CI installs
-Bats and ShellCheck, then runs the same `just check` gate on pushes and pull
-requests.
+The default check gate runs ShellCheck, portability lint, and the Bats suite.
+The Pi gate runs separately because it requires Node.js and npm. CI runs both
+jobs.
