@@ -20,6 +20,7 @@ teardown() { teardown_content_dir; }
     [[ "$status" -eq 0 ]]
     [[ "$output" == *"scripts/adapters/pi/knowledge.ts"* ]]
     [[ "$output" == *"scripts/adapters/pi/package.json"* ]]
+    [[ "$output" != *"node_modules"* ]]
 }
 
 @test "portability lint rejects an unknown adapter" {
