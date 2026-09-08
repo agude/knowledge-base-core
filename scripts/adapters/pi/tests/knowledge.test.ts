@@ -282,7 +282,7 @@ async function createFakeCore(
   harness: Harness,
   options: FakeCoreOptions = {},
 ): Promise<string> {
-  const coreRoot = join(harness.root, "fake-core")
+  const coreRoot = join(harness.root, "fake-core-" + randomUUID())
   const scriptsDir = join(coreRoot, "scripts")
   const missing = new Set(options.missing ?? [])
   await mkdir(scriptsDir, { recursive: true })
@@ -676,6 +676,18 @@ test("disables itself when knowledge-base configuration or core commands are mis
       const pi = await loadPi()
       assert.deepEqual(Object.keys(pi.handlers), [])
     })
+
+    const missingInitCore = await createFakeCore(harness, {
+      missing: ["session-init"],
+    })
+    await withEnvironment(
+      harness,
+      { knowledgeBase: missingInitCore, observation: "1" },
+      async () => {
+        const pi = await loadPi()
+        assert.deepEqual(Object.keys(pi.handlers), [])
+      },
+    )
 
     const incompleteCore = await createFakeCore(harness, {
       missing: ["session-append", "session-context", "session-flush"],
