@@ -11,11 +11,15 @@ teardown() { teardown_content_dir; }
     [[ "$output" == *"Portable surface is clean."* ]]
 }
 
-@test "portability lint checks retained adapters" {
+@test "portability lint checks supported adapters" {
     run "$SCRIPTS/portability-lint" --client claude
     [[ "$status" -eq 0 ]]
     run "$SCRIPTS/portability-lint" --client codex
     [[ "$status" -eq 0 ]]
+    run "$SCRIPTS/portability-lint" --client pi
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"scripts/adapters/pi/knowledge.ts"* ]]
+    [[ "$output" == *"scripts/adapters/pi/package.json"* ]]
 }
 
 @test "portability lint rejects an unknown adapter" {
@@ -29,7 +33,10 @@ teardown() { teardown_content_dir; }
     [[ "$status" -ne 0 ]]
 }
 
-@test "retained host adapters are present for executable lifecycle tests" {
+@test "supported host adapters are present for lifecycle tests" {
     [[ -x "$SCRIPTS/adapters/claude/session-start" ]]
     [[ -x "$SCRIPTS/adapters/codex/session-start" ]]
+    [[ -f "$SCRIPTS/adapters/pi/knowledge.ts" ]]
+    [[ -f "$SCRIPTS/adapters/pi/package.json" ]]
+    [[ -f "$SCRIPTS/adapters/pi/package-lock.json" ]]
 }
