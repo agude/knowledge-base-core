@@ -1,6 +1,16 @@
 // Pi adapter for the neutral knowledge-base session API.
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
+import type {
+  BeforeAgentStartEvent,
+  BeforeAgentStartEventResult,
+  ExtensionAPI,
+  ExtensionContext,
+  ExtensionFactory,
+  ExtensionHandler,
+  MessageEndEvent,
+  SessionShutdownEvent,
+  SessionStartEvent,
+} from "@earendil-works/pi-coding-agent"
 import { execFile as execFileCallback } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { existsSync } from "node:fs"
@@ -15,6 +25,24 @@ const warnings = new Set<string>()
 type CommandResult = {
   ok: boolean
   output: string
+}
+
+export type KnowledgeExtensionContext = {
+  sessionManager: Pick<ExtensionContext["sessionManager"], "getSessionFile">
+}
+type KnowledgeHandler<Event, Result = undefined> = (
+  event: Event,
+  context: KnowledgeExtensionContext,
+) => Promise<Result | void> | Result | void
+
+export type KnowledgeExtensionAPI = {
+  on(event: "session_start", handler: KnowledgeHandler<SessionStartEvent>): void
+  on(event: "message_end", handler: KnowledgeHandler<MessageEndEvent>): void
+  on(
+    event: "before_agent_start",
+    handler: KnowledgeHandler<BeforeAgentStartEvent, BeforeAgentStartEventResult>,
+  ): void
+  on(event: "session_shutdown", handler: KnowledgeHandler<SessionShutdownEvent>): void
 }
 
 function warnOnce(key: string, message: string): void {
@@ -71,7 +99,9 @@ function handlerError(category: string, error: unknown): void {
   )
 }
 
-export default function knowledge(pi: ExtensionAPI): void {
+export default function knowledge(pi: ExtensionAPI): void
+export default function knowledge(pi: KnowledgeExtensionAPI): void
+export default function knowledge(pi: KnowledgeExtensionAPI): void {
   if (!KNOWLEDGE_BASE || !existsSync(commandPath("session-init"))) return
 
   let sessionID: string = randomUUID()
@@ -223,3 +253,6 @@ export default function knowledge(pi: ExtensionAPI): void {
     }
   })
 }
+
+const extensionFactoryCompatibility: ExtensionFactory = knowledge
+void extensionFactoryCompatibility
