@@ -49,7 +49,7 @@ error() {
 
 if [[ -n "$CLIENT" ]]; then
     case "$CLIENT" in
-        claude|codex) ;;
+        claude|codex|pi) ;;
         *)
             error "scripts/adapters" 1 "no adapter for unsupported client '$CLIENT'"
             exit 1
@@ -59,7 +59,8 @@ if [[ -n "$CLIENT" ]]; then
     if [[ ! -d "$ADAPTER_DIR" ]]; then
         error "scripts/adapters" 1 "no adapter for client '$CLIENT'"
     else
-        find "$ADAPTER_DIR" -type f -print | sort | sed 's#^#  adapter  #'
+        find "$ADAPTER_DIR" -type d -name node_modules -prune -o \
+            -type f -print | sort | sed 's#^#  adapter  #'
     fi
     if (( errors == 0 )); then
         exit 0

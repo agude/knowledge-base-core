@@ -1,0 +1,28 @@
+{
+  "name": "knowledge-base-core-pi-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "pi": {
+    "extensions": [
+      "./knowledge.ts"
+    ]
+  },
+  "scripts": {
+    "type-check": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "check": "npm run type-check && npm test"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@types/node": "22.19.19",
+    "tsx": "4.23.13",
+    "typescript": "5.9.3"
+  }
+}
