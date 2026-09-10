@@ -113,7 +113,7 @@ EOF
     [[ "$status" -eq 0 ]]
     [[ "$output" == *"Nested observation"* ]]
 
-    run "$SCRIPTS/pending" --preview
+    run env FRESHNESS_TODAY_EPOCH=1788652800 "$SCRIPTS/pending" --preview
     [[ "$status" -eq 0 ]]
     [[ "$output" == *"Batch-selectable items: 1"* ]]
     [[ "$output" == *"Oldest pending age: 147 day(s) (2026-04-12; top-level.md)"* ]]
