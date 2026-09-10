@@ -6,6 +6,9 @@ default:
 sync *args:
     scripts/sync {{ args }}
 
+install:
+    scripts/install
+
 shellcheck:
     find scripts -type d -name node_modules -prune -o -type f ! -name '*.ts' ! -name '*.json' -exec shellcheck -x -P scripts -s bash {} +
 
