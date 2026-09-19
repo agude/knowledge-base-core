@@ -56,7 +56,7 @@ cannot tell which one is current.
 Before writing project detail into an article, check what the repo already has:
 
 ```bash
-ls ~/Projects/<repo>/AGENTS.md ~/Projects/<repo>/CLAUDE.md
+ls ~/Projects/<repo>/AGENTS.md
 ls -d ~/Projects/<repo>/.agents/skills/*/
 ```
 

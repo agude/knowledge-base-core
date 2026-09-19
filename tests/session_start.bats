@@ -12,7 +12,7 @@ teardown() {
     rm -rf "$SESSION_DIR"
 }
 
-@test "session-start outputs CLAUDE.md content" {
+@test "session-start outputs AGENTS.md content" {
     run bash -c 'echo "{\"session_id\":\"test-1\"}" | KNOWLEDGE_OBSERVE=0 "$SCRIPTS/adapters/claude/session-start"'
     [[ "$status" -eq 0 ]]
     [[ "$output" == *"Knowledge Base"* ]]

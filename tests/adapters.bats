@@ -277,8 +277,7 @@ run_codex_stop() {
     [[ "$(find "$TEST_CONTENT_DIR/observations/pending" -name '*.md' -type f | wc -l)" -eq 1 ]]
 }
 
-@test "portable instruction file is the canonical source with Claude alias" {
+@test "portable instruction file is the canonical source" {
     [[ -f "$BATS_TEST_DIRNAME/../AGENTS.md" ]]
-    [[ -L "$BATS_TEST_DIRNAME/../CLAUDE.md" ]]
-    [[ "$(readlink "$BATS_TEST_DIRNAME/../CLAUDE.md")" == "AGENTS.md" ]]
+    [[ ! -e "$BATS_TEST_DIRNAME/../CLAUDE.md" ]]
 }
