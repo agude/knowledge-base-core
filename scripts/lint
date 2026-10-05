@@ -195,7 +195,7 @@ batch_has_pending_observation() {
 
     pending_file="$CONTENT_DIR/observations/pending/$name"
     [[ -f "$pending_file" ]] || return 1
-    actual_sha="$(sha256sum "$pending_file" | awk '{print $1}')"
+    actual_sha="$(sha256_file "$pending_file")"
     [[ "$actual_sha" == "$original_sha" ]]
 }
 
@@ -383,6 +383,83 @@ check_frontmatter() {
     done
 }
 
+check_section_metadata() {
+    local file="$1" rel="$2" locator metadata_status supersedes
+    local effective verified source source_values effective_epoch verified_epoch
+    local current_locator cycle_reported=false
+    declare -A supersedes_targets=()
+
+    section_metadata_for_file "$rel" "$file"
+    mapfile -t section_locators < <(printf '%s\n' "${!SECTION_META_STATUS[@]}" | sort -V)
+    for locator in "${section_locators[@]}"; do
+        [[ -n "$locator" ]] || continue
+        metadata_status="${SECTION_META_STATUS[$locator]}"
+        if [[ "${SECTION_META_VALID[$locator]}" != true ]]; then
+            err "$rel" "$locator" \
+                "section metadata invalid: ${SECTION_META_INVALID[$locator]}"
+        fi
+
+        supersedes="${SECTION_META_SUPERSEDES[$locator]}"
+        if [[ "$metadata_status" == superseded && -n "$supersedes" ]]; then
+            err "$rel" "$locator" \
+                "superseded section must not declare supersedes; put the link on the newer section"
+        elif [[ -n "$supersedes" ]]; then
+            if [[ ! "$supersedes" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+                err "$rel" "$locator" \
+                    "invalid supersedes locator: $supersedes"
+            elif [[ -z "${SECTION_META_STATUS[$supersedes]+present}" ]]; then
+                err "$rel" "$locator" \
+                    "supersedes section does not exist: $supersedes"
+            elif [[ "$locator" == "$supersedes" ]]; then
+                err "$rel" "$locator" \
+                    "section cannot supersede itself: $locator"
+            else
+                supersedes_targets["$locator"]="$supersedes"
+            fi
+        fi
+
+        effective="${SECTION_META_EFFECTIVE[$locator]}"
+        verified="${SECTION_META_VERIFIED[$locator]}"
+        if [[ -n "$effective" && -n "$verified" ]]; then
+            effective_epoch="$(date_to_epoch "$effective")"
+            verified_epoch="$(date_to_epoch "$verified")"
+            if [[ -n "$effective_epoch" && -n "$verified_epoch" ]] \
+                && (( effective_epoch > verified_epoch )); then
+                err "$rel" "$locator" \
+                    "effective date $effective is after verified date $verified"
+            fi
+        fi
+
+        if [[ "${SECTION_META_SOURCE_SCOPE[$locator]}" == section ]]; then
+            source_values="${SECTION_META_SOURCES[$locator]}"
+            IFS=',' read -r -a section_sources <<< "$source_values"
+            for source in "${section_sources[@]}"; do
+                source="$(section_metadata_trim "$source")"
+                [[ -n "$source" ]] || continue
+                check_source_reference "$file" "$rel" "$locator" "$source"
+            done
+        fi
+    done
+
+    for locator in "${section_locators[@]}"; do
+        [[ -n "$locator" ]] || continue
+        declare -A chain_seen=()
+        current_locator="$locator"
+        while [[ -n "${supersedes_targets[$current_locator]+present}" ]]; do
+            if [[ -n "${chain_seen[$current_locator]+present}" ]]; then
+                if [[ "$cycle_reported" == false ]]; then
+                    err "$rel" "$current_locator" \
+                        "supersedes relationship contains a cycle"
+                    cycle_reported=true
+                fi
+                break
+            fi
+            chain_seen["$current_locator"]=1
+            current_locator="${supersedes_targets[$current_locator]}"
+        done
+    done
+}
+
 check_headings() {
     local file="$1" rel="$2"
     local line lineno=0 h1_count=0
@@ -441,6 +518,7 @@ for file in "${FILES[@]}"; do
     rel="${file#"$CONTENT_DIR/"}"
     check_frontmatter "$file" "$rel"
     check_headings "$file" "$rel"
+    check_section_metadata "$file" "$rel"
     check_source_references "$file" "$rel"
     check_local_links "$file" "$rel"
 done

@@ -5,6 +5,7 @@
 # Usage:
 #   search <term> [term ...]
 #   search -- <term>
+#   search --query QUESTION [--relax]
 #
 # Options:
 #   --limit N      Maximum result sections (default 20; 0 for all)
@@ -14,6 +15,10 @@
 #   --corpus TYPE  Restrict to knowledge, sources, pending, archive, or questions
 #   --archive      Also search archived observations and questions
 #   --files        List matching files and section counts only
+#   --query TEXT   Search a natural-language question instead of literal terms
+#   --relax        Retry a question with bounded any-term matching after no hits
+#   --explain      Print query and result diagnostics on stderr
+#   --max-bytes N  Bound stdout bytes; JSON keeps complete result records
 #   --json         Return one JSON object containing bounded results
 #   --text-only    Return metadata-free section text output
 #   -h, --help     Show this help message
@@ -21,7 +26,7 @@
 # Results are ranked sections. A section containing every query term outranks
 # file-level fallback sections whose terms are split across the file. Title
 # and heading matches outrank body evidence, and duplicate evidence lines
-# count once. H2 results include their `section --number` value; `top` and
+# count once. H2/H3 results include their `section --number` value; `top` and
 # frontmatter-title results include direct `--top` and `--title` selectors.
 
 set -euo pipefail
@@ -36,6 +41,10 @@ if ! CONTENT_DIR="$(canonicalize "$CONTENT_DIR")"; then
 fi
 
 TERMS=()
+QUERY_TEXT=""
+QUESTION_MODE=false
+RELAX=false
+EXPLAIN=false
 LIMIT=20
 PER_FILE=3
 PATH_FILTER=""
@@ -45,9 +54,19 @@ ARCHIVE=false
 FILES_ONLY=false
 JSON=false
 TEXT_ONLY=false
+MAX_BYTES=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --query)
+            need_arg "$1" $#
+            [[ "$QUESTION_MODE" == false ]] || { echo "Error: --query may be used once" >&2; exit 1; }
+            QUERY_TEXT="$2"
+            QUESTION_MODE=true
+            shift 2
+            ;;
+        --relax)     RELAX=true; shift ;;
+        --explain)   EXPLAIN=true; shift ;;
         --limit)     need_arg "$1" $#; LIMIT="$2"; shift 2 ;;
         --per-file)  need_arg "$1" $#; PER_FILE="$2"; shift 2 ;;
         --path)      need_arg "$1" $#; PATH_FILTER="$2"; shift 2 ;;
@@ -57,6 +76,11 @@ while [[ $# -gt 0 ]]; do
         --files)     FILES_ONLY=true; shift ;;
         --json)      JSON=true; shift ;;
         --text-only) TEXT_ONLY=true; shift ;;
+        --max-bytes)
+            need_arg "$1" $#
+            MAX_BYTES="$2"
+            shift 2
+            ;;
         -h|--help)   show_help "$0"; exit 0 ;;
         --) shift; TERMS+=("$@"); break ;;
         -*) echo "Unknown option: $1 (use -- to search for it literally)" >&2; exit 1 ;;
@@ -68,8 +92,27 @@ if [[ "$JSON" == true && "$TEXT_ONLY" == true ]]; then
     echo "Error: --json and --text-only cannot be combined" >&2
     exit 1
 fi
+if [[ "$QUESTION_MODE" == true && ${#TERMS[@]} -gt 0 ]]; then
+    echo "Error: --query cannot be combined with positional literal terms" >&2
+    exit 1
+fi
+if [[ "$QUESTION_MODE" == true && -z "$QUERY_TEXT" ]]; then
+    echo "Error: --query requires a non-empty question" >&2
+    exit 1
+fi
+if [[ "$QUESTION_MODE" == false && "$RELAX" == true ]]; then
+    echo "Error: --relax requires --query" >&2
+    exit 1
+fi
+if [[ "$QUESTION_MODE" == true ]]; then
+    mapfile -t TERMS < <(question_terms "$QUERY_TEXT")
+    if [[ ${#TERMS[@]} -eq 0 ]]; then
+        echo "Error: question contains no searchable terms after stopword removal" >&2
+        exit 1
+    fi
+fi
 if [[ ${#TERMS[@]} -eq 0 ]]; then
-    echo "Usage: search <term> [term ...]" >&2
+    echo "Usage: search <term> [term ...] or search --query QUESTION" >&2
     exit 1
 fi
 for term in "${TERMS[@]}"; do
@@ -81,6 +124,9 @@ for n in "$LIMIT" "$PER_FILE"; do
         exit 1
     }
 done
+if [[ -n "$MAX_BYTES" ]]; then
+    MAX_BYTES="$(parse_nonnegative_decimal "--max-bytes" "$MAX_BYTES")" || exit 1
+fi
 
 normalize_corpus() {
     case "$1" in
@@ -193,48 +239,388 @@ if [[ "$SCOPE_IMPOSSIBLE" == false ]]; then
     done
 fi
 
+MATCH_MODE=strict
+
+json_query_fields() {
+    local field_scope="${1:-summary}"
+    local result_alias="${2:-}"
+
+    printf ',"query_mode":'
+    json_quote "$([[ "$QUESTION_MODE" == true ]] && echo question || echo literal)"
+    printf ',"query":'
+    if [[ "$QUESTION_MODE" == true ]]; then json_quote "$QUERY_TEXT"; else printf 'null'; fi
+    printf ',"query_terms":['
+    local first=true term
+    for term in "${TERMS[@]}"; do
+        [[ "$first" == false ]] && printf ','
+        json_quote "$term"
+        first=false
+    done
+    printf '],"alias_matches":['
+    if [[ "$field_scope" == result ]]; then
+        if [[ -n "$result_alias" ]]; then json_quote "$result_alias"; fi
+    else
+        first=true
+        for alias_match in "${ALIAS_MATCHES[@]:-}"; do
+            [[ -n "$alias_match" ]] || continue
+            [[ "$first" == false ]] && printf ','
+            json_quote "$alias_match"
+            first=false
+        done
+    fi
+    printf '],"match_mode":'
+    json_quote "$MATCH_MODE"
+    printf ',"relaxed":%s' "$([[ "$MATCH_MODE" == relaxed ]] && echo true || echo false)"
+}
+
+query_metadata_text() {
+    [[ "$QUESTION_MODE" == true ]] || return 0
+    printf 'query-mode=question; match-mode=%s' "$MATCH_MODE"
+}
+
+declare -a JSON_BUDGET_RECORDS=()
+declare -a JSON_BUDGET_RECORD_BYTES=()
+ALIAS_MATCHES=()
+LIMIT_OMITTED=0
+BUDGET_RETURNED=0
+BUDGET_OMITTED=0
+BUDGET_BYTES=0
+
+json_budget_suffix() {
+    local total_files="$1" total_lines="$2" returned="$3" omitted="$4"
+    local truncated=false
+    (( omitted > 0 )) && truncated=true
+    printf ']'
+    json_query_fields
+    printf ',"total_files":%d,"total_lines":%d,"returned":%d,"truncated":%s,"omitted_results":%d,"max_bytes":%d}' \
+        "$total_files" "$total_lines" "$returned" "$truncated" "$omitted" "$MAX_BYTES"
+}
+
+json_budget_body() {
+    local count="$1" index
+    printf '{"results":['
+    for (( index=0; index < count; index++ )); do
+        (( index > 0 )) && printf ','
+        printf '%s' "${JSON_BUDGET_RECORDS[index]}"
+    done
+}
+
+json_budget_add_record() {
+    local record="$1"
+
+    JSON_BUDGET_RECORDS+=("$record")
+    JSON_BUDGET_RECORD_BYTES+=("$(byte_count_text "$record")")
+}
+
+json_budget_suffix_bytes() {
+    local total_files="$1" total_lines="$2" returned="$3" omitted="$4"
+
+    byte_count_text "$(json_budget_suffix "$total_files" "$total_lines" \
+        "$returned" "$omitted")"
+}
+
+emit_json_budget() {
+    local total_files="$1" total_lines="$2"
+    local total_candidates="${3:-${#JSON_BUDGET_RECORDS[@]}}"
+    local admitted_records="${#JSON_BUDGET_RECORDS[@]}"
+    local selected=0 omitted budget_omitted suffix body candidate_bytes final_bytes
+    local body_bytes candidate_body_bytes suffix_bytes record_bytes
+
+    body_bytes="$(byte_count_text '{"results":[')"
+    while (( selected < admitted_records )); do
+        record_bytes="${JSON_BUDGET_RECORD_BYTES[selected]}"
+        candidate_body_bytes=$((body_bytes + record_bytes))
+        (( selected > 0 )) && candidate_body_bytes=$((candidate_body_bytes + 1))
+        omitted=$((total_candidates - selected - 1))
+        suffix_bytes="$(json_budget_suffix_bytes "$total_files" "$total_lines" \
+            "$((selected + 1))" "$omitted")"
+        candidate_bytes=$((candidate_body_bytes + suffix_bytes + 1))
+        if (( candidate_bytes <= MAX_BYTES )); then
+            body_bytes=$candidate_body_bytes
+            selected=$((selected + 1))
+        else
+            break
+        fi
+    done
+
+    omitted=$((total_candidates - selected))
+    suffix="$(json_budget_suffix "$total_files" "$total_lines" "$selected" "$omitted")"
+    final_bytes=$((body_bytes + $(byte_count_text "$suffix") + 1))
+    if (( final_bytes > MAX_BYTES )); then
+        echo "Error: --max-bytes $MAX_BYTES is smaller than the minimum valid JSON response ($final_bytes bytes)" >&2
+        return 1
+    fi
+    BUDGET_RETURNED="$selected"
+    emitted_records="$selected"
+    budget_omitted=$((admitted_records - selected))
+    BUDGET_OMITTED="$budget_omitted"
+    BUDGET_BYTES="$final_bytes"
+    body="$(json_budget_body "$selected")"
+    printf '%s%s\n' "$body" "$suffix"
+    if (( omitted > 0 )); then
+        printf 'search: output budget used %d/%d bytes; omitted %d complete result record(s)\n' \
+            "$final_bytes" "$MAX_BYTES" "$omitted" >&2
+    fi
+}
+
+json_route_fields() {
+    local result_routing="${1:-0}" result_alias="${2:-}"
+    printf ',"routing":%s' "$([[ "$result_routing" == 1 ]] && echo true || echo false)"
+    if [[ -n "$result_alias" ]]; then
+        printf ',"alias":'
+        json_quote "$result_alias"
+    fi
+}
+
+explain_results() {
+    [[ "$EXPLAIN" == true ]] || return 0
+    local budget_mode=false
+    local returned="${emitted_records:-0}"
+    local byte_omitted=0
+    local budget_bytes=0
+    if [[ "${1:-}" == budget ]]; then
+        budget_mode=true
+        returned="${2:-0}"
+        byte_omitted="${3:-0}"
+        budget_bytes="${4:-0}"
+    elif [[ "$JSON" == true && -n "$MAX_BYTES" ]]; then
+        returned="$BUDGET_RETURNED"
+        byte_omitted="$BUDGET_OMITTED"
+        budget_bytes="$BUDGET_BYTES"
+    fi
+    # Text output is finalized from its temporary file after this script's
+    # normal path exits. Do not report pre-budget counts here.
+    [[ "$budget_mode" == true || ! ( "$JSON" == false && -n "$MAX_BYTES" ) ]] || return 0
+    printf 'search explain: mode=%s\n' \
+        "$([[ "$QUESTION_MODE" == true ]] && echo question || echo literal)" >&2
+    if [[ "$QUESTION_MODE" == true ]]; then
+        printf '  original query: %s\n' "$QUERY_TEXT" >&2
+        printf '  retained terms: %s\n' "${TERMS[*]}" >&2
+        printf '  alias matches: %s\n' "${ALIAS_MATCHES[*]:-none}" >&2
+    else
+        printf '  literal terms: %s\n' "${TERMS[*]}" >&2
+    fi
+    printf '  matching mode: %s\n' "$MATCH_MODE" >&2
+    printf '  scope: path=%s topic=%s corpora=%s\n' \
+        "${PATH_FILTER:-all}" "${TOPIC_FILTER:-all}" "${UNIQUE_CORPORA[*]}" >&2
+    printf '  candidates: %d; returned: %d; output limits: limit=%s per-file=%s\n' \
+        "${lines_total:-0}" "$returned" "$LIMIT" "$PER_FILE" >&2
+    if [[ -n "$MAX_BYTES" ]]; then
+        printf '  omissions: result/per-file=%d; byte-budget=%d\n' \
+            "$LIMIT_OMITTED" "$byte_omitted" >&2
+        printf '  byte budget: used=%d/%d bytes\n' "$budget_bytes" "$MAX_BYTES" >&2
+    fi
+    if [[ "${lines_total:-0}" -eq 0 ]]; then
+        if [[ "$SCOPE_IMPOSSIBLE" == true ]]; then
+            printf '  no-hit cause: path and topic filters have no intersection\n' >&2
+        else
+            printf '  no-hit cause: no selected record matched the retained terms\n' >&2
+        fi
+    elif (( LIMIT_OMITTED > 0 || byte_omitted > 0 )); then
+        if (( LIMIT_OMITTED > 0 && byte_omitted > 0 )); then
+            printf '  omission cause: result/per-file limits and byte budget hid candidates\n' >&2
+        elif (( LIMIT_OMITTED > 0 )); then
+            printf '  omission cause: result/per-file limits hid candidates\n' >&2
+        else
+            printf '  omission cause: byte budget hid complete records\n' >&2
+        fi
+    fi
+}
+
 if [[ ${#SEARCH_DIRS[@]} -eq 0 ]]; then
     if [[ "$JSON" == true ]]; then
-        printf '{"results":[],"total_files":0,"total_lines":0,"returned":0,"truncated":false}\n'
+        if [[ -n "$MAX_BYTES" ]]; then
+            emit_json_budget 0 0
+        else
+            printf '{"results":[]'
+            json_query_fields
+            printf ',"total_files":0,"total_lines":0,"returned":0,"truncated":false}\n'
+        fi
     elif [[ "$SCOPE_IMPOSSIBLE" == true ]]; then
         echo "No files match the requested path and topic filters." >&2
     fi
+    lines_total=0
+    admitted_records=0
+    emitted_records=0
+    explain_results
     exit 0
 fi
 
-json_search_file() {
-    printf '{"path":'; json_quote "$path"
-    printf ',"corpus":'; json_quote "$RESULT_CORPUS"
-    printf ',"title":'; json_quote "$title"
-    printf ',"match_count":%s,"locator":null,"freshness":' "$match_count"
-    json_freshness
-    printf ',"conflict":'
-    json_conflict
+json_search_prefix() {
+    local result_path="$1" result_corpus="$2" result_title="$3" result_match_count="$4"
+
+    printf '{"path":'; json_quote "$result_path"
+    printf ',"corpus":'; json_quote "$result_corpus"
+    printf ',"title":'; json_quote "$result_title"
+    printf ',"match_count":%s,"locator":' "$result_match_count"
+}
+
+json_search_metadata() {
+    printf ',"freshness":'; json_freshness
+    printf ',"conflict":'; json_conflict
     printf ',"provenance":'; json_provenance display
+    printf ',"section_metadata":'; json_section_metadata
+}
+
+json_search_file() {
+    local result_path="$1" result_corpus="$2" result_title="$3"
+    local result_match_count="$4" result_routing="$5" result_alias="$6"
+
+    json_search_prefix "$result_path" "$result_corpus" "$result_title" "$result_match_count"
+    printf 'null'
+    json_search_metadata
+    json_route_fields "$result_routing" "$result_alias"
+    json_query_fields result "$result_alias"
     printf '}'
 }
 
 json_search_section() {
-    local line_number="$1" section_name="$2" section_number="$3"
-    local section_command="$4" line_text="$5" evidence_count="$6"
-    printf '{"path":'; json_quote "$path"
-    printf ',"corpus":'; json_quote "$RESULT_CORPUS"
-    printf ',"title":'; json_quote "$title"
-    printf ',"match_count":%s,"locator":{"section":' "$evidence_count"
+    local result_path="$1" result_corpus="$2" result_title="$3"
+    local result_routing="$4" result_alias="$5" line_number="$6"
+    local section_name="$7" section_number="$8" section_command="$9"
+    local line_text="${10}" evidence_count="${11}"
+
+    json_search_prefix "$result_path" "$result_corpus" "$result_title" "$evidence_count"
+    printf '{"section":'
     json_quote "${section_name:-top}"
     printf ',"number":'
-    if [[ -n "$section_number" ]]; then json_quote "$section_number"; else printf 'null'; fi
+    json_nullable_string "$section_number"
     if [[ -n "$section_command" ]]; then
         printf ',"command":'; json_quote "$section_command"
     fi
-    printf ',"line":%s},"freshness":' "$line_number"
-    json_freshness
-    printf ',"conflict":'
-    json_conflict
-    printf ',"provenance":'; json_provenance display
+    printf ',"line":%s}' "$line_number"
+    json_search_metadata
     printf ',"text":'; json_quote "$line_text"
+    json_route_fields "$result_routing" "$result_alias"
+    json_query_fields result "$result_alias"
     printf '}'
 }
+
+render_text_result_suffix() {
+    local locator_metadata="$1" result_metadata="$2" query_metadata="$3" value
+
+    for value in "$locator_metadata" "$result_metadata" "$query_metadata"; do
+        [[ -z "$value" ]] || printf ' [%s]' "$value"
+    done
+}
+
+render_text_file_result() {
+    local result_path="$1" result_match_count="$2" result_title="$3"
+    local result_metadata="$4" result_routing="$5" result_alias="$6"
+    local result_query_metadata="$7"
+
+    if [[ "$TEXT_ONLY" == true ]]; then
+        printf "%s  [%s] %s\n" "$result_path" "$result_match_count" "$result_title"
+        return 0
+    fi
+    if [[ "$result_routing" == 1 ]]; then
+        printf "%s  [routing] alias matched: %s [%s]\n" \
+            "$result_path" "$result_alias" "$result_query_metadata"
+        return 0
+    fi
+    printf "%s  [%s] %s" "$result_path" "$result_match_count" "$result_title"
+    render_text_result_suffix "" "$result_metadata" "$result_query_metadata"
+    printf '\n'
+}
+
+render_text_section_result() {
+    local result_path="$1" result_section="$2" result_excerpt="$3"
+    local result_locator_metadata="$4" result_metadata="$5"
+    local result_routing="$6" result_alias="$7" result_query_metadata="$8"
+
+    if [[ "$TEXT_ONLY" == true ]]; then
+        if [[ "$result_routing" == 1 ]]; then
+            printf "%s | alias | alias matched: %s\n" "$result_path" "$result_alias"
+        else
+            printf "%s | %s | %s\n" "$result_path" "${result_section:-top}" "$result_excerpt"
+        fi
+        return 0
+    fi
+    if [[ "$result_routing" == 1 ]]; then
+        printf "%s | alias | alias matched: %s [routing-result] [%s]\n" \
+            "$result_path" "$result_alias" "$result_query_metadata"
+        return 0
+    fi
+    printf "%s | %s | %s" "$result_path" "${result_section:-top}" "$result_excerpt"
+    render_text_result_suffix "$result_locator_metadata" "$result_metadata" "$result_query_metadata"
+    printf '\n'
+}
+
+admit_result() {
+    admitted_records=$((admitted_records + 1))
+    shown_per_file["$path"]=$((${shown_per_file[$path]:-0} + 1))
+    shown_files["$path"]=1
+}
+
+search_budget_finalize() {
+    local exit_status="$1" full_bytes line line_bytes used=0
+    local marker=$'[output truncated: complete records omitted; increase --max-bytes]\n'
+    local marker_bytes full_result_records selected_records=0 byte_omitted=0
+    local line_number=0 selected_result_records=0
+    trap - EXIT
+    exec 1>&3
+    if (( exit_status != 0 )); then
+        cat "$SEARCH_BUDGET_FILE"
+        rm -f "$SEARCH_BUDGET_FILE"
+        exec 3>&-
+        exit "$exit_status"
+    fi
+    full_bytes="$(byte_size "$SEARCH_BUDGET_FILE")"
+    full_result_records="${admitted_records:-0}"
+    if (( full_bytes <= MAX_BYTES )); then
+        selected_records="$full_result_records"
+        if [[ "$EXPLAIN" == true ]]; then
+            explain_results budget "$selected_records" 0 "$full_bytes"
+        fi
+        cat "$SEARCH_BUDGET_FILE"
+        rm -f "$SEARCH_BUDGET_FILE"
+        exec 3>&-
+        exit 0
+    fi
+    marker_bytes="$(byte_count_text "$marker")"
+    bounded_file="$(mktemp)"
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line_number=$((line_number + 1))
+        line_bytes=$(( $(byte_count_text "$line") + 1 ))
+        if (( used + line_bytes + marker_bytes <= MAX_BYTES )); then
+            printf '%s\n' "$line" >> "$bounded_file"
+            used=$((used + line_bytes))
+            if (( line_number <= full_result_records )); then
+                selected_result_records=$((selected_result_records + 1))
+            fi
+        else
+            # Ranked text records form a prefix. Do not skip a large
+            # high-ranked record and then expose a later, lower-ranked one.
+            break
+        fi
+    done < "$SEARCH_BUDGET_FILE"
+    if (( used == 0 || used + marker_bytes > MAX_BYTES )); then
+        rm -f "$bounded_file" "$SEARCH_BUDGET_FILE"
+        echo "Error: --max-bytes $MAX_BYTES is too small for one complete output record and its truncation marker" >&2
+        exec 3>&-
+        exit 1
+    fi
+    selected_records="$selected_result_records"
+    byte_omitted=$((full_result_records - selected_records))
+    if [[ "$EXPLAIN" == true ]]; then
+        explain_results budget "$selected_records" "$byte_omitted" "$((used + marker_bytes))"
+    fi
+    printf '%s' "$marker" >> "$bounded_file"
+    cat "$bounded_file"
+    printf 'search: output budget used %d/%d bytes; omitted stdout records\n' \
+        "$((used + marker_bytes))" "$MAX_BYTES" >&2
+    rm -f "$bounded_file" "$SEARCH_BUDGET_FILE"
+    exec 3>&-
+    exit 0
+}
+
+SEARCH_BUDGET_FILE=""
+if [[ -n "$MAX_BYTES" && "$JSON" == false ]]; then
+    SEARCH_BUDGET_FILE="$(mktemp "${TMPDIR:-/tmp}/knowledge-search.XXXXXX")"
+    exec 3>&1
+    exec >"$SEARCH_BUDGET_FILE"
+    trap 'search_budget_finalize "$?"' EXIT
+fi
 
 # Control characters separate records so Markdown pipes, spaces, and tabs
 # remain ordinary content. Terms reach awk through the environment because
@@ -336,12 +722,21 @@ function section_score(section_number,   i, matched, score, evidence_bonus) {
     if (evidence_bonus > 4) evidence_bonus = 4
     return score + evidence_bonus * 2
 }
+function file_matches(   i, matched) {
+    matched = 0
+    for (i = 1; i <= nterms; i++) if (file_hit[i]) matched++
+    if (match_mode == "relaxed") return matched > 0 || (alias_enabled && alias_match != "")
+    if (alias_enabled && alias_match != "") return 1
+    return matched == nterms
+}
 function reset() {
     delete file_hit; delete title_hit; delete section_hit
     delete heading_hit; delete body_hit; delete unique_line_count
     delete seen_line; delete excerpt_count; delete excerpt_score
     delete excerpt_line; delete excerpt_text
     in_fm = 0; in_fence = 0; fence_ch = ""; fence_len = 0
+    in_metadata = 0
+    in_aliases = 0; alias_match = ""
     title = ""; path = FILENAME
     if (substr(path, 1, plen) == prefix) path = substr(path, plen + 1)
     section_count = 1; section_name[1] = "top"; section_number[1] = ""
@@ -349,8 +744,9 @@ function reset() {
 }
 function emit(   i, s, matched, title_matches, title_all,
                  candidate_count, best_tier, best_score, evidence_count,
-                 excerpt, output, section_command) {
-    for (i = 1; i <= nterms; i++) if (!file_hit[i]) return
+                 excerpt, output, section_command, routing_flag,
+                 complete_candidate_count) {
+    if (!file_matches()) return
     title_matches = 0
     for (i = 1; i <= nterms; i++) if (title_hit[i]) title_matches++
     title_all = (title_matches == nterms)
@@ -372,6 +768,24 @@ function emit(   i, s, matched, title_matches, title_all,
         candidate_tier[candidate_count] = 2
         candidate_section[candidate_count] = 0
     }
+    complete_candidate_count = 0
+    for (i = 1; i <= candidate_count; i++) {
+        if (candidate_tier[i] >= 1) complete_candidate_count++
+    }
+    # An alias admits a file for routing, but cannot promote a partial body
+    # match into strict evidence. Keep only complete evidence or the explicit
+    # routing result in that case.
+    if (alias_match != "" && match_mode != "relaxed" && complete_candidate_count == 0) {
+        candidate_count = 0
+    }
+    routing_flag = 0
+    if (candidate_count == 0 && alias_match != "") {
+        candidate_count++
+        candidate_score[candidate_count] = 70
+        candidate_tier[candidate_count] = 1
+        candidate_section[candidate_count] = -1
+        routing_flag = 1
+    }
     if (candidate_count == 0) return
     if (files_only == 1) {
         best_score = -1000000000
@@ -382,21 +796,24 @@ function emit(   i, s, matched, title_matches, title_all,
                 best_tier = candidate_tier[i]; best_score = candidate_score[i]
             }
         }
-        print best_tier US best_score US path US 0 US "-" US "-" US "-" US title US candidate_count US candidate_count
+        print best_tier US best_score US path US 0 US "-" US "-" US "-" US title US candidate_count US candidate_count US routing_flag US alias_match
         return
     }
     for (i = 1; i <= candidate_count; i++) {
         s = candidate_section[i]
-        if (s == 0) {
+        if (s == -1) {
+            output = candidate_tier[i] US candidate_score[i] US path US "-1" US "alias" US "" US "--alias" US title US candidate_count US 0 US 1 US alias_match
+            output = output US "0" RS_ alias_match
+        } else if (s == 0) {
             evidence_count = 1; excerpt = title
-            output = candidate_tier[i] US candidate_score[i] US path US 0 US "title" US "" US "--title" US title US candidate_count US evidence_count
+            output = candidate_tier[i] US candidate_score[i] US path US 0 US "title" US "" US "--title" US title US candidate_count US evidence_count US 0 US alias_match
             output = output US "1" RS_ excerpt
         } else {
             evidence_count = unique_line_count[s]
             excerpt = section_excerpt(s)
             if (s == 1) section_command = "--top"
             else section_command = ""
-            output = candidate_tier[i] US candidate_score[i] US path US s US section_name[s] US section_number[s] US section_command US title US candidate_count US evidence_count
+            output = candidate_tier[i] US candidate_score[i] US path US s US section_name[s] US section_number[s] US section_command US title US candidate_count US evidence_count US 0 US alias_match
             output = output US section_excerpt_line(s) RS_ excerpt
         }
         print output
@@ -406,6 +823,8 @@ BEGIN {
     US = ENVIRON["KB_US"]; RS_ = ENVIRON["KB_RS"]
     prefix = ENVIRON["KB_PREFIX"]; plen = length(prefix)
     files_only = (ENVIRON["KB_FILES_ONLY"] == "true" ? 1 : 0)
+    match_mode = ENVIRON["KB_MATCH_MODE"]
+    alias_enabled = (ENVIRON["KB_ALIAS_MODE"] == "true" ? 1 : 0)
     BACKTICK = sprintf("%c", 96)
     nterms = split(ENVIRON["KB_TERMS"], term, US)
     for (i = 1; i <= nterms; i++) term[i] = tolower(term[i])
@@ -415,13 +834,44 @@ FNR == 1 { if (NR > 1) emit(); reset() }
     line = $0; lower = tolower(line)
     if (FNR == 1 && line ~ /^---[[:space:]]*$/) { in_fm = 1; next }
     if (in_fm) {
-        if (line ~ /^---[[:space:]]*$/) { in_fm = 0; next }
+        if (line ~ /^---[[:space:]]*$/) { in_fm = 0; in_aliases = 0; next }
+        if (alias_enabled && line ~ /^aliases:[[:space:]]*$/) { in_aliases = 1; next }
+        if (in_aliases && line ~ /^[[:space:]]*-[[:space:]]+/) {
+            alias_value = line
+            sub(/^[[:space:]]*-[[:space:]]+/, "", alias_value)
+            sub(/^"/, "", alias_value)
+            sub(/"[[:space:]]*$/, "", alias_value)
+            alias_lower = tolower(alias_value)
+            alias_terms = 0
+            for (i = 1; i <= nterms; i++) {
+                if (index(alias_lower, term[i])) alias_terms++
+            }
+            if ((match_mode == "relaxed" && alias_terms > 0) ||
+                (match_mode != "relaxed" && alias_terms == nterms)) {
+                alias_match = alias_value
+                for (i = 1; i <= nterms; i++) file_hit[i] = 1
+            }
+            next
+        }
+        if (in_aliases && line !~ /^[[:space:]]*-[[:space:]]+/) in_aliases = 0
         if (line ~ /^title:/) {
             title = trim(substr(line, 7)); gsub(/^"|"$/, "", title)
             for (i = 1; i <= nterms; i++)
                 if (index(tolower(title), term[i])) { title_hit[i] = 1; file_hit[i] = 1 }
         }
         next
+    }
+    if (in_metadata) {
+        closing = index(line, "-->")
+        if (!closing) next
+        in_metadata = 0
+        line = substr(line, closing + 3)
+        lower = tolower(line)
+    } else if (!in_fence && line ~ /^[[:blank:]]*<!-- kb-section:/) {
+        closing = index(line, "-->")
+        if (!closing) { in_metadata = 1; next }
+        line = substr(line, closing + 3)
+        lower = tolower(line)
     }
     if (fence_check(line)) next
     is_heading = 0
@@ -435,6 +885,12 @@ FNR == 1 { if (NR > 1) emit(); reset() }
             section_count++; current_section = section_count
             section_name[current_section] = heading_text
             section_number[current_section] = h2_count
+            h3_count = 0
+        } else if (hash_count == 3 && h2_count > 0) {
+            h3_count++
+            section_count++; current_section = section_count
+            section_name[current_section] = heading_text
+            section_number[current_section] = h2_count "." h3_count
         } else if (hash_count == 1) current_section = 1
     }
     matched = 0; line_score = is_heading ? 40 : 20; line_term_count = 0
@@ -451,63 +907,133 @@ FNR == 1 { if (NR > 1) emit(); reset() }
 END { if (NR > 0) emit() }
 '
 
-if ! results="$(
+run_awk_search() {
+    local match_mode="$1"
+
     find "${SEARCH_DIRS[@]}" -name '*.md' -type f -print0 2>/dev/null \
-    | LC_ALL=C sort -z \
-    | KB_TERMS="$TERM_STR" KB_US="$US" KB_RS="$RS" KB_FILES_ONLY="$FILES_ONLY" \
-      KB_PREFIX="$CONTENT_DIR/" xargs -0 awk "$AWK_PROG" \
-    | LC_ALL=C sort -t"$US" -k1,1nr -k2,2nr -k3,3 -k4,4n
-)"; then
+        | LC_ALL=C sort -z \
+        | KB_TERMS="$TERM_STR" KB_US="$US" KB_RS="$RS" \
+          KB_FILES_ONLY="$FILES_ONLY" KB_MATCH_MODE="$match_mode" \
+          KB_ALIAS_MODE="$QUESTION_MODE" \
+          KB_PREFIX="$CONTENT_DIR/" xargs -0 awk "$AWK_PROG" \
+        | LC_ALL=C sort -t"$US" -k1,1nr -k2,2nr -k3,3 -k4,4n
+}
+
+if ! results="$(run_awk_search "$MATCH_MODE")"; then
     echo "Search failed while reading the selected content." >&2
     exit 1
 fi
 
+if [[ -z "$results" && "$QUESTION_MODE" == true && "$RELAX" == true ]]; then
+    MATCH_MODE=relaxed
+    if ! results="$(run_awk_search "$MATCH_MODE")"; then
+        echo "Search failed while reading the selected content." >&2
+        exit 1
+    fi
+fi
+
 if [[ -z "$results" ]]; then
-    [[ "$JSON" == true ]] && printf '{"results":[],"total_files":0,"total_lines":0,"returned":0,"truncated":false}\n'
+    if [[ "$JSON" == true ]]; then
+        if [[ -n "$MAX_BYTES" ]]; then
+            emit_json_budget 0 0
+        else
+            printf '{"results":[]'
+            json_query_fields
+            printf ',"total_files":0,"total_lines":0,"returned":0,"truncated":false}\n'
+        fi
+    fi
+    lines_total=0
+    admitted_records=0
+    emitted_records=0
+    explain_results
     exit 0
 fi
 
 declare -A all_files=()
 declare -A shown_files=()
 declare -A shown_per_file=()
-printed=0; files_total=0; lines_total=0; json_first=true
-if [[ "$JSON" == true ]]; then printf '{"results":['; fi
+SECTION_METADATA_CACHE_ENABLED=true
+ALIAS_MATCHES=()
+declare -A seen_alias_matches=()
+admitted_records=0; emitted_records=0; files_total=0; lines_total=0; json_first=true
+if [[ "$JSON" == true && -z "$MAX_BYTES" ]]; then printf '{"results":['; fi
 
 # shellcheck disable=SC2034  # ranking fields are sort keys.
-while IFS="$US" read -r coverage_tier score path section_order section section_number section_command title match_count evidence_count rest; do
+while IFS="$US" read -r coverage_tier score path section_order section section_number section_command title match_count evidence_count routing_flag alias_match rest; do
     [[ -n "$path" ]] || continue
+    if [[ -n "$alias_match" && -z "${seen_alias_matches[$alias_match]+present}" ]]; then
+        seen_alias_matches["$alias_match"]=1
+        ALIAS_MATCHES+=("$alias_match")
+    fi
     if [[ -z "${all_files[$path]+present}" ]]; then
         all_files["$path"]=1; files_total=$((files_total + 1))
     fi
+    SECTION_METADATA_AVAILABLE=false
     if [[ "$FILES_ONLY" == true ]]; then
         lines_total=$((lines_total + 1))
-        (( LIMIT > 0 && printed >= LIMIT )) && continue
-        retrieval_metadata_for_file "$path" "$CONTENT_DIR/$path"
-        metadata="$(retrieval_metadata_text)"
-        if [[ "$JSON" == true ]]; then
-            [[ "$json_first" == false ]] && printf ','
-            json_search_file; json_first=false
-        elif [[ "$TEXT_ONLY" == true ]]; then
-            printf "%s  [%s] %s\n" "$path" "$match_count" "$title"
-        else
-            printf "%s  [%s] %s [%s]\n" "$path" "$match_count" "$title" "$metadata"
+        if (( LIMIT > 0 && admitted_records >= LIMIT )); then
+            LIMIT_OMITTED=$((LIMIT_OMITTED + 1))
+            continue
         fi
-        printed=$((printed + 1)); shown_files["$path"]=1
+        retrieval_metadata_for_file "$path" "$CONTENT_DIR/$path"
+        metadata=""; query_metadata=""
+        if [[ "$JSON" == false && "$TEXT_ONLY" == false ]]; then
+            metadata="$(retrieval_metadata_text)"
+            query_metadata="$(query_metadata_text)"
+        fi
+        if [[ "$JSON" == true ]]; then
+            if [[ -n "$MAX_BYTES" ]]; then
+                json_budget_add_record "$(json_search_file \
+                    "$path" "$RESULT_CORPUS" "$title" "$match_count" \
+                    "$routing_flag" "$alias_match")"
+            else
+                [[ "$json_first" == false ]] && printf ','
+                json_search_file "$path" "$RESULT_CORPUS" "$title" "$match_count" \
+                    "$routing_flag" "$alias_match"
+                json_first=false
+                emitted_records=$((emitted_records + 1))
+            fi
+        else
+            render_text_file_result "$path" "$match_count" "$title" "$metadata" \
+                "$routing_flag" "$alias_match" "$query_metadata"
+            [[ -n "$MAX_BYTES" ]] || emitted_records=$((emitted_records + 1))
+        fi
+        admit_result
         continue
     fi
     lines_total=$((lines_total + 1))
-    (( LIMIT > 0 && printed >= LIMIT )) && continue
-    (( PER_FILE > 0 && ${shown_per_file[$path]:-0} >= PER_FILE )) && continue
-    retrieval_metadata_for_file "$path" "$CONTENT_DIR/$path"
-    metadata="$(retrieval_metadata_text)"
+    if (( LIMIT > 0 && admitted_records >= LIMIT )); then
+        LIMIT_OMITTED=$((LIMIT_OMITTED + 1))
+        continue
+    fi
+    if (( PER_FILE > 0 && ${shown_per_file[$path]:-0} >= PER_FILE )); then
+        LIMIT_OMITTED=$((LIMIT_OMITTED + 1))
+        continue
+    fi
+    retrieval_metadata_for_file "$path" "$CONTENT_DIR/$path" "$section_number"
+    metadata=""; query_metadata=""
+    if [[ "$JSON" == false && "$TEXT_ONLY" == false ]]; then
+        metadata="$(retrieval_metadata_text)"
+        section_detail="$(section_metadata_text)"
+        [[ -n "$section_detail" ]] && metadata+="; $section_detail"
+        query_metadata="$(query_metadata_text)"
+    fi
     while IFS="$RS" read -r line_number excerpt_text; do
         [[ -n "$line_number" ]] || continue
         if [[ "$JSON" == true ]]; then
-            [[ "$json_first" == false ]] && printf ','
-            json_search_section "$line_number" "$section" "$section_number" "$section_command" "$excerpt_text" "$evidence_count"
-            json_first=false
-        elif [[ "$TEXT_ONLY" == true ]]; then
-            printf "%s | %s | %s\n" "$path" "${section:-top}" "$excerpt_text"
+            if [[ -n "$MAX_BYTES" ]]; then
+                json_budget_add_record "$(json_search_section \
+                    "$path" "$RESULT_CORPUS" "$title" "$routing_flag" "$alias_match" \
+                    "$line_number" "$section" "$section_number" "$section_command" \
+                    "$excerpt_text" "$evidence_count")"
+            else
+                [[ "$json_first" == false ]] && printf ','
+                json_search_section "$path" "$RESULT_CORPUS" "$title" \
+                    "$routing_flag" "$alias_match" "$line_number" "$section" \
+                    "$section_number" "$section_command" "$excerpt_text" "$evidence_count"
+                json_first=false
+                emitted_records=$((emitted_records + 1))
+            fi
         else
             locator_metadata=""
             if [[ -n "$section_number" ]]; then
@@ -515,29 +1041,34 @@ while IFS="$US" read -r coverage_tier score path section_order section section_n
             elif [[ -n "$section_command" ]]; then
                 locator_metadata="section-command=$section_command"
             fi
-            if [[ -n "$locator_metadata" ]]; then
-                printf "%s | %s | %s [%s] [%s]\n" "$path" "${section:-top}" "$excerpt_text" "$locator_metadata" "$metadata"
-            else
-                printf "%s | %s | %s [%s]\n" "$path" "${section:-top}" "$excerpt_text" "$metadata"
-            fi
+            render_text_section_result "$path" "$section" "$excerpt_text" \
+                "$locator_metadata" "$metadata" "$routing_flag" "$alias_match" \
+                "$query_metadata"
+            [[ -n "$MAX_BYTES" ]] || emitted_records=$((emitted_records + 1))
         fi
-        printed=$((printed + 1))
-        shown_per_file["$path"]=$((${shown_per_file[$path]:-0} + 1))
-        if [[ -z "${shown_files[$path]+present}" ]]; then shown_files["$path"]=1; fi
+        admit_result
     done < <(printf '%s\n' "$rest" | tr "$US" '\n')
 done <<< "$results"
 
 if [[ "$JSON" == true ]]; then
-    hidden_lines=$((lines_total - printed))
+    if [[ -n "$MAX_BYTES" ]]; then
+        emit_json_budget "$files_total" "$lines_total" "$lines_total"
+        explain_results
+        exit 0
+    fi
+    hidden_lines=$((lines_total - emitted_records))
     hidden_files=$((files_total - ${#shown_files[@]}))
     truncated=false; (( hidden_lines > 0 )) && truncated=true
-    printf '],"total_files":%d,"total_lines":%d,"returned":%d,"truncated":%s}\n' \
-        "$files_total" "$lines_total" "$printed" "$truncated"
+    printf ']'
+    json_query_fields
+    printf ',"total_files":%d,"total_lines":%d,"returned":%d,"truncated":%s}\n' \
+        "$files_total" "$lines_total" "$emitted_records" "$truncated"
     if (( hidden_lines > 0 )); then
         printf 'search: %d result section(s) hidden' "$hidden_lines" >&2
         (( hidden_files > 0 )) && printf ' in %d unshown file(s)' "$hidden_files" >&2
         printf '; raise --limit/--per-file or narrow the query.\n' >&2
     fi
+    explain_results
     exit 0
 fi
 
@@ -547,10 +1078,11 @@ if [[ "$FILES_ONLY" == true ]]; then
         echo ""
         printf "... %d more file(s). Raise --limit, or narrow the query.\n" "$hidden_files"
     fi
+    explain_results
     exit 0
 fi
 
-hidden_lines=$((lines_total - printed))
+hidden_lines=$((lines_total - admitted_records))
 hidden_files=$((files_total - ${#shown_files[@]}))
 if (( hidden_lines > 0 )); then
     echo ""
@@ -558,3 +1090,4 @@ if (( hidden_lines > 0 )); then
     (( hidden_files > 0 )) && printf " in %d unshown file(s)" "$hidden_files"
     printf ". Raise --limit/--per-file, or narrow the query.\n"
 fi
+explain_results
