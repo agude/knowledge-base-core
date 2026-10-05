@@ -1,0 +1,290 @@
+{
+  "format": "knowledge-base-retrieval-evaluation-baseline",
+  "version": 1,
+  "fixture_id": "synthetic-question-v1",
+  "corpus_id": "synthetic-question-corpus-v1",
+  "evaluation_role": "post_implementation",
+  "fixture_sha256": "b1feac4284db2a9a82e3d4d8aad7868078391fca097ab3a86d755dcfa9b65fde",
+  "corpus_sha256": "9a059a7faf719d2e42b6543cac80ce9aa162edcf411abff4a04b4a377a66aab9",
+  "top_k": 5,
+  "cases": [
+    {
+      "id": "question-normalization-01",
+      "query_mode": "question",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "routing_success": false,
+      "false_positive_retrieval": null,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 2,
+      "full_ranking_response_bytes": 2319,
+      "top_five_raw_result_count": 2,
+      "top_five_section_count": 2,
+      "top_five_response_bytes": 2319,
+      "top_five": [
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "Restart the API service"
+        },
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "Backup location"
+        }
+      ]
+    },
+    {
+      "id": "question-unanswerable-01",
+      "query_mode": "question",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "status": "unanswerable",
+      "any_required_evidence": null,
+      "all_required_evidence": null,
+      "routing_success": null,
+      "false_positive_retrieval": false,
+      "matched_required_evidence_count": null,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 0,
+      "full_ranking_response_bytes": 232,
+      "top_five_raw_result_count": 0,
+      "top_five_section_count": 0,
+      "top_five_response_bytes": 232,
+      "top_five": []
+    },
+    {
+      "id": "question-backup-location-01",
+      "query_mode": "question",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "routing_success": false,
+      "false_positive_retrieval": null,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 3,
+      "full_ranking_result_count": 3,
+      "full_ranking_response_bytes": 3001,
+      "top_five_raw_result_count": 3,
+      "top_five_section_count": 3,
+      "top_five_response_bytes": 3001,
+      "top_five": [
+        {
+          "path": "knowledge/conflicts.md",
+          "section": "Backup destination conflict"
+        },
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "Restart the API service"
+        },
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "Backup location"
+        }
+      ]
+    },
+    {
+      "id": "question-api-hostname-01",
+      "query_mode": "question",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "routing_success": false,
+      "false_positive_retrieval": null,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 3,
+      "full_ranking_response_bytes": 3073,
+      "top_five_raw_result_count": 3,
+      "top_five_section_count": 3,
+      "top_five_response_bytes": 3073,
+      "top_five": [
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "API hostname"
+        },
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "Restart the API service"
+        },
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "Deploy the API service"
+        }
+      ]
+    },
+    {
+      "id": "question-deploy-workflow-01",
+      "query_mode": "question",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "routing_success": false,
+      "false_positive_retrieval": null,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 3,
+      "full_ranking_response_bytes": 3133,
+      "top_five_raw_result_count": 3,
+      "top_five_section_count": 3,
+      "top_five_response_bytes": 3133,
+      "top_five": [
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "Deploy the API service"
+        },
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "Restart the API service"
+        },
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "API hostname"
+        }
+      ]
+    },
+    {
+      "id": "question-alias-routing-01",
+      "query_mode": "question",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "status": "pass",
+      "any_required_evidence": false,
+      "all_required_evidence": false,
+      "routing_success": true,
+      "false_positive_retrieval": null,
+      "matched_required_evidence_count": 0,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 981,
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 981,
+      "top_five": [
+        {
+          "path": "knowledge/network.md",
+          "section": "alias"
+        }
+      ]
+    },
+    {
+      "id": "temporal-current-01",
+      "query_mode": "question",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "routing_success": false,
+      "false_positive_retrieval": null,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 3,
+      "full_ranking_response_bytes": 3156,
+      "top_five_raw_result_count": 3,
+      "top_five_section_count": 3,
+      "top_five_response_bytes": 3156,
+      "top_five": [
+        {
+          "path": "knowledge/temporal.md",
+          "section": "Current deploy target"
+        },
+        {
+          "path": "knowledge/temporal.md",
+          "section": "Previous deploy target"
+        },
+        {
+          "path": "knowledge/temporal.md",
+          "section": "top"
+        }
+      ]
+    },
+    {
+      "id": "temporal-historical-01",
+      "query_mode": "question",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "routing_success": false,
+      "false_positive_retrieval": null,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 3,
+      "full_ranking_response_bytes": 3208,
+      "top_five_raw_result_count": 3,
+      "top_five_section_count": 3,
+      "top_five_response_bytes": 3208,
+      "top_five": [
+        {
+          "path": "knowledge/temporal.md",
+          "section": "Previous deploy target"
+        },
+        {
+          "path": "knowledge/temporal.md",
+          "section": "Current deploy target"
+        },
+        {
+          "path": "knowledge/temporal.md",
+          "section": "top"
+        }
+      ]
+    },
+    {
+      "id": "conflict-unresolved-01",
+      "query_mode": "question",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "routing_success": false,
+      "false_positive_retrieval": null,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 2,
+      "full_ranking_response_bytes": 2152,
+      "top_five_raw_result_count": 2,
+      "top_five_section_count": 2,
+      "top_five_response_bytes": 2152,
+      "top_five": [
+        {
+          "path": "knowledge/conflicts.md",
+          "section": "Backup destination conflict"
+        },
+        {
+          "path": "knowledge/conflicts.md",
+          "section": "top"
+        }
+      ]
+    },
+    {
+      "id": "question-unanswerable-02",
+      "query_mode": "question",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "status": "unanswerable",
+      "any_required_evidence": null,
+      "all_required_evidence": null,
+      "routing_success": null,
+      "false_positive_retrieval": false,
+      "matched_required_evidence_count": null,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 0,
+      "full_ranking_response_bytes": 263,
+      "top_five_raw_result_count": 0,
+      "top_five_section_count": 0,
+      "top_five_response_bytes": 263,
+      "top_five": []
+    }
+  ]
+}

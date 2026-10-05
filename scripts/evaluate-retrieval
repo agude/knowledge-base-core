@@ -5,6 +5,7 @@
 # Usage:
 #   evaluate-retrieval --fixture FILE [--content-dir DIR]
 #                      [--baseline FILE] [--write-baseline FILE]
+#                      [--max-bytes N]
 #                      [--fail-on-regression]
 #
 # Options:
@@ -13,6 +14,7 @@
 #   --baseline FILE         Compare ranked results with a frozen baseline
 #   --write-baseline FILE   Write ranked results as a new frozen baseline
 #   --fail-on-regression    Exit nonzero when a baseline outcome regresses
+#   --max-bytes N           Bound each search response by stdout bytes
 #   --json                  Accepted for consistency; JSON is always returned
 #
 # The evaluator measures full-ranking and bounded search subprocesses. It
@@ -31,6 +33,7 @@ CONTENT_OVERRIDE=""
 BASELINE=""
 WRITE_BASELINE=""
 FAIL_ON_REGRESSION=false
+MAX_BYTES=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -57,6 +60,11 @@ while [[ $# -gt 0 ]]; do
         --fail-on-regression)
             FAIL_ON_REGRESSION=true
             shift
+            ;;
+        --max-bytes)
+            need_arg "$1" "$#"
+            MAX_BYTES="$(parse_nonnegative_decimal "--max-bytes" "$2")" || exit 1
+            shift 2
             ;;
         --json)
             shift
@@ -124,6 +132,9 @@ if ! jq -e '
     ((.fixture_id | length) > 0) and
     ((.corpus_id | type) == "string") and
     ((.corpus_id | length) > 0) and
+    (((.evaluation_role? // "unspecified") | IN(
+        "unspecified", "pre_change", "post_implementation", "comparison"
+    ))) and
     ((.cases | type) == "array") and
     ((.cases | length) > 0) and
     (([.cases[].id] | length) == ([.cases[].id] | unique | length)) and
@@ -133,6 +144,10 @@ if ! jq -e '
         ((.category | type) == "string") and
         ((.query | type) == "string") and
         ((.query | length) > 0) and
+        (((.query_mode? // "literal") | IN("literal", "question"))) and
+        (((.relax? // false) | type) == "boolean") and
+        (((.comparison_group? // null) == null) or
+         ((.comparison_group | type) == "string" and (.comparison_group | length) > 0)) and
         ((.expected_sections | type) == "array") and
         ((.requires_all_sections | type) == "boolean") and
         ((.unanswerable | type) == "boolean") and
@@ -142,7 +157,7 @@ if ! jq -e '
             ((.section | type) == "string") and
             ((.section | length) > 0) and
             ((.number? == null) or ((.number | type) == "string" and (.number | length) > 0)) and
-            ((.command? == null) or ((.command | type) == "string" and (.command | IN("--top", "--title")))) and
+            ((.command? == null) or ((.command | type) == "string" and (.command | IN("--alias", "--top", "--title")))) and
             ((.number? == null) or (.command? == null))
         ) and
         ((.unanswerable and (.expected_sections | length) == 0) or
@@ -153,20 +168,8 @@ if ! jq -e '
     exit 1
 fi
 
-sha256_file() {
-    if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum "$1" | awk '{print $1}'
-        return 0
-    fi
-    if command -v shasum >/dev/null 2>&1; then
-        shasum -a 256 "$1" | awk '{print $1}'
-        return 0
-    fi
-    echo "Error: evaluate-retrieval requires sha256sum or shasum" >&2
-    return 1
-}
-
 FIXTURE_SHA256="$(sha256_file "$FIXTURE")"
+EVALUATION_ROLE="$(jq -r '.evaluation_role // "unspecified"' "$FIXTURE")"
 
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/knowledge-evaluation.XXXXXX")" || {
     echo "Error: could not create evaluation temporary directory" >&2
@@ -213,6 +216,11 @@ validate_expected_locators() {
             # file existence check validates it; headings use section's
             # parser so fenced headings and exact text follow core behavior.
             if [[ "$expected_section" == "top" && -z "$expected_number" && -z "$expected_command" ]]; then
+                continue
+            fi
+            if [[ "$expected_command" == "--alias" ]]; then
+                # Alias routing has no Markdown section to extract. The
+                # search evaluator still checks the emitted routing locator.
                 continue
             fi
 
@@ -282,9 +290,18 @@ now_ms() {
 }
 
 run_search() {
-    local output_file="$1" error_file="$2" limit="$3" per_file="$4" query="$5"
-    KB_CONTENT_DIR="$CONTENT_DIR" "$SEARCH_SCRIPT" \
-        --json --limit "$limit" --per-file "$per_file" -- "$query" \
+    local output_file="$1" error_file="$2" limit="$3" per_file="$4"
+    local query_mode="$5" relax="$6" query="$7"
+    local -a query_args=(--json --limit "$limit" --per-file "$per_file")
+
+    [[ -n "$MAX_BYTES" ]] && query_args+=(--max-bytes "$MAX_BYTES")
+    if [[ "$query_mode" == question ]]; then
+        query_args+=(--query "$query")
+        [[ "$relax" == true ]] && query_args+=(--relax)
+    else
+        query_args+=(-- "$query")
+    fi
+    KB_CONTENT_DIR="$CONTENT_DIR" "$SEARCH_SCRIPT" "${query_args[@]}" \
         > "$output_file" 2> "$error_file"
 }
 
@@ -297,6 +314,59 @@ validate_search_json() {
     fi
 }
 
+run_timed_search() {
+    local result_file="$1" error_file="$2" limit="$3" per_file="$4"
+    local query_mode="$5" relax="$6" query="$7" label="$8" case_id="$9"
+    local search_status=0
+
+    SEARCH_STARTED_MS="$(now_ms)"
+    if run_search "$result_file" "$error_file" "$limit" "$per_file" \
+        "$query_mode" "$relax" "$query"; then
+        :
+    else
+        search_status=$?
+    fi
+    SEARCH_FINISHED_MS="$(now_ms)"
+
+    if (( search_status != 0 )); then
+        echo "$label retrieval failed for case '$case_id':" >&2
+        sed 's/^/  /' "$error_file" >&2
+        return 1
+    fi
+    validate_search_json "$result_file" "$case_id"
+}
+
+build_case_record() {
+    local case_json="$1" full_result_file="$2" bounded_result_file="$3"
+    local full_response_bytes="$4" bounded_response_bytes="$5"
+    local full_latency_ms="$6" bounded_latency_ms="$7"
+
+    jq -c \
+        --argjson question "$case_json" \
+        --slurpfile search_result "$full_result_file" \
+        --slurpfile bounded_result "$bounded_result_file" \
+        --arg full_response_bytes "$full_response_bytes" \
+        --arg bounded_response_bytes "$bounded_response_bytes" \
+        --arg full_latency_ms "$full_latency_ms" \
+        --arg bounded_latency_ms "$bounded_latency_ms" \
+        -f "$SCRIPT_DIR/evaluate-retrieval-case.jq" "$full_result_file"
+}
+
+read_case_fields() {
+    local case_json="$1" fields_file="$2"
+
+    printf '%s\n' "$case_json" | jq -rj '
+        [.id, .query, (.query_mode // "literal"), ((.relax // false) | tostring)][] |
+        ., "\u0000"
+    ' > "$fields_file"
+    exec 3< "$fields_file"
+    IFS= read -r -d '' case_id <&3 || return 1
+    IFS= read -r -d '' query <&3 || return 1
+    IFS= read -r -d '' query_mode <&3 || return 1
+    IFS= read -r -d '' relax <&3 || return 1
+    exec 3<&-
+}
+
 if [[ "$HIGH_RES_CLOCK" == true ]]; then
     LATENCY_CLOCK="epoch milliseconds from date +%s%N"
 else
@@ -305,156 +375,52 @@ fi
 
 CASE_RECORDS="$TEMP_DIR/cases.jsonl"
 : > "$CASE_RECORDS"
+CASE_FIELDS_DIR="$TEMP_DIR/case-fields"
+mkdir -p "$CASE_FIELDS_DIR"
 case_number=0
 
 while IFS= read -r case_json; do
     case_number=$((case_number + 1))
-    case_id="$(printf '%s\n' "$case_json" | jq -r '.id')"
-    query="$(printf '%s\n' "$case_json" | jq -r '.query')"
+    case_id=""
+    query=""
+    query_mode=""
+    relax=""
+    read_case_fields "$case_json" "$CASE_FIELDS_DIR/$case_number" || {
+        echo "Invalid retrieval fixture: could not read case '$case_number'" >&2
+        exit 1
+    }
     full_result_file="$TEMP_DIR/full-result-$case_number.json"
     full_stderr_file="$TEMP_DIR/full-result-$case_number.stderr"
     bounded_result_file="$TEMP_DIR/bounded-result-$case_number.json"
     bounded_stderr_file="$TEMP_DIR/bounded-result-$case_number.stderr"
 
-    full_started_ms="$(now_ms)"
-    search_status=0
-    if run_search "$full_result_file" "$full_stderr_file" 0 0 "$query"; then
-        :
-    else
-        search_status=$?
-    fi
-    full_finished_ms="$(now_ms)"
+    run_timed_search "$full_result_file" "$full_stderr_file" 0 0 \
+        "$query_mode" "$relax" "$query" "Full-ranking" "$case_id" || exit 1
+    full_started_ms="$SEARCH_STARTED_MS"
+    full_finished_ms="$SEARCH_FINISHED_MS"
 
-    if (( search_status != 0 )); then
-        echo "Full-ranking retrieval failed for case '$case_id':" >&2
-        sed 's/^/  /' "$full_stderr_file" >&2
-        exit 1
-    fi
-
-    if ! validate_search_json "$full_result_file" "$case_id"; then
-        exit 1
-    fi
-
-    bounded_started_ms="$(now_ms)"
-    search_status=0
-    if run_search "$bounded_result_file" "$bounded_stderr_file" 5 0 "$query"; then
-        :
-    else
-        search_status=$?
-    fi
-    bounded_finished_ms="$(now_ms)"
-
-    if (( search_status != 0 )); then
-        echo "Bounded top-five retrieval failed for case '$case_id':" >&2
-        sed 's/^/  /' "$bounded_stderr_file" >&2
-        exit 1
-    fi
-
-    if ! validate_search_json "$bounded_result_file" "$case_id"; then
-        exit 1
-    fi
+    run_timed_search "$bounded_result_file" "$bounded_stderr_file" 5 0 \
+        "$query_mode" "$relax" "$query" "Bounded top-five" "$case_id" || exit 1
+    bounded_started_ms="$SEARCH_STARTED_MS"
+    bounded_finished_ms="$SEARCH_FINISHED_MS"
 
     full_response_bytes="$(wc -c < "$full_result_file" | tr -d '[:space:]')"
     bounded_response_bytes="$(wc -c < "$bounded_result_file" | tr -d '[:space:]')"
     full_latency_ms=$((full_finished_ms - full_started_ms))
     bounded_latency_ms=$((bounded_finished_ms - bounded_started_ms))
-    case_record="$(jq -c \
-        --argjson question "$case_json" \
-        --slurpfile search_result "$full_result_file" \
-        --slurpfile bounded_result "$bounded_result_file" \
-        --arg full_response_bytes "$full_response_bytes" \
-        --arg bounded_response_bytes "$bounded_response_bytes" \
-        --arg full_latency_ms "$full_latency_ms" \
-        --arg bounded_latency_ms "$bounded_latency_ms" '
-        ($search_result[0].results // []) as $all_results |
-        ($bounded_result[0].results // []) as $bounded_results |
-        ($question.expected_sections // []) as $expected |
-       ($question.unanswerable == true) as $unanswerable |
-       ($question.requires_all_sections == true) as $requires_all |
-        def locator_matches($actual; $expected):
-            ($actual.path == $expected.path) and
-            (if ($expected.number // null) != null then
-                 $actual.number == $expected.number
-             elif ($expected.command // null) != null then
-                 $actual.command == $expected.command
-             else
-                 $actual.section == $expected.section
-             end);
-       ($all_results |
-           reduce .[] as $result
-           ([ ];
-               ($result.path) as $result_path |
-               ($result.locator.section // "top") as $result_section |
-                ($result.locator.number // "") as $result_number |
-                ($result.locator.command // "") as $result_command |
-                ($result_path + "\u0000" + $result_section + "\u0000" + $result_number + "\u0000" + $result_command) as $result_key |
-               if any(.[]; .key == $result_key) then .
-                else . + [{key: $result_key, path: $result_path, section: $result_section, number: $result_number, command: $result_command}]
-               end
-           )
-       ) as $distinct_sections |
-       ($distinct_sections | length > 0) as $has_retrieved_evidence |
-       ($unanswerable and $has_retrieved_evidence) as $false_positive_retrieval |
-       ($distinct_sections[:5] | map({path, section})) as $top_five |
-       ([
-           $expected[] as $expected_section |
-            select(any($distinct_sections[:5][]; locator_matches(.; $expected_section)))
-       ] | length) as $matched_count |
-       ([
-           $distinct_sections | to_entries[] | . as $entry |
-            select(any($expected[]; locator_matches($entry.value; .))) |
-            (.key + 1)
-        ]) as $relevant_ranks |
-        ($relevant_ranks[0] // null) as $first_relevant_rank |
-        (if $unanswerable then null else ($matched_count > 0) end) as $any |
-        (if $unanswerable then null
-         else ($matched_count == ($expected | length)) end) as $all |
-        (if $unanswerable then null
-         elif $requires_all then $all
-         else $any end) as $success |
-        {
-            id: $question.id,
-            category: $question.category,
-            query: $question.query,
-            expected_sections: $expected,
-            requires_all_sections: $requires_all,
-            unanswerable: $unanswerable,
-            status: (if $unanswerable and $has_retrieved_evidence then "false_positive"
-                     elif $unanswerable then "unanswerable"
-                     elif $success then "pass"
-                     else "fail" end),
-            any_required_evidence: $any,
-            all_required_evidence: $all,
-            false_positive_retrieval: (if $unanswerable then $has_retrieved_evidence else null end),
-            matched_required_evidence_count: (if $unanswerable then null else $matched_count end),
-            first_relevant_rank: $first_relevant_rank,
-            full_ranking_result_count: ($all_results | length),
-            full_ranking_response_bytes: ($full_response_bytes | tonumber),
-            full_ranking_latency_ms: ($full_latency_ms | tonumber),
-            top_five_raw_result_count: ($bounded_results | length),
-            top_five_section_count: ($top_five | length),
-            top_five_response_bytes: ($bounded_response_bytes | tonumber),
-            top_five_latency_ms: ($bounded_latency_ms | tonumber),
-           bounded_raw_results: ($bounded_results
-               | map({path, section: (.locator.section // "top"),
-                      number: .locator.number, command: .locator.command,
-                     line: .locator.line, text})),
-            top_five: $top_five,
-            failure: (if $false_positive_retrieval then
-                          "retrieval returned evidence for an unanswerable query"
-                      elif $unanswerable or $success then null
-                      elif $requires_all then
-                          "not all expected sections appear in the top five"
-                      else "no expected section appears in the top five" end)
-        }
-    ' "$full_result_file")"
+    case_record="$(build_case_record \
+        "$case_json" "$full_result_file" "$bounded_result_file" \
+        "$full_response_bytes" "$bounded_response_bytes" \
+        "$full_latency_ms" "$bounded_latency_ms")"
     printf '%s\n' "$case_record" >> "$CASE_RECORDS"
 done < <(jq -c '.cases[]' "$FIXTURE")
 
 REPORT_FILE="$TEMP_DIR/report.json"
+build_report() {
 jq -s -c \
     --arg fixture_id "$(jq -r '.fixture_id' "$FIXTURE")" \
     --arg corpus_id "$(jq -r '.corpus_id' "$FIXTURE")" \
+    --arg evaluation_role "$EVALUATION_ROLE" \
     --arg fixture_sha256 "$FIXTURE_SHA256" \
     --arg corpus_sha256 "$CORPUS_SHA256" \
     --arg latency_clock "$LATENCY_CLOCK" \
@@ -464,18 +430,55 @@ jq -s -c \
     ([.[] | select(.status == "fail" or .false_positive_retrieval == true)]) as $failures |
     ([.[] | select(.any_required_evidence == true)] | length) as $any_count |
     ([.[] | select(.all_required_evidence == true)] | length) as $all_count |
+    ([.[] | select(.routing_success == true)] | length) as $routing_count |
     ([.[] | select(.false_positive_retrieval == true)] | length) as $false_positive_count |
     ($answerable | length) as $answerable_count |
+    ($cases | group_by(.category) | map(
+        .[0].category as $category |
+        {
+            category: $category,
+            total_cases: length,
+            answerable_cases: (map(select(.unanswerable == false)) | length),
+            passed_cases: (map(select(.status == "pass")) | length),
+            any_required_evidence_cases: (map(select(.any_required_evidence == true)) | length),
+            all_required_evidence_cases: (map(select(.all_required_evidence == true)) | length),
+            routing_success_cases: (map(select(.routing_success == true)) | length),
+            false_positive_unanswerable_cases: (map(select(.false_positive_retrieval == true)) | length)
+        }
+    )) as $categories |
+    ([$cases[] | select(.comparison_group != null)]
+        | group_by(.comparison_group)
+        | map(
+            .[0].comparison_group as $comparison_group |
+            (map(select(.relaxed_query == false))) as $strict_cases |
+            (map(select(.relaxed_query == true))) as $relaxed_cases |
+            {
+                comparison_group: $comparison_group,
+                strict_case_count: ($strict_cases | length),
+                relaxed_case_count: ($relaxed_cases | length),
+                strict_passed_cases: ([$strict_cases[] | select(.status == "pass")] | length),
+                relaxed_passed_cases: ([$relaxed_cases[] | select(.status == "pass")] | length),
+                discovery_gain: (
+                    (any($strict_cases[]; .status == "fail")) and
+                    (any($relaxed_cases[]; .status == "pass"))
+                ),
+                added_false_positive: (
+                    (any($strict_cases[]; .false_positive_retrieval != true)) and
+                    (any($relaxed_cases[]; .false_positive_retrieval == true))
+                )
+            }
+        )) as $comparison_groups |
     {
         format: "knowledge-base-retrieval-evaluation-report",
         version: 1,
         fixture_id: $fixture_id,
         corpus_id: $corpus_id,
+        evaluation_role: $evaluation_role,
         fixture_sha256: $fixture_sha256,
         corpus_sha256: $corpus_sha256,
         measurement: {
             top_k: 5,
-            coverage_unit: "distinct search locators (path, section, number/command) from the full ranking",
+            coverage_unit: "distinct search locators (path, section, number/command) from the bounded top-five response",
             full_ranking_command: "search --json --limit 0 --per-file 0 QUERY",
             top_five_command: "search --json --limit 5 --per-file 0 QUERY",
             full_ranking_latency_scope: "wall-clock time for the full-ranking search subprocess",
@@ -492,14 +495,27 @@ jq -s -c \
             failed_cases: ($failures | length),
             any_required_evidence_cases: $any_count,
             all_required_evidence_cases: $all_count,
+            routing_success_cases: $routing_count,
             false_positive_unanswerable_cases: $false_positive_count,
             any_required_evidence_rate: (if $answerable_count == 0 then null else ($any_count / $answerable_count) end),
             all_required_evidence_rate: (if $answerable_count == 0 then null else ($all_count / $answerable_count) end),
+            routing_success_rate: (if $answerable_count == 0 then null else ($routing_count / $answerable_count) end),
             false_positive_unanswerable_rate: (
                 if (length - $answerable_count) == 0 then null
                 else ($false_positive_count / (length - $answerable_count))
                 end
             ),
+            categories: $categories,
+            query_modes: (group_by(.query_mode) | map({mode: .[0].query_mode, cases: length})),
+            comparison_groups: $comparison_groups,
+            relaxation: {
+                compared_groups: ($comparison_groups | length),
+                discovery_gain_groups: ([$comparison_groups[] | select(.discovery_gain)] | length),
+                added_false_positive_groups: ([$comparison_groups[] | select(.added_false_positive)] | length)
+            },
+            output_budget_bytes: (if (($cases | length) == 0) then null else ($cases[0].output_budget_bytes // null) end),
+            full_omitted_results_total: ([.[] | .full_omitted_results] | add // 0),
+            top_five_omitted_results_total: ([.[] | .top_five_omitted_results] | add // 0),
             full_ranking_response_bytes_total: ([.[] | .full_ranking_response_bytes] | add // 0),
             top_five_response_bytes_total: ([.[] | .top_five_response_bytes] | add // 0),
             full_ranking_latency_ms_total: ([.[] | .full_ranking_latency_ms] | add // 0),
@@ -510,12 +526,15 @@ jq -s -c \
         cases: $cases
     }
 ' "$CASE_RECORDS" > "$REPORT_FILE"
+}
+build_report
 
-baseline_json=""
-if [[ -n "$WRITE_BASELINE" ]]; then
+write_baseline() {
+    local baseline_json baseline_directory
     baseline_json="$(jq -c \
         --arg fixture_id "$(jq -r '.fixture_id' "$FIXTURE")" \
         --arg corpus_id "$(jq -r '.corpus_id' "$FIXTURE")" \
+        --arg evaluation_role "$EVALUATION_ROLE" \
         --arg fixture_sha256 "$FIXTURE_SHA256" \
         --arg corpus_sha256 "$CORPUS_SHA256" '
         {
@@ -523,14 +542,19 @@ if [[ -n "$WRITE_BASELINE" ]]; then
             version: 1,
             fixture_id: $fixture_id,
             corpus_id: $corpus_id,
+            evaluation_role: $evaluation_role,
             fixture_sha256: $fixture_sha256,
             corpus_sha256: $corpus_sha256,
             top_k: 5,
             cases: [.cases[] | {
                 id,
+                query_mode,
+                relaxed_query,
+                comparison_group,
                 status,
                 any_required_evidence,
                 all_required_evidence,
+                routing_success,
                 false_positive_retrieval,
                 matched_required_evidence_count,
                 first_relevant_rank,
@@ -549,9 +573,14 @@ if [[ -n "$WRITE_BASELINE" ]]; then
         exit 1
     fi
     printf '%s\n' "$baseline_json" | jq . > "$WRITE_BASELINE"
+}
+
+if [[ -n "$WRITE_BASELINE" ]]; then
+    write_baseline
 fi
 
-if [[ -n "$BASELINE" ]]; then
+compare_baseline() {
+    local comparison
     if [[ ! -f "$BASELINE" ]]; then
         echo "Baseline not found: $BASELINE" >&2
         exit 1
@@ -581,9 +610,12 @@ if [[ -n "$BASELINE" ]]; then
             select($baseline_case != null) |
             select(
                 $current_case.status != $baseline_case.status or
+                ($current_case.query_mode // "literal") != ($baseline_case.query_mode // "literal") or
+                ($current_case.relaxed_query // false) != ($baseline_case.relaxed_query // false) or
                 $current_case.first_relevant_rank != $baseline_case.first_relevant_rank or
                 $current_case.any_required_evidence != $baseline_case.any_required_evidence or
                 $current_case.all_required_evidence != $baseline_case.all_required_evidence or
+                ($current_case.routing_success // false) != ($baseline_case.routing_success // false) or
                 $current_case.false_positive_retrieval != $baseline_case.false_positive_retrieval or
                 $current_case.matched_required_evidence_count != $baseline_case.matched_required_evidence_count or
                 $current_case.full_ranking_result_count != $baseline_case.full_ranking_result_count or
@@ -597,6 +629,7 @@ if [[ -n "$BASELINE" ]]; then
                 status: $current_case.status,
                 any_required_evidence: $current_case.any_required_evidence,
                 all_required_evidence: $current_case.all_required_evidence,
+                routing_success: $current_case.routing_success,
                 false_positive_retrieval: $current_case.false_positive_retrieval,
                 matched_required_evidence_count: $current_case.matched_required_evidence_count,
                 first_relevant_rank: $current_case.first_relevant_rank,
@@ -622,6 +655,9 @@ if [[ -n "$BASELINE" ]]; then
                 (if .baseline.all_required_evidence == true and
                     .current.all_required_evidence != true
                  then "all_required_evidence" else empty end),
+                (if (.baseline.routing_success // false) == true and
+                    .current.routing_success != true
+                 then "routing_success" else empty end),
                 (if .baseline.false_positive_retrieval != true and
                     .current.false_positive_retrieval == true
                  then "false_positive_retrieval" else empty end),
@@ -634,6 +670,7 @@ if [[ -n "$BASELINE" ]]; then
         ]) as $regression_details |
         {
             fixture_match: ($current_report.fixture_sha256 == $baseline_report.fixture_sha256),
+            evaluation_role_match: (($current_report.evaluation_role // "unspecified") == ($baseline_report.evaluation_role // "unspecified")),
             baseline_fixture_sha256: $baseline_report.fixture_sha256,
             current_fixture_sha256: $current_report.fixture_sha256,
             corpus_match: ($current_report.corpus_sha256 == $baseline_report.corpus_sha256),
@@ -659,6 +696,10 @@ if [[ -n "$BASELINE" ]]; then
         '. + {baseline_comparison: $comparison}' "$REPORT_FILE" \
         > "$TEMP_DIR/report-with-baseline.json"
     mv "$TEMP_DIR/report-with-baseline.json" "$REPORT_FILE"
+}
+
+if [[ -n "$BASELINE" ]]; then
+    compare_baseline
 fi
 
 jq . "$REPORT_FILE"
@@ -667,7 +708,8 @@ if [[ "$FAIL_ON_REGRESSION" == true ]] && [[ -n "$BASELINE" ]]; then
     regression_count="$(jq '.baseline_comparison.regressions | length' "$REPORT_FILE")"
     fixture_mismatch="$(jq 'if .baseline_comparison.fixture_match then 0 else 1 end' "$REPORT_FILE")"
     corpus_mismatch="$(jq 'if .baseline_comparison.corpus_match then 0 else 1 end' "$REPORT_FILE")"
-    if (( regression_count > 0 || fixture_mismatch > 0 || corpus_mismatch > 0 )); then
+    role_mismatch="$(jq 'if .baseline_comparison.evaluation_role_match then 0 else 1 end' "$REPORT_FILE")"
+    if (( regression_count > 0 || fixture_mismatch > 0 || corpus_mismatch > 0 || role_mismatch > 0 )); then
         exit 1
     fi
 fi
