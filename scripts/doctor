@@ -1,0 +1,373 @@
+#!/usr/bin/env bash
+#
+# doctor - Diagnose knowledge-base runtime and installation requirements.
+#
+# Usage:
+#   doctor [--require CAPABILITY ...]
+#
+# Options:
+#   --require NAME  Treat a capability failure as fatal. Repeatable.
+#                   Names: retrieval, capture, curation, sync, development,
+#                   adapters, or all.
+#   -h, --help      Show this help message.
+#
+# The command is read-only with respect to the tooling and content roots. Its
+# capture smoke test uses a temporary buffer and removes it before returning.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd -P)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+source "$SCRIPT_DIR/_lib.sh"
+
+REQUIRED_CAPABILITIES=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --require)
+            need_arg "$1" $#
+            REQUIRED_CAPABILITIES+=("$2")
+            shift 2
+            ;;
+        -h|--help)
+            show_help "$0"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1" >&2
+            exit 1
+            ;;
+    esac
+done
+
+for capability in "${REQUIRED_CAPABILITIES[@]}"; do
+    case "$capability" in
+        retrieval|capture|curation|sync|development|adapters|all) ;;
+        *)
+            echo "Unknown capability: $capability" >&2
+            exit 1
+            ;;
+    esac
+done
+
+requires() {
+    local capability="$1" required
+
+    for required in "${REQUIRED_CAPABILITIES[@]}"; do
+        [[ "$required" == all || "$required" == "$capability" ]] && return 0
+    done
+    return 1
+}
+
+failures=0
+warnings=0
+
+report() {
+    local capability="$1" status="$2" message="$3"
+
+    case "$status" in
+        pass) printf 'PASS [%s] %s\n' "$capability" "$message" ;;
+        warn)
+            warnings=$((warnings + 1))
+            printf 'WARN [%s] %s\n' "$capability" "$message"
+            ;;
+        fail)
+            if requires "$capability"; then
+                failures=$((failures + 1))
+                printf 'FAIL [%s] %s\n' "$capability" "$message"
+            else
+                warnings=$((warnings + 1))
+                printf 'WARN [%s] %s (use --require %s to make this fatal)\n' \
+                    "$capability" "$message" "$capability"
+            fi
+            ;;
+    esac
+}
+
+check_command() {
+    local capability="$1" command_name="$2"
+
+    if command -v "$command_name" >/dev/null 2>&1; then
+        report "$capability" pass "$command_name is available"
+    else
+        report "$capability" fail "missing command: $command_name"
+    fi
+}
+
+check_command retrieval bash
+check_command retrieval awk
+check_command retrieval find
+check_command retrieval sort
+check_command retrieval sed
+check_command retrieval tr
+check_command retrieval date
+check_command retrieval mktemp
+check_command retrieval cmp
+check_command retrieval od
+
+probe_retrieval_features() {
+    local probe_dir="$1"
+    local sort_z_input="$probe_dir/sort-z-input"
+    local sort_z_expected="$probe_dir/sort-z-expected"
+    local sort_z_actual="$probe_dir/sort-z-actual"
+    local sort_v_input="$probe_dir/sort-v-input"
+    local sort_v_expected="$probe_dir/sort-v-expected"
+    local sort_v_actual="$probe_dir/sort-v-actual"
+    local find_root="$probe_dir/find-root"
+    local find_expected="$probe_dir/find-expected"
+    local find_actual="$probe_dir/find-actual"
+    local readlink_target="$probe_dir/readlink-target"
+    local readlink_link="$probe_dir/readlink-link"
+    local expected_target actual_target
+
+    printf 'b\0a\0' > "$sort_z_input"
+    printf 'a\0b\0' > "$sort_z_expected"
+    if LC_ALL=C sort -z "$sort_z_input" > "$sort_z_actual" 2>/dev/null \
+        && cmp -s "$sort_z_expected" "$sort_z_actual"; then
+        report retrieval pass "sort supports -z NUL-delimited ordering"
+    else
+        report retrieval fail "sort does not support -z NUL-delimited ordering"
+    fi
+
+    printf '10\n2\n' > "$sort_v_input"
+    printf '2\n10\n' > "$sort_v_expected"
+    if LC_ALL=C sort -V "$sort_v_input" > "$sort_v_actual" 2>/dev/null \
+        && cmp -s "$sort_v_expected" "$sort_v_actual"; then
+        report retrieval pass "sort supports -V version ordering"
+    else
+        report retrieval fail "sort does not support -V version ordering"
+    fi
+
+    mkdir -p "$find_root/nested"
+    touch "$find_root/top" "$find_root/nested/hidden"
+    printf '%s\n' "$find_root/top" > "$find_expected"
+    if find "$find_root" -maxdepth 1 -type f -print > "$find_actual" 2>/dev/null \
+        && cmp -s "$find_expected" "$find_actual"; then
+        report retrieval pass "find supports -maxdepth bounded scans"
+    else
+        report retrieval fail "find does not support -maxdepth bounded scans"
+    fi
+
+    touch "$readlink_target"
+    ln -s "$readlink_target" "$readlink_link"
+    expected_target="$readlink_target"
+    actual_target="$(readlink -f "$readlink_link" 2>/dev/null || true)"
+    if [[ "$actual_target" == "$expected_target" ]]; then
+        report retrieval pass "readlink supports -f entrypoint resolution"
+    else
+        report retrieval fail "readlink does not support -f entrypoint resolution"
+    fi
+}
+
+if command -v mktemp >/dev/null 2>&1 && command -v cmp >/dev/null 2>&1; then
+    retrieval_probe_dir="$(mktemp -d "${TMPDIR:-/tmp}/knowledge-doctor-retrieval.XXXXXX" 2>/dev/null || true)"
+    if [[ -n "$retrieval_probe_dir" ]]; then
+        probe_retrieval_features "$retrieval_probe_dir"
+        rm -rf "$retrieval_probe_dir"
+    else
+        report retrieval fail "could not create utility feature probe fixtures"
+    fi
+else
+    report retrieval fail "utility feature probes require mktemp and cmp"
+fi
+
+if (( BASH_VERSINFO[0] >= 4 )); then
+    report retrieval pass "Bash ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]} supports associative arrays"
+else
+    report retrieval fail "Bash 4 or newer is required"
+fi
+
+parsed_date_epoch="$(date_to_epoch 2026-01-01)"
+if [[ -n "$parsed_date_epoch" ]]; then
+    report retrieval pass "date can parse UTC freshness dates"
+else
+    report retrieval fail "date cannot parse YYYY-MM-DD freshness dates"
+fi
+
+if command -v stat >/dev/null 2>&1 && {
+    stat -c '%s' "$SCRIPT_DIR/doctor" >/dev/null 2>&1 ||
+    stat -f '%z' "$SCRIPT_DIR/doctor" >/dev/null 2>&1;
+}; then
+    report retrieval pass "stat supports file-size checks"
+else
+    report retrieval fail "stat with -c or -f is required for size checks"
+fi
+
+check_command capture jq
+check_command capture od
+check_command capture awk
+check_command capture cat
+
+check_command adapters jq
+check_command adapters node
+
+check_adapter_file() {
+    local client
+    local name
+    local path
+    client="$1"
+    name="$2"
+    path="$SCRIPT_DIR/adapters/$client/$name"
+
+    if [[ -x "$path" ]]; then
+        report adapters pass "$client adapter is executable: $name"
+    else
+        report adapters fail "$client adapter is missing or not executable: $name"
+    fi
+}
+
+check_adapter_file claude session-start
+check_adapter_file claude session-prompt
+check_adapter_file claude session-stop
+check_adapter_file claude session-end
+check_adapter_file claude pretool-allow
+check_adapter_file codex session-start
+check_adapter_file codex session-prompt
+check_adapter_file codex session-stop
+check_adapter_file codex session-end
+
+for pi_file in knowledge.ts package.json package-lock.json; do
+    if [[ -f "$SCRIPT_DIR/adapters/pi/$pi_file" ]]; then
+        report adapters pass "Pi adapter file is present: $pi_file"
+    else
+        report adapters fail "Pi adapter file is missing: $pi_file"
+    fi
+done
+
+if command -v node >/dev/null 2>&1; then
+    node_version="$(node -p 'process.versions.node' 2>/dev/null || echo unknown)"
+    if [[ "$node_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+        node_major="${BASH_REMATCH[1]}"
+        node_minor="${BASH_REMATCH[2]}"
+    else
+        node_major=0
+        node_minor=0
+    fi
+    if (( node_major > 22 )) || {
+        (( node_major == 22 )) && (( node_minor >= 19 ));
+    }; then
+        report adapters pass "Node.js $node_version supports the Pi adapter"
+    else
+        report adapters fail "Node.js $node_version is below the Pi requirement >=22.19.0"
+    fi
+fi
+
+if command -v jq >/dev/null 2>&1 && command -v mktemp >/dev/null 2>&1; then
+    smoke_dir="$(mktemp -d "${TMPDIR:-/tmp}/knowledge-doctor.XXXXXX")"
+    smoke_buffer="$smoke_dir/session.jsonl"
+    touch "$smoke_buffer"
+    smoke_message=$'doctor capture smoke\nwith a tab\tand quote "'
+    smoke_status=0
+    if ! printf '%s' "$smoke_message" | "$SCRIPT_DIR/session-append" \
+        --file "$smoke_buffer" --role user --message - >/dev/null 2>&1; then
+        smoke_status=1
+    elif ! jq -e --arg expected "$smoke_message" \
+        'select(.message == $expected)' "$smoke_buffer" >/dev/null 2>&1; then
+        smoke_status=1
+    fi
+    rm -rf "$smoke_dir"
+    if (( smoke_status == 0 )); then
+        report capture pass "stdin capture and JSON round-trip smoke test passed"
+    else
+        report capture fail "stdin capture smoke test failed"
+    fi
+else
+    report capture fail "capture smoke test skipped because jq or mktemp is unavailable"
+fi
+
+check_command curation git
+if command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1; then
+    report curation pass "a SHA-256 implementation is available"
+else
+    report curation fail "sha256sum or shasum is required for batch manifests"
+fi
+
+check_command sync git
+
+check_command development shellcheck
+check_command development bats
+check_command development just
+
+if [[ -d "$REPO_ROOT" && -x "$REPO_ROOT/scripts/search" ]]; then
+    report retrieval pass "tooling root is executable: $REPO_ROOT"
+else
+    report retrieval fail "tooling root or scripts/search is unavailable"
+fi
+
+if [[ -d "$CONTENT_DIR" ]]; then
+    report curation pass "content root: $CONTENT_DIR"
+    for required_directory in knowledge sources observations/pending \
+        observations/archived questions/open questions/resolved; do
+        if [[ -d "$CONTENT_DIR/$required_directory" ]]; then
+            report curation pass "content directory exists: $required_directory"
+        else
+            report curation fail "missing content directory: $required_directory"
+        fi
+    done
+
+    if [[ "$(cd "$CONTENT_DIR" && git rev-parse --is-inside-work-tree 2>/dev/null || true)" == true ]]; then
+        report curation pass "content root is a Git work tree"
+        dirty_count="$( { cd "$CONTENT_DIR" && git status --porcelain; } 2>/dev/null | wc -l | tr -d ' ')"
+        if [[ "$dirty_count" == 0 ]]; then
+            report curation pass "content Git work tree is clean"
+        else
+            report curation warn "content Git work tree has $dirty_count uncommitted path(s)"
+        fi
+    else
+        report curation fail "content root is not a Git work tree"
+    fi
+else
+    report curation fail "content root does not exist: $CONTENT_DIR"
+fi
+
+content_hook="$CONTENT_DIR/.git/hooks/pre-commit"
+expected_hook="$SCRIPT_DIR/hooks/pre-commit"
+if [[ -e "$content_hook" || -L "$content_hook" ]]; then
+    hook_target="$(canonicalize "$content_hook" 2>/dev/null || true)"
+    expected_target="$(canonicalize "$expected_hook" 2>/dev/null || true)"
+    if [[ -n "$hook_target" && "$hook_target" == "$expected_target" ]]; then
+        report curation pass "content pre-commit hook points to the tooling hook"
+    else
+        report curation fail "content pre-commit hook does not point to $expected_hook"
+    fi
+else
+    report curation fail "content pre-commit hook is not installed: $content_hook"
+fi
+
+for skill_name in knowledge-base curate; do
+    installed_skill="$HOME/.agents/skills/$skill_name"
+    expected_skill="$REPO_ROOT/skills/$skill_name"
+    if [[ -e "$installed_skill" || -L "$installed_skill" ]]; then
+        skill_target="$(canonicalize "$installed_skill" 2>/dev/null || true)"
+        expected_target="$(canonicalize "$expected_skill" 2>/dev/null || true)"
+        if [[ -n "$skill_target" && "$skill_target" == "$expected_target" ]]; then
+            report curation pass "installed skill target is current: $skill_name"
+        else
+            report curation fail "installed skill target is not current: $installed_skill"
+        fi
+    else
+        report curation fail "skill is not installed: $installed_skill"
+    fi
+done
+
+configured_session_dir="$(session_dir)"
+if [[ -d "$configured_session_dir" ]]; then
+    if [[ -O "$configured_session_dir" ]]; then
+        session_mode="$(stat -c '%a' "$configured_session_dir" 2>/dev/null || stat -f '%Lp' "$configured_session_dir" 2>/dev/null || echo unknown)"
+        if [[ "$session_mode" == 700 ]]; then
+            report capture pass "session directory is owned by the current user and mode 700: $configured_session_dir"
+        else
+            report capture fail "session directory must be mode 700: $configured_session_dir (mode $session_mode)"
+        fi
+    else
+        report capture fail "session directory is not owned by the current user: $configured_session_dir"
+    fi
+else
+    report capture warn "session directory does not exist yet: $configured_session_dir"
+fi
+
+if (( failures > 0 )); then
+    printf 'Doctor found %d required failure(s) and %d warning(s).\n' "$failures" "$warnings" >&2
+    exit 1
+fi
+printf 'Doctor completed with %d warning(s).\n' "$warnings"

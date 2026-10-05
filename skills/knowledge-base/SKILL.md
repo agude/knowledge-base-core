@@ -62,7 +62,13 @@ Start by searching, not browsing.
      `--archive` adds the archive and question corpora.
    - Use `--text-only` for metadata-free section text or `--json` for
      structured output. The two modes cannot be combined.
-     H2 search results include the numeric locator needed by
+   - Use `--query "question"` for question mode. It retains operational
+     tokens such as dates, paths, flags, and negation while removing grammar
+     stopwords. Strict mode requires all retained terms; add `--relax` to
+     permit an any-term fallback only after strict mode returns no result.
+     Use `--explain` to write normalization, aliases, scope, and result-limit
+     diagnostics to stderr.
+     H2/H3 search results include the numeric locator needed by
      `section --number`; `top` and frontmatter-title results include
      direct `--top` and `--title` commands.
 
@@ -87,6 +93,34 @@ Retrieval displays at most five provenance references. Structured results also
 include `reference_count` and `references_truncated`; use `section --references`
 when the complete list is required.
 
+Section metadata is an optional `<!-- kb-section: ... -->` comment on its own
+line as the first nonblank content after an H2 or H3. Inline and fenced examples
+do not set metadata; misplaced standalone comments are invalid. It inherits
+article frontmatter and can override
+`verified`/`synced`, `ttl`, `effective`, `status`, `supersedes`, and
+comma-separated `sources`. Put `supersedes` on the newer section as a backward
+link to the older H2/H3 numeric locator; mark the older section
+`status=superseded` without a link. The
+`section` and `search` JSON responses include `section_metadata`; use
+`stale --sections` for an explicit section-level freshness review. `lint`
+checks section dates, effective-date ordering, status values, supersession
+references, and section source paths. A comment with prose after its closing
+delimiter is an inline example, including when the comment spans multiple
+lines. It does not set live metadata; the surrounding prose remains searchable.
+
+Use `search --max-bytes N` when a caller needs a bounded stdout response. JSON
+keeps complete ranked records and reports `omitted_results`; text output keeps
+complete lines and marks truncation. Use `section --max-bytes N` for a bounded
+follow-up: its envelope remains intact and JSON reports
+`content_truncated` and `omitted_content_bytes`. A byte cap is a transport
+volume limit, not a token or billing estimate. Retrieval caps include all
+stdout serialization and metadata, but not stderr. Exact fits succeed;
+one-byte-short caps preserve complete records or lines and mark omissions, or
+fail when even the minimum envelope and marker cannot fit. Zero is a valid
+input budget for preview but selects no files; a zero retrieval budget fails
+when the command must emit an envelope. Omit the cap when the complete
+response is required.
+
 **Always load the minimum content needed.** Do NOT read entire knowledge
 files. The toc → section hierarchy is the compression scheme — scan the
 index, then load only what's relevant.
@@ -109,7 +143,9 @@ $KNOWLEDGE_BASE/scripts/observe --title "<one-line summary>" --body "<details>"
   no-ops if session-start was skipped. Check the value before relying on a
   host adapter. Codex keeps a private per-session initialization marker so a
   swept buffer can be recreated; normal flush clears the marker. Subagents do
-  not get this variable.
+  not get this variable. An enabled session that cannot create its buffer
+  reports failure through the adapter's existing retries; Codex still emits
+  its required `{}` response. Uninitialized sessions remain no-ops.
 - **Capture immediately.** Do not wait until the task is done.
 - **One observation per concept.** Three things learned = three calls.
 - **Be specific.** "Use uv + PEP 723 for standalone scripts" is good.
@@ -178,6 +214,9 @@ Knowledge articles carry a `verified` date and a `ttl` in frontmatter.
 
 `$KNOWLEDGE_BASE/scripts/stale` lists what is past its threshold.
 
+Numeric TTLs use decimal days, including leading zeroes. Numeric values above
+106751991167300 days are invalid because their seconds would overflow.
+
 If an article is past its `ttl`, retrieval labels it `stale`; treat its claims
 with skepticism and verify against live sources before acting on them. Missing
 or malformed dates are labeled `unknown` or `invalid`, never `fresh`. Source
@@ -191,7 +230,7 @@ All scripts are at `$KNOWLEDGE_BASE/scripts/<name>`.
 
 | Script | Purpose |
 |---|---|
-| `search <term> [term ...] [--json\|--text-only] [--path PATH] [--topic NAME] [--corpus TYPE]` | Search ranked sections with metadata |
+| `search <term> [term ...] [--query TEXT] [--relax] [--explain] [--json\|--text-only] [--path PATH] [--topic NAME] [--corpus TYPE]` | Search ranked sections with metadata |
 | `evaluate-retrieval --fixture FILE [--baseline FILE]` | Measure retrieval against a versioned question fixture |
 | `toc [--depth N] [--path DIR] [--flat] [--dirs]` | List topics and sections |
 | `section --file FILE (--number N \| --heading TEXT \| --top \| --title) [--json\|--text-only]` | Extract a section or search fallback with metadata |
@@ -204,13 +243,69 @@ All scripts are at `$KNOWLEDGE_BASE/scripts/<name>`.
 | `resolve --file F [--answer "..."]` | Resolve a question |
 | `archive FILENAME [FILENAME ...]` | Archive explicit observations |
 | `archive --batch ID --disposition TYPE [--destination PATH] FILENAME` | Complete one persisted batch member |
-| `stale [--days N] [--path DIR]` | List articles needing re-verification |
+| `stale [--days N] [--path DIR] [--sections]` | List articles or sections needing re-verification |
 | `lint [--path DIR] [--strict] [--batch ID]` | Check articles against the structural conventions |
 | `commit -m "..."` | Commit curation work under the write lock |
 | `sync [--status] [--no-push]` | Pull and push the content repo |
 | `init [--path DIR]` | Initialize an empty content repo |
 | `status` | Summary stats |
 | `context` | Compact summary for session injection |
+| `doctor [--require CAPABILITY]` | Diagnose runtime and installation requirements |
+
+The repository's public question-mode evaluation lives under
+`tests/fixtures/retrieval-question-v1/`. The ten-case fixture is labeled
+`post_implementation`; `retrieval-question-pre-change-v1.json` runs the same
+question strings as literal searches on the same corpus and is the frozen
+`pre_change` control. The separate comparison fixture pairs literal, strict
+question, and relaxed cases. These artifacts have distinct baselines and must
+not overwrite one another. The cases cover normalization, paraphrase,
+punctuation, alias-routing, temporal, conflict, and abstention.
+`temporal-judgments.json` is a separate manual-answer artifact: use it to
+distinguish retrieving a historical section from selecting the correct
+current claim. Retrieval metrics alone do not establish answer correctness.
+
+Capture requirements are capability-specific. Retrieval uses Bash 4 or newer
+and the shared shell utilities; JSON encoding requires od and AWK. JSON parsing
+for session flushing, host
+adapters, and evaluation requires `jq`; `session-append` can encode stdin
+without jq. Curation uses Git and a SHA-256 utility, while development checks
+use ShellCheck, Bats, and just. The optional Pi checks use Node and npm.
+
+The shell utilities have explicit portability boundaries: `stat -c` and
+`stat -f`, `date -d` and `date -j`, and `sha256sum` and `shasum -a 256` are
+paired fallbacks. Recursive ordering requires NUL-safe `sort -z`, section
+locators require `sort -V`, and bounded scans require `find -maxdepth`; these
+features have no safe text-line substitutes. Entrypoint bootstrapping uses
+`readlink -f`; shared path validation has a manual symlink fallback for BSD
+`readlink`, but hosts still need a compatible entrypoint resolver. Associative
+arrays and `mapfile` require Bash 4 or newer. Node, npm, SQLite, and network
+services are optional and outside the shell gate.
+
+Run `scripts/doctor` for read-only diagnostics. Add `--require retrieval`,
+`--require capture`, `--require curation`, `--require sync`,
+`--require development`, or `--require adapters` when a missing capability
+must return nonzero. The check uses only temporary capture files and never
+creates a real observation.
+
+For prompts or responses that may be large or multiline, send the message
+through stdin:
+
+```bash
+printf '%s' "$message" |
+  scripts/session-append --file "$buffer" --role user --message -
+```
+
+Pass `--message` once. Repeating it, including a mixture of stdin and argument
+forms, fails before capture; empty input remains a no-op and non-empty input
+keeps its Unicode and trailing newlines.
+
+`session-flush` parses the JSONL stream into a private temporary transcript and
+passes it to `observe` through stdin. Parse, write, or commit failures leave
+the original buffer for recovery, as do interrupted flushes. A rejected
+observation commit leaves both the generated pending observation and the
+source buffer so a retry cannot discard the evidence. Host adapters preserve
+their at-least-once retry behavior; a post-write failure can still produce a
+duplicate raw line.
 
 ### Curation queue preview
 
@@ -238,6 +333,14 @@ processing a persisted batch, run
 dispositions and destinations, lists bounded deferred work, and retains the
 existing pending/complete/deferred counts. Newly arrived observations are not
 part of that report unless a new batch selects them.
+
+Batch input budgets count source-file bytes, including frontmatter. Automatic
+selection orders valid `created` timestamps, breaks equal timestamps by
+filename, and places missing or invalid timestamps after valid files in
+filename order. Exact fits are selected. A zero-byte preview selects nothing;
+`batch start` reports that no item fits. Explicit over-budget selections fail
+before a manifest is created, and excluded or newly arrived observations
+remain pending rather than becoming completable members of the batch.
 
 Archive only completed members with explicit filenames. `archive --all` is a
 manual bulk-maintenance operation, not a curation command: it can archive

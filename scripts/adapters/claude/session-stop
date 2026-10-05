@@ -7,20 +7,27 @@ KB="${KNOWLEDGE_BASE:-}"
 [[ -z "$KB" ]] && exit 0
 command -v jq > /dev/null 2>&1 || exit 0
 
-append_message() {
-    "$KB/scripts/session-append" "$@" && return 0
-    "$KB/scripts/session-append" "$@"
-}
-
 INPUT="$(cat)"
 SESSION_ID="$(echo "$INPUT" | jq -r '.session_id // empty')"
-MESSAGE="$(echo "$INPUT" | jq -r '.last_assistant_message // empty')"
-[[ -z "$SESSION_ID" || -z "$MESSAGE" ]] && exit 0
+[[ -z "$SESSION_ID" ]] && exit 0
+
+MESSAGE_FILE="$(mktemp "${TMPDIR:-/tmp}/knowledge-adapter-message.XXXXXX")" || exit 1
+cleanup() { rm -f "$MESSAGE_FILE"; }
+trap cleanup EXIT
+if ! printf '%s' "$INPUT" | jq -rj '.last_assistant_message // empty' > "$MESSAGE_FILE"; then
+    exit 1
+fi
+[[ -s "$MESSAGE_FILE" ]] || exit 0
+
+append_message() {
+    "$KB/scripts/session-append" "$@" --message - < "$MESSAGE_FILE" && return 0
+    "$KB/scripts/session-append" "$@" --message - < "$MESSAGE_FILE"
+}
 
 if [[ -n "${KNOWLEDGE_SESSION_FILE:-}" ]]; then
     append_message --file "$KNOWLEDGE_SESSION_FILE" \
-        --role assistant --message "$MESSAGE"
+        --role assistant
 else
     append_message --session-id "$SESSION_ID" \
-        --role assistant --message "$MESSAGE"
+        --role assistant
 fi

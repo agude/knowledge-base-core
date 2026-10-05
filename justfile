@@ -10,7 +10,7 @@ install:
     scripts/install
 
 shellcheck:
-    find scripts -type d -name node_modules -prune -o -type f ! -name '*.ts' ! -name '*.json' -exec shellcheck -x -P scripts -s bash {} +
+    find scripts -type d -name node_modules -prune -o -type f ! -name '*.ts' ! -name '*.json' ! -name '*.jq' -exec shellcheck -x -P scripts -s bash {} +
 
 portability:
     scripts/portability-lint

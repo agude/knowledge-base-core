@@ -65,6 +65,41 @@ run_codex_stop() {
         "$SCRIPTS/adapters/codex/session-stop"
 }
 
+@test "Claude prompt and stop report enabled buffer creation failures" {
+    local blocked_directory="$SESSION_DIR/blocked" event
+    printf 'retain this file\n' > "$blocked_directory"
+    export KNOWLEDGE_OBSERVE=1
+
+    for event in prompt stop; do
+        run env SESSION_DIR="$blocked_directory" bash -c '
+            printf "%s\n" "{\"session_id\":\"probe\",\"prompt\":\"durable evidence\",\"last_assistant_message\":\"durable evidence\"}" |
+                "$1"
+        ' _ "$SCRIPTS/adapters/claude/session-$event"
+        [[ "$status" -ne 0 ]]
+        [[ -n "$output" ]]
+        [[ "$(cat "$blocked_directory")" == 'retain this file' ]]
+    done
+}
+
+@test "Codex prompt and stop retain protocol JSON on enabled buffer creation failures" {
+    local blocked_directory="$SESSION_DIR/blocked" event
+    local stdout_file="$TEST_CONTENT_DIR/adapter.stdout"
+    local stderr_file="$TEST_CONTENT_DIR/adapter.stderr"
+    printf 'retain this file\n' > "$blocked_directory"
+    export KNOWLEDGE_OBSERVE=1
+
+    for event in prompt stop; do
+        run env SESSION_DIR="$blocked_directory" bash -c '
+            printf "%s\n" "{\"session_id\":\"probe\",\"prompt\":\"durable evidence\",\"last_assistant_message\":\"durable evidence\"}" |
+                "$1" > "$2" 2> "$3"
+        ' _ "$SCRIPTS/adapters/codex/session-$event" "$stdout_file" "$stderr_file"
+        [[ "$status" -ne 0 ]]
+        [[ "$(cat "$stdout_file")" == '{}' ]]
+        [[ -s "$stderr_file" ]]
+        [[ "$(cat "$blocked_directory")" == 'retain this file' ]]
+    done
+}
+
 @test "Claude retries an append that fails before persistence" {
     local target="$SESSION_DIR/claude-before.jsonl"
     touch "$target"
@@ -280,4 +315,53 @@ run_codex_stop() {
 @test "portable instruction file is the canonical source" {
     [[ -f "$BATS_TEST_DIRNAME/../AGENTS.md" ]]
     [[ ! -e "$BATS_TEST_DIRNAME/../CLAUDE.md" ]]
+}
+
+@test "enabled adapters report message allocation and extraction failures" {
+    create_append_stub
+    local fake_bin="$TEST_CONTENT_DIR/adapter-fail-bin"
+    local real_jq client event mode stdout_file
+    real_jq="$(command -v jq)"
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/mktemp" <<'STUB'
+#!/usr/bin/env bash
+if [[ "$ADAPTER_FAILURE_MODE" == allocation ]]; then
+    echo 'injected message allocation failure' >&2
+    exit 23
+fi
+exec "$ADAPTER_REAL_MKTEMP" "$@"
+STUB
+    cat > "$fake_bin/jq" <<'STUB'
+#!/usr/bin/env bash
+if [[ "$ADAPTER_FAILURE_MODE" == extraction && "$1" == -rj ]]; then
+    printf 'partial message'
+    echo 'injected message extraction failure' >&2
+    exit 24
+fi
+exec "$ADAPTER_REAL_JQ" "$@"
+STUB
+    chmod 700 "$fake_bin/"*
+    local real_mktemp
+    real_mktemp="$(command -v mktemp)"
+    for client in claude codex; do
+        for event in prompt stop; do
+            for mode in allocation extraction; do
+                stdout_file="$TEST_CONTENT_DIR/$client-$event-$mode.stdout"
+                run env PATH="$fake_bin:$PATH" KNOWLEDGE_OBSERVE=1 \
+                    ADAPTER_FAILURE_MODE="$mode" ADAPTER_REAL_JQ="$real_jq" \
+                    ADAPTER_REAL_MKTEMP="$real_mktemp" bash -c '
+                    printf "%s\n" "{\"session_id\":\"probe\",\"prompt\":\"evidence\",\"last_assistant_message\":\"evidence\"}" |
+                        "$1" > "$2"
+                ' _ "$SCRIPTS/adapters/$client/session-$event" "$stdout_file"
+                [[ "$status" -ne 0 ]]
+                [[ "$output" == *"failure"* ]]
+                [[ ! -e "$APPEND_CALLS_FILE" ]]
+                if [[ "$client" == codex ]]; then
+                    [[ "$(cat "$stdout_file")" == '{}' ]]
+                else
+                    [[ ! -s "$stdout_file" ]]
+                fi
+            done
+        done
+    done
 }

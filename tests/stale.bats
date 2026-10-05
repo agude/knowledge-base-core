@@ -282,3 +282,19 @@ EOF
     run jq -e '.freshness.status == "fresh" and .freshness.age_days == 10' <<<"$output"
     [[ "$status" -eq 0 ]]
 }
+
+@test "stale --sections reports the affected locator" {
+    create_test_article "mixed.md" $'---\ntitle: "Mixed"\nverified: 2026-10-03\n---\n\n# Mixed\n\n## Historical\n\n<!-- kb-section: verified=2026-01-01; status=superseded -->\nOld guidance.\n\n## Replacement\n\nCurrent guidance.'
+    run env FRESHNESS_TODAY_EPOCH=1790985600 "$SCRIPTS/stale" --sections
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"knowledge/mixed.md#1"* ]]
+    [[ "$output" == *"status superseded"* ]]
+    [[ "$output" != *"knowledge/mixed.md#2"* ]]
+}
+
+@test "stale --sections preserves an explicit section count" {
+    create_test_article "mixed.md" $'---\ntitle: "Mixed"\nverified: 2026-10-03\n---\n\n# Mixed\n\n## Current\n\n<!-- kb-section: verified=2026-01-01 -->\nOld guidance.\n\n## Replacement\n\nCurrent guidance.'
+    run env FRESHNESS_TODAY_EPOCH=1790985600 "$SCRIPTS/stale" --sections --count
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == "1" ]]
+}

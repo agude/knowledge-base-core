@@ -1,0 +1,72 @@
+{
+  "format": "knowledge-base-retrieval-evaluation",
+  "version": 1,
+  "fixture_id": "synthetic-question-comparison-v1",
+  "corpus_id": "synthetic-question-corpus-v1",
+  "evaluation_role": "comparison",
+  "description": "Paired literal, strict-question, and relaxed-question cases over the question corpus.",
+  "cases": [
+    {
+      "id": "literal-backup-location-01",
+      "category": "literal_exact",
+      "query": "/srv/backups/kb",
+      "query_mode": "literal",
+      "expected_sections": [{"path": "knowledge/question-operations.md", "section": "Backup location"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "question-backup-location-01",
+      "category": "question_strict",
+      "query": "Where are the backups?",
+      "query_mode": "question",
+      "expected_sections": [{"path": "knowledge/question-operations.md", "section": "Backup location"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "question-relaxation-strict-01",
+      "category": "question_relaxation",
+      "query": "Where are the backups quantum orchard?",
+      "query_mode": "question",
+      "relax": false,
+      "comparison_group": "backup-discovery",
+      "expected_sections": [{"path": "knowledge/question-operations.md", "section": "Backup location"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "question-relaxation-enabled-01",
+      "category": "question_relaxation",
+      "query": "Where are the backups quantum orchard?",
+      "query_mode": "question",
+      "relax": true,
+      "comparison_group": "backup-discovery",
+      "expected_sections": [{"path": "knowledge/question-operations.md", "section": "Backup location"}],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "question-relaxation-abstention-strict-01",
+      "category": "question_relaxation_abstention",
+      "query": "Where are quantum backups?",
+      "query_mode": "question",
+      "relax": false,
+      "comparison_group": "unanswerable-backup-query",
+      "expected_sections": [],
+      "requires_all_sections": false,
+      "unanswerable": true
+    },
+    {
+      "id": "question-relaxation-abstention-enabled-01",
+      "category": "question_relaxation_abstention",
+      "query": "Where are quantum backups?",
+      "query_mode": "question",
+      "relax": true,
+      "comparison_group": "unanswerable-backup-query",
+      "expected_sections": [],
+      "requires_all_sections": false,
+      "unanswerable": true
+    }
+  ]
+}

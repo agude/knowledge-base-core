@@ -57,8 +57,35 @@ fi
 
 MIN_MESSAGES="${KNOWLEDGE_MIN_MESSAGES:-3}"
 
-# Count first: a transcript below the threshold is not worth building.
-TURN_COUNT="$(grep -c '"role"' "$SESSION_FILE" 2>/dev/null || echo 0)"
+# Build a readable transcript in a file. Parsing the complete JSONL stream at
+# once avoids putting a large transcript in an argument or repeatedly copying
+# it through shell variables. A malformed record is an error, so the source
+# buffer remains available for recovery.
+TRANSCRIPT_FILE="$(mktemp "${TMPDIR:-/tmp}/knowledge-transcript.XXXXXX")" || {
+    echo "session-flush: could not create transcript buffer" >&2
+    exit 1
+}
+cleanup() { rm -f "$TRANSCRIPT_FILE"; }
+trap cleanup EXIT
+interrupted() {
+    echo "session-flush: interrupted, keeping $SESSION_FILE" >&2
+    exit 130
+}
+trap interrupted HUP INT TERM
+
+if ! jq -r '
+    if (type != "object" or (.role? | type) != "string" or
+        (.message? | type) != "string") then
+        error("invalid session record")
+    else
+        "### " + .role + "\n\n" + .message + "\n\n"
+    end
+' "$SESSION_FILE" > "$TRANSCRIPT_FILE" 2>/dev/null; then
+    echo "session-flush: could not parse $SESSION_FILE" >&2
+    exit 1
+fi
+
+TURN_COUNT="$(jq -s 'length' "$SESSION_FILE")"
 
 if (( TURN_COUNT < MIN_MESSAGES )); then
     logger -t knowledge \
@@ -69,25 +96,7 @@ if (( TURN_COUNT < MIN_MESSAGES )); then
     exit 0
 fi
 
-# Build a readable transcript from the JSONL
-TRANSCRIPT=""
-while IFS= read -r line; do
-    [[ -z "$line" ]] && continue
-    [[ "$line" != \{* ]] && continue
-
-    ROLE="$(echo "$line" | jq -r '.role // empty' 2>/dev/null)"
-    MESSAGE="$(echo "$line" | jq -r '.message // empty' 2>/dev/null)"
-
-    if [[ -n "$ROLE" ]] && [[ -n "$MESSAGE" ]]; then
-        TRANSCRIPT="${TRANSCRIPT}### ${ROLE}
-
-${MESSAGE}
-
-"
-    fi
-done < "$SESSION_FILE"
-
-if [[ -z "$TRANSCRIPT" ]]; then
+if [[ ! -s "$TRANSCRIPT_FILE" ]]; then
     clear_initialization
     rm -f "$SESSION_FILE"
     exit 0
@@ -96,7 +105,7 @@ fi
 # Save as a single observation
 if "$SCRIPT_DIR/observe" \
     --title "Session transcript (${TURN_COUNT} messages)" \
-    --body "$TRANSCRIPT" \
+    --body - < "$TRANSCRIPT_FILE" \
     --source "session-transcript" \
     2>/dev/null; then
     clear_initialization

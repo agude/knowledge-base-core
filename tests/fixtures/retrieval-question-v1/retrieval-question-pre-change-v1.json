@@ -1,0 +1,141 @@
+{
+  "format": "knowledge-base-retrieval-evaluation",
+  "version": 1,
+  "fixture_id": "synthetic-question-pre-change-v1",
+  "corpus_id": "synthetic-question-corpus-v1",
+  "evaluation_role": "pre_change",
+  "description": "Synthetic question-mode retrieval cases covering normalization, routing, temporal claims, conflicts, and abstention.",
+  "cases": [
+    {
+      "id": "question-normalization-01",
+      "category": "question_normalization",
+      "query": "How do I restart --no-verify on 2026-10-03 from /srv/backups/kb?",
+      "query_mode": "literal",
+      "expected_sections": [
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "Restart the API service"
+        }
+      ],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "question-unanswerable-01",
+      "category": "question_abstention",
+      "query": "What is a quantum orchard?",
+      "query_mode": "literal",
+      "expected_sections": [],
+      "requires_all_sections": false,
+      "unanswerable": true
+    },
+    {
+      "id": "question-backup-location-01",
+      "category": "question_paraphrase",
+      "query": "Where are the backups?",
+      "query_mode": "literal",
+      "expected_sections": [
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "Backup location"
+        }
+      ],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "question-api-hostname-01",
+      "category": "question_punctuation",
+      "query": "What is the API hostname?",
+      "query_mode": "literal",
+      "expected_sections": [
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "API hostname"
+        }
+      ],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "question-deploy-workflow-01",
+      "category": "question_paraphrase",
+      "query": "How do I deploy the API service?",
+      "query_mode": "literal",
+      "expected_sections": [
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "Deploy the API service"
+        }
+      ],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "question-alias-routing-01",
+      "category": "question_alias",
+      "query": "Where is the production tunnel?",
+      "query_mode": "literal",
+      "expected_sections": [
+        {
+          "path": "knowledge/network.md",
+          "section": "alias",
+          "command": "--alias"
+        }
+      ],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "temporal-current-01",
+      "category": "temporal_current",
+      "query": "What is the current deploy target as of 2026-09-01?",
+      "query_mode": "literal",
+      "expected_sections": [
+        {
+          "path": "knowledge/temporal.md",
+          "section": "Current deploy target"
+        }
+      ],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "temporal-historical-01",
+      "category": "temporal_historical",
+      "query": "What was the previous deploy target before 2026-09-01?",
+      "query_mode": "literal",
+      "expected_sections": [
+        {
+          "path": "knowledge/temporal.md",
+          "section": "Previous deploy target"
+        }
+      ],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "conflict-unresolved-01",
+      "category": "question_conflict",
+      "query": "What is the unresolved backup destination conflict?",
+      "query_mode": "literal",
+      "expected_sections": [
+        {
+          "path": "knowledge/conflicts.md",
+          "section": "Backup destination conflict"
+        }
+      ],
+      "requires_all_sections": false,
+      "unanswerable": false
+    },
+    {
+      "id": "question-unanswerable-02",
+      "category": "question_abstention",
+      "query": "Where is the blue comet retention policy?",
+      "query_mode": "literal",
+      "expected_sections": [],
+      "requires_all_sections": false,
+      "unanswerable": true
+    }
+  ]
+}

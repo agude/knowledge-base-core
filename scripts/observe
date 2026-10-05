@@ -31,6 +31,14 @@ TITLE=""
 BODY=""
 SOURCE="session"
 DO_COMMIT=true
+BODY_FILE=""
+OBSERVATION_TEMP=""
+
+cleanup() {
+    [[ -z "$BODY_FILE" ]] || rm -f "$BODY_FILE"
+    [[ -z "$OBSERVATION_TEMP" ]] || rm -f "$OBSERVATION_TEMP"
+}
+trap cleanup EXIT
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -51,15 +59,29 @@ if [[ -z "$TITLE" ]]; then
     exit 1
 fi
 
-# Read body from stdin only when asked. Falling back on "stdin is not a
-# terminal" fired under any agent's Bash tool, where a call with a
-# mistyped or shell-swallowed --body silently recorded an empty body, or
-# blocked on a pipe that never closed.
+# Read body from stdin only when asked. Keep it in a file so trailing
+# newlines and large transcripts do not pass through a command substitution.
 if [[ "$BODY" == "-" ]]; then
-    BODY="$(cat)"
+    BODY_FILE="$(mktemp "${TMPDIR:-/tmp}/knowledge-observation.XXXXXX")" || {
+        echo "Error: could not create a body buffer" >&2
+        exit 1
+    }
+    cat > "$BODY_FILE" || {
+        echo "Error: could not read observation body from stdin" >&2
+        exit 1
+    }
 elif [[ -z "$BODY" ]]; then
     echo "Error: --body is required (use --body - to read stdin)" >&2
     exit 1
+else
+    BODY_FILE="$(mktemp "${TMPDIR:-/tmp}/knowledge-observation.XXXXXX")" || {
+        echo "Error: could not create a body buffer" >&2
+        exit 1
+    }
+    printf '%s' "$BODY" > "$BODY_FILE" || {
+        echo "Error: could not buffer observation body" >&2
+        exit 1
+    }
 fi
 
 # Generate filename: YYYYMMDDTHHMMSS-<4 random chars>.md
@@ -71,17 +93,32 @@ suffix="$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
 filename="${timestamp}-${suffix}.md"
 filepath="$PENDING_DIR/$filename"
 
-# Write the observation
+# Write the observation. The final newline matches the existing Markdown
+# format while the body file preserves any newlines supplied by the caller.
 safe_title="$(yaml_escape "$TITLE")"
-cat > "$filepath" <<EOF
----
-title: "$safe_title"
-source: $SOURCE
-created: $(date -u +%Y-%m-%dT%H:%M:%SZ)
----
+OBSERVATION_TEMP="$(mktemp "$PENDING_DIR/.observation.XXXXXX")" || {
+    echo "Error: could not create an observation file" >&2
+    exit 1
+}
+{
+    # A group checked by || disables errexit; stop at the first failed write.
+    printf '%s\n' '---' &&
+    printf 'title: "%s"\n' "$safe_title" &&
+    printf 'source: %s\n' "$SOURCE" &&
+    printf 'created: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" &&
+    printf '%s\n\n' '---' &&
+    cat "$BODY_FILE" &&
+    printf '\n'
+} > "$OBSERVATION_TEMP" || {
+    echo "Error: could not write observation file" >&2
+    exit 1
+}
 
-$BODY
-EOF
+mv "$OBSERVATION_TEMP" "$filepath" || {
+    echo "Error: could not publish observation file" >&2
+    exit 1
+}
+OBSERVATION_TEMP=""
 
 echo "Wrote: observations/pending/$filename"
 

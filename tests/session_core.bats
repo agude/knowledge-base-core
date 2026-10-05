@@ -195,6 +195,28 @@ Content."
     [[ "$status" -eq 0 ]]
 }
 
+@test "session-append reports buffer creation failure when capture is enabled" {
+    local blocked_directory="$SESSION_DIR/blocked"
+    printf 'retain this file\n' > "$blocked_directory"
+
+    run env KNOWLEDGE_OBSERVE=1 SESSION_DIR="$blocked_directory" \
+        "$SCRIPTS/session-append" --session-id allocation-failure \
+        --role user --message "durable evidence"
+    [[ "$status" -ne 0 ]]
+    [[ -n "$output" ]]
+    [[ "$(cat "$blocked_directory")" == 'retain this file' ]]
+    [[ ! -e "$SESSION_DIR/session-allocation-failure.jsonl" ]]
+}
+
+@test "session-append skips an uninitialized session without creating a buffer" {
+    run env -u KNOWLEDGE_OBSERVE -u KNOWLEDGE_SESSION_FILE \
+        "$SCRIPTS/session-append" --session-id never-initialized \
+        --role user --message "uncaptured message"
+    [[ "$status" -eq 0 ]]
+    [[ -z "$output" ]]
+    [[ ! -e "$SESSION_DIR/session-never-initialized.jsonl" ]]
+}
+
 @test "session-append with missing --role fails" {
     local file="$SESSION_DIR/buffer.jsonl"
     touch "$file"
@@ -223,6 +245,113 @@ Content."
     run "$SCRIPTS/session-append" --file "$file" --role user --message ""
     [[ "$status" -eq 0 ]]
     # File should still be empty
+    [[ ! -s "$file" ]]
+}
+
+@test "session-append reads a large multiline message from stdin" {
+    local file="$SESSION_DIR/stdin.jsonl"
+    local message="$SESSION_DIR/message.txt"
+    touch "$file"
+    awk 'BEGIN { for (i = 1; i <= 160000; i++) printf "x"; printf "\n\n\n" }' > "$message"
+
+    run bash -c 'cat "$1" | "$2" --file "$3" --role user --message -' \
+        _ "$message" "$SCRIPTS/session-append" "$file"
+    [[ "$status" -eq 0 ]]
+    local decoded="$SESSION_DIR/decoded.txt"
+    jq -j '.message' "$file" > "$decoded"
+    cmp -s "$message" "$decoded"
+}
+
+@test "session-append rejects repeated message options" {
+    local file="$SESSION_DIR/repeated-message.jsonl"
+    touch "$file"
+
+    run "$SCRIPTS/session-append" --file "$file" --role user \
+        --message first --message second
+    [[ "$status" -ne 0 ]]
+    [[ ! -s "$file" ]]
+}
+
+@test "session-append rejects mixed stdin and argument message options" {
+    local file="$SESSION_DIR/mixed-message.jsonl"
+    touch "$file"
+
+    run bash -c 'printf "%s" stdin | "$1" --file "$2" --role user \
+        --message - --message argument' _ "$SCRIPTS/session-append" "$file"
+    [[ "$status" -ne 0 ]]
+    [[ ! -s "$file" ]]
+}
+
+@test "session-append fallback escapes control characters without jq" {
+    local file="$SESSION_DIR/no-jq.jsonl"
+    local fake_bin="$SESSION_DIR/bin"
+    mkdir -p "$fake_bin"
+    mkdir "$fake_bin/jq"
+    for command in awk bash cat date dirname mktemp od pwd readlink rm; do
+        ln -s "$(command -v "$command")" "$fake_bin/$command"
+    done
+    touch "$file"
+
+    run /usr/bin/env PATH="$fake_bin" "$SCRIPTS/session-append" --file "$file" \
+        --role user --message $'line 1\nline 2\t"\\\001'
+    [[ "$status" -eq 0 ]]
+    run jq -e '.message | contains("line 1\nline 2\t\"") and
+        (explode | index(1) != null) and (explode | index(92) != null)' "$file"
+    [[ "$status" -eq 0 ]]
+}
+
+@test "session-append fallback preserves Unicode and trailing newlines without jq" {
+    local file="$SESSION_DIR/no-jq-round-trip.jsonl"
+    local message="$SESSION_DIR/no-jq-message.txt"
+    local decoded="$SESSION_DIR/no-jq-decoded.txt"
+    local fake_bin="$SESSION_DIR/bin"
+    mkdir -p "$fake_bin"
+    for command in awk bash cat date dirname mktemp od pwd readlink rm; do
+        ln -s "$(command -v "$command")" "$fake_bin/$command"
+    done
+    printf 'café\n雪\n\n' > "$message"
+    touch "$file"
+
+    run bash -c 'cat "$1" | /usr/bin/env PATH="$2" "$3" --file "$4" \
+        --role user --message -' _ "$message" "$fake_bin" "$SCRIPTS/session-append" "$file"
+    [[ "$status" -eq 0 ]]
+    jq -j '.message' "$file" > "$decoded"
+    cmp -s "$message" "$decoded"
+}
+
+@test "session-append does not append when od is missing" {
+    local file="$SESSION_DIR/missing-od.jsonl"
+    local fake_bin="$SESSION_DIR/bin"
+    mkdir -p "$fake_bin"
+    for command in awk bash cat date dirname mktemp pwd readlink rm; do
+        ln -s "$(command -v "$command")" "$fake_bin/$command"
+    done
+    touch "$file"
+
+    run /usr/bin/env PATH="$fake_bin" "$SCRIPTS/session-append" --file "$file" \
+        --role user --message "missing encoder"
+    [[ "$status" -ne 0 ]]
+    [[ ! -s "$file" ]]
+}
+
+@test "session-append does not append partial output from a failing od" {
+    local file="$SESSION_DIR/failing-od.jsonl"
+    local fake_bin="$SESSION_DIR/bin"
+    mkdir -p "$fake_bin"
+    for command in awk bash cat date dirname mktemp pwd readlink rm; do
+        ln -s "$(command -v "$command")" "$fake_bin/$command"
+    done
+    cat > "$fake_bin/od" <<'EOF'
+#!/usr/bin/env bash
+printf '20\n'
+exit 1
+EOF
+    chmod 700 "$fake_bin/od"
+    touch "$file"
+
+    run /usr/bin/env PATH="$fake_bin" "$SCRIPTS/session-append" --file "$file" \
+        --role user --message "failing encoder"
+    [[ "$status" -ne 0 ]]
     [[ ! -s "$file" ]]
 }
 
@@ -292,4 +421,397 @@ Content."
     run env KNOWLEDGE_MIN_MESSAGES=0 "$SCRIPTS/session-flush" "$file"
     [[ "$status" -eq 0 ]]
     [[ ! -f "$file" ]]
+}
+
+@test "session-flush keeps the buffer when jq is unavailable" {
+    local file="$SESSION_DIR/missing-jq.jsonl"
+    local original="$SESSION_DIR/missing-jq.original"
+    local expected_transcript="$SESSION_DIR/missing-jq.transcript"
+    local expected_body="$SESSION_DIR/missing-jq.expected-body"
+    local actual_body="$SESSION_DIR/missing-jq.actual-body"
+    local fake_bin="$SESSION_DIR/bin"
+    local temp_dir="$SESSION_DIR/tmp"
+    local original_path="$PATH"
+    local observation second_marker
+    mkdir -p "$fake_bin" "$temp_dir"
+    for command in bash cat date dirname mktemp readlink rm; do
+        ln -s "$(command -v "$command")" "$fake_bin/$command"
+    done
+    touch "$file"
+    printf 'question line 1\nquestion line 2\n\n' |
+        "$SCRIPTS/session-append" --file "$file" --role user --message -
+    printf 'answer line 1\nanswer line 2\n\n' |
+        "$SCRIPTS/session-append" --file "$file" --role assistant --message -
+    printf 'follow-up\n\n' |
+        "$SCRIPTS/session-append" --file "$file" --role user --message -
+    cp "$file" "$original"
+    jq -r '"### " + .role + "\n\n" + .message + "\n\n"' \
+        "$file" > "$expected_transcript"
+
+    run env PATH="$fake_bin" TMPDIR="$temp_dir" KNOWLEDGE_MIN_MESSAGES=0 \
+        "$SCRIPTS/session-flush" "$file"
+    [[ "$status" -ne 0 ]]
+    cmp -s "$original" "$file"
+    [[ "$(find "$TEST_CONTENT_DIR/observations/pending" -name '*.md' -type f | wc -l)" -eq 0 ]]
+    [[ ! -e "$temp_dir"/knowledge-transcript.* ]]
+
+    run env PATH="$original_path" KNOWLEDGE_MIN_MESSAGES=0 \
+        "$SCRIPTS/session-flush" "$file"
+    [[ "$status" -eq 0 ]]
+    [[ ! -e "$file" ]]
+    observation="$(find "$TEST_CONTENT_DIR/observations/pending" -name '*.md' -type f | head -n 1)"
+    second_marker="$(grep -n '^---$' "$observation" | sed -n '2p' | cut -d: -f1)"
+    tail -n "+$((second_marker + 1))" "$observation" > "$actual_body"
+    {
+        printf '\n'
+        cat "$expected_transcript"
+        printf '\n'
+    } > "$expected_body"
+    cmp -s "$expected_body" "$actual_body"
+}
+
+@test "session-flush retains the buffer when observe commit is rejected" {
+    local file="$SESSION_DIR/rejected-commit.jsonl"
+    local hook="$TEST_CONTENT_DIR/.git/hooks/pre-commit"
+    mkdir -p "$(dirname "$hook")"
+    cat > "$hook" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+    chmod 700 "$hook"
+    printf '%s\n' \
+        '{"role":"user","message":"Q1"}' \
+        '{"role":"assistant","message":"A1"}' \
+        '{"role":"user","message":"Q2"}' > "$file"
+
+    run env KNOWLEDGE_MIN_MESSAGES=0 "$SCRIPTS/session-flush" "$file"
+    [[ "$status" -ne 0 ]]
+    [[ -f "$file" ]]
+    [[ "$(find "$TEST_CONTENT_DIR/observations/pending" -name '*.md' -type f | wc -l)" -eq 1 ]]
+
+    rm -f "$hook"
+    run env KNOWLEDGE_MIN_MESSAGES=0 "$SCRIPTS/session-flush" "$file"
+    [[ "$status" -eq 0 ]]
+    [[ ! -f "$file" ]]
+    [[ "$(find "$TEST_CONTENT_DIR/observations/pending" -name '*.md' -type f | wc -l)" -eq 2 ]]
+}
+
+@test "session-flush keeps the buffer when interrupted during parsing" {
+    local file="$SESSION_DIR/interrupted.jsonl"
+    local original="$SESSION_DIR/interrupted.original"
+    local expected_transcript="$SESSION_DIR/interrupted.transcript"
+    local expected_body="$SESSION_DIR/interrupted.expected-body"
+    local actual_body="$SESSION_DIR/interrupted.actual-body"
+    local fake_bin="$SESSION_DIR/bin"
+    local temp_dir="$SESSION_DIR/tmp"
+    local jq_pid_file="$SESSION_DIR/jq.pid"
+    local original_path="$PATH"
+    local flush_pid flush_status jq_pid observation second_marker
+    mkdir -p "$fake_bin" "$temp_dir"
+    for command in bash cat date dirname mktemp readlink rm sleep; do
+        ln -s "$(command -v "$command")" "$fake_bin/$command"
+    done
+    cat > "$fake_bin/jq" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$BASHPID" > "$JQ_PID_FILE"
+printf 'partial transcript'
+while :; do sleep 1; done
+EOF
+    chmod 700 "$fake_bin/jq"
+    printf '%s\n' \
+        '{"role":"user","message":"Q1"}' \
+        '{"role":"assistant","message":"A1"}' \
+        '{"role":"user","message":"Q2"}' > "$file"
+    cp "$file" "$original"
+    jq -r '"### " + .role + "\n\n" + .message + "\n\n"' \
+        "$file" > "$expected_transcript"
+
+    env PATH="$fake_bin" TMPDIR="$temp_dir" JQ_PID_FILE="$jq_pid_file" \
+        KNOWLEDGE_MIN_MESSAGES=0 "$SCRIPTS/session-flush" "$file" \
+        > "$SESSION_DIR/flush-output" 2>&1 &
+    flush_pid=$!
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        [[ -f "$jq_pid_file" ]] && break
+        sleep 0.1
+    done
+    [[ -f "$jq_pid_file" ]]
+    jq_pid="$(cat "$jq_pid_file")"
+    kill -TERM "$flush_pid" 2>/dev/null || true
+    kill -TERM "$jq_pid" 2>/dev/null || true
+    if wait "$flush_pid"; then
+        flush_status=0
+    else
+        flush_status=$?
+    fi
+
+    [[ "$flush_status" -eq 130 ]]
+    cmp -s "$original" "$file"
+    [[ "$(find "$TEST_CONTENT_DIR/observations/pending" -name '*.md' -type f | wc -l)" -eq 0 ]]
+    [[ ! -e "$temp_dir"/knowledge-transcript.* ]]
+
+    run env PATH="$original_path" KNOWLEDGE_MIN_MESSAGES=0 \
+        "$SCRIPTS/session-flush" "$file"
+    [[ "$status" -eq 0 ]]
+    [[ ! -e "$file" ]]
+    observation="$(find "$TEST_CONTENT_DIR/observations/pending" -name '*.md' -type f | head -n 1)"
+    second_marker="$(grep -n '^---$' "$observation" | sed -n '2p' | cut -d: -f1)"
+    tail -n "+$((second_marker + 1))" "$observation" > "$actual_body"
+    {
+        printf '\n'
+        cat "$expected_transcript"
+        printf '\n'
+    } > "$expected_body"
+    cmp -s "$expected_body" "$actual_body"
+}
+
+@test "session-flush keeps the buffer when interrupted during observation writing" {
+    local file="$SESSION_DIR/interrupted-write.jsonl"
+    local original="$SESSION_DIR/interrupted-write.original"
+    local expected_transcript="$SESSION_DIR/interrupted-write.transcript"
+    local expected_body="$SESSION_DIR/interrupted-write.expected-body"
+    local actual_body="$SESSION_DIR/interrupted-write.actual-body"
+    local fake_bin="$SESSION_DIR/write-bin"
+    local cat_pid_file="$SESSION_DIR/cat.pid"
+    local observe_pid_file="$SESSION_DIR/observe.pid"
+    local original_path="$PATH"
+    local flush_pid flush_status cat_pid observe_pid observation second_marker
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/cat" <<'EOF'
+#!/usr/bin/env bash
+if [[ -n "${CAT_STAGE_FILE:-}" && "$1" == *knowledge-observation.* ]]; then
+    printf '%s\n' "$BASHPID" > "$CAT_STAGE_FILE"
+    printf '%s\n' "$PPID" > "$OBSERVE_PID_FILE"
+    printf 'partial observation'
+    while :; do sleep 1; done
+fi
+exec /bin/cat "$@"
+EOF
+    chmod 700 "$fake_bin/cat"
+    touch "$file"
+    printf 'question line 1\nquestion line 2\n\n' |
+        "$SCRIPTS/session-append" --file "$file" --role user --message -
+    printf 'answer line 1\nanswer line 2\n\n' |
+        "$SCRIPTS/session-append" --file "$file" --role assistant --message -
+    printf 'follow-up\n\n' |
+        "$SCRIPTS/session-append" --file "$file" --role user --message -
+    cp "$file" "$original"
+    jq -r '"### " + .role + "\n\n" + .message + "\n\n"' \
+        "$file" > "$expected_transcript"
+
+    env PATH="$fake_bin:$original_path" CAT_STAGE_FILE="$cat_pid_file" \
+        OBSERVE_PID_FILE="$observe_pid_file" \
+        KNOWLEDGE_MIN_MESSAGES=0 "$SCRIPTS/session-flush" "$file" \
+        > "$SESSION_DIR/flush-output" 2>&1 &
+    flush_pid=$!
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        [[ -f "$cat_pid_file" ]] && break
+        sleep 0.1
+    done
+    [[ -f "$cat_pid_file" ]]
+    cat_pid="$(cat "$cat_pid_file")"
+    observe_pid="$(cat "$observe_pid_file")"
+    kill -TERM "$flush_pid" 2>/dev/null || true
+    kill -TERM "$observe_pid" 2>/dev/null || true
+    kill -TERM "$cat_pid" 2>/dev/null || true
+    if wait "$flush_pid"; then
+        flush_status=0
+    else
+        flush_status=$?
+    fi
+
+    [[ "$flush_status" -ne 0 ]]
+    cmp -s "$original" "$file"
+    [[ "$(find "$TEST_CONTENT_DIR/observations/pending" -name '*.md' -type f | wc -l)" -eq 0 ]]
+    [[ "$(find "$TEST_CONTENT_DIR/observations/pending" -name '.observation.*' -type f | wc -l)" -eq 0 ]]
+
+    run env PATH="$fake_bin:$original_path" KNOWLEDGE_MIN_MESSAGES=0 \
+        "$SCRIPTS/session-flush" "$file"
+    [[ "$status" -eq 0 ]]
+    [[ ! -e "$file" ]]
+    observation="$(find "$TEST_CONTENT_DIR/observations/pending" -name '*.md' -type f | head -n 1)"
+    second_marker="$(grep -n '^---$' "$observation" | sed -n '2p' | cut -d: -f1)"
+    tail -n "+$((second_marker + 1))" "$observation" > "$actual_body"
+    {
+        printf '\n'
+        cat "$expected_transcript"
+        printf '\n'
+    } > "$expected_body"
+    cmp -s "$expected_body" "$actual_body"
+}
+
+@test "session-flush retains evidence when the observation body copy fails" {
+    local file="$SESSION_DIR/failed-copy.jsonl"
+    local original="$SESSION_DIR/failed-copy.original"
+    local expected_transcript="$SESSION_DIR/failed-copy.transcript"
+    local expected_body="$SESSION_DIR/failed-copy.expected-body"
+    local actual_body="$SESSION_DIR/failed-copy.actual-body"
+    local fake_bin="$SESSION_DIR/copy-bin"
+    local copy_marker="$SESSION_DIR/copy-failed"
+    local scratch_dir="$SESSION_DIR/copy-tmp"
+    local real_cat observation second_marker
+    real_cat="$(command -v cat)"
+    mkdir -p "$fake_bin" "$scratch_dir"
+    cat > "$fake_bin/cat" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == *knowledge-observation.* ]]; then
+    printf 'body copy failed\n' > "$BODY_COPY_MARKER"
+    printf 'partial evidence\n'
+    exit 7
+fi
+exec "$BODY_COPY_CAT" "$@"
+EOF
+    chmod 700 "$fake_bin/cat"
+    touch "$file"
+    printf 'question line 1\nquestion line 2\n\n' |
+        "$SCRIPTS/session-append" --file "$file" --role user --message -
+    printf 'answer line 1\nanswer line 2\n\n' |
+        "$SCRIPTS/session-append" --file "$file" --role assistant --message -
+    cp "$file" "$original"
+    jq -r '"### " + .role + "\n\n" + .message + "\n\n"' \
+        "$file" > "$expected_transcript"
+
+    run env PATH="$fake_bin:$PATH" TMPDIR="$scratch_dir" \
+        BODY_COPY_MARKER="$copy_marker" BODY_COPY_CAT="$real_cat" \
+        KNOWLEDGE_MIN_MESSAGES=0 "$SCRIPTS/session-flush" "$file"
+    [[ -f "$copy_marker" ]]
+    [[ "$status" -ne 0 ]]
+    cmp -s "$original" "$file"
+    [[ "$(find "$TEST_CONTENT_DIR/observations/pending" -type f | wc -l)" -eq 0 ]]
+    [[ "$(cd "$TEST_CONTENT_DIR" && git rev-list --count HEAD)" -eq 1 ]]
+    [[ "$(find "$scratch_dir" -mindepth 1 | wc -l)" -eq 0 ]]
+
+    run env TMPDIR="$scratch_dir" KNOWLEDGE_MIN_MESSAGES=0 \
+        "$SCRIPTS/session-flush" "$file"
+    [[ "$status" -eq 0 ]]
+    [[ ! -e "$file" ]]
+    [[ "$(find "$TEST_CONTENT_DIR/observations/pending" -name '*.md' -type f | wc -l)" -eq 1 ]]
+    [[ "$(cd "$TEST_CONTENT_DIR" && git rev-list --count HEAD)" -eq 2 ]]
+    observation="$(find "$TEST_CONTENT_DIR/observations/pending" -name '*.md' -type f | head -n 1)"
+    second_marker="$(grep -n '^---$' "$observation" | sed -n '2p' | cut -d: -f1)"
+    tail -n "+$((second_marker + 1))" "$observation" > "$actual_body"
+    {
+        printf '\n'
+        cat "$expected_transcript"
+        printf '\n'
+    } > "$expected_body"
+    cmp -s "$expected_body" "$actual_body"
+}
+
+@test "session-flush keeps the buffer when observation commit is interrupted" {
+    local file="$SESSION_DIR/interrupted-commit.jsonl"
+    local original="$SESSION_DIR/interrupted-commit.original"
+    local expected_transcript="$SESSION_DIR/interrupted-commit.transcript"
+    local expected_body="$SESSION_DIR/interrupted-commit.expected-body"
+    local actual_body="$SESSION_DIR/interrupted-commit.actual-body"
+    local hook="$TEST_CONTENT_DIR/.git/hooks/pre-commit"
+    local hook_pid_file="$SESSION_DIR/hook.pid"
+    local original_path="$PATH"
+    local flush_pid flush_status hook_pid observation second_marker
+    mkdir -p "$(dirname "$hook")"
+    cat > "$hook" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$BASHPID" > "$HOOK_PID_FILE"
+while :; do sleep 1; done
+EOF
+    chmod 700 "$hook"
+    touch "$file"
+    printf 'question line 1\nquestion line 2\n\n' |
+        "$SCRIPTS/session-append" --file "$file" --role user --message -
+    printf 'answer line 1\nanswer line 2\n\n' |
+        "$SCRIPTS/session-append" --file "$file" --role assistant --message -
+    printf 'follow-up\n\n' |
+        "$SCRIPTS/session-append" --file "$file" --role user --message -
+    cp "$file" "$original"
+    jq -r '"### " + .role + "\n\n" + .message + "\n\n"' \
+        "$file" > "$expected_transcript"
+
+    env PATH="$original_path" HOOK_PID_FILE="$hook_pid_file" \
+        KNOWLEDGE_MIN_MESSAGES=0 "$SCRIPTS/session-flush" "$file" \
+        > "$SESSION_DIR/flush-output" 2>&1 &
+    flush_pid=$!
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        [[ -f "$hook_pid_file" ]] && break
+        sleep 0.1
+    done
+    [[ -f "$hook_pid_file" ]]
+    hook_pid="$(cat "$hook_pid_file")"
+    kill -TERM "$flush_pid" 2>/dev/null || true
+    kill -TERM "$hook_pid" 2>/dev/null || true
+    if wait "$flush_pid"; then
+        flush_status=0
+    else
+        flush_status=$?
+    fi
+
+    [[ "$flush_status" -ne 0 ]]
+    cmp -s "$original" "$file"
+    [[ "$(find "$TEST_CONTENT_DIR/observations/pending" -name '*.md' -type f | wc -l)" -eq 1 ]]
+    [[ "$(cd "$TEST_CONTENT_DIR" && git rev-list --count HEAD)" -eq 1 ]]
+
+    rm -f "$hook"
+    run env PATH="$original_path" KNOWLEDGE_MIN_MESSAGES=0 \
+        "$SCRIPTS/session-flush" "$file"
+    [[ "$status" -eq 0 ]]
+    [[ ! -e "$file" ]]
+    [[ "$(find "$TEST_CONTENT_DIR/observations/pending" -name '*.md' -type f | wc -l)" -eq 2 ]]
+    [[ "$(cd "$TEST_CONTENT_DIR" && git rev-list --count HEAD)" -eq 2 ]]
+    for observation in "$TEST_CONTENT_DIR"/observations/pending/*.md; do
+        second_marker="$(grep -n '^---$' "$observation" | sed -n '2p' | cut -d: -f1)"
+        tail -n "+$((second_marker + 1))" "$observation" > "$actual_body"
+        {
+            printf '\n'
+            cat "$expected_transcript"
+            printf '\n'
+        } > "$expected_body"
+        cmp -s "$expected_body" "$actual_body"
+    done
+}
+
+@test "session-flush streams a large transcript and preserves its source" {
+    local file="$SESSION_DIR/large.jsonl"
+    local message="$SESSION_DIR/large-message.txt"
+    local decoded="$SESSION_DIR/large-decoded.txt"
+    local transcript="$SESSION_DIR/large-transcript.txt"
+    local extracted="$SESSION_DIR/large-extracted.txt"
+    awk 'BEGIN { for (i = 1; i <= 160000; i++) printf "large-evidence-"; printf "\n\n\n" }' > "$message"
+    touch "$file"
+
+    run bash -c 'cat "$1" | "$2" --file "$3" --role user --message -' \
+        _ "$message" "$SCRIPTS/session-append" "$file"
+    [[ "$status" -eq 0 ]]
+    jq -j '.message' "$file" > "$decoded"
+    cmp -s "$message" "$decoded"
+
+    run env KNOWLEDGE_MIN_MESSAGES=0 "$SCRIPTS/session-flush" "$file"
+    [[ "$status" -eq 0 ]]
+    [[ ! -f "$file" ]]
+    local observation
+    observation="$(find "$TEST_CONTENT_DIR/observations/pending" -name '*.md' -type f | head -n 1)"
+    [[ -n "$observation" ]]
+    awk 'BEGIN { frontmatter=0 } /^---$/ { frontmatter++; next } frontmatter >= 2 { print }' \
+        "$observation" > "$transcript"
+    prefix_bytes="$(printf '\n### user\n\n' | wc -c)"
+    message_bytes="$(wc -c < "$message")"
+    dd if="$transcript" of="$extracted" bs=1 skip="$prefix_bytes" \
+        count="$message_bytes" 2>/dev/null
+    cmp -s "$message" "$extracted"
+}
+
+@test "session-flush keeps malformed JSONL for recovery" {
+    local file="$SESSION_DIR/malformed.jsonl"
+    printf '%s\n' '{"role":"user","message":"valid"}' 'not json' > "$file"
+
+    run env KNOWLEDGE_MIN_MESSAGES=0 "$SCRIPTS/session-flush" "$file"
+    [[ "$status" -ne 0 ]]
+    [[ -f "$file" ]]
+    [[ "$(cat "$file")" == *'not json'* ]]
+}
+
+@test "session-flush validates malformed JSON before applying the message threshold" {
+    local file="$SESSION_DIR/short-malformed.jsonl"
+    printf '%s\n' '{"role":"user","message":"valid"}' 'not json' > "$file"
+
+    run "$SCRIPTS/session-flush" "$file"
+    [[ "$status" -ne 0 ]]
+    [[ -f "$file" ]]
 }

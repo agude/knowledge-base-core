@@ -365,6 +365,68 @@ Second.'
     [[ "$output" == *"duplicate H2 text: Setup"* ]]
 }
 
+@test "lint validates section metadata and local section sources" {
+    mkdir -p "$TEST_CONTENT_DIR/observations/archived"
+    printf '%s\n' 'section evidence' \
+        > "$TEST_CONTENT_DIR/observations/archived/section.md"
+    create_test_article "sections.md" $'---\ntitle: "Sections"\nupdated: 2026-10-03\nverified: 2026-10-03\n---\n\n# Sections\n\n## Current\n\n<!-- kb-section: effective=2026-09-01; status=current; supersedes=2; sources=observations/archived/section.md -->\nCurrent guidance.\n\n## Replacement\n\n<!-- kb-section: verified=2026-01-01; status=superseded -->\nOlder replacement.'
+    run "$SCRIPTS/lint" --file knowledge/sections.md
+    [[ "$status" -eq 0 ]]
+}
+
+@test "lint rejects invalid section metadata" {
+    create_test_article "invalid-sections.md" $'---\ntitle: "Invalid Sections"\nupdated: 2026-10-03\nverified: 2026-10-03\n---\n\n# Invalid Sections\n\n## Broken\n\n<!-- kb-section: effective=2026-10-04; status=superseded -->\nBroken guidance.'
+    run "$SCRIPTS/lint" --file knowledge/invalid-sections.md
+    [[ "$status" -eq 1 ]]
+    [[ "$output" == *"effective date 2026-10-04 is after verified date 2026-10-03"* ]]
+}
+
+@test "lint rejects invalid supersession links and cycles" {
+    create_test_article "self-supersession.md" $'---\ntitle: "Self Supersession"\nupdated: 2026-10-03\nverified: 2026-10-03\n---\n\n# Self Supersession\n\n## Current\n\n<!-- kb-section: status=current; supersedes=1 -->\nCurrent guidance.'
+    run "$SCRIPTS/lint" --file knowledge/self-supersession.md
+    [[ "$status" -eq 1 ]]
+    [[ "$output" == *"section cannot supersede itself: 1"* ]]
+
+    create_test_article "supersession-cycle.md" $'---\ntitle: "Supersession Cycle"\nupdated: 2026-10-03\nverified: 2026-10-03\n---\n\n# Supersession Cycle\n\n## Current\n\n<!-- kb-section: status=current; supersedes=2 -->\nCurrent guidance.\n\n## Previous\n\n<!-- kb-section: status=current; supersedes=1 -->\nPrevious guidance.'
+    run "$SCRIPTS/lint" --file knowledge/supersession-cycle.md
+    [[ "$status" -eq 1 ]]
+    [[ "$output" == *"supersedes relationship contains a cycle"* ]]
+
+    create_test_article "backward-link.md" $'---\ntitle: "Backward Link"\nupdated: 2026-10-03\nverified: 2026-10-03\n---\n\n# Backward Link\n\n## Current\n\n<!-- kb-section: status=current; supersedes=2 -->\nCurrent guidance.\n\n## Historical\n\n<!-- kb-section: status=superseded; supersedes=1 -->\nHistorical guidance.'
+    run "$SCRIPTS/lint" --file knowledge/backward-link.md
+    [[ "$status" -eq 1 ]]
+    [[ "$output" == *"superseded section must not declare supersedes"* ]]
+}
+
+@test "lint rejects unclosed and contradictory section metadata" {
+    create_test_article "malformed-sections.md" $'---\ntitle: "Malformed Sections"\nupdated: 2026-10-03\nverified: 2026-10-03\n---\n\n# Malformed Sections\n\n## Unclosed\n\n<!-- kb-section: verified=2026-01-01; status=superseded\nHistorical guidance.'
+    run "$SCRIPTS/lint" --file knowledge/malformed-sections.md
+    [[ "$status" -eq 1 ]]
+    [[ "$output" == *"unclosed section metadata comment"* ]]
+
+    create_test_article "duplicate-sections.md" $'---\ntitle: "Duplicate Sections"\nupdated: 2026-10-03\nverified: 2026-10-03\n---\n\n# Duplicate Sections\n\n## Contradictory\n\n<!-- kb-section: status=current; status=superseded -->\nContradictory guidance.'
+    run "$SCRIPTS/lint" --file knowledge/duplicate-sections.md
+    [[ "$status" -eq 1 ]]
+    [[ "$output" == *"conflicting values for field 'status'"* ]]
+}
+
+@test "lint accepts the section metadata fixture" {
+    fixture="$BATS_TEST_DIRNAME/fixtures/section-metadata"
+    cp -R "$fixture/knowledge/metadata.md" "$TEST_CONTENT_DIR/knowledge/"
+    cp -R "$fixture/observations/." "$TEST_CONTENT_DIR/observations/"
+    run "$SCRIPTS/lint" --file knowledge/metadata.md
+    [[ "$status" -eq 0 ]]
+}
+
+@test "lint reports fixture section metadata failures" {
+    fixture="$BATS_TEST_DIRNAME/fixtures/section-metadata"
+    cp "$fixture/knowledge/invalid.md" "$TEST_CONTENT_DIR/knowledge/"
+    run "$SCRIPTS/lint" --file knowledge/invalid.md
+    [[ "$status" -eq 1 ]]
+    [[ "$output" == *"effective date 2026-10-04 is after verified date 2026-10-03"* ]]
+    [[ "$output" == *"missing local source reference"* ]]
+}
+
 @test "lint --path scopes to a subdirectory" {
     create_test_article "ok.md" "$GOOD"
     create_test_article "bad/broken.md" '# Only

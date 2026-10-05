@@ -252,6 +252,7 @@ async function withEnvironment<T>(
     "REAL_KB",
     "ADAPTER_LOG_DIR",
     "FAIL_APPEND_BEFORE_ONCE",
+    "FAIL_APPEND_EPIPE_ONCE",
     "FAIL_APPEND_POST_WRITE_ONCE",
     "FAIL_FLUSH_ONCE",
   ]
@@ -311,6 +312,9 @@ if [[ "\${FAIL_APPEND_BEFORE_ONCE:-0}" == 1 && "$count" == 1 ]]; then
   set -e
   chmod u+w "$file"
   exit "$status"
+fi
+if [[ "\${FAIL_APPEND_EPIPE_ONCE:-0}" == 1 && "$count" == 1 ]]; then
+  exit 75
 fi
 if [[ "\${FAIL_APPEND_POST_WRITE_ONCE:-0}" == 1 && "$count" == 1 ]]; then
   "$REAL_KB/scripts/session-append" "$@"
@@ -621,6 +625,38 @@ test("retries a pre-write append failure without host redelivery", async () => {
 
       assert.equal(await counter(harness, "append.count"), 2)
       assert.match(await onlyPendingBody(harness), /pre-write retry/)
+    })
+  })
+})
+
+test("handles a large stdin pipe failure before retrying the append", async () => {
+  await withHarness(async (harness) => {
+    const fakeCore = await createFakeCore(harness)
+    await withEnvironment(harness, { knowledgeBase: fakeCore, observation: "1" }, async () => {
+      process.env.FAIL_APPEND_EPIPE_ONCE = "1"
+      const handlers = lifecycle(await loadPi(), () => join(harness.root, "epipe.jsonl"))
+      await handlers.sessionStart(sessionStartEvent(), handlers.context)
+
+      const largeMessage = "large stdin payload ".repeat(32 * 1024)
+      await handlers.messageEnd(
+        messageEndEvent(userMessage(92, largeMessage)),
+        handlers.context,
+      )
+      await handlers.messageEnd(
+        messageEndEvent(assistantMessage(93, [{ type: "text", text: "second message" }])),
+        handlers.context,
+      )
+      await handlers.messageEnd(
+        messageEndEvent(userMessage(94, "third message")),
+        handlers.context,
+      )
+      await handlers.shutdown(shutdownEvent(), handlers.context)
+
+      assert.equal(await counter(harness, "append.count"), 4)
+      const body = await onlyPendingBody(harness)
+      assert.match(body, /large stdin payload/)
+      assert.match(body, /second message/)
+      assert.match(body, /third message/)
     })
   })
 })

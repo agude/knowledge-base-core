@@ -3,8 +3,8 @@
 # batch - Create and inspect a curation batch.
 #
 # Usage:
-#   batch start
-#   batch start --files FILENAME [FILENAME ...]
+#   batch start [--max-bytes N]
+#   batch start --files FILENAME [FILENAME ...] [--max-bytes N]
 #   batch status BATCH_ID
 #   batch defer BATCH_ID FILENAME
 
@@ -34,25 +34,34 @@ batch_file() {
 start_batch() {
     local explicit=false
     local -a selected=()
-    local name seen path
+    local name seen path max_bytes="" size selected_bytes=0
+    local -a oversized=()
 
-    if (( $# == 0 )); then
-        :
-    elif [[ "$1" == --files ]]; then
-        shift
-        (( $# > 0 )) || die "--files requires at least one filename"
-        explicit=true
-        for name in "$@"; do
-            [[ "$name" != */* ]] || die "not a pending filename: $name"
-            [[ "$name" == *.md ]] || die "not a markdown filename: $name"
-            for seen in "${selected[@]}"; do
-                [[ "$seen" != "$name" ]] || die "duplicate filename: $name"
-            done
-            selected+=("$name")
-        done
-    else
-        die "usage: batch start [--files FILENAME [FILENAME ...]]"
-    fi
+    while (( $# > 0 )); do
+        case "$1" in
+            --max-bytes)
+                need_arg "$1" $#
+                max_bytes="$(parse_nonnegative_decimal "--max-bytes" "$2")" || exit 1
+                shift 2
+                ;;
+            --files)
+                explicit=true
+                shift
+                (( $# > 0 )) || die "--files requires at least one filename"
+                while (( $# > 0 )) && [[ "$1" != --max-bytes ]]; do
+                    name="$1"
+                    [[ "$name" != */* ]] || die "not a pending filename: $name"
+                    [[ "$name" == *.md ]] || die "not a markdown filename: $name"
+                    for seen in "${selected[@]}"; do
+                        [[ "$seen" != "$name" ]] || die "duplicate filename: $name"
+                    done
+                    selected+=("$name")
+                    shift
+                done
+                ;;
+            *) die "usage: batch start [--max-bytes N] [--files FILENAME [FILENAME ...]]" ;;
+        esac
+    done
 
     acquire_lock || exit 1
     mkdir -p "$BATCH_DIR"
@@ -64,28 +73,67 @@ start_batch() {
         for name in "${selected[@]}"; do
             path="$PENDING_DIR/$name"
             [[ -f "$path" ]] || fail_locked "pending observation not found: $name"
+            size="$(byte_size "$path")"
+            selected_bytes=$((selected_bytes + size))
         done
+        if [[ -n "$max_bytes" ]] && (( selected_bytes > max_bytes )); then
+            fail_locked "explicit selection is $selected_bytes bytes, over --max-bytes $max_bytes"
+        fi
     else
-        while IFS= read -r -d '' path; do
-            selected+=("$(basename "$path")")
-        done < <(find "$PENDING_DIR" -maxdepth 1 -name '*.md' -type f -print0 | sort -z)
+        select_pending_files "$PENDING_DIR" "$max_bytes"
+        for path in "${PENDING_SELECTION_FILES[@]}"; do
+            selected+=("${path##*/}")
+        done
+        selected_bytes="$PENDING_SELECTION_BYTES"
+        oversized=("${PENDING_SELECTION_SKIPPED[@]}")
     fi
 
     if (( ${#selected[@]} == 0 )); then
-        rm -f "$file"
-        release_lock
-        die "no pending observations"
+        if [[ -n "$max_bytes" && ${#oversized[@]} -gt 0 ]]; then
+            fail_locked "no pending observations fit --max-bytes $max_bytes"
+        fi
+        fail_locked "no pending observations"
     fi
-
     {
         echo $'filename\toriginal_sha256\tstatus\tdisposition\tdestination'
         for name in "${selected[@]}"; do
             path="$PENDING_DIR/$name"
-            printf '%s\t%s\tpending\t\t\n' "$name" "$(sha256sum "$path" | awk '{print $1}')"
+            printf '%s\t%s\tpending\t\t\n' "$name" "$(sha256_file "$path")"
         done
     } > "$file"
+    if [[ -n "$max_bytes" ]]; then
+        {
+            printf 'max_bytes=%s\n' "$max_bytes"
+            printf 'selected_bytes=%s\n' "$selected_bytes"
+            if (( ${#oversized[@]} > 0 )); then
+                printf 'oversized_count=%s\n' "${#oversized[@]}"
+                for item in "${oversized[@]}"; do
+                    printf 'oversized_item=%s\n' "$item"
+                done
+            fi
+        } > "$file.meta"
+    fi
     echo "Created batch: $id"
     echo "Selected: $(( $(wc -l < "$file") - 1 )) observation(s)"
+    echo "Selected bytes: $selected_bytes"
+    displayed_sizes=0
+    for name in "${selected[@]}"; do
+        (( displayed_sizes < MAX_BATCH_REPORT_ITEMS )) || break
+        echo "  Size: $name $(byte_size "$PENDING_DIR/$name") bytes"
+        displayed_sizes=$((displayed_sizes + 1))
+    done
+    if [[ -n "$max_bytes" ]]; then
+        echo "Input budget: $max_bytes bytes"
+    fi
+    displayed_oversized=0
+    for item in "${oversized[@]}"; do
+        (( displayed_oversized < MAX_BATCH_REPORT_ITEMS )) || break
+        echo "Skipped oversized: $item"
+        displayed_oversized=$((displayed_oversized + 1))
+    done
+    if (( ${#oversized[@]} > displayed_oversized )); then
+        echo "... $(( ${#oversized[@]} - displayed_oversized )) more oversized item(s)"
+    fi
     release_lock
 }
 
@@ -111,11 +159,29 @@ status_batch() {
     local -a deferred_names=()
     [[ -f "$file" ]] || die "batch not found: $(basename "$file")"
     local pending=0 complete=0 deferred=0 invalid=0
+    local total_bytes=0 size
+    local -a size_names=() size_values=()
+    local oversized_report_count=0 oversized_report_total=0
     while IFS=$'\t' read -r name hash status disposition destination; do
         [[ "$name" == filename ]] && continue
         path="$PENDING_DIR/$name"
+        if [[ -f "$path" ]]; then
+            size="$(byte_size "$path")"
+            total_bytes=$((total_bytes + size))
+            if (( ${#size_names[@]} < MAX_BATCH_REPORT_ITEMS )); then
+                size_names+=("$name")
+                size_values+=("$size")
+            fi
+        elif [[ -f "$CONTENT_DIR/observations/archived/$name" ]]; then
+            size="$(byte_size "$CONTENT_DIR/observations/archived/$name")"
+            total_bytes=$((total_bytes + size))
+            if (( ${#size_names[@]} < MAX_BATCH_REPORT_ITEMS )); then
+                size_names+=("$name")
+                size_values+=("$size")
+            fi
+        fi
         if [[ "$status" == pending && -f "$path" ]]; then
-            actual="$(sha256sum "$path" | awk '{print $1}')"
+            actual="$(sha256_file "$path")"
             if [[ "$actual" != "$hash" ]]; then
                 echo "CHANGED: observations/pending/$name"; invalid=$((invalid + 1))
             else
@@ -154,6 +220,34 @@ status_batch() {
     done < "$file"
     release_lock
     echo "Batch $(basename "$file"): $complete complete, $pending pending, $deferred deferred"
+    echo "  Input bytes: $total_bytes"
+    if (( ${#size_names[@]} > 0 )); then
+        echo "  Item sizes:"
+        for index in "${!size_names[@]}"; do
+            echo "    ${size_names[index]}: ${size_values[index]} bytes"
+        done
+    fi
+    if [[ -f "$file.meta" ]]; then
+        while IFS='=' read -r meta_key meta_value; do
+            case "$meta_key" in
+                max_bytes) [[ -n "$meta_value" ]] && echo "  Input budget: $meta_value bytes" ;;
+                selected_bytes) echo "  Selected bytes at creation: $meta_value" ;;
+                oversized_count)
+                    oversized_report_total="$meta_value"
+                    echo "  Oversized/deferred at creation: $meta_value item(s)"
+                    ;;
+                oversized_item)
+                    if (( oversized_report_count < MAX_BATCH_REPORT_ITEMS )); then
+                        echo "  Skipped oversized: $meta_value"
+                        oversized_report_count=$((oversized_report_count + 1))
+                    fi
+                    ;;
+            esac
+        done < "$file.meta"
+        if (( oversized_report_total > oversized_report_count )); then
+            echo "  ... $((oversized_report_total - oversized_report_count)) more oversized item(s)"
+        fi
+    fi
     echo "  Dispositions: incorporated=$incorporated, duplicate=$duplicate, ephemeral=$ephemeral"
     if (( invalid_disposition > 0 )); then
         echo "  Dispositions not recognized: $invalid_disposition"
@@ -194,7 +288,7 @@ defer_item() {
     IFS=$'\t' read -r _ hash status _ _ <<< "$row"
     [[ "$status" == pending ]] || die "item is already completed or deferred: $name"
     [[ -f "$PENDING_DIR/$name" ]] || die "pending input is missing: $name"
-    actual="$(sha256sum "$PENDING_DIR/$name" | awk '{print $1}')"
+    actual="$(sha256_file "$PENDING_DIR/$name")"
     [[ "$actual" == "$hash" ]] || die "input changed since batch selection: observations/pending/$name"
     tmp="$(mktemp)"
     awk -F '\t' -v n="$name" 'BEGIN { OFS="\t" } NR == 1 { print; next } $1 == n { $3="deferred"; $4="deferred"; found=1 } { print } END { if (!found) exit 1 }' "$file" > "$tmp" || { rm -f "$tmp"; die "item is not pending in batch: $name"; }

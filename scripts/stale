@@ -6,11 +6,12 @@
 # it against today. Articles are grouped by staleness severity.
 #
 # Usage:
-#   stale [--days N] [--path DIR] [--count]
+#   stale [--days N] [--path DIR] [--sections] [--count]
 #
 # Options:
 #   --days N     Override threshold: flag anything older than N days
 #   --path DIR   Scope to a subdirectory of knowledge/
+#   --sections   Report stale and unresolved H2/H3 sections individually
 #   --count      Print only the number of articles needing attention
 #
 # Examples:
@@ -44,12 +45,14 @@ source "$SCRIPT_DIR/_lib.sh"
 
 CUSTOM_DAYS=""
 TARGET=""
+SECTIONS=false
 COUNT_ONLY=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --days) need_arg "$1" $#; CUSTOM_DAYS="$2"; shift 2 ;;
         --path) need_arg "$1" $#; TARGET="$2"; shift 2 ;;
+        --sections) SECTIONS=true; shift ;;
         --count) COUNT_ONLY=true; shift ;;
         -h|--help)
             show_help "$0"
@@ -76,6 +79,88 @@ fi
 
 stale_count=0
 no_date_count=0
+
+section_attention() {
+    [[ "$FRESHNESS_STATUS" == stale || "$FRESHNESS_STATUS" == unknown || \
+        "$FRESHNESS_STATUS" == invalid ]] && return 0
+    [[ "${SECTION_METADATA_STATUS:-current}" != current ]]
+}
+
+section_freshness_with_override() {
+    [[ -n "$CUSTOM_DAYS" ]] || return 0
+    [[ "$FRESHNESS_STATUS" == unknown || "$FRESHNESS_STATUS" == invalid ]] && return 0
+    FRESHNESS_TTL_DAYS="$CUSTOM_DAYS"
+    local section_epoch today_epoch age_seconds
+    section_epoch="$(date_to_epoch "${FRESHNESS_DATE_VALUE%%T*}")"
+    today_epoch="${FRESHNESS_TODAY_EPOCH:-$(date -u +%s)}"
+    age_seconds=$((today_epoch - section_epoch))
+    FRESHNESS_AGE_DAYS=$((age_seconds / 86400))
+    if (( age_seconds > FRESHNESS_TTL_DAYS * 86400 )); then
+        FRESHNESS_STATUS=stale
+    else
+        FRESHNESS_STATUS=fresh
+    fi
+}
+
+report_section() {
+    local relpath="$1" locator="$2" status_label
+
+    section_freshness_with_override
+    section_attention || return 0
+    if [[ "$FRESHNESS_STATUS" == stale ]]; then
+        status_label="stale"
+        if [[ "$COUNT_ONLY" == false ]]; then
+            printf "  %4d days  %s#%s  (%s: %s, ttl %sd; status %s)\n" \
+                "$FRESHNESS_AGE_DAYS" "$relpath" "$locator" \
+                "$FRESHNESS_DATE_FIELD" "${FRESHNESS_DATE_VALUE%T*}" \
+                "$FRESHNESS_TTL_DAYS" "${SECTION_METADATA_STATUS:-current}"
+        fi
+    elif [[ "$FRESHNESS_STATUS" == unknown ]]; then
+        status_label="no $FRESHNESS_DATE_FIELD"
+        if [[ "$COUNT_ONLY" == false ]]; then
+            printf "  [%s]  %s#%s  (status %s)\n" \
+                "$status_label" "$relpath" "$locator" \
+                "${SECTION_METADATA_STATUS:-current}"
+        fi
+    elif [[ "$FRESHNESS_STATUS" == invalid ]]; then
+        status_label="bad date"
+        if [[ "$COUNT_ONLY" == false ]]; then
+            printf "  [%s]  %s#%s  (%s: %s; status %s)\n" \
+                "$status_label" "$relpath" "$locator" "$FRESHNESS_DATE_FIELD" \
+                "$FRESHNESS_DATE_VALUE" "${SECTION_METADATA_STATUS:-current}"
+        fi
+    else
+        if [[ "$COUNT_ONLY" == false ]]; then
+            printf "  [status %s]  %s#%s\n" \
+                "${SECTION_METADATA_STATUS:-current}" "$relpath" "$locator"
+        fi
+    fi
+    stale_count=$((stale_count + 1))
+}
+
+if [[ "$SECTIONS" == true ]]; then
+    while IFS= read -r -d '' file; do
+        relpath="${file#"$CONTENT_DIR/"}"
+        freshness_for_file "$relpath" "$file" "$CUSTOM_DAYS"
+        section_metadata_for_file "$relpath" "$file"
+        mapfile -t section_locators < <(printf '%s\n' "${!SECTION_META_STATUS[@]}" | sort -V)
+        for locator in "${section_locators[@]}"; do
+            [[ -n "$locator" ]] || continue
+            section_metadata_select "$locator"
+            report_section "$relpath" "$locator"
+        done
+    done < <(find "$TARGET" -name '*.md' -type f -print0 | sort -z)
+
+    if [[ "$COUNT_ONLY" == true ]]; then
+        echo "$stale_count"
+    elif (( stale_count == 0 )); then
+        echo "No stale sections."
+    else
+        echo ""
+        echo "$stale_count section(s) needing attention."
+    fi
+    exit 0
+fi
 
 while IFS= read -r -d '' file; do
     relpath="${file#"$CONTENT_DIR/"}"

@@ -21,6 +21,8 @@
 #   --json           Return one structured JSON object
 #   --text-only      Return the historical section body without metadata
 #   --references     Return the complete provenance reference list
+#   --section-references  Return complete sources resolved for a selected section
+#   --max-bytes N  Bound stdout bytes; section content remains complete by line
 #
 # Examples:
 #   section --file knowledge/networking.md --number 1     # 1st H2 section
@@ -50,6 +52,8 @@ EXACT=false
 JSON=false
 TEXT_ONLY=false
 REFERENCES_ONLY=false
+SECTION_REFERENCES_ONLY=false
+MAX_BYTES=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -62,6 +66,12 @@ while [[ $# -gt 0 ]]; do
         --json)    JSON=true; shift ;;
         --text-only) TEXT_ONLY=true; shift ;;
         --references) REFERENCES_ONLY=true; shift ;;
+        --section-references) SECTION_REFERENCES_ONLY=true; shift ;;
+        --max-bytes)
+            need_arg "$1" $#
+            MAX_BYTES="$(parse_nonnegative_decimal "--max-bytes" "$2")" || exit 1
+            shift 2
+            ;;
         -h|--help)
             show_help "$0"
             exit 0
@@ -99,6 +109,19 @@ if [[ "$REFERENCES_ONLY" == true ]] && {
     exit 1
 fi
 
+if [[ "$REFERENCES_ONLY" == true && "$SECTION_REFERENCES_ONLY" == true ]]; then
+    echo "Error: --references and --section-references cannot be combined" >&2
+    exit 1
+fi
+if [[ "$SECTION_REFERENCES_ONLY" == true && "$TEXT_ONLY" == true ]]; then
+    echo "Error: --section-references cannot be combined with --text-only" >&2
+    exit 1
+fi
+if [[ "$SECTION_REFERENCES_ONLY" == true && "$selector_count" -eq 0 ]]; then
+    echo "Error: --section-references requires a section selector" >&2
+    exit 1
+fi
+
 if [[ "$REFERENCES_ONLY" == false ]] && (( selector_count == 0 )); then
     echo "Error: provide --number N, --heading TEXT, --top, or --title" >&2
     exit 1
@@ -115,8 +138,23 @@ if [[ ! -f "$FILE" ]]; then
     exit 1
 fi
 
-if [[ "$REFERENCES_ONLY" == true ]]; then
-    retrieval_metadata_for_file "$resolved" "$FILE"
+SECTION_TEMP_DIR=""
+section_cleanup() {
+    if [[ -n "$SECTION_TEMP_DIR" && -d "$SECTION_TEMP_DIR" ]]; then
+        rm -rf -- "$SECTION_TEMP_DIR"
+        SECTION_TEMP_DIR=""
+    fi
+}
+section_temp_file() {
+    mktemp "$SECTION_TEMP_DIR/$1.XXXXXX"
+}
+SECTION_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/knowledge-section.XXXXXX")" || {
+    echo "Error: could not create section temporary directory" >&2
+    exit 1
+}
+trap section_cleanup EXIT
+
+emit_article_references() {
     if [[ "$JSON" == true ]]; then
         printf '{"path":'
         json_quote "$resolved"
@@ -132,6 +170,22 @@ if [[ "$REFERENCES_ONLY" == true ]]; then
     else
         printf '%s\n' "${PROVENANCE_REFERENCES[@]}"
     fi
+}
+
+if [[ "$REFERENCES_ONLY" == true ]]; then
+    retrieval_metadata_for_file "$resolved" "$FILE"
+    if [[ -n "$MAX_BYTES" ]]; then
+        references_output_file="$(section_temp_file references)"
+        emit_article_references > "$references_output_file"
+        references_bytes="$(byte_size "$references_output_file")"
+        if (( references_bytes > MAX_BYTES )); then
+            echo "Error: --max-bytes $MAX_BYTES is smaller than the complete references response ($references_bytes bytes)" >&2
+            exit 1
+        fi
+        cat "$references_output_file"
+    else
+        emit_article_references
+    fi
     exit 0
 fi
 
@@ -143,12 +197,10 @@ match_heading=""
 match_number=""
 match_level_number=""
 
-BODY_FILE="$(mktemp "${TMPDIR:-/tmp}/knowledge-section.XXXXXX")" || {
+BODY_FILE="$(section_temp_file body)" || {
     echo "Error: could not create temporary section output" >&2
     exit 1
 }
-cleanup() { rm -f "$BODY_FILE"; }
-trap cleanup EXIT
 
 # Parse dot notation: "2.3" means H2 #2, H3 #3 under it
 TARGET_H2=""
@@ -273,24 +325,15 @@ if [[ "$found" == false ]]; then
     exit 1
 fi
 
-retrieval_metadata_for_file "$resolved" "$FILE"
+retrieval_metadata_for_file "$resolved" "$FILE" "$match_number"
 
-if [[ "$TEXT_ONLY" == true ]]; then
-    cat "$BODY_FILE"
-    exit 0
-fi
-
-if [[ "$JSON" == true ]]; then
+section_json_prefix() {
     printf '{"path":'
     json_quote "$resolved"
     printf ',"corpus":'
     json_quote "$RESULT_CORPUS"
     printf ',"locator":{"number":'
-    if [[ -n "$match_number" ]]; then
-        json_quote "$match_number"
-    else
-        printf 'null'
-    fi
+    json_nullable_string "$match_number"
     printf ',"heading":'
     json_quote "$match_heading"
     if [[ "$TOP" == true ]]; then
@@ -306,9 +349,256 @@ if [[ "$JSON" == true ]]; then
     json_conflict
     printf ',"provenance":'
     json_provenance
+    printf ',"section_metadata":'
+    json_section_metadata
     printf ',"content":'
+}
+
+emit_section_json_full() {
+    section_json_prefix
     json_quote_file "$BODY_FILE"
     printf '}\n'
+}
+
+section_append_fence_closer() {
+    local file="$1" line
+
+    md_heading_reset
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        _md_fence_track "$line" || true
+    done < "$file"
+    section_append_current_fence_closer >> "$file"
+}
+
+section_append_current_fence_closer() {
+    local closer="" i
+
+    [[ "$MD_FENCE_OPEN" == true ]] || return 0
+    for ((i = 0; i < MD_FENCE_LEN; i++)); do
+        closer+="$MD_FENCE_CHAR"
+    done
+    printf '%s\n' "$closer"
+}
+
+section_write_truncated_body() {
+    local source_file="$1" output_file="$2" marker="$3"
+
+    cp "$source_file" "$output_file"
+    section_append_fence_closer "$output_file"
+    printf '%s' "$marker" >> "$output_file"
+}
+
+emit_section_json_budget() {
+    local full_json_file="$1" full_bytes body_source_bytes candidate_bytes
+    local selected_source_bytes=0 omitted_source_bytes line line_bytes
+    local candidate_body_file candidate_json_file marker_body
+    local candidate_file line_file escaped_line_file prefix_file
+    local prefix_bytes escaped_body_bytes line_json_bytes marker_json_bytes
+    local truncation_fields_bytes suffix_json_bytes
+    local prior_fence_open prior_fence_char prior_fence_len
+    local marker=$'[content truncated: retrieve without --max-bytes]\n'
+
+    full_bytes="$(byte_size "$full_json_file")"
+    if (( full_bytes <= MAX_BYTES )); then
+        cat "$full_json_file"
+        return 0
+    fi
+
+    candidate_file="$(section_temp_file candidate)"
+    line_file="$(section_temp_file line)"
+    escaped_line_file="$(section_temp_file escaped-line)"
+    candidate_body_file="$(section_temp_file candidate-body)"
+    candidate_json_file="$(section_temp_file candidate-json)"
+    prefix_file="$(section_temp_file prefix)"
+
+    : > "$candidate_file"
+    marker_body=$marker
+    body_source_bytes="$(byte_size "$BODY_FILE")"
+    section_json_prefix > "$prefix_file"
+    prefix_bytes="$(byte_size "$prefix_file")"
+    marker_json_bytes=$(( $(byte_count_text "$marker_body") + 1 ))
+    escaped_body_bytes=0
+    md_heading_reset
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line_bytes=$(( $(byte_count_text "$line") + 1 ))
+        printf '%s\n' "$line" > "$line_file"
+        json_escape_file "$line_file" > "$escaped_line_file"
+        line_json_bytes="$(byte_size "$escaped_line_file")"
+        prior_fence_open="$MD_FENCE_OPEN"
+        prior_fence_char="$MD_FENCE_CHAR"
+        prior_fence_len="$MD_FENCE_LEN"
+        _md_fence_track "$line" || true
+        suffix_json_bytes="$marker_json_bytes"
+        [[ "$MD_FENCE_OPEN" == true ]] && \
+            suffix_json_bytes=$((suffix_json_bytes + MD_FENCE_LEN + 2))
+        omitted_source_bytes=$((body_source_bytes - selected_source_bytes - line_bytes))
+        truncation_fields_bytes=$(( $(byte_count_text ",\"content_truncated\":true,\"omitted_content_bytes\":$omitted_source_bytes,\"max_bytes\":$MAX_BYTES}") + 1 ))
+        candidate_bytes=$((prefix_bytes + 2 + escaped_body_bytes + line_json_bytes + \
+            suffix_json_bytes + truncation_fields_bytes))
+        if (( candidate_bytes <= MAX_BYTES )); then
+            printf '%s\n' "$line" >> "$candidate_file"
+            selected_source_bytes=$((selected_source_bytes + line_bytes))
+            escaped_body_bytes=$((escaped_body_bytes + line_json_bytes))
+        else
+            MD_FENCE_OPEN="$prior_fence_open"
+            MD_FENCE_CHAR="$prior_fence_char"
+            MD_FENCE_LEN="$prior_fence_len"
+            break
+        fi
+    done < "$BODY_FILE"
+
+    omitted_source_bytes=$(( body_source_bytes - selected_source_bytes ))
+    suffix_json_bytes="$marker_json_bytes"
+    [[ "$MD_FENCE_OPEN" == true ]] && \
+        suffix_json_bytes=$((suffix_json_bytes + MD_FENCE_LEN + 2))
+    truncation_fields_bytes=$(( $(byte_count_text ",\"content_truncated\":true,\"omitted_content_bytes\":$omitted_source_bytes,\"max_bytes\":$MAX_BYTES}") + 1 ))
+    candidate_bytes=$((prefix_bytes + 2 + escaped_body_bytes + suffix_json_bytes + \
+        truncation_fields_bytes))
+    section_write_truncated_body "$candidate_file" "$candidate_body_file" "$marker_body"
+    {
+        section_json_prefix
+        json_quote_file "$candidate_body_file"
+        printf ',"content_truncated":true,"omitted_content_bytes":%d,"max_bytes":%d}\n' \
+            "$omitted_source_bytes" "$MAX_BYTES"
+    } > "$candidate_json_file"
+    if (( candidate_bytes > MAX_BYTES )); then
+        echo "Error: --max-bytes $MAX_BYTES is smaller than the minimum valid section envelope" >&2
+        return 1
+    fi
+    cat "$candidate_json_file"
+    printf 'section: output budget used %d/%d bytes; omitted %d content bytes\n' \
+        "$candidate_bytes" "$MAX_BYTES" "$omitted_source_bytes" >&2
+}
+
+section_output_budget_file=""
+# A subshell gives finalization its own EXIT cleanup, including write failures.
+section_budget_finalize() (
+    local exit_status="$1" full_bytes line line_bytes used=0 omitted_bytes final_bytes
+    local marker=$'[content truncated: retrieve without --max-bytes]\n'
+    local marker_bytes bounded_file candidate_file body_started=false metadata_overflow=false
+    local prior_fence_open prior_fence_char prior_fence_len candidate_bytes
+    trap section_cleanup EXIT
+    exec 1>&3 3>&-
+    if (( exit_status != 0 )); then
+        cat "$section_output_budget_file"
+        exit "$exit_status"
+    fi
+    full_bytes="$(byte_size "$section_output_budget_file")"
+    if (( full_bytes <= MAX_BYTES )); then
+        cat "$section_output_budget_file"
+        exit 0
+    fi
+    marker_bytes="$(byte_count_text "$marker")"
+    bounded_file="$(section_temp_file bounded)"
+    candidate_file="$(section_temp_file candidate)"
+    : > "$bounded_file"
+    md_heading_reset
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line_bytes=$(( $(byte_count_text "$line") + 1 ))
+        prior_fence_open="$MD_FENCE_OPEN"
+        prior_fence_char="$MD_FENCE_CHAR"
+        prior_fence_len="$MD_FENCE_LEN"
+        _md_fence_track "$line" || true
+        candidate_bytes=$((used + line_bytes + marker_bytes))
+        [[ "$MD_FENCE_OPEN" == true ]] && \
+            candidate_bytes=$((candidate_bytes + MD_FENCE_LEN + 1))
+        if (( candidate_bytes <= MAX_BYTES )); then
+            printf '%s\n' "$line" >> "$bounded_file"
+            used=$((used + line_bytes))
+            if [[ "$TEXT_ONLY" == false && "$line" == "---" ]]; then
+                body_started=true
+            fi
+        else
+            MD_FENCE_OPEN="$prior_fence_open"
+            MD_FENCE_CHAR="$prior_fence_char"
+            MD_FENCE_LEN="$prior_fence_len"
+            if [[ "$TEXT_ONLY" == false && "$body_started" == false ]]; then
+                metadata_overflow=true
+            fi
+            break
+        fi
+    done < "$section_output_budget_file"
+    if [[ "$metadata_overflow" == true ]]; then
+        echo "Error: --max-bytes $MAX_BYTES is smaller than the complete section metadata envelope" >&2
+        exit 1
+    fi
+    if [[ "$TEXT_ONLY" == false && "$body_started" == false ]]; then
+        echo "Error: section output did not contain a complete metadata envelope" >&2
+        exit 1
+    fi
+    if (( used == 0 || used + marker_bytes > MAX_BYTES )); then
+        echo "Error: --max-bytes $MAX_BYTES is too small for one complete section record and its truncation marker" >&2
+        exit 1
+    fi
+    omitted_bytes=$((full_bytes - used))
+    cp "$bounded_file" "$candidate_file"
+    section_append_current_fence_closer >> "$candidate_file"
+    printf '%s' "$marker" >> "$candidate_file"
+    final_bytes="$(byte_size "$candidate_file")"
+    if (( final_bytes > MAX_BYTES )); then
+        echo "Error: --max-bytes $MAX_BYTES is too small for one complete output record and its truncation marker" >&2
+        exit 1
+    fi
+    cat "$candidate_file"
+    printf 'section: output budget used %d/%d bytes; omitted %d content/output bytes\n' \
+        "$final_bytes" "$MAX_BYTES" "$omitted_bytes" >&2
+    exit 0
+)
+
+if [[ -n "$MAX_BYTES" && "$JSON" == false ]]; then
+    section_output_budget_file="$(section_temp_file output)"
+    exec 3>&1
+    exec >"$section_output_budget_file"
+    trap 'section_budget_finalize "$?"' EXIT
+fi
+
+if [[ "$SECTION_REFERENCES_ONLY" == true ]]; then
+    if [[ "$JSON" == true ]]; then
+        section_references_json_file=""
+        if [[ -n "$MAX_BYTES" ]]; then
+            section_references_json_file="$(section_temp_file section-references)"
+            exec 4>&1
+            exec >"$section_references_json_file"
+        fi
+        printf '{"path":'; json_quote "$resolved"
+        printf ',"corpus":'; json_quote "$RESULT_CORPUS"
+        printf ',"locator":{"number":'; json_nullable_string "$match_number"
+        printf ',"heading":'; json_quote "$match_heading"
+        printf '},"section_metadata":'; json_section_metadata
+        printf ',"provenance":'; json_provenance all
+        printf '}\n'
+        if [[ -n "$MAX_BYTES" ]]; then
+            exec 1>&4 4>&-
+            bytes="$(byte_size "$section_references_json_file")"
+            if (( bytes > MAX_BYTES )); then
+                rm -f "$section_references_json_file"
+                echo "Error: --max-bytes $MAX_BYTES is smaller than the complete references response ($bytes bytes)" >&2
+                exit 1
+            fi
+            cat "$section_references_json_file"
+            rm -f "$section_references_json_file"
+        fi
+    else
+        for section_reference in "${PROVENANCE_REFERENCES[@]}"; do
+            printf '%s\n' "$section_reference"
+        done
+    fi
+    exit 0
+fi
+
+if [[ "$TEXT_ONLY" == true ]]; then
+    cat "$BODY_FILE"
+    exit 0
+fi
+
+if [[ "$JSON" == true ]]; then
+    if [[ -n "$MAX_BYTES" ]]; then
+        full_json_file="$(section_temp_file full-json)"
+        emit_section_json_full > "$full_json_file"
+        emit_section_json_budget "$full_json_file"
+    else
+        emit_section_json_full
+    fi
     exit 0
 fi
 
@@ -332,6 +622,9 @@ printf 'Freshness: '
 freshness_metadata_text
 printf '\n'
 conflict_metadata_text
+if [[ -n "$match_number" ]]; then
+    printf 'Section metadata: %s\n' "$(section_metadata_text)"
+fi
 printf 'Provenance: scope=%s; %s\n' "$PROVENANCE_SCOPE" \
     "$(provenance_metadata_text)"
 printf -- '---\n'

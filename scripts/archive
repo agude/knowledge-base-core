@@ -146,7 +146,7 @@ for name in "${FILES[@]}"; do
         continue
     fi
 
-    actual_sha="$(sha256sum "$src" | awk '{print $1}')"
+    actual_sha="$(sha256_file "$src")"
     if [[ -n "$BATCH_FILE" ]]; then
         [[ "$actual_sha" == "$original_sha" ]] || { echo "Input changed since batch selection: observations/pending/$name" >&2; continue; }
     else
