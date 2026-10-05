@@ -92,16 +92,21 @@ example.
    calls. Preview and `batch start --files FILENAME ...` operate on top-level
    pending files; normal `pending` listing, counting, and `--full` access remain
    recursive.
+   Use `pending --preview --max-bytes N` to inspect only the deterministic
+   oldest-created input that fits a byte budget. The preview reports selected
+   bytes and skipped oversized items; source-file bytes include frontmatter.
 3. If there are only a small number of observations, run
    `$KNOWLEDGE_BASE/scripts/pending --full` to read them all. Otherwise
    use your READ tool to go through them one by one.
 4. Run `$KNOWLEDGE_BASE/scripts/toc --depth 2` to see the current knowledge structure.
 5. Create a batch before processing with
-   `$KNOWLEDGE_BASE/scripts/batch start --files FILENAME ...`. The command
+   `$KNOWLEDGE_BASE/scripts/batch start --files FILENAME ...`. Add
+   `--max-bytes N` for automatic selection within a source-byte budget. The command
    records exactly the filenames selected by the curator and their content
-   hashes. With no `--files` argument, the command selects every top-level
-   pending file for compatibility; use that mode only when a full queue pass
-   is intentional.
+   hashes and reports selected costs. With an explicit `--files` list, an
+   over-budget request fails before a manifest is created. Without a budget,
+   the command selects every top-level pending file for compatibility; use
+   that mode only when a full queue pass is intentional.
 6. For each observation, decide what to do (see Decision Framework below).
 7. Execute your decisions --- edit knowledge articles directly. Find the
    content root with `$KNOWLEDGE_BASE/scripts/status`; do not assume
@@ -388,6 +393,32 @@ sources:
   rate, which is wrong in both directions --- an org chart is stale in a
   fortnight and a protocol description is not stale in a year.
 - `sources` --- observation files that contributed. Append on update.
+- `aliases` --- optional curator-authored routing phrases used only by
+  question-mode search. Add one phrase per list item; do not use aliases as
+  evidence or as a replacement for a useful article title.
+
+### Partial review and section evidence
+
+An article `verified` date applies to the claims reviewed for the article, not
+automatically to every section. When a review covers only one H2 or H3, attach
+the section metadata immediately after its heading and leave the article date
+unchanged:
+
+```markdown
+## Current procedure
+
+<!-- kb-section: verified=2026-09-01; ttl=process; effective=2026-08-15; status=current; sources=observations/archived/procedure.md -->
+The reviewed procedure.
+```
+
+Omitted fields inherit from article frontmatter. Put `supersedes` on the newer
+claim and point it backward at the numeric H2/H3 locator of the retained
+historical claim. Mark that historical claim `status=superseded` without a
+backward link.
+Use `status=unresolved` when authority or effective date is unresolved. Keep
+the competing claims readable, preserve attribution and source paths, and do
+not select a current claim from recency alone. Run `lint` after adding the
+metadata and use `stale --sections` to review affected locators.
 
 An article that mixes fast- and slow-rotting content is usually two
 articles. Split it rather than picking an average `ttl`.
@@ -421,6 +452,22 @@ Linking everything to everything is the same as linking nothing.
 - Prefer many small files over few large ones. A file with 3 H2 sections is
   fine. An agent that needs one fact shouldn't have to scan past 20 section
   titles in `toc` output to find it.
+
+### Byte-bounded retrieval
+
+Use `search --max-bytes N` when the ranked response must fit a transport
+budget. JSON retains complete result records in rank order and reports omitted
+records; a budget never clips a JSON object. Use the returned locator with
+`section --number` to load a selected section. `section --max-bytes N` retains
+the freshness, conflict, provenance, and locator envelope, then includes only
+complete content lines from the start with an explicit truncation marker.
+An open Markdown fence is closed before the marker so the marker cannot be
+mistaken for evidence inside the code block. Retrieve the section again
+without the cap before treating a truncated result as a complete claim. Byte
+caps constrain input or output volume; they do not estimate model tokens,
+context usage, or billing. Input caps count complete source-file bytes,
+including frontmatter; output caps count serialized stdout and leave stderr
+outside the budget.
 
 ### When to use directories
 
