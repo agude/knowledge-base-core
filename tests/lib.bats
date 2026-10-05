@@ -211,3 +211,38 @@ HOOK
     [[ "$status" -ne 0 ]]
     [[ "$output" == *"Not a question filename"* ]]
 }
+
+@test "streaming JSON encoder round trips all bytes without scratch allocation" {
+    local input="$TEST_CONTENT_DIR/bytes" encoded="$TEST_CONTENT_DIR/encoded.json"
+    local decoded="$TEST_CONTENT_DIR/decoded" fake_bin="$TEST_CONTENT_DIR/encoder-bin"
+    local code
+    mkdir -p "$fake_bin"
+    printf '#!/bin/sh\necho unexpected-scratch-allocation >&2\nexit 23\n' > "$fake_bin/mktemp"
+    chmod 700 "$fake_bin/mktemp"
+    for (( code=0; code<32; code++ )); do
+        printf '%b' "\\$(printf '%03o' "$code")"
+    done > "$input"
+    printf '%s\n\n' 'Unicode café 日本語; quotes " and backslashes \' >> "$input"
+    run env PATH="$fake_bin:$PATH" bash -c 'set -euo pipefail; source "$1"; json_quote_file "$2" > "$3"' _ "$SCRIPTS/_lib.sh" "$input" "$encoded"
+    [[ "$status" -eq 0 ]]
+    jq -j . "$encoded" > "$decoded"
+    cmp "$input" "$decoded"
+    run env PATH="$fake_bin:$PATH" bash -c 'set -euo pipefail; source "$1"; json_quote "$2" > "$3"' _ "$SCRIPTS/_lib.sh" $'café\t"\\\n\n' "$encoded"
+    [[ "$status" -eq 0 ]]
+    printf '%s' $'café\t"\\\n\n' > "$input"
+    jq -j . "$encoded" > "$decoded"
+    cmp "$input" "$decoded"
+    : > "$input"
+    run env PATH="$fake_bin:$PATH" bash -c 'set -euo pipefail; source "$1"; json_quote_file "$2"' _ "$SCRIPTS/_lib.sh" "$input"
+    [[ "$status" -eq 0 && "$output" == '""' ]]
+}
+
+@test "streaming JSON encoder propagates partial upstream failure without pipefail" {
+    local fake_bin="$TEST_CONTENT_DIR/od-bin" input="$TEST_CONTENT_DIR/input"
+    mkdir -p "$fake_bin"
+    printf '#!/bin/sh\nprintf " 61 62\\n"\nexit 23\n' > "$fake_bin/od"
+    chmod 700 "$fake_bin/od"
+    printf 'abc' > "$input"
+    run env PATH="$fake_bin:$PATH" bash -c 'source "$1"; json_quote_file "$2"' _ "$SCRIPTS/_lib.sh" "$input"
+    [[ "$status" -ne 0 ]]
+}

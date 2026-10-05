@@ -427,15 +427,15 @@ session_clear_initialization_for_file() {
 # durable marker used by hosts whose hook processes do not share environment.
 # An unset value alone still means that capture was never initialized.
 #
-# Prints the path; returns 1 when capture should be skipped.
-#
-# Usage:
-#   file="$(session_buffer_path "$dir" "$id")" || exit 0
+# Prints the path; returns 2 for an uninitialized session, 1 for a failure.
 session_buffer_path() {
     local dir="$1" id="$2"
     local file
 
-    file="$(session_file_path "$dir" "$id")" || return 1
+    file="$(session_file_path "$dir" "$id")" || {
+        echo "session buffer: invalid session ID" >&2
+        return 1
+    }
 
     if [[ -f "$file" ]]; then
         echo "$file"
@@ -445,11 +445,17 @@ session_buffer_path() {
     if [[ "${KNOWLEDGE_OBSERVE:-}" != "1" ]] \
         && [[ -z "${KNOWLEDGE_SESSION_FILE:-}" ]] \
         && ! session_is_initialized "$dir" "$id"; then
-        return 1
+        return 2
     fi
 
-    ensure_session_dir "$dir" || return 1
-    touch "$file" 2>/dev/null || return 1
+    ensure_session_dir "$dir" || {
+        echo "session buffer: cannot create session directory $dir" >&2
+        return 1
+    }
+    touch "$file" 2>/dev/null || {
+        echo "session buffer: cannot create $file" >&2
+        return 1
+    }
     chmod 600 "$file" 2>/dev/null || true
 
     echo "$file"
@@ -857,60 +863,47 @@ retrieval_metadata_for_file() {
     provenance_for_file "$relpath" "$file"
 }
 
-# json_escape_value - Escape one shell value for use inside a JSON string.
-#
-# This preserves UTF-8 and escapes the JSON-significant characters plus the
-# control characters that can occur in multiline Markdown.
-json_escape_value() {
-    awk '
-    function escape(s,    i, c, out) {
-        for (i = 1; i <= length(s); i++) {
-            c = substr(s, i, 1)
-            if (c == "\\") out = out "\\\\"
-            else if (c == "\"") out = out "\\\""
-            else if (c == "\t") out = out "\\t"
-            else if (c == "\r") out = out "\\r"
-            else if (c == "\b") out = out "\\b"
-            else if (c == "\f") out = out "\\f"
-            else out = out c
+# Escape od's byte stream so UTF-8 and trailing newlines survive unchanged.
+_json_escape_hex() {
+    LC_ALL=C awk '
+    BEGIN { digits = "0123456789abcdef" }
+    {
+        for (i = 1; i <= NF; i++) {
+            code = (index(digits, substr($i, 1, 1)) - 1) * 16 + index(digits, substr($i, 2, 1)) - 1
+            if (code == 8) printf "%s", "\\b"
+            else if (code == 9) printf "%s", "\\t"
+            else if (code == 10) printf "%s", "\\n"
+            else if (code == 12) printf "%s", "\\f"
+            else if (code == 13) printf "%s", "\\r"
+            else if (code == 34) printf "%s", "\\\""
+            else if (code == 92) printf "%s", "\\\\"
+            else if (code < 32) printf "%s%04x", "\\u", code
+            else printf "%c", code
         }
-        return out
-    }
-    { if (seen) printf "\\n"; printf "%s", escape($0); seen = 1 }
-    '
+    }'
 }
 
-# json_escape_file - Escape a text file while retaining its line breaks.
-json_escape_file() {
-    awk '
-    function escape(s,    i, c, out) {
-        for (i = 1; i <= length(s); i++) {
-            c = substr(s, i, 1)
-            if (c == "\\") out = out "\\\\"
-            else if (c == "\"") out = out "\\\""
-            else if (c == "\t") out = out "\\t"
-            else if (c == "\r") out = out "\\r"
-            else if (c == "\b") out = out "\\b"
-            else if (c == "\f") out = out "\\f"
-            else out = out c
-        }
-        return out
-    }
-    { if (seen) printf "\\n"; printf "%s", escape($0); seen = 1 }
-    END { if (seen) printf "\\n" }
-    ' "$1"
-}
+# Check every pipeline stage even when the caller has not enabled pipefail.
+json_escape_value() (
+    set -o pipefail
+    printf '%s' "$1" | LC_ALL=C od -An -v -t x1 | _json_escape_hex
+)
+
+json_escape_file() (
+    set -o pipefail
+    LC_ALL=C od -An -v -t x1 "$1" | _json_escape_hex
+)
 
 json_quote() {
-    printf '"'
-    printf '%s' "$1" | json_escape_value
-    printf '"'
+    printf '"' || return 1
+    json_escape_value "$1" || return 1
+    printf '"' || return 1
 }
 
 json_quote_file() {
-    printf '"'
-    json_escape_file "$1"
-    printf '"'
+    printf '"' || return 1
+    json_escape_file "$1" || return 1
+    printf '"' || return 1
 }
 
 json_nullable_string() {

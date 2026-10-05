@@ -7,7 +7,7 @@
 # buffer means capture was not initialized for this session).
 #
 # Usage: session-append (--file PATH | --session-id ID) \
-#          --role user|assistant --message TEXT
+#          --role user|assistant --message TEXT|-
 
 set -euo pipefail
 
@@ -19,15 +19,26 @@ FILE=""
 SESSION_ID=""
 ROLE=""
 MESSAGE=""
+MESSAGE_SPECIFIED=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --file) [[ $# -ge 2 ]] || { echo "Option --file requires an argument" >&2; exit 1; }; FILE="$2"; shift 2 ;;
         --session-id) [[ $# -ge 2 ]] || { echo "Option --session-id requires an argument" >&2; exit 1; }; SESSION_ID="$2"; shift 2 ;;
         --role) [[ $# -ge 2 ]] || { echo "Option --role requires an argument" >&2; exit 1; }; ROLE="$2"; shift 2 ;;
-        --message) [[ $# -ge 2 ]] || { echo "Option --message requires an argument" >&2; exit 1; }; MESSAGE="$2"; shift 2 ;;
+        --message)
+            [[ $# -ge 2 ]] || { echo "Option --message requires an argument" >&2; exit 1; }
+            if [[ "$MESSAGE_SPECIFIED" == true ]]; then
+                echo "session-append: --message may be specified only once" >&2
+                exit 1
+            fi
+            MESSAGE="$2"
+            MESSAGE_SPECIFIED=true
+            shift 2
+            ;;
         --help|-h)
-            echo "Usage: session-append (--file PATH | --session-id ID) --role user|assistant --message TEXT"
+            echo "Usage: session-append (--file PATH | --session-id ID) --role user|assistant --message TEXT|-"
+            echo "Use --message - to read the exact message, including trailing newlines, from stdin."
             exit 0
             ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
@@ -45,7 +56,13 @@ if [[ -z "$FILE" ]] && [[ -z "$SESSION_ID" ]]; then
 fi
 
 if [[ -n "$SESSION_ID" ]]; then
-    FILE="$(session_buffer_path "$(session_dir)" "$SESSION_ID")" || exit 0
+    if FILE="$(session_buffer_path "$(session_dir)" "$SESSION_ID")"; then
+        :
+    else
+        buffer_status=$?
+        [[ "$buffer_status" -eq 2 ]] && exit 0
+        exit "$buffer_status"
+    fi
 fi
 
 if [[ -z "$ROLE" ]]; then
@@ -67,20 +84,57 @@ if [[ ! -f "$FILE" ]]; then
     exit 0
 fi
 
-# jq for proper JSON escaping of the message text.
+MESSAGE_FILE="$(mktemp "${TMPDIR:-/tmp}/knowledge-message.XXXXXX")" || {
+    echo "session-append: could not create a message buffer" >&2
+    exit 1
+}
+RECORD_FILE=""
+cleanup() {
+    rm -f "$MESSAGE_FILE"
+    [[ -z "$RECORD_FILE" ]] || rm -f "$RECORD_FILE"
+}
+trap cleanup EXIT
+
+if [[ "$MESSAGE" == "-" ]]; then
+    cat > "$MESSAGE_FILE" || {
+        echo "session-append: could not read message from stdin" >&2
+        exit 1
+    }
+else
+    printf '%s' "$MESSAGE" > "$MESSAGE_FILE" || {
+        echo "session-append: could not buffer message" >&2
+        exit 1
+    }
+fi
+
+# An empty message remains a no-op. The file path preserves trailing newlines
+# for both argument and stdin input without putting the message in argv.
+if [[ ! -s "$MESSAGE_FILE" ]]; then
+    exit 0
+fi
+
 if command -v jq > /dev/null 2>&1; then
-    if ! jq -nc --arg role "$ROLE" --arg msg "$MESSAGE" \
+    if ! jq -nc --arg role "$ROLE" --rawfile msg "$MESSAGE_FILE" \
         '{role: $role, message: $msg, timestamp: now}' >> "$FILE" 2>/dev/null; then
         echo "session-append: could not write $FILE" >&2
         exit 1
     fi
 else
-    # Fallback: basic escaping for common characters.
-    escaped="$MESSAGE"
-    escaped="${escaped//\\/\\\\}"
-    escaped="${escaped//\"/\\\"}"
-    if ! printf '{"role":"%s","message":"%s","timestamp":%s}\n' \
-        "$ROLE" "$escaped" "$(date +%s)" >> "$FILE" 2>/dev/null; then
+    RECORD_FILE="$(mktemp "${TMPDIR:-/tmp}/knowledge-record.XXXXXX")" || {
+        echo "session-append: could not create a record buffer" >&2
+        exit 1
+    }
+    {
+        printf '{"role":' || exit 1
+        json_quote "$ROLE" || exit 1
+        printf ',"message":' || exit 1
+        json_quote_file "$MESSAGE_FILE" || exit 1
+        printf ',"timestamp":%s}\n' "$(date +%s)" || exit 1
+    } > "$RECORD_FILE" 2>/dev/null || {
+        echo "session-append: could not encode message" >&2
+        exit 1
+    }
+    if ! cat "$RECORD_FILE" >> "$FILE" 2>/dev/null; then
         echo "session-append: could not write $FILE" >&2
         exit 1
     fi

@@ -11,7 +11,7 @@ import type {
   SessionShutdownEvent,
   SessionStartEvent,
 } from "@earendil-works/pi-coding-agent"
-import { execFile as execFileCallback } from "node:child_process"
+import { execFile as execFileCallback, spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { existsSync } from "node:fs"
 import { basename, extname } from "node:path"
@@ -63,7 +63,46 @@ async function runCommand(
   name: string,
   args: string[],
   timeout = 10000,
+  input?: string,
 ): Promise<CommandResult> {
+  if (input !== undefined) {
+    return new Promise((resolve) => {
+      const child = spawn(commandPath(name), args, { stdio: ["pipe", "pipe", "pipe"] })
+      let output = ""
+      let errorOutput = ""
+      let settled = false
+      const timer = setTimeout(() => {
+        child.kill()
+        finish(false, "command timed out")
+      }, timeout)
+
+      const finish = (ok: boolean, detail: string): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        if (!ok) warnOnce("command:" + name, `${name} failed: ${detail}`)
+        resolve({ ok, output: ok ? output.trim() : "" })
+      }
+
+      child.stdout.on("data", (chunk: Buffer | string) => {
+        output += chunk.toString()
+      })
+      child.stderr.on("data", (chunk: Buffer | string) => {
+        errorOutput += chunk.toString()
+      })
+      child.stdin.on("error", (error) => finish(false, error.message))
+      child.on("error", (error) => finish(false, error.message))
+      child.on("close", (code, signal) => {
+        if (code === 0) {
+          finish(true, "")
+        } else {
+          finish(false, errorOutput || `exit ${code ?? signal ?? "unknown"}`)
+        }
+      })
+      child.stdin.end(input)
+    })
+  }
+
   try {
     const result = await execFile(commandPath(name), args, {
       encoding: "utf-8",
@@ -161,14 +200,14 @@ export default function knowledge(pi: KnowledgeExtensionAPI): void {
       "--role",
       role,
       "--message",
-      message,
+      "-",
     ]
-    const result = await runCommand("session-append", args)
+    const result = await runCommand("session-append", args, 10000, message)
     if (result.ok) return true
 
     // Pi does not promise to redeliver a failed event. Retry the same payload
     // while this adapter still owns it, preserving at-least-once persistence.
-    return (await runCommand("session-append", args)).ok
+    return (await runCommand("session-append", args, 10000, message)).ok
   }
 
   async function flushSession(): Promise<void> {

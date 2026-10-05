@@ -8,17 +8,23 @@ KB="${KNOWLEDGE_BASE:-}"
 [[ "${KNOWLEDGE_OBSERVE:-}" == "0" ]] && { echo '{}'; exit 0; }
 command -v jq > /dev/null 2>&1 || { echo '{}'; exit 0; }
 
-append_message() {
-    "$KB/scripts/session-append" "$@" && return 0
-    "$KB/scripts/session-append" "$@"
-}
-
 SESSION_ID="$(echo "$INPUT" | jq -r '.session_id // empty')"
-MESSAGE="$(echo "$INPUT" | jq -r '.last_assistant_message // empty')"
+[[ -z "$SESSION_ID" ]] && { echo '{}'; exit 0; }
+MESSAGE_FILE="$(mktemp "${TMPDIR:-/tmp}/knowledge-adapter-message.XXXXXX")" || { echo '{}'; exit 1; }
+# shellcheck disable=SC2317  # Called by EXIT trap.
+cleanup() { rm -f "$MESSAGE_FILE"; }
+trap cleanup EXIT
+if ! printf '%s' "$INPUT" | jq -rj '.last_assistant_message // empty' > "$MESSAGE_FILE"; then
+    echo '{}'
+    exit 1
+fi
 append_status=0
-if [[ -n "$SESSION_ID" && -n "$MESSAGE" ]]; then
-    append_message --session-id "$SESSION_ID" \
-        --role assistant --message "$MESSAGE" || append_status=$?
+if [[ -s "$MESSAGE_FILE" ]]; then
+    "$KB/scripts/session-append" --session-id "$SESSION_ID" \
+        --role assistant --message - < "$MESSAGE_FILE" || {
+        "$KB/scripts/session-append" --session-id "$SESSION_ID" \
+            --role assistant --message - < "$MESSAGE_FILE" || append_status=$?
+    }
 fi
 echo '{}'
 exit "$append_status"
