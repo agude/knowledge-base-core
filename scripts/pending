@@ -7,12 +7,13 @@
 # Use --preview for bounded queue metrics without body text.
 #
 # Usage:
-#   pending [--full] [--count] [--preview]
+#   pending [--full] [--count] [--preview] [--max-bytes N]
 #
 # Options:
 #   --full    Show full observation content, not just titles
 #   --count   Just print the count
 #   --preview Show batch-selectable queue metrics and lexical topic hints
+#   --max-bytes N  With --preview, select input files within a byte budget
 
 set -euo pipefail
 
@@ -24,6 +25,11 @@ PENDING_DIR="$CONTENT_DIR/observations/pending"
 FULL=false
 COUNT_ONLY=false
 PREVIEW=false
+MAX_INPUT_BYTES=""
+PREVIEW_SELECTED_BYTES=0
+PREVIEW_SKIPPED=()
+PREVIEW_SKIPPED_COUNT=0
+PREVIEW_SELECTED_SIZES=()
 
 MAX_TOPIC_HINTS=8
 MAX_METADATA_WARNINGS=8
@@ -31,12 +37,18 @@ MAX_TOPIC_HINT_LENGTH=120
 MAX_METADATA_BYTES=65536
 MAX_TOPIC_ARTICLES=256
 TOPIC_SAMPLE_BYTES=8192
+MAX_PREVIEW_REPORT_ITEMS=8
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --full)  FULL=true; shift ;;
         --count) COUNT_ONLY=true; shift ;;
         --preview) PREVIEW=true; shift ;;
+        --max-bytes)
+            need_arg "$1" $#
+            MAX_INPUT_BYTES="$(parse_nonnegative_decimal "--max-bytes" "$2")" || exit 1
+            shift 2
+            ;;
         -h|--help)
             show_help "$0"
             exit 0
@@ -49,13 +61,26 @@ if [[ "$PREVIEW" == true ]] && [[ "$FULL" == true || "$COUNT_ONLY" == true ]]; t
     echo "--preview cannot be combined with --full or --count" >&2
     exit 1
 fi
+if [[ -n "$MAX_INPUT_BYTES" && "$PREVIEW" == false ]]; then
+    echo "--max-bytes requires --preview" >&2
+    exit 1
+fi
 
 files=()
 if [[ "$PREVIEW" == true ]]; then
     preview_files=()
-    while IFS= read -r -d '' f; do
-        preview_files+=("$f")
-    done < <(find "$PENDING_DIR" -maxdepth 1 -name '*.md' -type f -print0 2>/dev/null | sort -z)
+    if [[ -n "$MAX_INPUT_BYTES" ]]; then
+        select_pending_files "$PENDING_DIR" "$MAX_INPUT_BYTES"
+        preview_files=("${PENDING_SELECTION_FILES[@]}")
+        PREVIEW_SELECTED_BYTES="$PENDING_SELECTION_BYTES"
+        PREVIEW_SELECTED_SIZES=("${PENDING_SELECTION_SIZES[@]:0:MAX_PREVIEW_REPORT_ITEMS}")
+        PREVIEW_SKIPPED_COUNT="${#PENDING_SELECTION_SKIPPED[@]}"
+        PREVIEW_SKIPPED=("${PENDING_SELECTION_SKIPPED[@]:0:MAX_PREVIEW_REPORT_ITEMS}")
+    else
+        while IFS= read -r -d '' f; do
+            preview_files+=("$f")
+        done < <(find "$PENDING_DIR" -maxdepth 1 -name '*.md' -type f -print0 2>/dev/null | sort -z)
+    fi
 else
     while IFS= read -r -d '' f; do
         files+=("$f")
@@ -78,18 +103,6 @@ human_bytes() {
         awk -v bytes="$bytes" 'BEGIN { printf "%.1f MiB", bytes / 1048576 }'
     else
         awk -v bytes="$bytes" 'BEGIN { printf "%.1f GiB", bytes / 1073741824 }'
-    fi
-}
-
-file_size() {
-    local file="$1" size
-
-    if size="$(stat -c '%s' "$file" 2>/dev/null)" && [[ "$size" =~ ^[0-9]+$ ]]; then
-        printf '%s\n' "$size"
-    elif size="$(stat -f '%z' "$file" 2>/dev/null)" && [[ "$size" =~ ^[0-9]+$ ]]; then
-        printf '%s\n' "$size"
-    else
-        wc -c < "$file" | awk '{print $1}'
     fi
 }
 
@@ -226,7 +239,7 @@ preview_queue() {
     fi
 
     for file in "${preview_files[@]}"; do
-        size="$(file_size "$file")"
+        size="$(byte_size "$file")"
         read_pending_metadata "$file"
         source="$PENDING_SOURCE"
         created="$PENDING_CREATED"
@@ -298,6 +311,19 @@ preview_queue() {
 
     echo "Batch-selectable queue preview"
     echo "Batch-selectable items: ${#preview_files[@]}"
+    if [[ -n "$MAX_INPUT_BYTES" ]]; then
+        echo "Input budget: $MAX_INPUT_BYTES bytes"
+        echo "Selected input bytes: $PREVIEW_SELECTED_BYTES"
+        for selected_size in "${PREVIEW_SELECTED_SIZES[@]}"; do
+            echo "Selected size: $selected_size bytes"
+        done
+        for skipped in "${PREVIEW_SKIPPED[@]}"; do
+            echo "Skipped oversized: $skipped"
+        done
+        if (( PREVIEW_SKIPPED_COUNT > ${#PREVIEW_SKIPPED[@]} )); then
+            echo "... $((PREVIEW_SKIPPED_COUNT - ${#PREVIEW_SKIPPED[@]})) more oversized item(s)"
+        fi
+    fi
     if [[ -n "$oldest_epoch" ]]; then
         local age_seconds=$((today_epoch - oldest_epoch))
         local age_days=$((age_seconds / 86400))

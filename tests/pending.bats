@@ -174,6 +174,44 @@ EOF
     [[ "$output" == *"Metadata warnings: none"* ]]
 }
 
+@test "pending --preview selects input within a byte budget" {
+    create_test_observation a.md "A" "small"
+    create_test_observation b.md "B" "a larger observation body that exceeds the budget"
+    cap="$(stat -c '%s' "$TEST_CONTENT_DIR/observations/pending/a.md")"
+    run "$SCRIPTS/pending" --preview --max-bytes "$cap"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Batch-selectable items: 1"* ]]
+    [[ "$output" == *"Input budget: $cap bytes"* ]]
+    [[ "$output" == *"Selected input bytes: $cap"* ]]
+    [[ "$output" == *"Skipped oversized: b.md:"* ]]
+}
+
+@test "pending --preview accepts a zero-byte budget without selecting files" {
+    create_test_observation "a.md" "A" "Body"
+    run "$SCRIPTS/pending" --preview --max-bytes 0
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Batch-selectable items: 0"* ]]
+    [[ "$output" == *"Skipped oversized: a.md:"* ]]
+}
+
+@test "pending preview rejects an invalid byte budget" {
+    run "$SCRIPTS/pending" --preview --max-bytes nope
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"--max-bytes takes a non-negative number"* ]]
+}
+
+@test "pending preview bounds oversized-item reporting" {
+    for ((i = 1; i <= 25; i++)); do
+        create_test_observation "oversized-$i.md" "Observation $i" "Body $i"
+    done
+
+    run "$SCRIPTS/pending" --preview --max-bytes 0
+    [[ "$status" -eq 0 ]]
+    [[ "$(grep -c 'Skipped oversized:' <<< "$output")" -le 8 ]]
+    [[ "$output" == *"more oversized item(s)"* ]]
+    [[ "${#output}" -lt 2500 ]]
+}
+
 @test "preview ignores metadata years and isolated common topic words" {
     create_test_article "bike.md" "# Canyon Neuron 6 (2026)"
     create_test_article "handoff.md" "# Handing a Claude Code Session Between Machines"
@@ -188,4 +226,22 @@ EOF
     [[ "$output" == *"Canyon Neuron 6 (2026) (1 pending item(s))"* ]]
     [[ "$output" == *"PDF Skill (1 pending item(s))"* ]]
     [[ "$output" != *"Handing a Claude"* ]]
+}
+
+@test "preview and batch select identical ordered input within a byte budget" {
+    create_test_observation "a.md" "First" "A"
+    create_test_observation "b.md" "Second" "B"
+    create_test_observation "c.md" "Oversized" "$(printf 'large%.0s' {1..100})"
+    local cap
+    cap=$(( $(wc -c < "$TEST_CONTENT_DIR/observations/pending/a.md") + $(wc -c < "$TEST_CONTENT_DIR/observations/pending/b.md") ))
+    run "$SCRIPTS/pending" --preview --max-bytes "$cap"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"a.md"* && "$output" == *"b.md"* && "$output" == *"c.md"* ]]
+    [[ "$output" == *"Selected input bytes: $cap"* ]]
+    run "$SCRIPTS/batch" start --max-bytes "$cap"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"Selected: 2 observation(s)"* && "$output" == *"Selected bytes: $cap"* ]]
+    local manifest
+    manifest="$(find "$TEST_CONTENT_DIR/observations/batches" -name '*.tsv')"
+    [[ "$(awk -F '\t' 'NR > 1 { print $1 }' "$manifest")" == $'a.md\nb.md' ]]
 }
