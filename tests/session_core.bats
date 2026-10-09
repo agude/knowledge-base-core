@@ -406,6 +406,44 @@ EOF
     [[ "$status" -eq 0 ]]
 }
 
+# Hooks run without KB_CONTENT_DIR, so the default content path must
+# resolve. An empty buffer exits before writing, so the real default
+# content directory is never touched.
+@test "session-flush runs without KB_CONTENT_DIR" {
+    local file="$SESSION_DIR/session-default-root.jsonl"
+    touch "$file"
+    run env -u KB_CONTENT_DIR "$SCRIPTS/session-flush" "$file"
+    [[ "$status" -eq 0 ]]
+    [[ ! -f "$file" ]]
+}
+
+# The same hook environment must also persist a transcript. Copy the
+# scripts into an isolated checkout so the default <root>/content path
+# is a test repo rather than this checkout's own content directory.
+@test "session-flush commits through the default content path" {
+    local root="$BATS_TEST_TMPDIR/checkout"
+    mkdir -p "$root/scripts"
+    find "$SCRIPTS" -maxdepth 1 -type f -exec cp {} "$root/scripts/" \;
+    mv "$TEST_CONTENT_DIR" "$root/content"
+    TEST_CONTENT_DIR="$root/content"
+
+    local file="$SESSION_DIR/session-default-commit.jsonl"
+    echo '{"role":"user","message":"Q1"}' > "$file"
+    echo '{"role":"assistant","message":"A1"}' >> "$file"
+    echo '{"role":"user","message":"Q2"}' >> "$file"
+
+    run env -u KB_CONTENT_DIR -u REPO_ROOT "$root/scripts/session-flush" "$file"
+    [[ "$status" -eq 0 ]]
+    [[ ! -f "$file" ]]
+
+    run git -C "$root/content" log -1 --format=%s
+    [[ "$output" == "Observe: Session transcript (3 messages)" ]]
+    run git -C "$root/content" status --porcelain
+    [[ -z "$output" ]]
+    run git -C "$root/content" ls-files 'observations/pending/*.md'
+    [[ "$(printf '%s\n' "$output" | grep -c .)" -eq 1 ]]
+}
+
 @test "session-flush returns failure and keeps the buffer when observe fails" {
     local file="$SESSION_DIR/observe-failure.jsonl"
     echo '{"role":"user","message":"Q1"}' > "$file"

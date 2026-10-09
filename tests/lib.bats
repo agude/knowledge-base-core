@@ -5,6 +5,24 @@ load test_helper
 setup() { setup_content_dir; }
 teardown() { teardown_content_dir; }
 
+# _lib.sh reads REPO_ROOT under `set -u`. The test helper always exports
+# KB_CONTENT_DIR, which hides a missing REPO_ROOT from every other test.
+@test "every script that sources _lib.sh sets REPO_ROOT first" {
+    local script missing=()
+    for script in "$SCRIPTS"/* "$SCRIPTS"/adapters/*/*; do
+        [[ -f "$script" && "${script##*/}" != _lib.sh ]] || continue
+        grep -q '^[[:space:]]*source "$SCRIPT_DIR/_lib.sh"' "$script" || continue
+        awk '
+            /^[[:space:]]*REPO_ROOT=/ { found = 1 }
+            /^[[:space:]]*source "\$SCRIPT_DIR\/_lib.sh"/ { exit !found }
+        ' "$script" || missing+=("${script#"$SCRIPTS"/}")
+    done
+    if (( ${#missing[@]} > 0 )); then
+        printf 'missing REPO_ROOT: %s\n' "${missing[@]}" >&2
+        return 1
+    fi
+}
+
 @test "ttl_days normalizes decimal days and bounds seconds arithmetic" {
     source "$SCRIPTS/_lib.sh"
     run ttl_days 08
