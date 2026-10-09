@@ -312,6 +312,32 @@ run_codex_stop() {
     [[ "$(find "$TEST_CONTENT_DIR/observations/pending" -name '*.md' -type f | wc -l)" -eq 1 ]]
 }
 
+# Codex allows SessionEnd at most three seconds and runs it synchronously.
+# A held commit lock must fail inside that budget and leave the buffer for
+# a later sweep, not stall until Codex kills the hook.
+@test "Codex SessionEnd fails inside its time budget when the lock is held" {
+    export KNOWLEDGE_OBSERVE=1 KNOWLEDGE_MIN_MESSAGES=0
+
+    bash -c 'printf "%s\n" "{\"session_id\":\"$SESSION_ID\"}" | "$SCRIPTS/adapters/codex/session-start"' >/dev/null
+    bash -c 'printf "%s\n" "{\"session_id\":\"$SESSION_ID\",\"prompt\":\"Question\"}" | "$SCRIPTS/adapters/codex/session-prompt"' >/dev/null
+    mkdir "$TEST_CONTENT_DIR/.observe.lock"
+    echo $$ > "$TEST_CONTENT_DIR/.observe.lock/pid"
+
+    local start=$SECONDS
+    run bash -c 'printf "%s\n" "{\"session_id\":\"$SESSION_ID\"}" | "$SCRIPTS/adapters/codex/session-end"'
+    (( SECONDS - start < 3 ))
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == "{}" ]]
+    [[ -f "$SESSION_DIR/session-${SESSION_ID}.jsonl" ]]
+    [[ -z "$(find "$TEST_CONTENT_DIR/observations/pending" -type f)" ]]
+
+    rm -rf "$TEST_CONTENT_DIR/.observe.lock"
+    run bash -c 'printf "%s\n" "{\"session_id\":\"$SESSION_ID\"}" | "$SCRIPTS/adapters/codex/session-end"'
+    [[ "$status" -eq 0 ]]
+    [[ ! -f "$SESSION_DIR/session-${SESSION_ID}.jsonl" ]]
+    [[ "$(find "$TEST_CONTENT_DIR/observations/pending" -name '*.md' -type f | wc -l)" -eq 1 ]]
+}
+
 @test "portable instruction file is the canonical source" {
     [[ -f "$BATS_TEST_DIRNAME/../AGENTS.md" ]]
     [[ ! -e "$BATS_TEST_DIRNAME/../CLAUDE.md" ]]

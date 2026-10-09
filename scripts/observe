@@ -33,10 +33,16 @@ SOURCE="session"
 DO_COMMIT=true
 BODY_FILE=""
 OBSERVATION_TEMP=""
+LOCK_HELD=false
 
+# acquire_lock and release_lock replace the EXIT trap, so this handler
+# owns the lock too and is reinstalled after taking it.
 cleanup() {
     [[ -z "$BODY_FILE" ]] || rm -f "$BODY_FILE"
     [[ -z "$OBSERVATION_TEMP" ]] || rm -f "$OBSERVATION_TEMP"
+    if [[ "$LOCK_HELD" == true ]]; then
+        rm -rf "$CONTENT_DIR/.observe.lock" 2>/dev/null || true
+    fi
 }
 trap cleanup EXIT
 
@@ -114,6 +120,15 @@ OBSERVATION_TEMP="$(mktemp "$PENDING_DIR/.observation.XXXXXX")" || {
     exit 1
 }
 
+# Take the lock before publishing. A writer that times out waiting then
+# leaves nothing in pending/, so a caller that retries later (a session
+# flush keeps its buffer) does not also leave an uncommitted duplicate.
+if [[ "$DO_COMMIT" == true ]]; then
+    acquire_lock || exit 1
+    LOCK_HELD=true
+    trap cleanup EXIT
+fi
+
 mv "$OBSERVATION_TEMP" "$filepath" || {
     echo "Error: could not publish observation file" >&2
     exit 1
@@ -122,7 +137,6 @@ OBSERVATION_TEMP=""
 
 echo "Wrote: observations/pending/$filename"
 
-# Auto-commit
 if [[ "$DO_COMMIT" == true ]]; then
-    locked_commit "Observe: $TITLE" "observations/pending/$filename"
+    commit_paths "Observe: $TITLE" "observations/pending/$filename"
 fi

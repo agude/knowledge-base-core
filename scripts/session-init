@@ -4,7 +4,7 @@
 #
 # Creates a JSONL buffer file for the given session ID and prints its
 # path to stdout. Idempotent: a second call with the same ID returns
-# the existing path. Also sweeps orphaned buffers older than 1 hour.
+# the existing path. Then sweeps orphaned buffers older than 1 hour.
 #
 # Usage: session-init --session-id ID [--persist-initialization]
 #
@@ -41,17 +41,6 @@ if ! ensure_session_dir "$DIR"; then
     exit 1
 fi
 
-# Sweep orphaned buffers (>1 hour old, not symlinks, owned by us).
-for orphan in "$DIR"/session-*.jsonl; do
-    [[ -f "$orphan" ]] || continue
-    [[ -L "$orphan" ]] && continue
-    [[ -O "$orphan" ]] || continue
-    [[ "$orphan" == "$DIR/session-${SESSION_ID}.jsonl" ]] && continue
-    if [[ "$(find "$orphan" -mmin +60 2>/dev/null)" ]]; then
-        "$SCRIPT_DIR/session-flush" --preserve-initialization "$orphan" 2>/dev/null || true
-    fi
-done
-
 SESSION_FILE="$(session_file_path "$DIR" "$SESSION_ID")" || {
     echo "session-init: invalid session ID" >&2
     exit 1
@@ -67,3 +56,21 @@ if [[ "$PERSIST_INITIALIZATION" == true ]]; then
 fi
 
 echo "$SESSION_FILE"
+
+# Sweep orphaned buffers (>1 hour old, not symlinks, owned by us).
+#
+# The sweep runs after this session is initialized because it can be slow:
+# each orphan is a commit, and a held lock waits. A host that kills the
+# hook mid-sweep then loses only sweep progress, which the next session
+# resumes, never this session's capture. Flush output is discarded so
+# stdout carries only the path above, which hosts read as the buffer path.
+for orphan in "$DIR"/session-*.jsonl; do
+    [[ -f "$orphan" ]] || continue
+    [[ -L "$orphan" ]] && continue
+    [[ -O "$orphan" ]] || continue
+    [[ "$orphan" == "$SESSION_FILE" ]] && continue
+    if [[ "$(find "$orphan" -mmin +60 2>/dev/null)" ]]; then
+        "$SCRIPT_DIR/session-flush" --preserve-initialization "$orphan" \
+            > /dev/null 2>&1 || true
+    fi
+done

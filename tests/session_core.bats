@@ -103,6 +103,47 @@ Content."
     [[ "$output" == *"Recovered"* ]]
 }
 
+# A host may kill SessionStart while the sweep is still flushing a backlog.
+# The current session must already be initialized by then. The checkout is
+# isolated so a stub session-flush can record what existed at sweep time.
+@test "session-init initializes the session before sweeping orphans" {
+    local root="$BATS_TEST_TMPDIR/checkout"
+    mkdir -p "$root/scripts"
+    find "$SCRIPTS" -maxdepth 1 -type f -exec cp {} "$root/scripts/" \;
+    cat > "$root/scripts/session-flush" <<EOF
+#!/usr/bin/env bash
+{
+    [[ -f "$SESSION_DIR/session-current.jsonl" ]] && echo buffer
+    [[ -f "$SESSION_DIR/session-current.initialized" ]] && echo marker
+} > "$BATS_TEST_TMPDIR/at-sweep"
+EOF
+    chmod +x "$root/scripts/session-flush"
+    touch -d '2 hours ago' "$SESSION_DIR/session-orphan.jsonl"
+
+    run "$root/scripts/session-init" --session-id current --persist-initialization
+    [[ "$status" -eq 0 ]]
+    run cat "$BATS_TEST_TMPDIR/at-sweep"
+    [[ "$output" == $'buffer\nmarker' ]]
+}
+
+# Hosts read session-init's stdout as the buffer path, so flushing an orphan
+# must not add observe's output to it.
+@test "session-init prints only the buffer path when the sweep commits" {
+    local orphan="$SESSION_DIR/session-old.jsonl"
+    printf '%s\n' \
+        '{"role":"user","message":"Q1"}' \
+        '{"role":"assistant","message":"A1"}' \
+        '{"role":"user","message":"Q2"}' > "$orphan"
+    touch -d '2 hours ago' "$orphan"
+
+    run "$SCRIPTS/session-init" --session-id "fresh"
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == "$SESSION_DIR/session-fresh.jsonl" ]]
+    [[ ! -f "$orphan" ]]
+    run git -C "$TEST_CONTENT_DIR" log -1 --format=%s
+    [[ "$output" == "Observe: Session transcript (3 messages)" ]]
+}
+
 @test "session-flush clears persisted initialization after normal completion" {
     run "$SCRIPTS/session-init" --session-id "clear-marker" --persist-initialization
     local path="$output"
