@@ -13,6 +13,10 @@ setup() {
 }
 
 teardown() {
+    if [[ -n "${sync_pid:-}" ]]; then
+        kill "$sync_pid" 2>/dev/null || true
+        wait "$sync_pid" 2>/dev/null || true
+    fi
     teardown_content_dir
     [[ -n "${REMOTE:-}" ]] && rm -rf "$REMOTE"
     if [[ -n "${SYNC_TEST_TMP:-}" ]]; then
@@ -138,6 +142,10 @@ if [[ "${1:-}" == fetch ]]; then
         attempt=$((attempt + 1))
         sleep 0.05
     done
+    if [[ ! -f "$SYNC_FETCH_RELEASE" ]]; then
+        echo "Timed out waiting for the test to release fetch" >&2
+        exit 1
+    fi
 fi
 exec "$REAL_GIT" "$@"
 EOF
@@ -153,27 +161,21 @@ EOF
     done
     [[ -f "$SYNC_FETCH_STARTED" ]]
 
-    KNOWLEDGE_OBSERVE=1 "$SCRIPTS/observe" \
+    # Auto-committing observers wait for sync's lock before publishing.
+    # Publish without committing to exercise the post-fetch worktree check.
+    "$SCRIPTS/observe" --no-commit \
         --title "Concurrent" --body "Written during sync" \
-        > "$SYNC_TEST_TMP/observer-output" 2>&1 &
-    observer_pid=$!
-    pending_path=""
-    attempt=0
-    while [[ -z "$pending_path" && "$attempt" -lt 100 ]]; do
-        pending_path="$(find "$TEST_CONTENT_DIR/observations/pending" \
-            -name '*.md' -type f -print -quit)"
-        attempt=$((attempt + 1))
-        sleep 0.05
-    done
+        > "$SYNC_TEST_TMP/observer-output" 2>&1
+    pending_path="$(find "$TEST_CONTENT_DIR/observations/pending" \
+        -name '*.md' -type f -print -quit)"
     [[ -n "$pending_path" ]]
     touch "$SYNC_FETCH_RELEASE"
 
     sync_status=0
     wait "$sync_pid" || sync_status=$?
+    sync_pid=""
     [[ "$sync_status" -ne 0 ]]
-    observer_status=0
-    wait "$observer_pid" || observer_status=$?
-    [[ "$observer_status" -eq 0 ]]
+    [[ -f "$pending_path" ]]
     output="$(<"$SYNC_TEST_TMP/output")"
     [[ "$output" == *"Uncommitted changes"* ]]
 }

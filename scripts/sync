@@ -88,8 +88,8 @@ assert_clean_worktree() {
 }
 
 # The lock covers fetch, history inspection, and the worktree operations. A
-# capture can write its pending file before it waits for this same lock, so
-# the clean-worktree check must also run after fetch.
+# writer using observe --no-commit can publish without this lock, so the
+# clean-worktree check must also run after fetch.
 acquire_lock || exit 1
 
 if ! git remote get-url origin > /dev/null 2>&1; then
