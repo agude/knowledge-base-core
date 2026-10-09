@@ -406,6 +406,17 @@ EOF
     [[ "$status" -eq 0 ]]
 }
 
+# Hooks run without KB_CONTENT_DIR, so the default content path must
+# resolve. An empty buffer exits before writing, so the real default
+# content directory is never touched.
+@test "session-flush runs without KB_CONTENT_DIR" {
+    local file="$SESSION_DIR/session-default-root.jsonl"
+    touch "$file"
+    run env -u KB_CONTENT_DIR "$SCRIPTS/session-flush" "$file"
+    [[ "$status" -eq 0 ]]
+    [[ ! -f "$file" ]]
+}
+
 @test "session-flush returns failure and keeps the buffer when observe fails" {
     local file="$SESSION_DIR/observe-failure.jsonl"
     echo '{"role":"user","message":"Q1"}' > "$file"
