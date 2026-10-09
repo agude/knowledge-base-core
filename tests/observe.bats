@@ -78,3 +78,47 @@ teardown() { teardown_content_dir; }
     file=$(ls "$TEST_CONTENT_DIR/observations/pending/"*.md | head -1)
     grep -q 'Say \\"hello\\"' "$file"
 }
+
+# hold_lock - Take the commit lock on behalf of a live process.
+hold_lock() {
+    mkdir "$TEST_CONTENT_DIR/.observe.lock"
+    echo $$ > "$TEST_CONTENT_DIR/.observe.lock/pid"
+}
+
+@test "observe leaves nothing in pending when the lock wait expires" {
+    hold_lock
+    run env KNOWLEDGE_LOCK_WAIT=0 "$SCRIPTS/observe" --title "Blocked" --body "Body"
+    [[ "$status" -ne 0 ]]
+    [[ -z "$(find "$TEST_CONTENT_DIR/observations/pending" -type f)" ]]
+    # The lock belongs to a live process and must survive.
+    [[ -f "$TEST_CONTENT_DIR/.observe.lock/pid" ]]
+}
+
+@test "observe waits up to KNOWLEDGE_LOCK_WAIT seconds" {
+    hold_lock
+    local start=$SECONDS
+    run env KNOWLEDGE_LOCK_WAIT=1 "$SCRIPTS/observe" --title "Blocked" --body "Body"
+    [[ "$status" -ne 0 ]]
+    (( SECONDS - start < 3 ))
+}
+
+@test "observe rejects a non-numeric KNOWLEDGE_LOCK_WAIT" {
+    run env KNOWLEDGE_LOCK_WAIT=soon "$SCRIPTS/observe" --title "T" --body "Body"
+    [[ "$status" -ne 0 ]]
+    [[ "$output" == *"KNOWLEDGE_LOCK_WAIT takes a non-negative number"* ]]
+    [[ -z "$(find "$TEST_CONTENT_DIR/observations/pending" -type f)" ]]
+}
+
+# acquire_lock and release_lock replace the EXIT trap; the body buffer
+# must still be removed after a committed observation.
+@test "observe removes its temporary files and lock after committing" {
+    local tmp="$BATS_TEST_TMPDIR/tmp"
+    mkdir -p "$tmp"
+    run env TMPDIR="$tmp" "$SCRIPTS/observe" --title "Clean" --body - <<< "Body"
+    [[ "$status" -eq 0 ]]
+    [[ -z "$(ls -A "$tmp")" ]]
+    [[ ! -e "$TEST_CONTENT_DIR/.observe.lock" ]]
+    [[ -z "$(find "$TEST_CONTENT_DIR/observations/pending" -name '.observation.*')" ]]
+    run git -C "$TEST_CONTENT_DIR" log -1 --format=%s
+    [[ "$output" == "Observe: Clean" ]]
+}

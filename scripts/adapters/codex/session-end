@@ -14,8 +14,15 @@ if [[ -n "$SESSION_ID" ]]; then
     if [[ -n "$FILE" ]]; then
         # Keep shutdown synchronous so a failed flush remains visible and the
         # session buffer stays available for a later lifecycle.
+        #
+        # Codex runs SessionEnd synchronously and allows it at most three
+        # seconds. An uncontended flush takes about 0.1 s, but the commit lock
+        # waits 30 s by default, and Codex would kill the hook before it
+        # answered. A one-second wait fails inside the budget instead; the
+        # buffer stays for the next session's sweep.
         flush_status=0
-        if "$KB/scripts/session-flush" "$FILE" </dev/null > /dev/null 2>&1; then
+        if KNOWLEDGE_LOCK_WAIT=1 "$KB/scripts/session-flush" "$FILE" \
+            </dev/null > /dev/null 2>&1; then
             flush_status=0
         else
             flush_status=$?

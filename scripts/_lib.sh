@@ -281,12 +281,20 @@ break_stale_git_lock() {
 # Returns the git exit status, so a rejecting hook is visible to callers
 # instead of leaving a file written but uncommitted.
 #
+# KNOWLEDGE_LOCK_WAIT sets how many seconds acquire_lock waits for another
+# writer (default 30). An adapter whose host gives a hook only a few
+# seconds lowers it so a held lock fails inside that budget instead of the
+# host killing the hook mid-write.
+#
 # Usage:
 #   locked_commit "message" path1 [path2 ...]
 acquire_lock() {
     local lockdir="$CONTENT_DIR/.observe.lock"
     local pidfile="$lockdir/pid"
-    local retries=30
+    local wait waited=0
+
+    wait="$(parse_nonnegative_decimal KNOWLEDGE_LOCK_WAIT "${KNOWLEDGE_LOCK_WAIT:-30}")" \
+        || return 1
 
     while ! mkdir "$lockdir" 2>/dev/null; do
         # Break stale locks left by dead processes
@@ -298,12 +306,12 @@ acquire_lock() {
                 continue
             fi
         fi
-        retries=$((retries - 1))
-        if (( retries <= 0 )); then
+        if (( waited >= wait )); then
             echo "Could not acquire lock" >&2
             return 1
         fi
         sleep 1
+        waited=$((waited + 1))
     done
 
     echo $$ > "$pidfile"
@@ -326,6 +334,24 @@ locked_commit() {
     acquire_lock || return 1
 
     local rc=0
+    commit_paths "$message" "$@" || rc=$?
+
+    release_lock
+    return $rc
+}
+
+# commit_paths - Commit only the named paths. The caller must hold the lock.
+#
+# For a caller that must take the lock before writing the files it commits,
+# so that a lock timeout leaves nothing behind.
+#
+# Usage:
+#   commit_paths "message" path1 [path2 ...]
+commit_paths() {
+    local message="$1"
+    shift
+
+    local rc=0
     (
         cd "$CONTENT_DIR"
         for p in "$@"; do
@@ -333,8 +359,6 @@ locked_commit() {
         done
         git commit -q -m "$message" -- "$@"
     ) || rc=$?
-
-    release_lock
 
     if (( rc != 0 )); then
         echo "locked_commit: commit failed ($rc) for: $message" >&2
