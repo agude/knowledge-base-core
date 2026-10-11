@@ -152,9 +152,11 @@ $KNOWLEDGE_BASE/scripts/observe --title "<one-line summary>" --body "<details>"
   "Use modern tooling" is bad.
 - **Include concrete details:** exact commands, error messages, version
   numbers, who told you.
-- **Attribute when possible.** If the user says "Dana told me X," include
-  Dana's name and role in the observation body. The curator preserves
-  inline attribution in knowledge articles.
+- **Preserve useful attribution in raw observations.** If the user says
+  "Dana told me X," include Dana's name and role in the observation body.
+  Curated articles keep source references; inline attribution belongs only
+  where authority, ownership, uncertainty, or conflicting reports matter.
+  Routine framing such as "Alex confirmed" does not belong in article prose.
 
 When a source reference is missing, search both pending and archived paths in
 content Git history. Restore the original evidence when available. Otherwise

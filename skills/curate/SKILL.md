@@ -35,13 +35,11 @@ Examples of what does NOT belong:
 - Raw debugging transcripts with no extractable lesson
 - Exact duplicates of what's already captured
 
-When in doubt, include it. Thin coverage is the main risk, not bloat. The
-curator can always reorganize later.
-
-**That licenses breadth, not depth.** Include the topic; do not include the
-derivation. An observation that worked through an analysis in twenty steps
-becomes the conclusion plus the one or two facts that would let a reader
-re-derive it --- not the twenty steps. See "Cut before you split" below.
+Keep every distinct durable fact. Completeness means coverage of useful
+facts, not retention of the observation's prose. Include the conclusion,
+decision, and inputs needed to repeat an analysis. Remove session narration,
+repeated attribution, and worked derivations. See "Voice" and "Cut before
+you split" below.
 
 ### If it has a repo, the repo owns it
 
@@ -111,8 +109,14 @@ example.
 7. Execute your decisions --- edit knowledge articles directly. Find the
    content root with `$KNOWLEDGE_BASE/scripts/status`; do not assume
    it is `./content`.
-8. **Check what you wrote.** Run the linter over everything you touched.
-   It reports oversized H2s, second H1s, missing or malformed `verified`
+8. **Check what you wrote.** Review each touched section against its source
+   evidence. Apply the Voice rules below; remove narration and duplication
+   while preserving distinct facts, requirements, exceptions, literal values,
+   reasons, and uncertainty. Editing prose alone must not refresh `verified`
+   or remove source references or unresolved-conflict metadata.
+
+   Run the linter over everything you touched. It reports oversized H2s,
+   second H1s, missing or malformed `verified`
    dates, unclosed code fences, duplicate H2 names, and broken local
    references. You will not notice all of these by eye; measure them. If a
    Markdown article or source is moved or deleted, run the linter over the
@@ -213,21 +217,19 @@ compare three separate properties before editing the article:
   explicit `effective` or `as of` date when the evidence provides one.
 
 Choose a canonical claim only when the authority, observation date, and
-effective date support that choice. State the reason and effective date next
-to the replacement, for example:
+effective date support that choice. Replace the outdated statement with the
+current fact and its relevant effective date:
 
 ```markdown
-## Canonical claim
+## Service ownership
 
-**Effective 2026-09-01:** Platform Operations owns the service. This
-supersedes the 2026-08-01 claim. Reason: the authoritative ownership roster
-lists Platform Operations as the owner.
-
-## Retained old evidence
-
-The 2026-08-01 observation said Infrastructure owned the service. It remains
-in the archive as historical evidence.
+Platform Operations owns the service effective 2026-09-01.
 ```
+
+Keep the evidence in source references and archived observations. Include the
+reason for choosing a source when a reader needs it to assess the claim.
+Retain an old claim in the article only when its history affects future work;
+do not add supersession or archive-retention narration to a resolved fact.
 
 If authority or effective date is unresolved, retain both claims under an
 explicit `Unresolved conflict` heading. Describe the disagreement and what
@@ -326,12 +328,24 @@ Do not let the 500-line alarm calibrate you. A 70-line section is already
 
 ### Voice
 
-- Terse, factual, reference-style.
-- Include commands, code, config, or examples where they make the knowledge
-  actionable.
-- Strip session-specific framing ("I learned that..."). Keep the durable fact.
-- Preserve *why* and *context* --- not just what, but the reasoning. "We use X
-  because Y" is more valuable than "We use X."
+Write durable facts directly. Each sentence must add a useful fact,
+constraint, exception, uncertainty, decision, or reason.
+
+- Remove wrappers such as "Alex confirmed", "the user clarified", "we checked
+  locally", and "during this session". Name people when their ownership,
+  responsibility, decision, or source authority matters.
+- Keep provenance in `sources` frontmatter or section metadata. Use inline
+  attribution when needed to assess authority or distinguish reported,
+  uncertain, or conflicting claims. Removing a speaker wrapper must not turn
+  an estimate, inference, or unverified report into an established fact.
+- State the current fact once. Replace outdated wording in place. Omit
+  research chronology, repeated source-check descriptions, resolved correction
+  histories, temporary branch names, test counts, and task progress. Preserve
+  unresolved uncertainty and conflicts explicitly and concisely.
+- Keep exact commands, identifiers, paths, quantities, dates, conditions, and
+  exceptions when needed to act. Keep decisions and concise reasons, including
+  meaningful rejected alternatives. Drop worked calculations, duplicate
+  caveats, and inventories maintained by an authoritative repo or document.
 
 Example --- observation says:
 
@@ -351,19 +365,16 @@ Curated:
 
 Example --- observation says:
 
-> "Talked to Dana, she said the reason deploys to prod only happen before 2pm
-> is that the SRE team needs time to monitor before end of day, and they got
-> burned by a 4pm deploy that paged oncall at 2am."
+> "Alex confirmed that production deploys must finish before 2:00 PM local
+> time so SRE can monitor before end of day. This corrects our earlier
+> late-afternoon assumption. We checked this again during today's session."
 
 Curated:
 
 > ## Deploy Window
 >
-> Production deploys must complete before 2:00 PM local time. The SRE team
-> requires a monitoring buffer before end of day. This policy was adopted
-> after a late-afternoon deploy caused a 2 AM oncall page.
->
-> Source: Dana (SRE lead).
+> Production deploys must complete before 2:00 PM local time so SRE can
+> monitor before end of day.
 
 ### Frontmatter
 
