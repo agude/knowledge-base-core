@@ -389,9 +389,12 @@ sources:
 ---
 ```
 
-- `updated` --- date of the last edit. **Do not set this by hand.** The
-  content repo's pre-commit hook stamps it, because "the content changed
-  today" is a fact, not a judgment.
+- `updated` --- date of the last edit. **Do not maintain this by hand.**
+  The content repo's pre-commit hook restamps it on every committed edit,
+  because "the content changed today" is a fact, not a judgment. The field
+  must exist: `lint` rejects an article without it, and the hook rewrites
+  an existing value but never adds a missing field. Give a new article
+  `updated:` with today's date; leave it alone on existing articles.
 - `verified` --- date the content was last confirmed accurate, by a human
   or by you cross-checking against live sources. Set it to today when you
   confirm the claims still hold, **even if you change nothing**. Nothing
