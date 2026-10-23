@@ -75,3 +75,14 @@ trailing slash, because the target comes from the glob `skills/*/`.
 Expected: unknown. Hosts resolve both forms.
 Class: undecided
 Decision:
+
+## A-008: init --path installs the hook into the wrong repository
+
+Script: `init`  Test: `test_init.py::test_init_with_path`
+Observed: `init --path DIR` creates and commits DIR, then runs `install`,
+which links `pre-commit` into `$KB_CONTENT_DIR`, not DIR. DIR gets no
+hook. `install`'s comment says "init calls this again after creating it",
+which implies DIR was meant to get the hook.
+Expected: DIR gets the `pre-commit` hook.
+Class: undecided
+Decision:

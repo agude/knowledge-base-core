@@ -1,0 +1,31 @@
+## tree
+knowledge/
+knowledge/.gitkeep
+knowledge/keep.md
+observations/
+observations/archived/
+observations/archived/.gitkeep
+observations/pending/
+observations/pending/.gitkeep
+questions/
+questions/open/
+questions/open/.gitkeep
+questions/resolved/
+questions/resolved/.gitkeep
+sources/
+sources/.gitkeep
+## log
+<COMMIT-1> Test <test@test.com> Init content repo
+
+A	knowledge/.gitkeep
+A	knowledge/keep.md
+A	observations/archived/.gitkeep
+A	observations/pending/.gitkeep
+A	questions/open/.gitkeep
+A	questions/resolved/.gitkeep
+A	sources/.gitkeep
+## identity
+user.name=Knowledge Base
+user.email=kb@localhost
+## pre-commit
+absent

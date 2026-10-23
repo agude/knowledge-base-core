@@ -2,3 +2,4 @@
 # a listed file must map to a pytest test (@pytest.mark.bats) or a row in
 # NOT_PORTED.md. test_harness.py::test_bats_mapping enforces this.
 install.bats
+init.bats
