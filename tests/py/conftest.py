@@ -10,6 +10,7 @@ import json
 import os
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -104,6 +105,18 @@ def kb(
 def no_jq(kb: KB, _no_jq_mirror: Path) -> KB:
     """The kb fixture with jq absent. jq is optional in production."""
     kb.without_jq(_no_jq_mirror)
+    return kb
+
+
+@pytest.fixture
+def hooked(kb: KB) -> KB:
+    """The kb fixture with the implementation's pre-commit hook installed."""
+    tree = kb.resolve_impl(kb.default_impl)
+    hooks = kb.layout.content / ".git" / "hooks"
+    hooks.mkdir(parents=True, exist_ok=True)
+    (hooks / "pre-commit").symlink_to(tree.executable("hooks/pre-commit"))
+    # The hook stamps `updated:` with the real UTC date.
+    kb.normalizer.extra[datetime.now(UTC).strftime("%Y-%m-%d")] = "<TODAY>"
     return kb
 
 

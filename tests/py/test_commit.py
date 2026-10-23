@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 import pytest
 
 from kbtest.golden import Golden
@@ -39,18 +37,6 @@ Content.
 ## T
 
 Content."""
-
-
-@pytest.fixture
-def hooked(kb: KB) -> KB:
-    """The content repository with the implementation's pre-commit hook installed."""
-    tree = kb.resolve_impl(kb.default_impl)
-    hooks = kb.layout.content / ".git" / "hooks"
-    hooks.mkdir(parents=True, exist_ok=True)
-    (hooks / "pre-commit").symlink_to(tree.executable("hooks/pre-commit"))
-    # The hook stamps `updated:` with the real UTC date.
-    kb.normalizer.extra[datetime.now(UTC).strftime("%Y-%m-%d")] = "<TODAY>"
-    return kb
 
 
 def _check(

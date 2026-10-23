@@ -54,6 +54,15 @@ inherited.
 - Git author and committer names, emails, and dates are fixed, with
   `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_NOSYSTEM=1`.
 
+## Fixtures
+
+| Fixture | Provides |
+|---|---|
+| `kb` | A fresh content repository and `run()` for the selected implementation. |
+| `no_jq` | `kb` with `jq` absent. |
+| `hooked` | `kb` with the implementation's `hooks/pre-commit` installed in the content repository. It also normalizes the real UTC date to `<TODAY>`, because the hook stamps `updated:` with it. |
+| `golden` | Golden-file checks for the current test. |
+
 ## Leak check
 
 Every session ID a test uses comes from `kb.session_id()` and starts with
