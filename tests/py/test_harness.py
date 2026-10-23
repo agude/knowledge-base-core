@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from kbtest import bats_map
 from kbtest import env as envmod
 from kbtest import impl as implmod
 from kbtest.golden import Golden
@@ -276,3 +277,73 @@ def test_real_session_dir_follows_xdg_runtime_dir() -> None:
     path = real_session_dir({"XDG_RUNTIME_DIR": "/run/user/1"})
     assert path == Path(f"/run/user/1/knowledge-sessions-{os.getuid()}")
     assert real_session_dir({}) == Path(f"/tmp/knowledge-sessions-{os.getuid()}")
+
+
+# Bats mapping
+
+
+def _mapping_sources(
+    root: Path, test_source: str, ported: str, not_ported: str
+) -> bats_map.Sources:
+    bats_dir = root / "bats"
+    bats_dir.mkdir()
+    (bats_dir / "demo.bats").write_text(
+        '@test "first behavior" {\n    true\n}\n\n@test "second behavior" {\n    true\n}\n',
+        encoding="utf-8",
+    )
+    test_dir = root / "py"
+    test_dir.mkdir()
+    (test_dir / "test_demo.py").write_text(test_source, encoding="utf-8")
+    (root / "ported.txt").write_text(ported, encoding="utf-8")
+    (root / "NOT_PORTED.md").write_text(not_ported, encoding="utf-8")
+    return bats_map.Sources(bats_dir, root / "ported.txt", root / "NOT_PORTED.md", test_dir)
+
+
+_DEMO_TEST = """
+import pytest
+
+@pytest.mark.bats("demo.bats", "first behavior")
+def test_first():
+    pass
+"""
+
+
+def test_bats_mapping_reports_unmapped_test(tmp_path: Path) -> None:
+    sources = _mapping_sources(tmp_path, _DEMO_TEST, "demo.bats\n", "")
+    assert bats_map.problems(sources) == [
+        "demo.bats: @test 'second behavior' has no pytest test and no NOT_PORTED entry"
+    ]
+
+
+def test_bats_mapping_accepts_not_ported_row(tmp_path: Path) -> None:
+    row = "| `demo.bats` | second behavior | Asserts the od fallback. |\n"
+    sources = _mapping_sources(tmp_path, _DEMO_TEST, "demo.bats\n", row)
+    assert bats_map.problems(sources) == []
+
+
+def test_bats_mapping_reports_unknown_names(tmp_path: Path) -> None:
+    source = _DEMO_TEST + '\n@pytest.mark.bats("demo.bats", "renamed")\ndef test_x():\n    pass\n'
+    row = "| `demo.bats` | gone | Reason. |\n"
+    sources = _mapping_sources(tmp_path, source, "", row)
+    assert bats_map.problems(sources) == [
+        "demo.bats has no @test 'gone'",
+        "demo.bats has no @test 'renamed'",
+    ]
+
+
+def test_bats_mapping_requires_reason(tmp_path: Path) -> None:
+    row = "| `demo.bats` | second behavior |  |\n"
+    sources = _mapping_sources(tmp_path, _DEMO_TEST, "demo.bats\n", row)
+    assert "has no reason" in bats_map.problems(sources)[0]
+
+
+def test_bats_mapping() -> None:
+    """Every @test in a completed bats file maps to pytest or NOT_PORTED.md."""
+    tests_py = Path(__file__).parent
+    sources = bats_map.Sources(
+        bats_dir=tests_py.parent,
+        ported_list=tests_py / "bats_ported.txt",
+        not_ported=tests_py / "NOT_PORTED.md",
+        test_dir=tests_py,
+    )
+    assert bats_map.problems(sources) == []

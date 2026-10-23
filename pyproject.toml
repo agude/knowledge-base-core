@@ -54,6 +54,7 @@ markers = [
     "harness: tests of the harness itself; they never run an implementation",
     "null_ok(reason): the test passes under the null0 control, for the stated reason",
     "audit(entry): pinned behavior that looks wrong or accidental; see audit.md",
+    "bats(file, name): the bats test this pytest test ports",
 ]
 
 [tool.ruff.lint.isort]
