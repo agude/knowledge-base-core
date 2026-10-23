@@ -12,8 +12,14 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      # The minimum supported Python. Without UV_PYTHON, uv follows
+      # .python-version.
+      UV_PYTHON: "3.11"
     steps:
       - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
 
       - uses: extractions/setup-just@v4
 
@@ -24,6 +30,37 @@ jobs:
 
       - name: Run check gate
         run: just check
+
+  # The characterization suite against bash on the remaining platform and
+  # Python combinations. The check job covers Linux with Python 3.11.
+  characterize:
+    name: Characterize on ${{ matrix.os }}, Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.11", "3.15"]
+        exclude:
+          - os: ubuntu-latest
+            python-version: "3.11"
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+
+      - uses: extractions/setup-just@v4
+
+      - name: Install Bash 4+ and jq on macOS
+        if: runner.os == 'macOS'
+        run: |
+          brew install bash jq
+          echo "KB_BASH=$(brew --prefix)/bin/bash" >> "$GITHUB_ENV"
+
+      - name: Run the characterization suite against bash
+        run: just test-py
 
   pi-check:
     runs-on: ubuntu-latest
