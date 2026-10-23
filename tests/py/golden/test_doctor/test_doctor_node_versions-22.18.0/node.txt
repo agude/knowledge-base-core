@@ -1,0 +1,1 @@
+FAIL [adapters] Node.js 22.18.0 is below the Pi requirement >=22.19.0

@@ -1,0 +1,1 @@
+FAIL [adapters] Node.js not-a-version is below the Pi requirement >=22.19.0

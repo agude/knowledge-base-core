@@ -1,0 +1,1 @@
+PASS [adapters] Node.js 23.0.0 supports the Pi adapter

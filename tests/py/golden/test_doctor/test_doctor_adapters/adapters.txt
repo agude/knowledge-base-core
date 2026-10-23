@@ -1,0 +1,12 @@
+PASS [adapters] claude adapter is executable: session-start
+PASS [adapters] claude adapter is executable: session-prompt
+PASS [adapters] claude adapter is executable: session-stop
+PASS [adapters] claude adapter is executable: session-end
+PASS [adapters] claude adapter is executable: pretool-allow
+PASS [adapters] codex adapter is executable: session-start
+PASS [adapters] codex adapter is executable: session-prompt
+PASS [adapters] codex adapter is executable: session-stop
+PASS [adapters] codex adapter is executable: session-end
+PASS [adapters] Pi adapter file is present: knowledge.ts
+PASS [adapters] Pi adapter file is present: package.json
+PASS [adapters] Pi adapter file is present: package-lock.json
