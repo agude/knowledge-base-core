@@ -1,0 +1,10 @@
+Installing skills...
+  <ROOT>/home/.agents/skills/curate
+  <ROOT>/home/.agents/skills/knowledge-base
+Installing content repo git hooks...
+  pre-commit
+Done.
+
+Note: KNOWLEDGE_BASE is not set in your shell.
+  Add to your shell config:
+    export KNOWLEDGE_BASE="<KB>"

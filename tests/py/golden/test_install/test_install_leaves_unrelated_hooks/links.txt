@@ -1,0 +1,5 @@
+<ROOT>/config/coat-tree/hooks.d/SessionStart/010.knowledge -> /elsewhere/session-start
+<ROOT>/config/coat-tree/hooks.d/SessionStart/020.other -> /elsewhere/other
+<ROOT>/home/.agents/skills/curate -> <KB>/skills/curate/
+<ROOT>/home/.agents/skills/knowledge-base -> <KB>/skills/knowledge-base/
+<CONTENT>/.git/hooks/pre-commit -> <KB>/scripts/hooks/pre-commit

@@ -57,3 +57,21 @@ order depends on the locale. Python's `sorted()` uses code-point order.
 Expected: one canonical order.
 Class: undecided
 Decision:
+
+## A-006: install reports removing skill links it recreates
+
+Script: `install`  Test: `test_install.py::test_install_is_idempotent`
+Observed: every re-run prints `Removed 2 prior skill symlink(s).`, because
+it deletes every skill link into the repo and then recreates the same links.
+Expected: unknown. A re-run with nothing to change may report nothing.
+Class: undecided
+Decision:
+
+## A-007: skill link targets end in a slash
+
+Script: `install`  Test: `test_install.py::test_install_fresh`
+Observed: `~/.agents/skills/<name>` links to `<repo>/skills/<name>/`, with a
+trailing slash, because the target comes from the glob `skills/*/`.
+Expected: unknown. Hosts resolve both forms.
+Class: undecided
+Decision:
