@@ -1,0 +1,193 @@
+"""Run executables against a per-test content repository."""
+
+from __future__ import annotations
+
+import subprocess
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import pytest
+
+from kbtest import env as envmod
+from kbtest.impl import Impl
+from kbtest.normalize import Normalizer
+
+TRACEBACK = b"Traceback (most recent call last):"
+
+
+@dataclass(frozen=True)
+class Result:
+    script: str
+    args: tuple[str, ...]
+    impl: str
+    returncode: int
+    stdout: bytes
+    stderr: bytes
+
+    @property
+    def out(self) -> str:
+        return self.stdout.decode("utf-8", errors="surrogateescape")
+
+    @property
+    def err(self) -> str:
+        return self.stderr.decode("utf-8", errors="surrogateescape")
+
+
+@dataclass
+class KB:
+    """One test's view of the system under test.
+
+    layout: per-test directories; every path the executables see is inside.
+    resolve_impl: maps an implementation name to its tree.
+    default_impl: KB_IMPL for this run; run(impl=...) overrides it per call.
+    session_prefix: prefix for every session ID the test uses.
+    """
+
+    layout: envmod.Layout
+    resolve_impl: Callable[[str], Impl]
+    default_impl: str
+    session_prefix: str
+    system_path: str = envmod.SYSTEM_PATH
+    normalizer: Normalizer = field(default_factory=Normalizer)
+    invocations: list[tuple[str, str]] = field(default_factory=list)
+    _session_ids: int = 0
+
+    # Setup
+
+    def setup(self) -> None:
+        self.layout.create()
+        envmod.build_bin(self.layout.bin, self.layout.syslog)
+        self.normalizer.add_path(self.layout.content, "<CONTENT>")
+        self.normalizer.add_path(self.layout.root, "<ROOT>")
+        self._init_content()
+
+    def without_jq(self, mirror: Path) -> None:
+        """Run every later command with jq absent, a production configuration."""
+        (self.layout.bin / "jq").unlink()
+        self.system_path = str(envmod.system_bin_without(mirror, frozenset({"jq"})))
+
+    def _init_content(self) -> None:
+        content = self.layout.content
+        for sub in (
+            "knowledge",
+            "observations/pending",
+            "observations/archived",
+            "questions/open",
+            "questions/resolved",
+            "sources",
+        ):
+            (content / sub).mkdir(parents=True, exist_ok=True)
+        self.git("init", "-q", "-b", "main")
+        (content / ".gitkeep").touch()
+        self.git("add", ".gitkeep")
+        self.git("commit", "-q", "-m", "init")
+
+    # Running
+
+    def env(self, impl: Impl, overrides: Mapping[str, str | None] | None = None) -> dict[str, str]:
+        result = envmod.base_env(self.layout, impl.kb_root, self.system_path)
+        for name, value in (overrides or {}).items():
+            if value is None:
+                result.pop(name, None)
+            else:
+                result[name] = value
+        envmod.assert_confined(result, self.layout.root)
+        return result
+
+    def run(
+        self,
+        script: str,
+        *args: str,
+        stdin: str | bytes | None = None,
+        env: Mapping[str, str | None] | None = None,
+        impl: str | None = None,
+        cwd: Path | None = None,
+        timeout: float = 60,
+    ) -> Result:
+        tree = self.resolve_impl(impl or self.default_impl)
+        if not tree.has(script):
+            if tree.name == "python":
+                pytest.skip(f"not ported to python: {script}")
+            raise AssertionError(f"{tree.name} has no executable {script} in {tree.scripts_dir}")
+        self.normalizer.add_path(tree.kb_root, "<KB>")
+        self.invocations.append((tree.name, script))
+        data = stdin.encode("utf-8") if isinstance(stdin, str) else stdin
+        completed = subprocess.run(
+            [str(tree.executable(script)), *args],
+            input=data if data is not None else b"",
+            capture_output=True,
+            env=self.env(tree, env),
+            cwd=cwd or self.layout.root,
+            timeout=timeout,
+            check=False,
+        )
+        if tree.name == "python" and TRACEBACK in completed.stderr:
+            pytest.fail(
+                f"{script} raised an uncaught exception:\n"
+                + completed.stderr.decode("utf-8", errors="replace")
+            )
+        return Result(
+            script=script,
+            args=args,
+            impl=tree.name,
+            returncode=completed.returncode,
+            stdout=completed.stdout,
+            stderr=completed.stderr,
+        )
+
+    def git(self, *args: str) -> str:
+        """Run git in the content repository with the test environment."""
+        git_env = envmod.base_env(self.layout, self.layout.root, self.system_path)
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=self.layout.content,
+            env=git_env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return completed.stdout
+
+    def commits(self) -> list[str]:
+        return self.git("rev-list", "--all").split()
+
+    # Normalizing
+
+    def norm(self, text: str) -> str:
+        self.normalizer.commits = self.commits()
+        return self.normalizer(text)
+
+    def norm_err(self, text: str) -> str:
+        self.normalizer.commits = self.commits()
+        return self.normalizer.stderr(text)
+
+    # Content
+
+    def session_id(self) -> str:
+        self._session_ids += 1
+        return f"{self.session_prefix}{self._session_ids}"
+
+    def create_article(self, name: str, content: str) -> Path:
+        path = self.layout.content / "knowledge" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content + "\n", encoding="utf-8", newline="")
+        return path
+
+    def create_observation(self, name: str, title: str, body: str) -> Path:
+        path = self.layout.content / "observations" / "pending" / name
+        path.write_text(
+            f'---\ntitle: "{title}"\nsource: session\ncreated: 2026-04-12T00:00:00Z\n---\n\n{body}\n',
+            encoding="utf-8",
+            newline="",
+        )
+        return path
+
+    def create_question(self, name: str, title: str, context: str = "") -> Path:
+        lines = ["---", f'title: "{title}"', "source: test"]
+        if context:
+            lines.append(f"context: {context}")
+        lines += ["created: 2026-04-12T00:00:00Z", "---"]
+        path = self.layout.content / "questions" / "open" / name
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="")
+        return path

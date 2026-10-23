@@ -30,8 +30,30 @@ pi-check: pi-deps
 test:
     bats tests/*.bats
 
-lint: shellcheck portability
+# Install the locked Python test environment.
+py-sync:
+    uv sync --locked
 
-check: lint test
+# Lint and format-check the Python test harness.
+py-lint:
+    uv run --locked ruff check .
+    uv run --locked ruff format --check .
+
+# Apply the Python formatter and safe lint fixes.
+py-format:
+    uv run --locked ruff format .
+    uv run --locked ruff check --fix .
+
+# Run the characterization suite against KB_IMPL (default bash).
+test-py *args:
+    uv run --locked pytest {{ args }}
+
+# Check that every characterization test fails under a null implementation.
+test-py-null *args:
+    uv run --locked python tests/py/nullcheck.py {{ args }}
+
+lint: shellcheck portability py-lint
+
+check: lint test test-py test-py-null
 
 check-all: check pi-check

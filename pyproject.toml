@@ -1,0 +1,60 @@
+[project]
+name = "knowledge-base-core"
+version = "0.1.0"
+description = "Infrastructure for a personal knowledge base: scripts, skills, and tests."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Alexander Gude" }]
+# The runtime uses the standard library only. See docs/python-port.md.
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.140",
+    "pytest>=9.1",
+    "ruff>=0.17.0",
+]
+
+[tool.uv]
+# Not an installable package yet; the kb package arrives in step 3.
+package = false
+# Ignore releases younger than a week, so a compromised upload has time to be
+# noticed and yanked before it reaches the lock.
+exclude-newer = "7 days"
+required-version = ">=0.12.18"
+
+[tool.ruff]
+# Match requires-python.
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+    "RET", # flake8-return
+    "RUF", # Ruff-specific
+    "PTH", # flake8-use-pathlib
+]
+ignore = [
+    "E501", # line too long (handled by the formatter)
+]
+
+[tool.pytest]
+testpaths = ["tests/py"]
+pythonpath = ["tests/py"]
+addopts = ["--strict-markers", "-p", "no:cacheprovider"]
+markers = [
+    "harness: tests of the harness itself; they never run an implementation",
+    "null_ok(reason): the test passes under the null0 control, for the stated reason",
+    "audit(entry): pinned behavior that looks wrong or accidental; see audit.md",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["kb", "kbtest"]
