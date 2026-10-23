@@ -3,3 +3,4 @@
 # NOT_PORTED.md. test_harness.py::test_bats_mapping enforces this.
 install.bats
 init.bats
+commit.bats

@@ -86,3 +86,27 @@ which implies DIR was meant to get the hook.
 Expected: DIR gets the `pre-commit` hook.
 Class: undecided
 Decision:
+
+## A-009: commit fails on files outside the content areas
+
+Script: `commit`  Test: `test_commit.py::test_commit_ignores_files_outside_content_areas`
+Observed: `commit` decides there is work from `git status --porcelain` over
+the whole repository but stages only `knowledge/`, `observations/`,
+`questions/`, and `sources/`. An untracked file elsewhere makes it run
+`git commit` with nothing staged: exit 1, git's status text on stdout, and
+`locked_commit_index: commit failed (1)` on stderr. Git's status also lists
+`.observe.lock/` as untracked; the content repository does not ignore it.
+Expected: unknown. Probably "Nothing to commit." when nothing in the four
+areas changed.
+Class: undecided
+Decision:
+
+## A-010: a rejected commit leaves its paths staged
+
+Script: `commit`  Test: `test_commit.py::test_commit_lint_failure`
+Observed: when the pre-commit hook rejects the commit, the paths `commit`
+staged stay in the index (`A  knowledge/bad.md`), although the hook prints
+"nothing modified".
+Expected: unknown.
+Class: undecided
+Decision:

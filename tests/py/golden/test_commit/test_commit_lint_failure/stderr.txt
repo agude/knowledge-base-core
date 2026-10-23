@@ -1,0 +1,6 @@
+  error    knowledge/bad.md:13  second H1 (one article, one H1): Two
+
+1 file(s): 1 error(s), 0 warning(s)
+
+pre-commit: lint errors — commit rejected, nothing modified.
+locked_commit_index: commit failed (1) for: Curate: bad
