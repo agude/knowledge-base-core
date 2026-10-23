@@ -1,0 +1,4 @@
+archived/
+archived/plain.md
+archived/rule.md
+pending/

@@ -110,3 +110,26 @@ staged stay in the index (`A  knowledge/bad.md`), although the hook prints
 Expected: unknown.
 Class: undecided
 Decision:
+
+## A-011: archive's header says it uses git mv
+
+Script: `archive`  Test: `test_archive.py::test_archive_one`
+Observed: the header says "Moves the file with git mv so history is
+preserved"; the code rewrites the file and uses plain `mv`, and the
+commit records an add and a delete (or a rename only when git detects
+one).
+Expected: the header matches the code.
+Class: undecided
+Decision:
+
+## A-012: archive metadata placement depends on a `---` line
+
+Script: `archive`  Test: `test_archive.py::test_archive_without_front_matter`
+Observed: archive inserts `disposition:` and `original_sha256:` before the
+first `---` line after line 1. An observation without front matter gets no
+metadata. One without front matter whose body has a `---` thematic break
+gets the metadata inserted into the body, before the break.
+Expected: unknown. Probably add front matter, or leave such files
+unchanged.
+Class: undecided
+Decision:

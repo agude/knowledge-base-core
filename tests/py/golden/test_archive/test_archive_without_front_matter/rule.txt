@@ -1,0 +1,7 @@
+Before.
+
+disposition: processed
+original_sha256: 4409471bc218a6812b892df8e7a3e27441bd181380307bad6cba5adf9eb940b1
+---
+
+After.

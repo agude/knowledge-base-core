@@ -1,0 +1,11 @@
+<COMMIT-1> Test <test@test.com> Archive: 1 observation(s)
+
+A	observations/archived/obs1.md
+D	observations/pending/obs1.md
+<COMMIT-2> Test <test@test.com> Seed legacy content
+
+A	knowledge/legacy.md
+A	observations/pending/obs1.md
+<COMMIT-3> Test <test@test.com> init
+
+A	.gitkeep

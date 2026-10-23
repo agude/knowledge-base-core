@@ -1,0 +1,2 @@
+Archive already exists: observations/archived/a.md
+Nothing archived.

@@ -1,0 +1,3 @@
+archived/
+archived/a.md
+pending/

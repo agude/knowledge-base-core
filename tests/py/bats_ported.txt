@@ -4,3 +4,4 @@
 install.bats
 init.bats
 commit.bats
+archive.bats

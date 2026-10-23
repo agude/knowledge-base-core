@@ -1,0 +1,2 @@
+Not a pending filename: ../pending/a.md
+Nothing archived.

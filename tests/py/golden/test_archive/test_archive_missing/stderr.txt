@@ -1,0 +1,2 @@
+Not found: observations/pending/nonexistent.md
+Nothing archived.
