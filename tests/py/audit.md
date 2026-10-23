@@ -152,3 +152,23 @@ Observed: the text is written with `echo "$BODY"`, so a body of `-n` (or
 Expected: the text is written verbatim.
 Class: undecided
 Decision:
+
+## A-015: context ignores unknown arguments
+
+Script: `context`  Test: `test_status_context.py::test_context_unknown_option`
+Observed: `context --bogus` prints the normal report and exits 0. Every
+other command rejects an unknown option with exit 1.
+Expected: unknown. Probably exit 1 with `Unknown option: --bogus`.
+Class: undecided
+Decision:
+
+## A-016: context's script list comes from the directory listing
+
+Script: `context`  Test: `test_status_context.py::test_context_empty`
+Observed: the `Scripts:` line lists every executable file in `scripts/`
+except `_*`, `session-*`, `pretool-allow`, and `install`, in glob order. It
+includes the development tool `portability-lint`, which retires with bash,
+so the list changes at cutover.
+Expected: unknown. Probably a fixed list of the agent-facing commands.
+Class: undecided
+Decision:

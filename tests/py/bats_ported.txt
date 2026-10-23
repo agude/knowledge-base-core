@@ -7,3 +7,4 @@ commit.bats
 archive.bats
 questions.bats
 doctor.bats
+status_context.bats

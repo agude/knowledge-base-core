@@ -1,0 +1,11 @@
+=== Knowledge Base (<KB>) ===
+
+Topics (1 files):
+  NAS
+
+Source documents: 0
+
+Pending observations: 0
+
+Scripts: archive, ask, batch, commit, context, doctor, evaluate-retrieval, init, lint, observe, pending, portability-lint, questions, resolve, search, section, stale, status, sync, toc
+Usage: $KNOWLEDGE_BASE/scripts/<script> [args]
