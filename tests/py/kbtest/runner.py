@@ -138,29 +138,47 @@ class KB:
 
     def git(self, *args: str) -> str:
         """Run git in the content repository with the test environment."""
-        git_env = envmod.base_env(self.layout, self.layout.root, self.system_path)
         completed = subprocess.run(
             ["git", *args],
             cwd=self.layout.content,
-            env=git_env,
+            env=self.git_env(),
             capture_output=True,
             text=True,
             check=True,
         )
         return completed.stdout
 
-    def commits(self) -> list[str]:
-        return self.git("rev-list", "--all").split()
+    def git_env(self) -> dict[str, str]:
+        return envmod.base_env(self.layout, self.layout.root, self.system_path)
+
+    def commits(self, repo: Path | None = None) -> list[str]:
+        """Every commit hash in repo (default: the content repository)."""
+        completed = subprocess.run(
+            ["git", "rev-list", "--all"],
+            cwd=repo or self.layout.content,
+            env=self.git_env(),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return completed.stdout.split()
 
     # Normalizing
 
-    def norm(self, text: str) -> str:
-        self.normalizer.commits = self.commits()
+    def norm(self, text: str, *, repos: tuple[Path, ...] = ()) -> str:
+        """Normalize text; repos adds commit hashes from further repositories."""
+        self.normalizer.commits = self._all_commits(repos)
         return self.normalizer(text)
 
-    def norm_err(self, text: str) -> str:
-        self.normalizer.commits = self.commits()
+    def norm_err(self, text: str, *, repos: tuple[Path, ...] = ()) -> str:
+        self.normalizer.commits = self._all_commits(repos)
         return self.normalizer.stderr(text)
+
+    def _all_commits(self, repos: tuple[Path, ...]) -> list[str]:
+        hashes = self.commits()
+        for repo in repos:
+            hashes += self.commits(repo)
+        return hashes
 
     # Content
 
