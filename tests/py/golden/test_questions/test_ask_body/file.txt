@@ -1,0 +1,7 @@
+---
+title: "Question?"
+source: session
+created: <TIMESTAMP>
+---
+
+Extra context here

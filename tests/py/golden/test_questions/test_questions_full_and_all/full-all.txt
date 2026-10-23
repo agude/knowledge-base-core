@@ -1,0 +1,15 @@
+--- q1.md ---
+---
+title: "Open one"
+source: test
+context: knowledge/a.md
+created: <TIMESTAMP>
+---
+
+--- q2.md ---
+---
+title: "Resolved one"
+source: test
+created: <TIMESTAMP>
+---
+

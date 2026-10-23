@@ -1,0 +1,9 @@
+---
+title: "Test question"
+source: test
+created: <TIMESTAMP>
+---
+
+## Resolution (<TODAY>)
+
+Answered.

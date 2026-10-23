@@ -133,3 +133,22 @@ Expected: unknown. Probably add front matter, or leave such files
 unchanged.
 Class: undecided
 Decision:
+
+## A-013: questions --path matches string prefixes, not path segments
+
+Script: `questions`  Test: `test_questions.py::test_questions_path_filter`
+Observed: `--path knowledge/deploys` also lists a question whose context is
+`knowledge/deploys-old/x.md`, because the filter is a plain string prefix.
+Expected: unknown. Probably match whole path segments.
+Class: undecided
+Decision:
+
+## A-014: ask and resolve drop text that looks like an echo option
+
+Scripts: `ask` (`--body`), `resolve` (`--answer`)
+Test: `test_questions.py::test_ask_body_that_looks_like_an_echo_option`
+Observed: the text is written with `echo "$BODY"`, so a body of `-n` (or
+`-e`, `-E`) is taken as an option and the file gets an empty body line.
+Expected: the text is written verbatim.
+Class: undecided
+Decision:

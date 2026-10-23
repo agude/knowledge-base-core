@@ -1,0 +1,8 @@
+--- q1.md ---
+---
+title: "Open one"
+source: test
+context: knowledge/a.md
+created: <TIMESTAMP>
+---
+
