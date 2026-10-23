@@ -1,0 +1,91 @@
+# Python port decision
+
+Status: accepted, 2026-10-23. Work happens on the `python` branch.
+
+## Decision
+
+Replace the bash runtime (`scripts/`, about 7k lines of bash, awk, and jq)
+with Python 3.11 or later, using the standard library only.
+
+This reverses the standing constraint that the runtime and quality gate stay
+independent of Python, and the earlier exclusion of "a broad shell-to-Python
+rewrite" from the memory-system plan.
+
+## Reasons
+
+1. **Speed.** Retrieval and session start are slow on the live knowledge
+   base (210 articles), measured 2026-10-23 as the mean of 5 runs:
+
+   | Command | Bash |
+   |---|---:|
+   | `search --json python` | 4652 ms |
+   | `search python` | 1764 ms |
+   | `session-context` (mostly `status --brief` → `stale --count`) | 1262 ms |
+   | `toc --map` | 125 ms |
+   | `section --number 1` | 85 ms |
+
+   Python start-up is 13 ms (`python3 -I -c pass`), 15 ms through the `sh`
+   preamble. The slow commands spend their time spawning processes per file
+   and per section, which in-process Python does not need.
+2. **Portability.** The bash runtime depends on GNU and BSD variants of
+   `date`, `stat`, `sort`, `readlink`, and awk, and on Bash 4, which macOS
+   does not ship. `portability-lint` and the `doctor` probes exist only to
+   manage those differences. Python removes that class of defect and makes
+   Windows support possible.
+3. **Maintainability.** `search` builds JSON and enforces byte budgets by
+   hand, and ranking runs in embedded awk. Both are short, testable code in
+   Python.
+4. **Retrieval.** Ranking improvements (BM25, optional embeddings) are
+   impractical in awk.
+
+## Scope
+
+- Minimum Python version: 3.11. Debian 12 ships 3.11 and Ubuntu 24.04 ships
+  3.12. macOS ships 3.9 with the Command Line Tools, so macOS hosts need a
+  separately installed interpreter (uv, Homebrew, or python.org).
+- Runtime dependencies after the port: a Python 3.11+ interpreter and `git`.
+  Two current external commands (`pgrep` in stale-lock breaking, `logger`
+  in `session-flush`) are decided in the behavior audit.
+- Test tooling: uv, pytest, ruff, hypothesis.
+- Platforms: Linux and macOS are required at cutover. Windows follows after
+  cutover. All platform-specific calls go through one module
+  (`kb/platform.py`) from the first ported script, so Windows support does
+  not require reworking ported code.
+- Host registration stays outside this repository (README, "Host-specific
+  registration remains outside `scripts/install`"). Hosts reach the
+  executables by path, by symlink, or through shims, so no entry point can
+  pass an interpreter argument. Each executable therefore selects its own
+  interpreter: a POSIX `sh` preamble resolves its own symlinks, finds a
+  3.11+ interpreter, and runs the script with it before any Python starts.
+  Lookup order: the path recorded by `install` in
+  `<repo>/.python-interpreter`; then `python3.20` down to `python3.11` on
+  `PATH` and in `/opt/homebrew/bin`, `/usr/local/bin`, and `~/.local/bin`;
+  then `python3` in the same places. Version-manager shims (`*/shims/*`) are
+  never candidates. Only the unversioned `python3` is probed by running it,
+  so the common path starts one interpreter.
+
+## Cutover criteria
+
+Measured on the live knowledge base and on a synthetic corpus ten times its
+size, on CI hardware and on the slowest host that runs agent sessions.
+
+- **Correctness.** The full characterization suite passes against Python on
+  Linux and macOS, at Python 3.11 and the latest release.
+- **Command speed.** At the 95th percentile, no command is slower than its
+  bash baseline. `search`, `search --json`, and `session-context` each take
+  at most 250 ms on the live knowledge base and 1 s on the 10× corpus.
+- **Hook speed.** Defined workloads, each within 50% of the tightest host
+  budget (Codex SessionEnd: 1 s default) at the 95th percentile:
+  - SessionStart: `session-init` with no orphan buffers, plus
+    `session-context`.
+  - SessionEnd: flush of a 200-message buffer, producing one observation
+    commit with the installed content-repo `pre-commit` hook running.
+  The orphan sweep in `session-init` has no upper bound (one commit per
+  orphan) and is interruptible by design. Its per-orphan cost is reported,
+  not gated.
+- **Retrieval quality.** `evaluate-retrieval` shows no regression against
+  each committed baseline: `retrieval-v1`, `retrieval-question-v1`,
+  `retrieval-question-comparison-v1`, and
+  `retrieval-question-pre-change-v1`.
+- **Dependencies.** No runtime dependency beyond the Python interpreter and
+  `git`, except any the behavior audit explicitly allows.

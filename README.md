@@ -46,7 +46,7 @@ articles).
 knowledge-base-core/    # this repo
 ├── scripts/            # CLI tools
 ├── skills/             # Portable Agent Skills
-├── tests/              # bats tests
+├── tests/              # Bats tests; tests/py/ holds the pytest characterization suite
 ├── scripts/adapters/   # Host-specific protocol adapters
 └── .agents/skills      # shared skill installation location
 
@@ -230,6 +230,12 @@ All scripts support `--help`.
 
 ### Runtime requirements and diagnosis
 
+The runtime is moving from Bash to Python 3.11 or newer, using the standard
+library only. [docs/python-port.md](docs/python-port.md) records the decision,
+its reasons, and the cutover criteria. Until cutover, the runtime requirements
+below apply unchanged, and the development check gate additionally requires uv
+and Python 3.11 or newer for the characterization suite.
+
 The core runtime uses Bash 4 or newer, standard POSIX-style utilities, and
 Git for the content repository. `stat` must support either GNU `-c` or BSD
 `-f`; freshness parsing supports both GNU and BSD `date`. Batch manifests need
@@ -242,7 +248,7 @@ protocols, and retrieval evaluation. `session-append` can encode messages
 without jq, using `od` and AWK to preserve control characters and exact trailing
 newlines without encoder scratch files. `session-flush` will retain the
 source buffer when JSON parsing fails or jq is unavailable. Development checks
-add ShellCheck, Bats, and just; the Pi adapter has its separate npm and Node
+add ShellCheck, Bats, just, and uv; the Pi adapter has its separate npm and Node
 requirements documented below.
 
 #### Utility compatibility
@@ -788,7 +794,7 @@ flush retains the buffer for a later extension instance.
 The Pi checks are optional. From the repository root, use:
 
 ```bash
-just check       # ShellCheck, portability lint, and Bats; no Node/npm
+just check       # ShellCheck, portability lint, Ruff, Bats, and pytest; no Node/npm
 just pi-check    # Clean Pi dependency install, type-check, and tests
 just check-all   # Both independent gates
 ```
@@ -826,6 +832,19 @@ API before the lockfile is updated.
 
 ## Testing
 
-The default check gate runs ShellCheck, portability lint, and the Bats suite.
-The Pi gate runs separately because it requires Node.js and npm. CI runs both
-jobs.
+The default check gate runs ShellCheck, portability lint, Ruff, the Bats
+suite, and the pytest characterization suite with its null controls. The Pi
+gate runs separately because it requires Node.js and npm. CI runs both jobs,
+and runs the characterization suite on Linux and macOS at Python 3.11 and the
+latest release.
+
+The characterization suite in `tests/py/` runs the executables as
+subprocesses and pins their observable behavior, so the same tests can check
+the Bash runtime and its Python replacement. `KB_IMPL` selects the
+implementation; see [tests/py/README.md](tests/py/README.md).
+
+```bash
+just test-py                    # characterization suite against Bash
+just test-py --update-golden    # rewrite golden files; review the diff
+just test-py-null               # every test must fail under a null implementation
+```
