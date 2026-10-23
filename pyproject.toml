@@ -53,7 +53,7 @@ addopts = ["--strict-markers", "-p", "no:cacheprovider"]
 markers = [
     "harness: tests of the harness itself; they never run an implementation",
     "null_ok(reason): the test passes under the null0 control, for the stated reason",
-    "audit(entry): pinned behavior that looks wrong or accidental; see audit.md",
+    "audit(entry): pinned behavior that looks wrong or accidental; see tests/py/audit.md",
     "bats(file, name): the bats test this pytest test ports",
 ]
 
