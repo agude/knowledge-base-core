@@ -40,10 +40,10 @@ def test_init_with_path(kb: KB, golden: Golden) -> None:
     assert result.returncode == 0
     golden.check("stdout", kb.norm(result.out, repos=(target,)))
     golden.check("stderr", kb.norm_err(result.err, repos=(target,)))
-    golden.check("state", _state(kb, target))
+    golden.contract("state", _state(kb, target))
     # install wires the configured content repository, not the --path one.
     hook = kb.layout.content / ".git" / "hooks" / "pre-commit"
-    golden.check("default-hook", kb.norm(f"{hook.readlink()}\n"))
+    golden.contract("default-hook", kb.norm(f"{hook.readlink()}\n"))
 
 
 @pytest.mark.bats("init.bats", "init is safe to run twice")
@@ -53,7 +53,7 @@ def test_init_twice(kb: KB, golden: Golden) -> None:
     result = kb.run("init", "--path", str(target))
     assert result.returncode == 0
     golden.check("stdout", kb.norm(result.out, repos=(target,)))
-    golden.check("state", _state(kb, target))
+    golden.contract("state", _state(kb, target))
 
 
 @pytest.mark.bats("init.bats", "init uses CONTENT_DIR when no --path given")
@@ -62,14 +62,14 @@ def test_init_defaults_to_content_dir(kb: KB, golden: Golden) -> None:
     result = kb.run("init", env={"KB_CONTENT_DIR": str(target)})
     assert result.returncode == 0
     golden.check("stdout", kb.norm(result.out, repos=(target,)))
-    golden.check("state", _state(kb, target))
+    golden.contract("state", _state(kb, target))
 
 
 def test_init_relative_path(kb: KB, golden: Golden) -> None:
     result = kb.run("init", "--path", "relative")
     assert result.returncode == 0
     golden.check("stdout", kb.norm(result.out))
-    golden.check("tree", tree(kb.layout.root / "relative"))
+    golden.contract("tree", tree(kb.layout.root / "relative"))
 
 
 def test_init_existing_partial_directory(kb: KB, golden: Golden) -> None:
@@ -79,7 +79,7 @@ def test_init_existing_partial_directory(kb: KB, golden: Golden) -> None:
     result = kb.run("init", "--path", str(target))
     assert result.returncode == 0
     golden.check("stdout", kb.norm(result.out, repos=(target,)))
-    golden.check("state", _state(kb, target))
+    golden.contract("state", _state(kb, target))
 
 
 def test_init_path_requires_argument(kb: KB, golden: Golden) -> None:

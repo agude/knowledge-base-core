@@ -42,7 +42,7 @@ def _approved(kb: KB, command: str) -> bool:
 @pytest.mark.bats("pretool_allow.bats", "approves a bare script invocation")
 def test_approves_bare_invocation(kb: KB, golden: Golden) -> None:
     code, out, err = _decide(kb, f"{_scripts(kb)}/status")
-    golden.check("decision", f"exit {code}\nstdout={out!r}\nstderr={err!r}\n")
+    golden.contract("decision", f"exit {code}\nstdout={out!r}\nstderr={err!r}\n")
 
 
 @pytest.mark.bats("pretool_allow.bats", "approves a script with quoted arguments")

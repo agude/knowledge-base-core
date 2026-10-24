@@ -50,7 +50,7 @@ def test_install_migrates_legacy_claude_hooks(kb: KB, golden: Golden) -> None:
     assert result.returncode == 0
     golden.check("stdout", kb.norm(result.out))
     golden.check("stderr", kb.norm_err(result.err))
-    golden.check("links", _links(kb))
+    golden.contract("links", _links(kb))
 
 
 @pytest.mark.audit("A-007")
@@ -59,7 +59,7 @@ def test_install_fresh(kb: KB, golden: Golden) -> None:
     assert result.returncode == 0
     golden.check("stdout", kb.norm(result.out))
     golden.check("stderr", kb.norm_err(result.err))
-    golden.check("links", _links(kb))
+    golden.contract("links", _links(kb))
 
 
 @pytest.mark.audit("A-006")
@@ -68,7 +68,7 @@ def test_install_is_idempotent(kb: KB, golden: Golden) -> None:
     result = kb.run("install")
     assert result.returncode == 0
     golden.check("stdout", kb.norm(result.out))
-    golden.check("links", _links(kb))
+    golden.contract("links", _links(kb))
 
 
 def test_install_leaves_unrelated_hooks(kb: KB, golden: Golden) -> None:
@@ -80,10 +80,12 @@ def test_install_leaves_unrelated_hooks(kb: KB, golden: Golden) -> None:
     result = kb.run("install")
 
     assert result.returncode == 0
-    golden.check("links", _links(kb))
+    golden.contract("links", _links(kb))
 
 
 def test_install_without_knowledge_base_prints_reminder(kb: KB, golden: Golden) -> None:
     result = kb.run("install", env={"KNOWLEDGE_BASE": None})
     assert result.returncode == 0
+    tree = kb.resolve_impl(kb.default_impl)
+    assert f'export KNOWLEDGE_BASE="{tree.kb_root.resolve()}"' in result.out
     golden.check("stdout", kb.norm(result.out))
