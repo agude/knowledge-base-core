@@ -679,6 +679,16 @@ five-writer runs failed. Both tests lose their `xfail`, and
 Residual: a breaker killed while holding the guard blocks breaking until
 the guard is removed by hand. Commit e4c2a54.
 
+## Accepted reference differences
+
+Reference goldens that the Python port does not reproduce, each by a
+decision above. A difference not listed here is reviewed before its unit
+is ticked (plan step 4).
+
+| Test | Golden | Unit | Reason |
+|---|---|---|---|
+| `test_help.py::test_help[archive]` | stdout | 4.2 | A-011 header; A-001 example names |
+
 ## null_ok review (plan item 2.3)
 
 Reviewed 2026-10-24. Each mark below covers a test whose contract is
