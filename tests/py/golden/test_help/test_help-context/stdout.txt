@@ -1,0 +1,12 @@
+
+context - Output a brief knowledge base summary for session injection.
+
+Prints a compact summary of the knowledge base: topic list, source
+document count, pending observation count, and available scripts.
+Intended for injection into an agent context at session start.
+
+Usage:
+  context
+
+Options:
+  -h, --help   Show this help message

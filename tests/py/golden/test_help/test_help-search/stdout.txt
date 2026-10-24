@@ -1,0 +1,29 @@
+
+search - Search the knowledge base by ranked Markdown section.
+
+Usage:
+  search <term> [term ...]
+  search -- <term>
+  search --query QUESTION [--relax]
+
+Options:
+  --limit N      Maximum result sections (default 20; 0 for all)
+  --per-file N   Maximum sections from one file (default 3; 0 for all)
+  --path PATH    Restrict to a content-relative file or directory
+  --topic NAME   Restrict to a knowledge topic directory
+  --corpus TYPE  Restrict to knowledge, sources, pending, archive, or questions
+  --archive      Also search archived observations and questions
+  --files        List matching files and section counts only
+  --query TEXT   Search a natural-language question instead of literal terms
+  --relax        Retry a question with bounded any-term matching after no hits
+  --explain      Print query and result diagnostics on stderr
+  --max-bytes N  Bound stdout bytes; JSON keeps complete result records
+  --json         Return one JSON object containing bounded results
+  --text-only    Return metadata-free section text output
+  -h, --help     Show this help message
+
+Results are ranked sections. A section containing every query term outranks
+file-level fallback sections whose terms are split across the file. Title
+and heading matches outrank body evidence, and duplicate evidence lines
+count once. H2/H3 results include their `section --number` value; `top` and
+frontmatter-title results include direct `--top` and `--title` selectors.

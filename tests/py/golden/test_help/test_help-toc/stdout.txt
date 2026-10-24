@@ -1,0 +1,54 @@
+
+toc - Generate a table of contents from markdown files.
+
+Scans markdown files and extracts headings. H1 is the file title.
+H2s are numbered per file (these are the content units). H3+ are
+shown indented under their parent H2 when --depth allows.
+
+Usage:
+  toc [--depth N] [--path DIR_OR_FILE] [--flat] [--dirs] [--map]
+
+Options:
+  --depth N    Maximum heading level to include (default: 2, i.e., H1 + H2)
+  --path PATH  Directory to scan or single file (default: knowledge/)
+  --flat       Omit filename grouping, just list headings
+  --dirs       Show the directory/file tree
+  --map        One line per topic area with an article count
+
+Examples:
+  toc                          # H1+H2 from knowledge/
+  toc --depth 3                # H1+H2+H3
+  toc --path knowledge/topic.md
+  toc --depth 1 --flat         # Just topic names, no file headers
+  toc --dirs                   # Just show directory/file tree
+  toc --map                    # Areas and counts, for session injection
+
+Output format (default):
+  [knowledge/networking.md]
+  Networking
+    1. DNS Resolution
+    2. TCP Handshake
+       2.1. Client Hello
+       2.2. Server Hello
+    3. TLS
+
+Output format (--dirs):
+  knowledge/
+    ach/
+      fraud/
+        credits.md
+        debits.md
+    git.md
+    networking.md
+
+Output format (--map):
+  knowledge/ach/          12
+    fraud/                 4
+  knowledge/deploys/       7
+
+Counts include nested directories. --map is what session-start injects:
+it costs one line per area instead of three per article, and a session
+drills in with `toc --path knowledge/<area>`.
+
+Use the section numbers with the `section` script:
+  section --file knowledge/networking.md --number 2

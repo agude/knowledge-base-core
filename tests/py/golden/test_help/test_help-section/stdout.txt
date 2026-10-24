@@ -1,0 +1,37 @@
+
+section - Extract a section from a markdown file.
+
+Retrieves a section by H2 number (from `toc` output) or by heading text.
+Returns everything from the matched heading up to the next heading at the
+same or higher level.
+
+Usage:
+  section --file FILE (--number N | --heading TEXT | --top | --title) [--exact]
+          [--json | --text-only]
+  section --file FILE --references [--json]
+
+Options:
+  --file FILE      Markdown file to read (required)
+  --number N       H2 section number, or N.M for H3 under H2 N (from toc output)
+  --heading TEXT   Heading text to match (case-insensitive substring)
+  --top            Retrieve the prose before the first H2
+  --title          Retrieve the frontmatter title
+  --exact          Require exact heading match instead of substring
+  --json           Return one structured JSON object
+  --text-only      Return the historical section body without metadata
+  --references     Return the complete provenance reference list
+  --section-references  Return complete sources resolved for a selected section
+  --max-bytes N  Bound stdout bytes; section content remains complete by line
+
+Examples:
+  section --file knowledge/networking.md --number 1     # 1st H2 section
+  section --file knowledge/networking.md --number 2     # 2nd H2 section
+  section --file knowledge/networking.md --number 2.1   # 1st H3 under 2nd H2
+  section --file knowledge/networking.md --heading 'DNS'  # any heading level
+  section --file knowledge/networking.md --top            # preamble and H1
+  section --file knowledge/networking.md --title          # frontmatter title
+
+Notes:
+  --number N targets H2s. --number N.M targets the Mth H3 under the Nth H2.
+  --heading matches any heading level (H2, H3, etc.), returning content up
+  to the next heading at the same or higher level.

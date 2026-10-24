@@ -13,7 +13,10 @@ platform artifact, bash-only.
 Script: `observe`  Test: `test_smoke.py::test_observe_writes_and_commits`
 Observed: the comment at `observe:93` says `YYYYMMDDTHHMMSS-<4 random
 chars>.md`; the code writes 8 lowercase hex digits from 4 random bytes.
-Expected: the comment matches the code.
+The help examples of `archive`, `questions`, and `resolve` use names such
+as `20260412T000000-abcd.md`, which no command produces
+(`test_help.py::test_help`).
+Expected: the comment and help examples match the code.
 Class: undecided
 Decision:
 
@@ -353,5 +356,19 @@ objects carry spaces (`"field_scopes":{ "status":"article" }`). Byte budgets
 (`--max-bytes`) count these exact bytes, so the goldens pin them.
 Expected: unknown. Probably compact JSON throughout; budgets then shift by
 the removed bytes.
+Class: undecided
+Decision:
+
+## A-034: some entry points do not parse options
+
+Scripts: `hooks/pre-commit`, `session-context`, `session-flush`, `context`,
+and the Claude and Codex adapters  Test: `test_help.py`
+Observed: `--help` and unknown options are ignored: the hooks run as if
+invoked by their host, `session-context` and `context` print the context,
+and `session-flush` takes `--help` as the buffer path and exits 0 because
+no such buffer exists. Every other command prints help or rejects the
+option.
+Expected: unknown. Hook entry points need not parse options; `session-flush`
+and `context` probably should.
 Class: undecided
 Decision:

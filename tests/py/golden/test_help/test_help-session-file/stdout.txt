@@ -1,0 +1,7 @@
+
+session-file - Resolve a session ID to its observation buffer path.
+
+Usage: session-file --session-id ID [--create]
+
+The resolver is the single path-formatting API for host adapters. Use
+--create when an adapter needs to initialize a buffer after it was swept.
