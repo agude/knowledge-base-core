@@ -29,6 +29,7 @@ COMMANDS: dict[str, str] = {
     "archive": "kb.commands.archive",
     "commit": "kb.commands.commit",
     "observe": "kb.commands.observe",
+    "pending": "kb.commands.pending",
     "adapters/claude/session-end": "kb.commands.adapters.claude.session_end",
 }
 
