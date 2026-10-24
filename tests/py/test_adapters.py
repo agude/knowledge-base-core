@@ -270,3 +270,32 @@ def test_codex_end_time_budget(kb: KB, golden: Golden) -> None:
 def test_agents_md_is_canonical() -> None:
     assert (REPO / "AGENTS.md").is_file()
     assert not (REPO / "CLAUDE.md").exists()
+
+
+@pytest.mark.parametrize("client", ["claude", "codex"])
+def test_session_end_flushes_a_buffer(kb: KB, golden: Golden, client: str) -> None:
+    """SessionEnd alone turns a buffer into one committed observation (plan 3.5).
+
+    The buffer is written by hand in its contract format, so the test needs
+    no other executable: under KB_IMPL=python it runs with only the adapter
+    ported.
+    """
+    session_id = kb.session_id()
+    kb.layout.sessions.mkdir(mode=0o700, parents=True, exist_ok=True)
+    buffer = kb.layout.sessions / f"session-{session_id}.jsonl"
+    records = [("user", "Q1"), ("assistant", "A1"), ("user", "Q2")]
+    buffer.write_text(
+        "".join(
+            json.dumps({"role": r, "message": m, "timestamp": 1}, separators=(",", ":")) + "\n"
+            for r, m in records
+        ),
+        encoding="utf-8",
+    )
+    result = _hook(kb, client, "end", {"session_id": session_id}, KNOWLEDGE_OBSERVE="1")
+    assert result.returncode == 0, result.err
+    assert not buffer.exists()
+    (observation,) = _pending(kb)
+    body = observation.read_text(encoding="utf-8").split("---\n", 2)[2]
+    assert body == "\n" + "".join(f"### {r}\n\n{m}\n\n\n" for r, m in records) + "\n"
+    golden.contract("log", kb.norm(kb.git("log", "--format=%s", "--name-status")))
+    assert kb.git("status", "--porcelain") == ""

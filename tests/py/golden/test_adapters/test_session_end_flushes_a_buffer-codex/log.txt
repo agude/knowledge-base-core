@@ -1,0 +1,6 @@
+Observe: Session transcript (3 messages)
+
+A	observations/pending/<OBS-1>.md
+init
+
+A	.gitkeep
