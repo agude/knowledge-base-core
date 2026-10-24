@@ -43,6 +43,7 @@ COMMANDS: dict[str, str] = {
     "archive": "kb.commands.archive",
     "commit": "kb.commands.commit",
     "hooks/pre-commit": "kb.commands.hooks.pre_commit",
+    "init": "kb.commands.init",
     "install": "kb.commands.install",
     "context": "kb.commands.context",
     "lint": "kb.commands.lint",
