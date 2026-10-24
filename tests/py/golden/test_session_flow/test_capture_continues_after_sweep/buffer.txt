@@ -1,0 +1,2 @@
+{"role":"user","message":"After the sweep","timestamp":<EPOCH>}
+{"role":"assistant","message":"Second answer","timestamp":<EPOCH>}

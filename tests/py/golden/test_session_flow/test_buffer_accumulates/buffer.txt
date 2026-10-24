@@ -1,0 +1,4 @@
+{"role":"user","message":"First question","timestamp":<EPOCH>}
+{"role":"assistant","message":"First answer","timestamp":<EPOCH>}
+{"role":"user","message":"Second question","timestamp":<EPOCH>}
+{"role":"assistant","message":"Second answer","timestamp":<EPOCH>}

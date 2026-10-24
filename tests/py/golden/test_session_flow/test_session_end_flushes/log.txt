@@ -1,0 +1,6 @@
+<COMMIT-1> Test <test@test.com> Observe: Session transcript (4 messages)
+
+A	observations/pending/<OBS-1>.md
+<COMMIT-2> Test <test@test.com> init
+
+A	.gitkeep

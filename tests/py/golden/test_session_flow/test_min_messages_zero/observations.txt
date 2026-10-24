@@ -1,0 +1,18 @@
+## <OBS-1>.md
+---
+title: "Session transcript (2 messages)"
+source: session-transcript
+created: <TIMESTAMP>
+---
+
+### user
+
+What is 2+2?
+
+
+### assistant
+
+4
+
+
+

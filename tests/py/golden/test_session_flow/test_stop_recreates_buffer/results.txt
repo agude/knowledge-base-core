@@ -1,0 +1,1 @@
+adapters/claude/session-stop: exit 0 stdout='' stderr=''
