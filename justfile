@@ -53,8 +53,16 @@ test-py *args:
 test-py-null *args:
     uv run --locked python tests/py/nullcheck.py --contract {{ args }}
 
+# Time the read commands and hook workloads (tests/py/bench.py --help).
+bench *args:
+    uv run --locked python tests/py/bench.py {{ args }}
+
+# Run the benchmark once against the null implementation as a smoke test.
+bench-smoke:
+    uv run --locked python tests/py/bench.py --impl null0 --scale 1 --runs 1 > /dev/null
+
 lint: shellcheck portability py-lint
 
-check: lint test test-py test-py-null
+check: lint test test-py test-py-null bench-smoke
 
 check-all: check pi-check

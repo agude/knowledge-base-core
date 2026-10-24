@@ -143,3 +143,19 @@ fail under at least one. A test that passes under `null0` needs a `null_ok`
 mark, and a `null_ok` mark on a test that fails under `null0` is reported as
 stale. Under `KB_IMPL=python`, any stderr containing a Python traceback fails
 the test, because an uncaught exception also exits 1.
+
+## Benchmarks
+
+`just bench [args]` runs `bench.py`. It copies a content tree (`--content
+DIR`) or generates a synthetic one (`--scale N --seed S`, default 10× the
+live knowledge base), times each read command and the two hook workloads
+from `docs/python-port.md`, and prints a JSON report with p50 and p95 in
+milliseconds. The source tree is never modified.
+
+`kbtest/corpus.py` generates the synthetic tree. Its counts and size
+quantiles were measured on the live knowledge base; the text is
+pseudo-words, and a seed always produces the same bytes. Three marker words
+appear in 50%, 5%, and 0.5% of articles, so searches have known hit rates.
+
+`just bench-smoke` runs one pass against `null0` and is part of `just check`.
+Results for the Bash implementation are in `BASELINE.md`.
