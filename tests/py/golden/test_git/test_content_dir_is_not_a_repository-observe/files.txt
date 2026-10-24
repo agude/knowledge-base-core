@@ -2,7 +2,6 @@ knowledge/
 observations/
 observations/archived/
 observations/pending/
-observations/pending/<OBS-1>.md
 questions/
 questions/open/
 sources/

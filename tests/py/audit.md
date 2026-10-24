@@ -626,10 +626,15 @@ Observed: with `KB_CONTENT_DIR` pointing at a directory that is not a git
 repository, both write their file, then the commit fails: exit 128 (git's
 code) with git's own `fatal:` message. The file stays. `commit` and `sync`
 check first and exit 1 with `Not a git repository`.
-Expected: unknown. Probably check first, like `commit`, or keep the file
-and exit 1 with one clear message.
-Class: undecided
-Decision:
+Expected: check first, like `commit`: exit 1 with `Not a git repository:
+<dir>` and no file written. `--no-commit` writes without checking.
+Class: bug
+Decision: exit 128 leaks git's code and two `fatal:` lines, and the
+written file is left uncommitted. Nothing is lost by refusing first: the
+session-flush path keeps its buffer when `observe` fails. The `observe` and
+`ask` cases now expect `commit`'s outcome (their goldens are copies of its
+goldens) and are strict `xfail` under bash. A misconfiguration only, so
+bash is not fixed.
 
 ## A-040: the Claude session-end hook prints observe's output
 
