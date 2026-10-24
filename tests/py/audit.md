@@ -244,3 +244,23 @@ deliberate.
 Expected: unknown. Confirm, or make the two views agree.
 Class: undecided
 Decision:
+
+## A-023: stale accepts a non-numeric --days
+
+Script: `stale`  Test: `test_stale.py::test_stale_argument_errors`
+Observed: `stale --days x` prints `No stale articles.` and exits 0, as if no
+threshold applied. `KNOWLEDGE_LOCK_WAIT` and `--max-bytes` elsewhere reject
+non-numbers.
+Expected: a usage error, exit 1.
+Class: undecided
+Decision:
+
+## A-024: stale's header says it groups by severity; it sorts by path
+
+Script: `stale`  Test: `test_stale.py::test_stale_report`
+Observed: the header says "Articles are grouped by staleness severity";
+the report lists stale, undated, and badly dated articles together in path
+order.
+Expected: the header matches the output, or the output groups by severity.
+Class: undecided
+Decision:

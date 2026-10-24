@@ -18,3 +18,4 @@ sync.bats
 pre_commit.bats
 adapters.bats
 pending.bats
+stale.bats

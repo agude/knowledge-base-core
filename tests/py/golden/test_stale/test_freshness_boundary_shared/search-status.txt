@@ -1,0 +1,4 @@
+{
+  "knowledge/boundary-fresh.md": "fresh",
+  "knowledge/boundary-stale.md": "stale"
+}

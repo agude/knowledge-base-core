@@ -1,0 +1,4 @@
+   275 days  knowledge/mixed.md#1  (verified: 2026-01-01, ttl 60d; status superseded)
+   275 days  knowledge/mixed.md#2  (verified: 2026-01-01, ttl 60d; status current)
+
+2 section(s) needing attention.

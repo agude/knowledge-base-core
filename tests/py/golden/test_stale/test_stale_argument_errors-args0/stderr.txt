@@ -1,0 +1,1 @@
+Option --days requires an argument

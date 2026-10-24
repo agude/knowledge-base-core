@@ -1,0 +1,4 @@
+    90 days  sources/manual.md  (synced: 2026-07-25, ttl 60d)
+  [no synced]  sources/nodate.md
+
+1 stale, 1 missing date.
