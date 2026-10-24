@@ -67,10 +67,13 @@ def user_id() -> str:
 
 
 def owned_by_user(path: Path) -> bool:
-    """True when path (not a symlink's target) belongs to the current user."""
+    """True when path belongs to the current user, following symlinks as test -O does."""
     if WINDOWS:
         return True  # The per-user profile directory is private already.
-    return path.lstat().st_uid == os.getuid()
+    try:
+        return path.stat().st_uid == os.getuid()
+    except OSError:
+        return False
 
 
 def make_private(path: Path) -> None:

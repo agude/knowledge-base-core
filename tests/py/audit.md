@@ -692,6 +692,19 @@ Class: accidental (unused)
 Decision: Python prints only the first message (found in unit 4.6). The
 output is a reference golden, so no test changes.
 
+## A-043: session-flush needs jq
+
+Script: `session-flush`  Test: `test_session_core.py::test_flush_without_jq`
+Observed: without jq on `PATH`, `session-flush` cannot parse the buffer:
+it exits 1 with `could not parse <buffer>` and keeps the buffer.
+Expected: the buffer is never lost; whether jq is needed is the
+implementation's business.
+Class: bash-only
+Decision: Python parses the buffer itself. The test now accepts either a
+flush into one committed observation or a failure that keeps the buffer
+unchanged with a message, and its contract goldens are removed (found in
+unit 4.7).
+
 ## Accepted reference differences
 
 Reference goldens that the Python port does not reproduce, each by a
@@ -704,6 +717,9 @@ is ticked (plan step 4).
 | `test_help.py::test_help[questions]`, `[resolve]` | stdout | 4.5 | A-001 example names |
 | `test_lib.py::test_context_resolution[ambiguous]`, `[symlink-out]` | stderr | 4.5 | A-029: one message per failure |
 | `test_batch.py::test_batch_usage_errors[status-path]` | commands | 4.6 | A-042 |
+| `test_session_core.py::test_append_unwritable_buffer` | stderr | 4.7 | a message, not a shell diagnostic (as A-036) |
+| `test_session_core.py::test_flush_min_messages[x]` | stderr | 4.7 | a message, not a shell diagnostic (as A-036) |
+| `test_session_core.py::test_flush_threshold[2]` | syslog | 4.7 | A-004: syslog(3), not the logger stub |
 
 ## null_ok review (plan item 2.3)
 

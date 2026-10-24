@@ -13,8 +13,23 @@ STALE_INDEX_LOCK_SECONDS = 5 * 60
 
 
 def run(repo: Path, *args: str) -> int:
-    """Run git in repo with inherited output; return its exit status."""
-    return subprocess.run(["git", *args], cwd=repo, check=False).returncode
+    """Run git in repo with inherited output; return its exit status.
+
+    A signal that arrives meanwhile is re-raised only after git exits, as
+    bash defers its traps to a foreground child: killing git instead would
+    leave its index.lock behind and block the next commit.
+    """
+    process = subprocess.Popen(["git", *args], cwd=repo)
+    interrupted: BaseException | None = None
+    while True:
+        try:
+            status = process.wait()
+            break
+        except BaseException as error:
+            interrupted = interrupted or error
+    if interrupted is not None:
+        raise interrupted
+    return status
 
 
 def break_stale_index_lock(repo: Path) -> None:

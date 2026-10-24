@@ -34,6 +34,10 @@ COMMANDS: dict[str, str] = {
     "commit": "kb.commands.commit",
     "observe": "kb.commands.observe",
     "pending": "kb.commands.pending",
+    "session-append": "kb.commands.session_append",
+    "session-file": "kb.commands.session_file",
+    "session-flush": "kb.commands.session_flush",
+    "session-init": "kb.commands.session_init",
     "adapters/claude/session-end": "kb.commands.adapters.claude.session_end",
 }
 

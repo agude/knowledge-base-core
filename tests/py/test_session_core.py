@@ -591,16 +591,24 @@ def test_flush_keeps_buffer_when_observation_cannot_be_written(kb: KB) -> None:
 
 
 @pytest.mark.bats("session_core.bats", "session-flush keeps the buffer when jq is unavailable")
-def test_flush_without_jq(kb: KB, without_tools, golden: Golden) -> None:
+def test_flush_without_jq(kb: KB, without_tools) -> None:
+    """Without jq the buffer is never lost (A-043).
+
+    Bash needs jq to parse the buffer, so it fails and keeps the buffer
+    unchanged; Python needs no jq and flushes it. Either outcome is allowed.
+    """
     path, original = _rich_buffer(kb)
     without_tools("jq")
-    failed = kb.run("session-flush", str(path), env={"KNOWLEDGE_MIN_MESSAGES": "0"})
-    _check(kb, golden, failed, "failed")
-    assert path.read_bytes() == original
-    assert _pending(kb) == []
+    result = kb.run("session-flush", str(path), env={"KNOWLEDGE_MIN_MESSAGES": "0"})
+    if result.returncode == 0:
+        assert not path.exists()
+        (observation,) = _pending(kb)
+        assert _body(observation) == _expected_body(original)
+    else:
+        assert result.err.strip(), "a failing flush says why"
+        assert path.read_bytes() == original
+        assert _pending(kb) == []
     assert list(kb.layout.tmp.iterdir()) == []
-    # How the drop is logged is not a contract (A-004).
-    golden.check("syslog", kb.layout.syslog.read_text() if kb.layout.syslog.exists() else "none\n")
 
 
 def test_flush_after_jq_returns(kb: KB) -> None:

@@ -54,8 +54,11 @@ def violations(path: Path) -> list[str]:
             and (func.value.id, func.attr) in RESERVED
         ):
             found.append(f"{node.lineno}: calls {func.value.id}.{func.attr}")
+        # os.open returns a raw descriptor: no text, no encoding.
         is_open = (isinstance(func, ast.Name) and func.id == "open") or (
-            isinstance(func, ast.Attribute) and func.attr == "open"
+            isinstance(func, ast.Attribute)
+            and func.attr == "open"
+            and not (isinstance(func.value, ast.Name) and func.value.id == "os")
         )
         position = 1 if isinstance(func, ast.Name) else 0
         if is_open and not _binary_mode(node, position):
