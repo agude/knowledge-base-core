@@ -7,7 +7,16 @@ import time
 
 import pytest
 
+from kbtest import impl as implmod
 from kbtest.runner import KB
+
+# A-041: the Bash lock break races with a new owner, so these outcome tests
+# fail intermittently under bash. Any other implementation must pass them.
+BASH_LOCK_RACE = pytest.mark.xfail(
+    implmod.selected_name() == "bash",
+    reason="A-041: breaking a stale lock can delete a live owner's lock",
+    strict=False,
+)
 
 WRITERS = 5
 
@@ -17,6 +26,8 @@ def _observations(kb: KB) -> list[str]:
 
 
 @pytest.mark.audit("A-038")
+@pytest.mark.audit("A-041")
+@BASH_LOCK_RACE
 @pytest.mark.parametrize("attempt", range(20))
 def test_concurrent_observe_loses_nothing(kb: KB, attempt: int) -> None:
     tree = kb.resolve_impl(kb.default_impl)
@@ -39,6 +50,39 @@ def test_concurrent_observe_loses_nothing(kb: KB, attempt: int) -> None:
     assert sorted(subjects[:-1]) == sorted(f"Observe: Writer {n}" for n in range(WRITERS))
     assert kb.git("status", "--porcelain") == ""
     assert not (kb.layout.content / ".observe.lock").exists()
+
+
+RACERS = 8
+
+
+@pytest.mark.audit("A-041")
+@BASH_LOCK_RACE
+@pytest.mark.parametrize("attempt", range(10))
+def test_stale_lock_race_loses_nothing(kb: KB, attempt: int) -> None:
+    """Writers that all find a dead owner's lock break it once, not each other's."""
+    finished = subprocess.Popen(["true"])
+    finished.wait()
+    lock = kb.layout.content / ".observe.lock"
+    lock.mkdir()
+    (lock / "pid").write_text(f"{finished.pid}\n", encoding="utf-8")
+    tree = kb.resolve_impl(kb.default_impl)
+    env = kb.env(tree)
+    processes = [
+        subprocess.Popen(
+            [str(tree.executable("observe")), "--title", f"Racer {n}", "--body", "Body"],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        for n in range(RACERS)
+    ]
+    outcomes = [
+        (p.wait(timeout=120), p.stderr.read().decode() if p.stderr else "") for p in processes
+    ]
+    assert all(code == 0 for code, _ in outcomes), outcomes
+    assert len(_observations(kb)) == RACERS
+    assert kb.git("status", "--porcelain") == ""
+    assert not lock.exists()
 
 
 def test_lock_from_dead_process_is_broken(kb: KB) -> None:

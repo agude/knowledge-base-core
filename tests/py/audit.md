@@ -448,6 +448,28 @@ Expected: unknown. Probably print nothing.
 Class: undecided
 Decision:
 
+## A-041: breaking a stale lock can delete a live owner's lock
+
+Script: `_lib.sh` (`acquire_lock`; every writer)
+Test: `test_concurrency.py::test_stale_lock_race_loses_nothing`,
+`test_concurrency.py::test_concurrent_observe_loses_nothing`
+Observed: a waiter reads the owner's pid from `.observe.lock/pid`, then
+checks it with `kill -0`, then runs `rm -rf .observe.lock`. When the owner
+exits between the read and the check and a second waiter takes the lock in
+that window, the first waiter deletes the second waiter's live lock. Two
+writers then run git together: one fails with `fatal: Unable to create
+'.git/index.lock'` (exit 128), or `echo $$ > pidfile` fails with `No such
+file or directory` and the writer proceeds without a lock. With a stale
+lock and 8 concurrent `observe` runs, 14 of 40 runs failed (2026-10-24).
+Without a stale lock it needs load: 1 failure in the 20 five-writer runs of
+one full parallel suite run, 0 in 200 runs alone. Both tests are non-strict
+`xfail` under bash.
+Expected: every writer commits; a lock is broken only if it still holds
+the pid that was found dead (for example, rename the lock away atomically
+and recheck).
+Class: undecided
+Decision:
+
 ## Coverage note (plan item 1b.11)
 
 kcov is not installed on the development host or in CI, so no line-coverage
