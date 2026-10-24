@@ -11,6 +11,7 @@ import pytest
 
 from kbtest.golden import Golden
 from kbtest.inspect import git_log, tree
+from kbtest.marks import xfail_bash
 from kbtest.runner import KB, Result
 
 LEGACY_BROKEN_LINK = """---
@@ -59,7 +60,6 @@ def _check(kb: KB, golden: Golden, result: Result) -> None:
 
 @pytest.mark.bats("archive.bats", "archive moves file from pending to archived")
 @pytest.mark.bats("archive.bats", "archive preserves file content")
-@pytest.mark.audit("A-011")
 def test_archive_one(kb: KB, golden: Golden) -> None:
     _seed(kb, "obs1.md")
     _check(kb, golden, kb.run("archive", "obs1.md", "--no-commit"))
@@ -120,7 +120,7 @@ def test_archive_existing_destination(kb: KB, golden: Golden) -> None:
     _check(kb, golden, kb.run("archive", "a.md", "--no-commit"))
 
 
-@pytest.mark.audit("A-012")
+@xfail_bash("A-012: bash skips the metadata or writes it into the body")
 def test_archive_without_front_matter(kb: KB, golden: Golden) -> None:
     pending = kb.layout.content / "observations" / "pending"
     (pending / "plain.md").write_text("Plain body.\n", encoding="utf-8")

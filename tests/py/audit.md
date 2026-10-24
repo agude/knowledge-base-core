@@ -186,8 +186,11 @@ preserved"; the code rewrites the file and uses plain `mv`, and the
 commit records an add and a delete (or a rename only when git detects
 one).
 Expected: the header matches the code.
-Class: undecided
-Decision:
+Class: intended
+Decision: archive must rewrite the file to add its metadata, so a
+byte-preserving `git mv` cannot apply; git records a rename when the
+similarity is high enough. Only the header text is stale. Python's header
+describes the rewrite. Bash is left unchanged; audit mark removed.
 
 ## A-012: archive metadata placement depends on a `---` line
 
@@ -196,10 +199,16 @@ Observed: archive inserts `disposition:` and `original_sha256:` before the
 first `---` line after line 1. An observation without front matter gets no
 metadata. One without front matter whose body has a `---` thematic break
 gets the metadata inserted into the body, before the break.
-Expected: unknown. Probably add front matter, or leave such files
-unchanged.
-Class: undecided
-Decision:
+Expected: an observation without front matter gets a new front-matter
+block holding only `disposition:` and `original_sha256:`, then a blank line
+and the original bytes unchanged.
+Class: bug
+Decision: `search` and `section` read `disposition` from archived front
+matter as provenance, so a missing block loses it and a block inserted into
+the body corrupts the observation. The contract goldens for both files now
+hold the expected output; the test is a strict `xfail` under bash. Pending
+observations come from `observe` and `session-flush`, which always write
+front matter, so bash is not fixed.
 
 ## A-013: questions --path matches string prefixes, not path segments
 
