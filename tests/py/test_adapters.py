@@ -60,6 +60,11 @@ def test_buffer_creation_failure(kb: KB, golden: Golden, client: str) -> None:
         )
         for event in ("prompt", "stop")
     ]
+    for result in results:
+        # Enabled capture that cannot create its buffer fails visibly.
+        assert result.returncode != 0 and result.err.strip()
+        # Codex reads a JSON object from every hook's stdout; Claude reads nothing.
+        assert result.out == ("{}\n" if client == "codex" else "")
     golden.check("results", _summary(kb, *results).replace(str(blocked), "<BLOCKED>"))
     assert blocked.read_text(encoding="utf-8") == "retain this file\n"
 
