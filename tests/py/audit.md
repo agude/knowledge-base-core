@@ -457,7 +457,8 @@ Class: accidental (unused)
 Decision: the message is for a person or agent to read; no caller parses
 it, and the exit code and the absence of a question file are the contract.
 Python prints the matches in code-point order (A-005) and omits the
-trailing `Not found:` line. The test already sorts the match lines and
+trailing `Not found:` line, after an ambiguous match and after a refusal
+alike: each failure prints one message. The test already sorts the match lines and
 compares stderr through a reference golden; audit mark removed. Commit 35c7fb9.
 
 ## A-030: an option takes the next word even when it is another option
@@ -688,6 +689,8 @@ is ticked (plan step 4).
 | Test | Golden | Unit | Reason |
 |---|---|---|---|
 | `test_help.py::test_help[archive]` | stdout | 4.2 | A-011 header; A-001 example names |
+| `test_help.py::test_help[questions]`, `[resolve]` | stdout | 4.5 | A-001 example names |
+| `test_lib.py::test_context_resolution[ambiguous]`, `[symlink-out]` | stderr | 4.5 | A-029: one message per failure |
 
 ## null_ok review (plan item 2.3)
 

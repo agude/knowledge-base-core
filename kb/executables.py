@@ -26,6 +26,9 @@ EXECUTABLES = ROOT / "python"
 
 # Executable path under python/ -> the module whose main(argv) it runs.
 COMMANDS: dict[str, str] = {
+    "ask": "kb.commands.ask",
+    "questions": "kb.commands.questions",
+    "resolve": "kb.commands.resolve",
     "archive": "kb.commands.archive",
     "commit": "kb.commands.commit",
     "observe": "kb.commands.observe",
