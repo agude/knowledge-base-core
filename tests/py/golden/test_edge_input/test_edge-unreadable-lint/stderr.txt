@@ -1,1 +1,0 @@
-<KB>/scripts/lint: line 469: <CONTENT>/knowledge/locked.md: Permission denied

@@ -1,3 +1,0 @@
-  error    knowledge/locked.md:1  frontmatter missing title
-  error    knowledge/locked.md:1  frontmatter missing updated
-  error    knowledge/locked.md:1  frontmatter missing verified

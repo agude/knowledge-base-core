@@ -554,10 +554,15 @@ Test: `test_edge_input.py::test_edge` (case `empty`)
 Observed: with no `knowledge/` directory, `toc`, `stale`, and `lint` exit 1
 with `Not found: <content>/knowledge`; `search`, `pending`, `status`,
 `context`, and `session-context` treat it as empty and exit 0.
-Expected: one behavior. An empty knowledge base is a normal state after
-`init`.
-Class: undecided
-Decision:
+Expected: a missing `knowledge/` is an empty knowledge base for every
+command.
+Class: bug
+Decision: `init` creates the directory, but a fresh clone of a content
+repository with no articles has no `knowledge/` (git does not track empty
+directories without a `.gitkeep`), and five of eight commands already treat
+it as empty. The `empty` cases of `toc`, `stale`, and `lint` now expect
+exactly the output bash gives for an empty `knowledge/` directory (exit 0),
+and are strict `xfail` under bash. Bash is not fixed.
 
 ## A-036: one unreadable article breaks or garbles reading commands
 
@@ -567,9 +572,17 @@ Observed: with one article at mode 000, `search` fails as a whole (`Search
 failed while reading the selected corpus`, exit 1) and returns none of the
 readable matches; `toc`, `context`, and `lint` print raw Bash errors with
 script line numbers (`scripts/toc: line 168: ...: Permission denied`).
-Expected: unknown. Probably skip the file with one clear warning.
-Class: undecided
-Decision:
+Expected: every reading command skips the unreadable article, names it
+once on stderr, and processes the rest; `lint` also counts it as an error
+and exits 1. No command prints a shell or awk diagnostic.
+Class: bug
+Decision: one bad file must not hide the readable ones, and `stale` must
+not report an article it could not read as undated. `test_edge` now asserts
+that no case prints a shell diagnostic, and for the `unreadable` case of
+`search`, `toc`, `stale`, `context`, and `lint` it asserts the rule above in
+place of goldens (whose expected bytes no implementation has produced
+yet). Those five cases are strict `xfail` under bash. Bash is not fixed:
+articles are written by the curator and are readable in practice.
 
 ## A-037: a lock directory without a pid file is never broken
 

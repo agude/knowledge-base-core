@@ -1,2 +1,0 @@
-awk: cmd. line:192: fatal: cannot open file `<CONTENT>/knowledge/locked.md' for reading: Permission denied
-Search failed while reading the selected content.

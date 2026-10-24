@@ -1,2 +1,2 @@
-stdout empty
-totals none
+stdout present
+totals No stale articles

@@ -1,3 +1,0 @@
-stdout present
-knowledge/locked.md no verified
-totals 0 stale, 1 missing date

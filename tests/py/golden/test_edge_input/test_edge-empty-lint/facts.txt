@@ -1,2 +1,2 @@
-stdout empty
-none
+stdout present
+0 file(s): 0 error(s), 0 warning(s)

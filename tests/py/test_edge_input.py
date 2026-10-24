@@ -17,6 +17,7 @@ import pytest
 
 from kbtest import facts
 from kbtest.golden import Golden
+from kbtest.marks import xfail_bash
 from kbtest.runner import KB, Result
 
 ARTICLE = '---\ntitle: "{title}"\nupdated: 2026-10-20\nverified: 2026-10-20\n---\n\n# {title}\n\n## Section\n\n{body}\n'
@@ -132,10 +133,52 @@ COMMANDS: dict[str, tuple[Callable[[KB], list[str]], Callable[[KB, Result], str]
 }
 
 
-@pytest.mark.audit("A-035")
-@pytest.mark.audit("A-036")
-@pytest.mark.parametrize("command", sorted(COMMANDS))
-@pytest.mark.parametrize("case", sorted(CASES))
+# A shell or awk error with a script location, rather than a message.
+RAW_ERROR = re.compile(r": line \d+: |^awk: ", re.MULTILINE)
+LOCKED = "knowledge/locked.md"
+
+
+def _unreadable_skipped(kb: KB, result: Result) -> None:
+    """The unreadable article is skipped with a warning naming it (A-036)."""
+    assert result.err.count(LOCKED) == 1, result.err
+    if result.script == "search":
+        assert result.returncode == 0
+        assert [r["path"] for r in json.loads(result.out)["results"]] == ["knowledge/ok.md"]
+    elif result.script == "lint":
+        assert result.returncode == 1, "an unreadable article is a lint error"
+    else:
+        assert result.returncode == 0
+        assert LOCKED not in result.out
+        if result.script == "toc":
+            assert "knowledge/ok.md" in result.out
+
+
+# Commands whose expected outcome bash does not reach. With a missing
+# knowledge directory, the expected goldens are those of an empty one
+# (A-035); with an unreadable article, _unreadable_skipped holds the
+# expectation and the goldens are not used (A-036).
+MISSING_AS_EMPTY = {"toc", "stale", "lint"}
+SKIPS_UNREADABLE = {"search", "toc", "stale", "context", "lint"}
+
+
+def _edge_params() -> list[object]:
+    params = []
+    for case in sorted(CASES):
+        for command in sorted(COMMANDS):
+            marks = []
+            if case == "empty" and command in MISSING_AS_EMPTY:
+                marks = [xfail_bash("A-035: bash fails on a missing knowledge directory")]
+                if command == "toc":
+                    marks.append(
+                        pytest.mark.null_ok("toc of an empty knowledge base prints nothing")
+                    )
+            elif case == "unreadable" and command in SKIPS_UNREADABLE:
+                marks = [xfail_bash("A-036: bash fails or misreports on an unreadable article")]
+            params.append(pytest.param(case, command, marks=marks, id=f"{case}-{command}"))
+    return params
+
+
+@pytest.mark.parametrize(("case", "command"), _edge_params())
 def test_edge(kb: KB, golden: Golden, case: str, command: str) -> None:
     if case == "unreadable" and os.geteuid() == 0:
         pytest.skip("root reads files regardless of mode")
@@ -151,6 +194,10 @@ def test_edge(kb: KB, golden: Golden, case: str, command: str) -> None:
         ):
             if not path.is_symlink():
                 path.chmod(0o755 if path.is_dir() else 0o644)
+    assert not RAW_ERROR.search(result.err), "errors are messages, not shell diagnostics"
+    if case == "unreadable" and command in SKIPS_UNREADABLE:
+        _unreadable_skipped(kb, result)
+        return
     golden.contract("result", f"exit {result.returncode}\n")
     # An empty report and silence are different results.
     reported = f"stdout {'present' if result.out.strip() else 'empty'}\n"
