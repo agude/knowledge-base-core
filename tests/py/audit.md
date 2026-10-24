@@ -88,7 +88,7 @@ reference.
 ## A-005: output order follows the user's collation
 
 Scripts: `toc`, `stale`, `pending`, `archive`, `questions`, `lint`
-Test: `test_locale.py::test_order_follows_collation`
+Test: `test_locale.py::test_order_is_code_point`
 Observed: 12 `sort -z`/`sort -V` calls run without `LC_ALL=C`, so output
 order depends on the locale. Python's `sorted()` uses code-point order.
 Articles or observations named `B`, `_x`, `a-c`, `a`, `ab` list in that
@@ -98,8 +98,17 @@ in both `toc` and `pending`. The full suite under
 other golden difference: its file names are lowercase, date-stamped, and
 order the same under both collations.
 Expected: one canonical order.
-Class: undecided
-Decision:
+Class: platform artifact
+Decision: file lists are in code-point order of their paths under every
+locale, the order C.UTF-8 gives today and Python's `sorted()` gives on
+`str`. `test_order_is_code_point` asserts it for `toc` and `pending` under
+both locales; the en_US case is a strict `xfail` under bash. The two
+`sort -V` calls in `stale` and `lint` order section locators numerically,
+which is not collation, and Python keeps that version order. Bash is not
+changed, although the difference is live: dirac runs agent sessions under
+`LANG=en_US.UTF-8`, and kebab-case article names that share a prefix
+(`home-x.md`, `home.md`, `homey.md`) list in a different order there. Only
+listing order changes; no reader depends on it.
 
 ## A-006: install reports removing skill links it recreates
 

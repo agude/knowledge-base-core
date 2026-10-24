@@ -1,8 +1,9 @@
-"""Output order under the C and en_US collations (A-005).
+"""File lists are in code-point order under every locale (A-005).
 
-The scripts sort file lists with `sort -z` under the caller's locale. These
-names order differently under C (byte order) and en_US (punctuation and
-case ignored at the first level).
+The Bash scripts sort file lists with `sort -z` under the caller's locale,
+so these names order differently under C (code-point order) and en_US
+(punctuation and case ignored at the first level). The audit chose
+code-point order of the file names everywhere.
 """
 
 from __future__ import annotations
@@ -11,11 +12,16 @@ import subprocess
 
 import pytest
 
-from kbtest.golden import Golden
+from kbtest.marks import xfail_bash
 from kbtest.runner import KB
 
 NAMES = ("B", "_x", "a-c", "a", "ab")
-LOCALES = ("C.UTF-8", "en_US.UTF-8")
+LOCALES = (
+    "C.UTF-8",
+    pytest.param(
+        "en_US.UTF-8", marks=xfail_bash("A-005: bash sorts file lists in the caller's collation")
+    ),
+)
 
 
 def _available(locale: str) -> bool:
@@ -30,10 +36,9 @@ def _order(text: str, words: list[str]) -> list[str]:
     return sorted(words, key=positions.__getitem__)
 
 
-@pytest.mark.audit("A-005")
 @pytest.mark.parametrize("locale", LOCALES)
 @pytest.mark.parametrize("script", ["toc", "pending"])
-def test_order_follows_collation(kb: KB, golden: Golden, script: str, locale: str) -> None:
+def test_order_is_code_point(kb: KB, script: str, locale: str) -> None:
     if not _available(locale):
         pytest.skip(f"locale {locale} is not installed")
     for name in NAMES:
@@ -43,5 +48,5 @@ def test_order_follows_collation(kb: KB, golden: Golden, script: str, locale: st
             kb.create_observation(f"{name}.md", f"Title {name}", "Body")
     result = kb.run(script, env={"LANG": locale, "LC_ALL": locale})
     assert result.returncode == 0, result.err
-    order = _order(result.out, [f"Title {name}" for name in NAMES])
-    golden.check("order", "".join(f"{title}\n" for title in order))
+    expected = [f"Title {name}" for name in sorted(NAMES, key=lambda name: f"{name}.md")]
+    assert _order(result.out, [f"Title {name}" for name in NAMES]) == expected
