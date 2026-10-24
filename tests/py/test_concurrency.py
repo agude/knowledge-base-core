@@ -7,15 +7,13 @@ import time
 
 import pytest
 
-from kbtest import impl as implmod
+from kbtest.marks import xfail_bash
 from kbtest.runner import KB
 
 # A-041: the Bash lock break races with a new owner, so these outcome tests
 # fail intermittently under bash. Any other implementation must pass them.
-BASH_LOCK_RACE = pytest.mark.xfail(
-    implmod.selected_name() == "bash",
-    reason="A-041: breaking a stale lock can delete a live owner's lock",
-    strict=False,
+BASH_LOCK_RACE = xfail_bash(
+    "A-041: breaking a stale lock can delete a live owner's lock", strict=False
 )
 
 WRITERS = 5

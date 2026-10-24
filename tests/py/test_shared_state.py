@@ -14,7 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from kbtest.golden import Golden
+from kbtest.golden import Golden, directory_for
+from kbtest.marks import xfail_bash
 from kbtest.runner import KB
 
 # A message with every awkward byte: controls, DEL, invalid UTF-8, a quote,
@@ -75,9 +76,26 @@ def test_lock_released_on_signal(kb: KB) -> None:
     assert not (kb.layout.content / ".observe.lock").exists(), "released on signal"
 
 
-@pytest.mark.audit("A-002")
-@pytest.mark.parametrize("configuration", ["jq", "no-jq"])
+@pytest.mark.parametrize(
+    "configuration",
+    [
+        "jq",
+        pytest.param(
+            "no-jq",
+            marks=xfail_bash("A-002: without jq, bash writes raw bytes and integer timestamps"),
+        ),
+    ],
+)
 def test_buffer_bytes(kb: KB, without_tools, golden: Golden, configuration: str) -> None:
+    """One buffer format, strict JSON, whether or not jq is installed (A-002)."""
+    # Both configurations compare against one contract, recorded from jq.
+    golden = Golden(
+        directory_for("test_shared_state", "buffer_format"),
+        update=golden.update and configuration == "jq",
+        mode=golden.mode,
+        report=golden.report,
+        nodeid=golden.nodeid,
+    )
     if configuration == "no-jq":
         without_tools("jq")
     session_id = kb.session_id()

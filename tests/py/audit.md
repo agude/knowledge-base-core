@@ -29,15 +29,24 @@ so no test changes.
 
 ## A-002: session-append writes two buffer formats
 
-Script: `session-append`  Test: (1c.2)
+Script: `session-append`
+Test: `test_shared_state.py::test_buffer_bytes`,
+`test_shared_state.py::test_buffer_round_trips_through_flush`,
+`test_mixed.py::test_jq_free_buffer_is_flushed_intact`
 Observed: with jq on `PATH`, DEL is escaped as `\u007f`, invalid UTF-8 is
 replaced with U+FFFD, and the timestamp is a float. Without jq, DEL and
 invalid bytes are written raw (not strict JSON) and the timestamp is an
 integer.
-Expected: unknown. Decide which format Python writes, and confirm that the
-reader accepts both.
-Class: undecided
-Decision:
+Expected: one format, the jq one, in every configuration.
+Class: platform artifact
+Decision: Python writes the jq format whether or not jq is installed:
+strict JSON, `\u007f` for DEL, U+FFFD for invalid UTF-8, and a float
+timestamp. Both configurations of `test_buffer_bytes` now compare against
+one contract golden (`golden/test_shared_state/buffer_format`), and the
+no-jq case is a strict `xfail` under bash. The reader accepts both formats,
+because buffers written by bash without jq survive an upgrade: the
+round-trip and mixed tests pin that a raw-byte buffer flushes without losing
+its messages. Bash is not changed.
 
 ## A-003: stale index-lock breaking depends on pgrep
 
