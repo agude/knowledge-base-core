@@ -28,7 +28,7 @@ class Headings:
         self.fence_char = ""
         self.fence_len = 0
 
-    def _fence(self, line: str) -> bool:
+    def track_fence(self, line: str) -> bool:
         """Update fence state; True if the line is a fence delimiter."""
         match = FENCE.fullmatch(line)
         if match is None:
@@ -47,7 +47,7 @@ class Headings:
         return True
 
     def heading(self, line: str) -> Heading | None:
-        if self._fence(line) or self.fence_char:
+        if self.track_fence(line) or self.fence_char:
             return None
         match = HEADING.match(line)
         if match is None:

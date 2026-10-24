@@ -720,6 +720,8 @@ is ticked (plan step 4).
 | `test_session_core.py::test_append_unwritable_buffer` | stderr | 4.7 | a message, not a shell diagnostic (as A-036) |
 | `test_session_core.py::test_flush_min_messages[x]` | stderr | 4.7 | a message, not a shell diagnostic (as A-036) |
 | `test_session_core.py::test_flush_threshold[2]` | syslog | 4.7 | A-004: syslog(3), not the logger stub |
+| `section --json` output in `test_section.py`, `test_edge_input.py`, `test_retrieval_fixtures.py` | stdout, transcript | 4.11 | A-033: compact JSON (only the `field_scopes` spaces differ) |
+| `section --json --max-bytes` in `test_section.py` | value, stdout, stderr | 4.11 | A-033: budgets count Python's bytes, so a line more can fit and the reported sizes differ |
 
 ## null_ok review (plan item 2.3)
 

@@ -75,6 +75,34 @@ def _check(kb: KB, golden: Golden, result: Result, name: str = "") -> None:
     golden.check(f"{prefix}stderr", kb.norm_err(result.err))
 
 
+MARKER = TRUNCATED_MARKER + "\n"
+
+
+def _check_json_budget(
+    kb: KB, golden: Golden, result: Result, full: Result, cap: int, name: str = ""
+) -> None:
+    """A budgeted JSON section: the budget invariants are contract, which lines fit is not.
+
+    Which lines fit depends on the envelope's exact bytes, which audit A-033
+    leaves to the implementation.
+    """
+    prefix = f"{name}-" if name else ""
+    golden.contract(f"{prefix}result", f"exit {result.returncode}\n")
+    assert len(result.stdout) <= cap
+    data, whole = json.loads(result.out), json.loads(full.out)
+    content, body = data.pop("content"), whole.pop("content")
+    assert content.endswith(MARKER)
+    kept = content.removesuffix(MARKER)
+    assert body.startswith(kept) and (not kept or kept.endswith("\n")), "cut at a line boundary"
+    assert data.pop("content_truncated") is True
+    assert data.pop("max_bytes") == cap
+    assert data.pop("omitted_content_bytes") == len(body.encode()) - len(kept.encode())
+    assert data == whole, "everything but the content is unchanged"
+    golden.check(f"{prefix}value", kb.norm(_value(result)))
+    golden.check(f"{prefix}stdout", kb.norm(result.out))
+    golden.check(f"{prefix}stderr", kb.norm_err(result.err))
+
+
 def _section(kb: KB, *args: str, env: dict[str, str | None] | None = None) -> Result:
     return kb.run("section", *args, env=env)
 
@@ -338,11 +366,9 @@ def test_json_budget_serializes_candidates(kb: KB, golden: Golden) -> None:
         "a.md",
         f'---\ntitle: "Budget"\nverified: 2026-10-03\n---\n\n# Budget\n\n## Evidence\n\n{body}',
     )
-    result = _section(
-        kb, "--json", "--max-bytes", "751", "--file", "knowledge/a.md", "--number", "1"
-    )
-    assert len(result.stdout) <= 751
-    _check(kb, golden, result)
+    args = ["--json", "--file", "knowledge/a.md", "--number", "1"]
+    result = _section(kb, "--max-bytes", "751", *args)
+    _check_json_budget(kb, golden, result, _section(kb, *args), 751)
 
 
 @pytest.mark.bats("section.bats", "section text-only byte budgets signal truncation")
@@ -458,7 +484,10 @@ def test_exact_and_short_budgets(kb: KB, golden: Golden, mode: list[str]) -> Non
     short = _section(kb, *mode, "--max-bytes", str(short_cap), *args)
     assert short.returncode == 0
     assert len(short.stdout) <= short_cap
-    _check(kb, golden, short, "short")
+    if "--json" in mode:
+        _check_json_budget(kb, golden, short, full, short_cap, "short")
+    else:
+        _check(kb, golden, short, "short")
 
 
 @pytest.mark.bats(

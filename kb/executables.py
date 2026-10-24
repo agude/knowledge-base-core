@@ -31,6 +31,7 @@ COMMANDS: dict[str, str] = {
     "batch": "kb.commands.batch",
     "questions": "kb.commands.questions",
     "resolve": "kb.commands.resolve",
+    "section": "kb.commands.section",
     "archive": "kb.commands.archive",
     "commit": "kb.commands.commit",
     "observe": "kb.commands.observe",
