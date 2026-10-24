@@ -15,6 +15,7 @@ import pytest
 
 from kbtest.golden import Golden
 from kbtest.inspect import git as inspect_git
+from kbtest.marks import xfail_bash
 from kbtest.runner import KB, Result
 
 TWO_HOURS = 7200
@@ -480,10 +481,11 @@ def test_flush_missing_file(kb: KB) -> None:
     assert _pending(kb) == []
 
 
-@pytest.mark.audit("A-032")
-@pytest.mark.null_ok("session-flush with no argument exits 0 silently (A-032)")
+@xfail_bash("A-032: bash's session-flush exits 0 silently without a buffer argument")
 def test_flush_without_argument(kb: KB, golden: Golden) -> None:
-    _check(kb, golden, kb.run("session-flush"))
+    result = kb.run("session-flush")
+    assert result.err.strip(), "a usage error says why"
+    _check(kb, golden, result)
 
 
 @pytest.mark.bats("session_core.bats", "session-flush runs without KB_CONTENT_DIR")
@@ -648,20 +650,20 @@ def test_flush_interrupted_while_blocked(kb: KB, golden: Golden, signum: int) ->
     assert list(kb.layout.tmp.iterdir()) == []
 
 
-@pytest.mark.audit("A-031")
 def test_flush_signal_to_process_only(kb: KB, golden: Golden) -> None:
-    """A signal to session-flush alone takes effect only after its child gives up."""
+    """A signal to session-flush alone, not its group, still keeps the buffer.
+
+    Bash acts on it only after the blocked child gives up (A-031); when it
+    takes effect is not part of the contract.
+    """
     path, original = _rich_buffer(kb)
     with kb.hold_lock():
         process = _blocked_flush(kb, path, "3")
-        start = time.monotonic()
         process.send_signal(signal.SIGTERM)
         stdout, stderr = process.communicate(timeout=30)
-        elapsed = time.monotonic() - start
     golden.contract("result", f"exit {process.returncode}\n")
     golden.check("stdout", kb.norm(stdout.decode()))
     golden.check("stderr", kb.norm_err(_without_job_messages(stderr.decode())))
-    golden.contract("deferred", f"deferred {elapsed >= 1}\n")
     assert path.read_bytes() == original
     assert _pending(kb) == []
 

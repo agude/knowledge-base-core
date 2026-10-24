@@ -1,0 +1,1 @@
+Usage: session-flush [--preserve-initialization] <session-file>

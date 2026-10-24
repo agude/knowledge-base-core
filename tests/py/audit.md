@@ -468,16 +468,37 @@ and `--answer`.
 Class: undecided
 Decision:
 
+## A-031: a signal to session-flush alone waits for its child
+
+Script: `session-flush`
+Test: `test_session_core.py::test_flush_signal_to_process_only`
+Observed: SIGTERM sent to the `session-flush` process only, not its process
+group, while its `observe` child waits for a held lock, takes effect only
+when the child gives up (`KNOWLEDGE_LOCK_WAIT`, 3 s in the test). Bash runs
+a trap only after the foreground child exits. The flush then exits 130,
+prints `session-flush: interrupted, keeping <buffer>`, and keeps the buffer.
+(Entry written in step 2; commit 3b1244d named it but did not add it.)
+Expected: the outcome as observed; when the signal takes effect is free.
+Class: bash-only
+Decision: the delay is how Bash defers traps, not a designed behavior.
+Python acts on the signal when it arrives. The test keeps the exit-code
+contract and the kept-buffer and no-observation assertions, and drops the
+`deferred` contract golden; audit mark removed.
+
 ## A-032: session-flush with no buffer argument exits 0 silently
 
 Script: `session-flush`  Test: `test_session_core.py::test_flush_without_argument`
 Observed: `session-flush` with no arguments prints nothing and exits 0, the
 same as for a buffer that does not exist. Other commands reject a missing
 required argument with a usage error.
-Expected: unknown. A missing argument is a caller bug; a missing buffer is
-a normal race with the orphan sweep.
-Class: undecided
-Decision:
+Expected: a missing argument is a usage error (exit 1, usage on stderr); a
+missing buffer stays a silent exit 0, because it is a normal race with the
+orphan sweep.
+Class: bug
+Decision: every caller (the adapters and the orphan sweep) passes a path,
+so a missing argument is a caller bug that should be visible. The test now
+expects exit 1 and a message, is a strict `xfail` under bash, and loses its
+`null_ok` mark. The missing-buffer case is unchanged. Bash is not fixed.
 
 ## A-033: search and section JSON has irregular whitespace
 
