@@ -1,0 +1,1 @@
+session-append: --role must be 'user' or 'assistant', got 'system'

@@ -1,0 +1,1 @@
+session-append: use only one of --file or --session-id

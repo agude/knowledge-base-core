@@ -332,3 +332,14 @@ Expected: unknown. Values that begin with `--` are legitimate for `--body`
 and `--answer`.
 Class: undecided
 Decision:
+
+## A-032: session-flush with no buffer argument exits 0 silently
+
+Script: `session-flush`  Test: `test_session_core.py::test_flush_without_argument`
+Observed: `session-flush` with no arguments prints nothing and exits 0, the
+same as for a buffer that does not exist. Other commands reject a missing
+required argument with a usage error.
+Expected: unknown. A missing argument is a caller bug; a missing buffer is
+a normal race with the orphan sweep.
+Class: undecided
+Decision:

@@ -1,0 +1,1 @@
+session-append: --message may be specified only once

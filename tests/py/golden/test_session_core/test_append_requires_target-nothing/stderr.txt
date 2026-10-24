@@ -1,0 +1,1 @@
+session-append: --file or --session-id is required

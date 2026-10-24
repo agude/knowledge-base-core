@@ -1,0 +1,1 @@
+session-flush: observe failed, keeping <ROOT>/run/knowledge-sessions/buffer.jsonl

@@ -23,3 +23,7 @@ allocation, or a `_lib.sh` function that no executable exposes. See
 | `lib.bats` | retrieval loads article state once before lazy section parsing | Tests the Bash cache's laziness by stubbing internal functions. |
 | `lib.bats` | article cache preserves interleaved question and archive provenance | Tests the Bash cache's internal variables. Provenance is pinned through `search` and `section` output. |
 | `section.bats` | section text budgets clean scratch files after finalizer write failures | Injects a `cp` failure into the Bash budget finalizer. Scratch cleanup after normal truncated runs is pinned by `test_section.py::test_text_budget_truncates_and_cleans_up`. |
+| `session_core.bats` | session-append does not append when od is missing | Removes `od`, which only the Bash JSON encoder uses. |
+| `session_core.bats` | session-append does not append partial output from a failing od | Injects an `od` failure into the Bash JSON encoder. |
+| `session_core.bats` | session-flush keeps the buffer when interrupted during observation writing | Stubs `cat` to pause inside the Bash observation writer. Interruption is pinned by `test_flush_interrupted_while_blocked` and `test_flush_interrupted_during_commit`. |
+| `session_core.bats` | session-flush retains evidence when the observation body copy fails | Stubs `cat` to fail inside the Bash observation writer. |

@@ -1,0 +1,1 @@
+session-init: --session-id is required

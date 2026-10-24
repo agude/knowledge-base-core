@@ -1,0 +1,23 @@
+## <OBS-1>.md
+---
+title: "Session transcript (3 messages)"
+source: session-transcript
+created: <TIMESTAMP>
+---
+
+### user
+
+Q1
+
+
+### assistant
+
+A1
+
+
+### user
+
+Q2
+
+
+
