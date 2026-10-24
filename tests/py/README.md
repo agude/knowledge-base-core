@@ -60,6 +60,7 @@ inherited.
 |---|---|
 | `kb` | A fresh content repository and `run()` for the selected implementation. |
 | `no_jq` | `kb` with `jq` absent. |
+| `without_tools` | A function: `without_tools("tree")` removes the named tools from `PATH` for `kb`, for host-dependent behavior such as an optional utility. |
 | `hooked` | `kb` with the implementation's `hooks/pre-commit` installed in the content repository. It also normalizes the real UTC date to `<TODAY>`, because the hook stamps `updated:` with it. |
 | `golden` | Golden-file checks for the current test. |
 

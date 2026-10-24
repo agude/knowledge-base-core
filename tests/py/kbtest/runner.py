@@ -63,10 +63,18 @@ class KB:
         self.normalizer.add_path(self.layout.root, "<ROOT>")
         self._init_content()
 
-    def without_jq(self, mirror: Path) -> None:
-        """Run every later command with jq absent, a production configuration."""
-        (self.layout.bin / "jq").unlink()
-        self.system_path = str(envmod.system_bin_without(mirror, frozenset({"jq"})))
+    def without_tools(self, names: frozenset[str], mirror_root: Path) -> None:
+        """Run every later command with the named tools absent from PATH.
+
+        mirror_root holds one mirror of the system directories per set of
+        names, shared across tests.
+        """
+        for name in names:
+            link = self.layout.bin / name
+            if link.is_symlink() or link.exists():
+                link.unlink()
+        mirror = mirror_root / ("without-" + "-".join(sorted(names)))
+        self.system_path = str(envmod.system_bin_without(mirror, names))
 
     def _init_content(self) -> None:
         content = self.layout.content

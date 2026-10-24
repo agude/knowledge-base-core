@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -73,8 +73,8 @@ def _impl_scratch(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture(scope="session")
-def _no_jq_mirror(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    return tmp_path_factory.mktemp("sysbin") / "without-jq"
+def _mirror_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    return tmp_path_factory.mktemp("sysbin")
 
 
 @pytest.fixture
@@ -102,10 +102,20 @@ def kb(
 
 
 @pytest.fixture
-def no_jq(kb: KB, _no_jq_mirror: Path) -> KB:
+def without_tools(kb: KB, _mirror_root: Path) -> Callable[..., KB]:
+    """Return a function that removes the named tools from PATH for kb."""
+
+    def remove(*names: str) -> KB:
+        kb.without_tools(frozenset(names), _mirror_root)
+        return kb
+
+    return remove
+
+
+@pytest.fixture
+def no_jq(without_tools: Callable[..., KB]) -> KB:
     """The kb fixture with jq absent. jq is optional in production."""
-    kb.without_jq(_no_jq_mirror)
-    return kb
+    return without_tools("jq")
 
 
 @pytest.fixture
