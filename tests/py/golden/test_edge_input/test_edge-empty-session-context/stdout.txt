@@ -3,4 +3,6 @@
 ## Topic areas (auto-generated)
 
 
-State: 0 articles | 0 pending | ? stale | 0 open question(s)
+  0 articles. Drill in with: toc --path <area>
+
+State: 0 articles | 0 pending | 0 stale | 0 open question(s)

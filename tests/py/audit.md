@@ -700,7 +700,9 @@ it exits 1 with `could not parse <buffer>` and keeps the buffer.
 Expected: the buffer is never lost; whether jq is needed is the
 implementation's business.
 Class: bash-only
-Decision: Python parses the buffer itself. The test now accepts either a
+Decision: Python parses the buffer itself, and its adapters read hook JSON
+themselves, so `test_session_start_without_jq` no longer asserts that
+capture is skipped. The test now accepts either a
 flush into one committed observation or a failure that keeps the buffer
 unchanged with a message, and its contract goldens are removed (found in
 unit 4.7).
@@ -726,6 +728,9 @@ is ticked (plan step 4).
 | `search --json --max-bytes` in `test_search.py` | transcript | 4.12 | A-033: budgets and reported sizes count Python's bytes |
 | `context` stdout in `test_status_context.py`, `test_edge_input.py`, `test_state.py` | stdout | 4.13 | A-016: the fixed Scripts list (only that line differs) |
 | `test_help.py::test_help[stale]` | stdout | 4.13 | A-024 header |
+| `test_adapters.py::test_buffer_creation_failure` | results | 4.8 | A-021: one append attempt, one message |
+| `test_session_flow.py::test_session_end_flushes` | results | 4.8 | A-040: Claude SessionEnd prints nothing |
+| `test_session_flow.py::test_session_end_drops_one_exchange` | syslog | 4.8 | A-004 |
 
 ## null_ok review (plan item 2.3)
 

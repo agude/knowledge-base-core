@@ -85,8 +85,9 @@ def test_session_start_content_claude_md(kb: KB, golden: Golden) -> None:
 def test_session_start_without_jq(no_jq: KB, golden: Golden) -> None:
     no_jq.create_article("infra/networking.md", "# Networking\n\n## DNS\n\nContent.")
     session_id = no_jq.session_id()
+    # The context is printed either way. Bash's adapter needs jq to read the
+    # session ID and skips capture without it; Python's needs no jq (A-043).
     _check(no_jq, golden, _start(no_jq, session_id))
-    assert not (no_jq.layout.sessions / f"session-{session_id}.jsonl").exists()
 
 
 @pytest.mark.bats("session_start.bats", "session-start creates the session directory mode 700")

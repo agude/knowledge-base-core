@@ -2,4 +2,4 @@ stdout present
 instructions verbatim
 area knowledge/ (loose files) 2
 total 2
-state 2 articles | 0 pending | 1 stale | 0 open question(s)
+state 2 articles | 0 pending | 0 stale | 0 open question(s)

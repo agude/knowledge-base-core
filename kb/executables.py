@@ -26,6 +26,13 @@ EXECUTABLES = ROOT / "python"
 
 # Executable path under python/ -> the module whose main(argv) it runs.
 COMMANDS: dict[str, str] = {
+    "adapters/claude/session-prompt": "kb.commands.adapters.claude.session_prompt",
+    "adapters/claude/session-start": "kb.commands.adapters.claude.session_start",
+    "adapters/claude/session-stop": "kb.commands.adapters.claude.session_stop",
+    "adapters/codex/session-end": "kb.commands.adapters.codex.session_end",
+    "adapters/codex/session-prompt": "kb.commands.adapters.codex.session_prompt",
+    "adapters/codex/session-start": "kb.commands.adapters.codex.session_start",
+    "adapters/codex/session-stop": "kb.commands.adapters.codex.session_stop",
     "adapters/claude/pretool-allow": "kb.commands.adapters.claude.pretool_allow",
     "ask": "kb.commands.ask",
     "batch": "kb.commands.batch",
@@ -39,6 +46,7 @@ COMMANDS: dict[str, str] = {
     "observe": "kb.commands.observe",
     "pending": "kb.commands.pending",
     "session-append": "kb.commands.session_append",
+    "session-context": "kb.commands.session_context",
     "session-file": "kb.commands.session_file",
     "session-flush": "kb.commands.session_flush",
     "session-init": "kb.commands.session_init",

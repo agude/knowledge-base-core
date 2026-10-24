@@ -1,3 +1,4 @@
 stdout present
 instructions verbatim
-state 0 articles | 0 pending | ? stale | 0 open question(s)
+total 0
+state 0 articles | 0 pending | 0 stale | 0 open question(s)

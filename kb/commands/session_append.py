@@ -40,7 +40,27 @@ def main(argv: list[str]) -> int:
             return 0
         else:
             cli.fail(f"Unknown option: {word}")
-    file, session_id = values.get("file", ""), values.get("session-id", "")
+    message = values.get("message", "")
+    data = b""
+    if message == "-":
+        data = sys.stdin.buffer.read()
+    elif message:
+        data = message.encode("utf-8", errors="surrogateescape")
+    return record(
+        values.get("file", ""),
+        values.get("session-id", ""),
+        values.get("role", ""),
+        data,
+        given=bool(message),
+    )
+
+
+def record(file: str, session_id: str, role: str, data: bytes, *, given: bool = True) -> int:
+    """Append one message, with session-append's checks and exit status.
+
+    Used in-process by the host adapters (plan 3.5): one attempt, so a
+    failure reports once (audit A-021).
+    """
     if file and session_id:
         cli.fail("session-append: use only one of --file or --session-id")
     if not file and not session_id:
@@ -54,20 +74,12 @@ def main(argv: list[str]) -> int:
             return 0  # Capture was never initialized for this session.
     else:
         buffer = Path(file)
-    role = values.get("role", "")
     if not role:
         cli.fail("session-append: --role is required")
     if role not in ("user", "assistant"):
         cli.fail(f"session-append: --role must be 'user' or 'assistant', got '{role}'")
-    message = values.get("message", "")
-    if not message or not buffer.is_file():
+    if not given or not buffer.is_file() or not data:
         return 0  # Nothing to record, or no buffer: capture is off.
-    if message == "-":
-        data = sys.stdin.buffer.read()
-    else:
-        data = message.encode("utf-8", errors="surrogateescape")
-    if not data:
-        return 0
     try:
         session.append(buffer, role, data)
     except OSError:

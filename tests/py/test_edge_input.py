@@ -174,6 +174,12 @@ def _edge_params() -> list[object]:
                     )
             elif case == "unreadable" and command in SKIPS_UNREADABLE:
                 marks = [xfail_bash("A-036: bash fails or misreports on an unreadable article")]
+            elif (case, command) == ("empty", "session-context"):
+                marks = [
+                    xfail_bash("A-035: bash's map and stale count fail on a missing directory")
+                ]
+            elif (case, command) == ("unreadable", "session-context"):
+                marks = [xfail_bash("A-036: bash's stale count includes the unreadable article")]
             params.append(pytest.param(case, command, marks=marks, id=f"{case}-{command}"))
     return params
 

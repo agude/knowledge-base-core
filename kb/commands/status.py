@@ -43,7 +43,7 @@ def _last_commit(content: Path, area: str) -> str:
 def brief(content: Path) -> str:
     try:
         stale_count = str(stale.count(content))
-    except Exception:
+    except Exception:  # Bash prints "?" when stale fails for any reason.
         stale_count = "?"
     return (
         f"{count_md(content / 'knowledge')} articles | {count_md(content / 'observations' / 'pending')} pending | "

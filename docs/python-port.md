@@ -119,3 +119,23 @@ size, on CI hardware and on the slowest host that runs agent sessions.
   `retrieval-question-pre-change-v1`.
 - **Dependencies.** No runtime dependency beyond the Python interpreter and
   `git`, except any the behavior audit explicitly allows.
+
+## Claude hook shims
+
+The dotfiles Claude hooks (`~/.dotfiles/llm/claude/hooks.d/*/010.knowledge.sh`)
+re-implement the repo adapters instead of calling them, and have drifted:
+the Stop and UserPromptSubmit shims pass the message through `$(...)`,
+which drops trailing newlines, and hide append failures; SessionEnd builds
+the buffer path itself. The in-process design needs one Python process per
+hook, so at cutover (step 7) each shim body becomes a single line,
+
+```bash
+exec "$KNOWLEDGE_BASE/scripts/adapters/claude/<event>"
+```
+
+where `<event>` is `session-start`, `session-prompt`, `session-stop`, or
+`session-end`. The repo adapters already carry both behaviors the shims
+add: an empty message records nothing, and `KNOWLEDGE_SESSION_FILE` takes
+precedence over the session ID. The switch is a change to the live
+dotfiles, so it is made at cutover and verified there with one live Claude
+session that captures and flushes (plan 4.8).
