@@ -155,9 +155,15 @@ _REFERENCE_REPORT = ReferenceReport()
 @pytest.fixture
 def golden(request: pytest.FixtureRequest) -> Golden:
     module = Path(request.node.path).stem
+    update = request.config.getoption("--update-golden")
+    # An expected failure's goldens hold the expected output, written by
+    # hand; recording would replace them with the behavior being rejected.
+    xfail = request.node.get_closest_marker("xfail")
+    if xfail is not None and xfail.args and xfail.args[0]:
+        update = False
     return Golden(
         directory_for(module, request.node.name),
-        update=request.config.getoption("--update-golden"),
+        update=update,
         mode=golden_mode(request.config),
         report=_REFERENCE_REPORT,
         nodeid=request.node.nodeid,

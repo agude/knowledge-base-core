@@ -1,5 +1,3 @@
-
 [knowledge/h.md]
 H
-  1. 
-  2. Real Section
+  1. Real Section

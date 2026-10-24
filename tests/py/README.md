@@ -92,6 +92,11 @@ reference report is collected in one process, so pass `-n 0` with
 `--reference-report FILE` writes the diffs to a Markdown file for the
 behavior audit.
 
+A test that the behavior audit marks `xfail_bash` (`kbtest/marks.py`)
+expects behavior bash does not have. Its contract and reference goldens
+hold the expected output, written by hand, not a bash snapshot.
+`--update-golden` leaves the goldens of an active `xfail` alone.
+
 `just test-py-null` runs the null controls with reference goldens disabled.
 A test it reports depends only on reference goldens: it needs a contract
 golden or a semantic assertion before it can gate the port.
