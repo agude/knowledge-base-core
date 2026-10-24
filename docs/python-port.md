@@ -61,11 +61,15 @@ rewrite" from the memory-system plan.
   interpreter: a POSIX `sh` preamble resolves its own symlinks, finds a
   3.11+ interpreter, and runs the script with it before any Python starts.
   Lookup order: the path recorded by `install` in
-  `<repo>/.python-interpreter`; then `python3.20` down to `python3.11` on
-  `PATH` and in `/opt/homebrew/bin`, `/usr/local/bin`, and `~/.local/bin`;
-  then `python3` in the same places. Version-manager shims (`*/shims/*`) are
-  never candidates. Only the unversioned `python3` is probed by running it,
-  so the common path starts one interpreter.
+  `<repo>/.python-interpreter`; then `python3.20` down to `python3.11` in
+  every `PATH` directory and in `/opt/homebrew/bin`, `/usr/local/bin`, and
+  `~/.local/bin` (`KB_PYTHON_DIRS` replaces that list); then `python3` in the
+  same places. Every `PATH` directory is checked, not just the first match,
+  so a shim first on `PATH` does not hide a real interpreter after it.
+  Version-manager shims (`*/shims/*`) are never candidates. Only the
+  unversioned `python3` is probed by running it, so the common path starts
+  one interpreter. The preamble is `kb/preamble.sh`; `kb/executables.py`
+  generates every executable in `python/` from it.
 
 ## Cutover criteria
 

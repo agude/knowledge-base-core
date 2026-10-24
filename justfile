@@ -33,11 +33,17 @@ test:
 # Install the locked Python test environment.
 py-sync:
     uv sync --locked
+    # test_invocation.py checks how executables fail under an old interpreter.
+    uv python install 3.9
 
 # Lint and format-check the Python test harness.
 py-lint:
     uv run --locked ruff check .
     uv run --locked ruff format --check .
+
+# Regenerate python/ from kb/preamble.sh and kb/executables.py.
+py-executables:
+    uv run --locked python kb/executables.py
 
 # Apply the Python formatter and safe lint fixes.
 py-format:
