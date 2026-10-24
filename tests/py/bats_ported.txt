@@ -17,3 +17,4 @@ session_start.bats
 sync.bats
 pre_commit.bats
 adapters.bats
+pending.bats

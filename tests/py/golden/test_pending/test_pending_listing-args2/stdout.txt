@@ -1,0 +1,20 @@
+2 pending observation(s):
+
+--- a.md ---
+---
+title: "First observation"
+source: session
+created: <TIMESTAMP>
+---
+
+Full body text here
+
+--- b.md ---
+---
+title: "Second"
+source: session
+created: <TIMESTAMP>
+---
+
+Body two
+

@@ -1,0 +1,10 @@
+Batch-selectable queue preview
+Batch-selectable items: 2
+Oldest pending age: 127 day(s) (2026-05-01; large.md)
+Observation items: 1 (43 B; 43 bytes)
+Transcript items: 1 (19.6 KiB; 20092 bytes)
+Input volume: 19.7 KiB (20135 bytes)
+Topic hints (hints only; no LLM):
+  none available
+Metadata warnings: 1 malformed file(s)
+  broken.md: malformed frontmatter, missing title, missing source, missing created

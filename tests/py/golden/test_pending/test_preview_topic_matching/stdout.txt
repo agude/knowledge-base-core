@@ -1,0 +1,10 @@
+Batch-selectable queue preview
+Batch-selectable items: 3
+Oldest pending age: 47 day(s) (2026-09-06; a.md)
+Observation items: 3 (331 B; 331 bytes)
+Transcript items: 0 (0 B; 0 bytes)
+Input volume: 331 B (331 bytes)
+Topic hints (hints only; no LLM):
+  Canyon Neuron 6 (2026) (1 pending item(s))
+  PDF Skill (1 pending item(s))
+Metadata warnings: none

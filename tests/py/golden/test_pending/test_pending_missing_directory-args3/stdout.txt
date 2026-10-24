@@ -1,0 +1,9 @@
+Batch-selectable queue preview
+Batch-selectable items: 0
+Oldest pending age: unknown (no valid created date)
+Observation items: 0 (0 B; 0 bytes)
+Transcript items: 0 (0 B; 0 bytes)
+Input volume: 0 B (0 bytes)
+Topic hints (hints only; no LLM):
+  none available
+Metadata warnings: none

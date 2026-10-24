@@ -1,0 +1,20 @@
+2 pending observation(s):
+
+--- hidden.md ---
+---
+title: "Nested observation"
+source: session
+created: <TIMESTAMP>
+---
+
+Body
+
+--- top-level.md ---
+---
+title: "Top-level observation"
+source: session
+created: <TIMESTAMP>
+---
+
+Body
+

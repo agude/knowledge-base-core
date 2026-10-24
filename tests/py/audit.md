@@ -231,3 +231,16 @@ Expected: unknown. Decide whether the retry stays, and whether a failure
 reports once.
 Class: undecided
 Decision:
+
+## A-022: pending lists nested observations that batches never select
+
+Script: `pending`  Test: `test_pending.py::test_nested_observations`
+Observed: the listing, `--count`, and `--full` include files in
+subdirectories of `observations/pending/`; `--preview` and `batch start`
+consider only top-level files. A nested observation is counted as pending
+but can never be curated through a batch. The bats test name ("keeps
+recursive listing and bounds preview selection") suggests this is
+deliberate.
+Expected: unknown. Confirm, or make the two views agree.
+Class: undecided
+Decision:

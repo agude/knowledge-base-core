@@ -1,0 +1,13 @@
+Batch-selectable queue preview
+Batch-selectable items: 1
+Input budget: 72 bytes
+Selected input bytes: 72
+Selected size: a.md:72 bytes
+Skipped oversized: b.md:116
+Oldest pending age: 194 day(s) (2026-04-12; a.md)
+Observation items: 1 (72 B; 72 bytes)
+Transcript items: 0 (0 B; 0 bytes)
+Input volume: 72 B (72 bytes)
+Topic hints (hints only; no LLM):
+  none available
+Metadata warnings: none
