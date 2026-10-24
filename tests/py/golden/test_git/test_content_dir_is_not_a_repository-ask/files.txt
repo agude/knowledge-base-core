@@ -1,0 +1,8 @@
+knowledge/
+observations/
+observations/archived/
+observations/pending/
+questions/
+questions/open/
+questions/open/<OBS-1>.md
+sources/

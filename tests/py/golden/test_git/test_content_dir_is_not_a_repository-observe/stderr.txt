@@ -1,0 +1,3 @@
+<git fatal>
+<git fatal>
+locked_commit: commit failed (128) for: Observe: T

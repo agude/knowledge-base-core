@@ -1,0 +1,22 @@
+Observe: Session transcript (3 messages)
+
+A	observations/pending/<OBS-1>.md
+Curate: topic
+
+A	knowledge/topic.md
+Archive: 1 observation(s)
+
+A	observations/archived/<OBS-2>.md
+D	observations/pending/<OBS-2>.md
+Resolve: Open question?
+
+R066	questions/open/<OBS-3>.md	questions/resolved/<OBS-3>.md
+Ask: Open question?
+
+A	questions/open/<OBS-3>.md
+Observe: Observed fact
+
+A	observations/pending/<OBS-2>.md
+init
+
+A	.gitkeep

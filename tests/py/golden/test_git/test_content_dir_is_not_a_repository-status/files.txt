@@ -1,0 +1,7 @@
+knowledge/
+observations/
+observations/archived/
+observations/pending/
+questions/
+questions/open/
+sources/

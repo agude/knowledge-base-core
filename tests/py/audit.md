@@ -418,3 +418,15 @@ almost all of it waiting.
 Expected: unknown. A shorter retry interval keeps the same safety.
 Class: undecided
 Decision:
+
+## A-039: observe and ask outside a git repository write, then fail
+
+Scripts: `observe`, `ask`  Test: `test_git.py::test_content_dir_is_not_a_repository`
+Observed: with `KB_CONTENT_DIR` pointing at a directory that is not a git
+repository, both write their file, then the commit fails: exit 128 (git's
+code) with git's own `fatal:` message. The file stays. `commit` and `sync`
+check first and exit 1 with `Not a git repository`.
+Expected: unknown. Probably check first, like `commit`, or keep the file
+and exit 1 with one clear message.
+Class: undecided
+Decision:
