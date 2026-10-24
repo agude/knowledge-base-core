@@ -6,8 +6,8 @@ null1: every executable exits 1 with no output.
 Rule: every test fails under at least one control. A test that passes under
 null0 must carry @pytest.mark.null_ok("<reason>"), and a null_ok mark on a
 test that fails under null0 is stale. Harness self-tests and fixture-data
-checks (markers harness and data), and invocation tests, which do not
-run KB_IMPL, are excluded.
+checks (markers harness and data), and invocation and static tests,
+which do not run KB_IMPL, are excluded.
 
 With --contract, reference goldens record instead of failing, so every test
 must fail the controls through contract goldens or semantic assertions. That
@@ -40,7 +40,7 @@ def run_control(
             "pytest",
             "-q",
             "-m",
-            "not harness and not data and not invocation",
+            "not harness and not data and not invocation and not static",
             "--no-header",
             "-n",
             "auto",

@@ -61,6 +61,7 @@ markers = [
     "harness: tests of the harness itself; they never run an implementation",
     "data: checks of committed fixture data; they never run an implementation",
     "invocation: start-up of the Python executables; independent of KB_IMPL",
+    "static: source checks of kb/; independent of KB_IMPL",
     "null_ok(reason): the test passes under the null0 control, for the stated reason",
     "audit(entry): pinned behavior that looks wrong or accidental; see tests/py/audit.md",
     "bats(file, name): the bats test this pytest test ports",
