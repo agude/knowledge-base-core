@@ -26,7 +26,7 @@ def _start(kb: KB, session_id: str, **env: str | None) -> Result:
 def _check(kb: KB, golden: Golden, result: Result) -> None:
     """Pin output; the tooling repo's AGENTS.md, printed verbatim, is a placeholder."""
     out = kb.placeholder_instructions(result.out)
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     golden.check("stdout", kb.norm(out).replace(kb.session_prefix, "<SESSION>-"))
     golden.check("stderr", kb.norm_err(result.err))
 
@@ -98,12 +98,12 @@ def test_session_start_creates_buffer(kb: KB, golden: Golden) -> None:
     _check(kb, golden, result)
     buffer = kb.layout.sessions / f"session-{session_id}.jsonl"
     marker = kb.layout.sessions / f"session-{session_id}.initialized"
-    golden.check(
+    golden.contract(
         "modes",
         f"dir {_mode(kb.layout.sessions)}\nbuffer {_mode(buffer)} size {buffer.stat().st_size}\n"
         + (f"marker {_mode(marker)}\n" if marker.exists() else "marker absent\n"),
     )
-    golden.check(
+    golden.contract(
         "env",
         kb.norm(env_file.read_text(encoding="utf-8")).replace(kb.session_prefix, "<SESSION>-"),
     )
@@ -130,7 +130,7 @@ def test_session_start_unwritable_session_dir(kb: KB, golden: Golden) -> None:
     env_file.touch()
     result = _start(kb, kb.session_id(), SESSION_DIR=str(blocked), CLAUDE_ENV_FILE=str(env_file))
     _check(kb, golden, result)
-    golden.check("env", kb.norm(env_file.read_text(encoding="utf-8")))
+    golden.contract("env", kb.norm(env_file.read_text(encoding="utf-8")))
 
 
 @pytest.mark.bats("session_start.bats", "session-start sets KNOWLEDGE_OBSERVE=1 by default")
@@ -142,12 +142,12 @@ def test_session_start_env_file(kb: KB, golden: Golden, observe: str | None) -> 
     session_id = kb.session_id()
     result = _start(kb, session_id, KNOWLEDGE_OBSERVE=observe, CLAUDE_ENV_FILE=str(env_file))
     assert result.returncode == 0
-    golden.check(
+    golden.contract(
         "env",
         kb.norm(env_file.read_text(encoding="utf-8")).replace(kb.session_prefix, "<SESSION>-"),
     )
     buffer = kb.layout.sessions / f"session-{session_id}.jsonl"
-    golden.check("buffer", "present\n" if buffer.exists() else "absent\n")
+    golden.contract("buffer", "present\n" if buffer.exists() else "absent\n")
 
 
 def test_session_start_without_session_id(kb: KB, golden: Golden) -> None:
@@ -161,7 +161,7 @@ def test_session_start_without_session_id(kb: KB, golden: Golden) -> None:
     names = [p.name for p in kb.layout.sessions.iterdir()]
     assert len(names) == 1, names
     assert re.fullmatch(r"session-\d+-\d+\.jsonl", names[0]), names
-    golden.check(
+    golden.contract(
         "env",
         re.sub(
             r"session-\d+-\d+",

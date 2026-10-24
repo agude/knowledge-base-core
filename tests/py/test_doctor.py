@@ -94,7 +94,7 @@ def test_doctor_node_versions(sessions: KB, golden: Golden, version: str) -> Non
     _fake_node(sessions, version)
     result = sessions.run("doctor", "--require", "adapters")
     _assert_format(result)
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     node_lines = [line for line in result.out.splitlines() if "Node.js" in line]
     golden.check("node", "\n".join(node_lines) + "\n")
 
@@ -144,7 +144,7 @@ def test_doctor_session_directory(kb: KB, golden: Golden, state: str) -> None:
         kb.layout.sessions.chmod(0o755)
     result = kb.run("doctor", "--require", "capture")
     _assert_format(result)
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     lines = [line for line in result.out.splitlines() if "session directory" in line]
     golden.check("session", kb.norm("\n".join(lines) + "\n"))
 
@@ -152,6 +152,6 @@ def test_doctor_session_directory(kb: KB, golden: Golden, state: str) -> None:
 @pytest.mark.parametrize("args", [["--require", "bogus"], ["--bogus"], ["--require"]])
 def test_doctor_argument_errors(kb: KB, golden: Golden, args: list[str]) -> None:
     result = kb.run("doctor", *args)
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     golden.check("stdout", kb.norm(result.out))
     golden.check("stderr", kb.norm_err(result.err))

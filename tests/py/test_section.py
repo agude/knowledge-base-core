@@ -52,7 +52,7 @@ TRUNCATED_MARKER = "[content truncated: retrieve without --max-bytes]"
 
 def _check(kb: KB, golden: Golden, result: Result, name: str = "") -> None:
     prefix = f"{name}-" if name else ""
-    golden.check(f"{prefix}result", f"exit {result.returncode}\n")
+    golden.contract(f"{prefix}result", f"exit {result.returncode}\n")
     golden.check(f"{prefix}stdout", kb.norm(result.out))
     golden.check(f"{prefix}stderr", kb.norm_err(result.err))
 
@@ -485,7 +485,7 @@ def test_section_reference_formats_agree(kb: KB, golden: Golden, selector: list[
     as_json = _json(_section(kb, *args, "--json"))["provenance"]["references"]
     as_text = _section(kb, *args)
     assert as_text.out.splitlines() == as_json
-    golden.check("references", as_text.out)
+    golden.contract("references", as_text.out)
 
 
 @pytest.mark.bats(

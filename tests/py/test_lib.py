@@ -19,7 +19,7 @@ from kbtest.runner import KB, Result
 
 
 def _check(kb: KB, golden: Golden, result: Result) -> None:
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     golden.check("stdout", kb.norm(result.out))
     golden.check("stderr", kb.norm_err(result.err))
 
@@ -38,7 +38,7 @@ def test_ttl_bounds(kb: KB, golden: Golden, ttl: str) -> None:
     )
     result = kb.run("section", "--file", "knowledge/ttl.md", "--number", "1", "--json")
     assert result.returncode == 0
-    golden.check("freshness", json.dumps(json.loads(result.out)["freshness"], indent=2) + "\n")
+    golden.contract("freshness", json.dumps(json.loads(result.out)["freshness"], indent=2) + "\n")
 
 
 @pytest.mark.bats("lib.bats", "retrieval marks out-of-range article and section TTLs invalid")
@@ -51,7 +51,7 @@ def test_out_of_range_section_ttl(kb: KB, golden: Golden, selector: list[str]) -
     )
     result = kb.run("section", "--file", "knowledge/ttl-range.md", *selector, "--json")
     assert result.returncode == 0
-    golden.check("freshness", json.dumps(json.loads(result.out)["freshness"], indent=2) + "\n")
+    golden.contract("freshness", json.dumps(json.loads(result.out)["freshness"], indent=2) + "\n")
 
 
 # Help text (show_help)
@@ -104,7 +104,7 @@ def test_title_escaping_round_trip(kb: KB, golden: Golden) -> None:
     created = re.search(r"^created: (\S+)$", text, re.MULTILINE)
     assert created
     kb.normalizer.extra[created.group(1)] = "<TIMESTAMP>"
-    golden.check("file", kb.norm(text))
+    golden.contract("file", kb.norm(text))
     # The listing reads the title back through the front-matter parser.
     golden.check("listing", kb.norm(kb.run("pending").out))
 
@@ -134,8 +134,8 @@ def test_commit_only_named_paths(kb: KB, golden: Golden) -> None:
     kb.create_article("staged-by-someone-else.md", "# Draft")
     kb.git("add", "knowledge/staged-by-someone-else.md")
     assert kb.run("observe", "--title", "Obs", "--body", "Body").returncode == 0
-    golden.check("head", kb.norm(kb.git("show", "--name-only", "--format=%s", "HEAD")))
-    golden.check("status", kb.git("status", "--porcelain"))
+    golden.contract("head", kb.norm(kb.git("show", "--name-only", "--format=%s", "HEAD")))
+    golden.contract("status", kb.git("status", "--porcelain"))
 
 
 @pytest.mark.bats("lib.bats", "locked_commit returns nonzero when the commit is rejected")
@@ -204,11 +204,13 @@ def test_context_resolution(kb: KB, golden: Golden, context: str) -> None:
     (kb.layout.content / "knowledge" / "sneaky.md").symlink_to("/etc/passwd")
     value = context.replace("<CONTENT>", str(kb.layout.content))
     result = kb.run("ask", "--title", "Q?", "--context", value, "--no-commit")
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     golden.check("stdout", kb.norm(result.out))
     golden.check("stderr", _sort_indented(kb.norm_err(result.err)))
     files = sorted((kb.layout.content / "questions" / "open").glob("*.md"))
-    golden.check("question", kb.norm(files[0].read_text(encoding="utf-8")) if files else "none\n")
+    golden.contract(
+        "question", kb.norm(files[0].read_text(encoding="utf-8")) if files else "none\n"
+    )
 
 
 @pytest.mark.bats("lib.bats", "section refuses to read outside the content root")
@@ -249,7 +251,7 @@ def test_jq_free_encoder_round_trip(no_jq: KB, golden: Golden) -> None:
     )
     assert result.returncode == 0, result.err
     line = buffer.read_bytes()
-    golden.check("buffer", no_jq.norm(line.decode("utf-8")))
+    golden.contract("buffer", no_jq.norm(line.decode("utf-8")))
     record = json.loads(line)
     assert record["message"].encode("utf-8") == message
     empty = no_jq.run(
@@ -270,6 +272,6 @@ def test_jq_encoder_round_trip(kb: KB, golden: Golden) -> None:
     )
     assert result.returncode == 0, result.err
     line = buffer.read_bytes()
-    golden.check("buffer", kb.norm(line.decode("utf-8")))
+    golden.contract("buffer", kb.norm(line.decode("utf-8")))
     assert json.loads(line)["message"].encode("utf-8") == message
     assert buffer.stat().st_size == len(line)

@@ -24,11 +24,11 @@ def _only_file(kb: KB) -> str:
 
 
 def _check(kb: KB, golden: Golden, result: Result) -> None:
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     golden.check("stdout", kb.norm(result.out))
     golden.check("stderr", kb.norm_err(result.err))
-    golden.check("pending", kb.norm("\n".join(_pending(kb)) + "\n"))
-    golden.check("log", kb.norm(git_log(kb.layout.content, kb.git_env())))
+    golden.contract("pending", kb.norm("\n".join(_pending(kb)) + "\n"))
+    golden.contract("log", kb.norm(git_log(kb.layout.content, kb.git_env())))
 
 
 @pytest.mark.bats("observe.bats", "observe creates file with correct frontmatter")
@@ -43,7 +43,7 @@ def test_observe_writes_front_matter(kb: KB, golden: Golden) -> None:
         env={"KNOWLEDGE_OBSERVE": "1"},
     )
     _check(kb, golden, result)
-    golden.check("file", _only_file(kb))
+    golden.contract("file", _only_file(kb))
 
 
 @pytest.mark.bats("observe.bats", "observe respects custom --source")
@@ -52,7 +52,7 @@ def test_observe_source(kb: KB, golden: Golden) -> None:
         "observe", "--title", "Test", "--body", "Body", "--source", "slack", "--no-commit"
     )
     _check(kb, golden, result)
-    golden.check("file", _only_file(kb))
+    golden.contract("file", _only_file(kb))
 
 
 @pytest.mark.bats("observe.bats", "observe works without KNOWLEDGE_OBSERVE set")
@@ -87,14 +87,14 @@ def test_observe_body_from_stdin(kb: KB, golden: Golden) -> None:
         stdin="Piped body content\n",
     )
     _check(kb, golden, result)
-    golden.check("file", _only_file(kb))
+    golden.contract("file", _only_file(kb))
 
 
 def test_observe_preserves_body_bytes(kb: KB, golden: Golden) -> None:
     body = "tab\there\n\nleading -n\n\\backslash\n\n\n"
     result = kb.run("observe", "--title", "Bytes", "--body", body, "--no-commit")
     _check(kb, golden, result)
-    golden.check("file", _only_file(kb))
+    golden.contract("file", _only_file(kb))
 
 
 @pytest.mark.bats("observe.bats", "observe requires --body rather than silently reading stdin")
@@ -117,7 +117,7 @@ def test_observe_file_names(kb: KB) -> None:
 def test_observe_escapes_title(kb: KB, golden: Golden) -> None:
     result = kb.run("observe", "--title", 'Say "hello" \\ there', "--body", "Body")
     _check(kb, golden, result)
-    golden.check("file", _only_file(kb))
+    golden.contract("file", _only_file(kb))
 
 
 @pytest.mark.bats("observe.bats", "observe leaves nothing in pending when the lock wait expires")
@@ -157,7 +157,7 @@ def test_observe_cleans_up(kb: KB, golden: Golden) -> None:
     _check(kb, golden, result)
     assert list(kb.layout.tmp.iterdir()) == []
     assert not (kb.layout.content / ".observe.lock").exists()
-    golden.check("content", kb.norm(tree(kb.layout.content)))
+    golden.contract("content", kb.norm(tree(kb.layout.content)))
 
 
 def test_observe_unknown_option(kb: KB, golden: Golden) -> None:

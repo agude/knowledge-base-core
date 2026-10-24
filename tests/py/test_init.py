@@ -85,6 +85,6 @@ def test_init_existing_partial_directory(kb: KB, golden: Golden) -> None:
 def test_init_path_requires_argument(kb: KB, golden: Golden) -> None:
     result = kb.run("init", "--path")
     assert result.returncode != 0
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     golden.check("stdout", kb.norm(result.out))
     golden.check("stderr", kb.norm_err(result.err))

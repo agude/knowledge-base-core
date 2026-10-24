@@ -22,7 +22,7 @@ TWO_HOURS = 7200
 
 def _check(kb: KB, golden: Golden, result: Result, name: str = "") -> None:
     prefix = f"{name}-" if name else ""
-    golden.check(f"{prefix}result", f"exit {result.returncode}\n")
+    golden.contract(f"{prefix}result", f"exit {result.returncode}\n")
     golden.check(f"{prefix}stdout", kb.norm(result.out).replace(kb.session_prefix, "<SESSION>-"))
     golden.check(
         f"{prefix}stderr", kb.norm_err(result.err).replace(kb.session_prefix, "<SESSION>-")
@@ -81,7 +81,7 @@ def test_session_context(kb: KB, golden: Golden) -> None:
     kb.create_article("infra/networking.md", "# Networking\n\n## DNS\n\nContent.")
     kb.create_observation("20260412T000000-0000aaaa.md", "Obs", "Body")
     result = kb.run("session-context")
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     golden.check("stdout", kb.norm(kb.placeholder_instructions(result.out)))
     golden.check("stderr", kb.norm_err(result.err))
 
@@ -107,11 +107,11 @@ def test_session_init(kb: KB, golden: Golden) -> None:
     _check(kb, golden, first)
     assert second.out == first.out
     path = Path(first.out.strip())
-    golden.check(
+    golden.contract(
         "modes",
         f"dir {_mode(kb.layout.sessions)}\nbuffer {_mode(path)} size {path.stat().st_size}\n",
     )
-    golden.check(
+    golden.contract(
         "files",
         "\n".join(sorted(p.name.replace(session_id, "<ID>") for p in kb.layout.sessions.iterdir()))
         + "\n",
@@ -127,7 +127,7 @@ def test_persisted_initialization(kb: KB, golden: Golden) -> None:
         kb.run("session-init", "--session-id", session_id, "--persist-initialization").out.strip()
     )
     marker = kb.layout.sessions / f"session-{session_id}.initialized"
-    golden.check("marker", f"mode {_mode(marker)}\ncontent {marker.read_bytes()!r}\n")
+    golden.contract("marker", f"mode {_mode(marker)}\ncontent {marker.read_bytes()!r}\n")
     path.unlink()
     result = kb.run(
         "session-append",
@@ -140,7 +140,7 @@ def test_persisted_initialization(kb: KB, golden: Golden) -> None:
         env={"KNOWLEDGE_OBSERVE": None},
     )
     _check(kb, golden, result)
-    golden.check("buffer", kb.norm(path.read_text(encoding="utf-8")))
+    golden.contract("buffer", kb.norm(path.read_text(encoding="utf-8")))
 
 
 @pytest.mark.bats(
@@ -185,7 +185,7 @@ def test_init_sweep_output(kb: KB, golden: Golden) -> None:
     result = kb.run("session-init", "--session-id", kb.session_id())
     _check(kb, golden, result)
     assert not orphan.exists()
-    golden.check("log", kb.git("log", "-1", "--format=%s"))
+    golden.contract("log", kb.git("log", "-1", "--format=%s"))
 
 
 def test_init_sweep_leaves_recent_and_symlinked_buffers(kb: KB, golden: Golden) -> None:
@@ -241,7 +241,7 @@ def test_session_file(kb: KB, golden: Golden, create: bool) -> None:
     result = kb.run("session-file", "--session-id", session_id, *(["--create"] if create else []))
     _check(kb, golden, result)
     path = Path(result.out.strip())
-    golden.check("file", f"mode {_mode(path)}\n" if path.exists() else "absent\n")
+    golden.contract("file", f"mode {_mode(path)}\n" if path.exists() else "absent\n")
 
 
 @pytest.mark.parametrize("args", [[], ["--session-id", "../x"], ["--bogus"]])
@@ -273,7 +273,7 @@ def test_append_messages(kb: KB, golden: Golden) -> None:
     ]
     for result in results:
         assert (result.returncode, result.out, result.err) == (0, "", "")
-    golden.check("buffer", kb.norm(path.read_text(encoding="utf-8")))
+    golden.contract("buffer", kb.norm(path.read_text(encoding="utf-8")))
 
 
 @pytest.mark.bats(
@@ -292,7 +292,7 @@ def test_append_by_session_id(kb: KB, golden: Golden) -> None:
         "Resolved message",
     )
     assert result.returncode == 0
-    golden.check(
+    golden.contract(
         "buffer",
         kb.norm((kb.layout.sessions / f"session-{session_id}.jsonl").read_text(encoding="utf-8")),
     )
@@ -419,7 +419,7 @@ def test_append_without_jq(no_jq: KB, golden: Golden, message: str) -> None:
         "session-append", "--file", str(path), "--role", "user", "--message", message
     )
     assert result.returncode == 0
-    golden.check("buffer", no_jq.norm(path.read_text(encoding="utf-8")))
+    golden.contract("buffer", no_jq.norm(path.read_text(encoding="utf-8")))
     assert json.loads(path.read_bytes())["message"] == message
 
 
@@ -451,11 +451,13 @@ def test_flush_threshold(kb: KB, golden: Golden, count: int) -> None:
     result = kb.run("session-flush", str(path))
     _check(kb, golden, result)
     assert not path.exists()
-    golden.check(
+    golden.contract(
         "observations",
         kb.norm("".join(f"## {p.name}\n{p.read_text()}" for p in _pending(kb)) or "none\n"),
     )
-    golden.check("syslog", kb.layout.syslog.read_text() if kb.layout.syslog.exists() else "none\n")
+    golden.contract(
+        "syslog", kb.layout.syslog.read_text() if kb.layout.syslog.exists() else "none\n"
+    )
 
 
 @pytest.mark.parametrize("value", ["0", "5", "x"])
@@ -463,7 +465,7 @@ def test_flush_min_messages(kb: KB, golden: Golden, value: str) -> None:
     path = _buffer(kb, lines=_transcript(4))
     result = kb.run("session-flush", str(path), env={"KNOWLEDGE_MIN_MESSAGES": value})
     _check(kb, golden, result)
-    golden.check(
+    golden.contract(
         "state",
         f"buffer {'kept' if path.exists() else 'removed'}\nobservations {len(_pending(kb))}\n",
     )
@@ -515,8 +517,8 @@ def test_flush_default_content_path(kb: KB, golden: Golden) -> None:
     def git(*args: str) -> str:
         return inspect_git(content, *args, env=kb.git_env())
 
-    golden.check("log", git("log", "-1", "--format=%s"))
-    golden.check("status", git("status", "--porcelain"))
+    golden.contract("log", git("log", "-1", "--format=%s"))
+    golden.contract("status", git("status", "--porcelain"))
     assert len(git("ls-files", "observations/pending/*.md").split()) == 1
 
 
@@ -569,7 +571,9 @@ def test_flush_without_jq(kb: KB, without_tools, golden: Golden) -> None:
     assert path.read_bytes() == original
     assert _pending(kb) == []
     assert list(kb.layout.tmp.iterdir()) == []
-    golden.check("syslog", kb.layout.syslog.read_text() if kb.layout.syslog.exists() else "none\n")
+    golden.contract(
+        "syslog", kb.layout.syslog.read_text() if kb.layout.syslog.exists() else "none\n"
+    )
 
 
 def test_flush_after_jq_returns(kb: KB) -> None:
@@ -636,7 +640,7 @@ def test_flush_interrupted_while_blocked(kb: KB, golden: Golden, signum: int) ->
         os.killpg(process.pid, signum)
         stdout, stderr = process.communicate(timeout=30)
         assert (kb.layout.content / ".observe.lock" / "pid").is_file(), "the held lock must survive"
-    golden.check("result", f"exit {process.returncode}\n")
+    golden.contract("result", f"exit {process.returncode}\n")
     golden.check("stdout", kb.norm(stdout.decode()))
     golden.check("stderr", kb.norm_err(_without_job_messages(stderr.decode())))
     assert path.read_bytes() == original
@@ -654,10 +658,10 @@ def test_flush_signal_to_process_only(kb: KB, golden: Golden) -> None:
         process.send_signal(signal.SIGTERM)
         stdout, stderr = process.communicate(timeout=30)
         elapsed = time.monotonic() - start
-    golden.check("result", f"exit {process.returncode}\n")
+    golden.contract("result", f"exit {process.returncode}\n")
     golden.check("stdout", kb.norm(stdout.decode()))
     golden.check("stderr", kb.norm_err(_without_job_messages(stderr.decode())))
-    golden.check("deferred", f"deferred {elapsed >= 1}\n")
+    golden.contract("deferred", f"deferred {elapsed >= 1}\n")
     assert path.read_bytes() == original
     assert _pending(kb) == []
 

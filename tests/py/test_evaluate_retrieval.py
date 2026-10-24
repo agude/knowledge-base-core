@@ -65,7 +65,7 @@ def _evaluate(kb: KB, *args: str, env: dict[str, str | None] | None = None) -> R
 
 
 def _check(kb: KB, golden: Golden, result: Result) -> dict[str, Any] | None:
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     golden.check("stderr", kb.norm_err(result.err))
     if not result.out:
         golden.check("stdout", "")
@@ -429,6 +429,6 @@ def test_rank_and_evidence_regression(kb: KB, golden: Golden) -> None:
 @pytest.mark.parametrize("args", [[], ["--fixture"], ["--bogus"], ["--max-bytes", "x"]])
 def test_argument_errors(kb: KB, golden: Golden, args: list[str]) -> None:
     result = kb.run("evaluate-retrieval", *args)
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     golden.check("stdout", kb.norm(result.out))
     golden.check("stderr", kb.norm_err(result.err))

@@ -42,15 +42,15 @@ Content."""
 def _check(
     kb: KB, golden: Golden, result: Result, *, log: bool = True, stdout: bool = True
 ) -> None:
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     if stdout:
         golden.check("stdout", kb.norm(result.out))
     golden.check("stderr", kb.norm_err(result.err))
     if log:
-        golden.check("log", kb.norm(git_log(kb.layout.content, kb.git_env())))
-    golden.check("status", kb.norm(kb.git("status", "--porcelain")))
+        golden.contract("log", kb.norm(git_log(kb.layout.content, kb.git_env())))
+    golden.contract("status", kb.norm(kb.git("status", "--porcelain")))
     lock = kb.layout.content / ".observe.lock"
-    golden.check("lock", "held\n" if lock.exists() else "released\n")
+    golden.contract("lock", "held\n" if lock.exists() else "released\n")
 
 
 @pytest.mark.bats("commit.bats", "commit requires a message")
@@ -68,7 +68,7 @@ def test_commit_clean_tree(hooked: KB, golden: Golden) -> None:
 def test_commit_article(hooked: KB, golden: Golden) -> None:
     hooked.create_article("net.md", ARTICLE.format(title="Networking"))
     _check(hooked, golden, hooked.run("commit", "-m", "Curate: networking"))
-    golden.check("committed", hooked.norm(hooked.git("show", "HEAD:knowledge/net.md")))
+    golden.contract("committed", hooked.norm(hooked.git("show", "HEAD:knowledge/net.md")))
 
 
 @pytest.mark.bats("commit.bats", "commit fails when an article does not lint")
@@ -88,7 +88,7 @@ def test_commit_archived_observation(hooked: KB, golden: Golden) -> None:
     pending = hooked.layout.content / "observations" / "pending" / name
     pending.rename(hooked.layout.content / "observations" / "archived" / name)
     _check(hooked, golden, hooked.run("commit", "-m", "Curate: archive"))
-    golden.check("tree", hooked.norm(hooked.git("ls-tree", "-r", "--name-only", "HEAD")))
+    golden.contract("tree", hooked.norm(hooked.git("ls-tree", "-r", "--name-only", "HEAD")))
 
 
 def test_commit_all_areas(hooked: KB, golden: Golden) -> None:
@@ -112,7 +112,7 @@ def test_commit_outside_git_repository(hooked: KB, golden: Golden) -> None:
     plain = hooked.layout.root / "plain"
     plain.mkdir()
     result = hooked.run("commit", "-m", "Curate: x", env={"KB_CONTENT_DIR": str(plain)})
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     golden.check("stderr", hooked.norm_err(result.err))
 
 

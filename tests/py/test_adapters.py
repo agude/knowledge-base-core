@@ -81,7 +81,7 @@ def test_claude_repeated_delivery(kb: KB, golden: Golden) -> None:
         _hook(kb, "claude", event, payload, **env) for event in ("prompt", "prompt", "stop", "stop")
     ]
     golden.check("results", _summary(kb, *results))
-    golden.check("buffer", kb.norm(target.read_text(encoding="utf-8")))
+    golden.contract("buffer", kb.norm(target.read_text(encoding="utf-8")))
 
 
 @pytest.mark.bats("adapters.bats", "repeated Codex hook delivery is retained as a duplicate record")
@@ -95,7 +95,7 @@ def test_codex_repeated_delivery(kb: KB, golden: Golden) -> None:
     _hook(kb, "codex", "start", {"session_id": session_id})
     results = [_hook(kb, "codex", event, payload) for event in ("prompt", "prompt", "stop", "stop")]
     golden.check("results", _summary(kb, *results))
-    golden.check("buffer", _buffer(kb, session_id))
+    golden.contract("buffer", _buffer(kb, session_id))
 
 
 @pytest.mark.bats(
@@ -111,9 +111,9 @@ def test_codex_session_start(kb: KB, golden: Golden) -> None:
         kb.placeholder_instructions(context)
     )
     golden.check("stdout", json.dumps(output, indent=2) + "\n")
-    golden.check("raw-shape", f"lines {len(result.out.splitlines())}\n")
+    golden.contract("raw-shape", f"lines {len(result.out.splitlines())}\n")
     names = sorted(p.name.replace(session_id, "<ID>") for p in kb.layout.sessions.iterdir())
-    golden.check("sessions", "\n".join(names) + "\n")
+    golden.contract("sessions", "\n".join(names) + "\n")
 
 
 @pytest.mark.parametrize("observe", ["0"], ids=["disabled"])
@@ -122,7 +122,7 @@ def test_codex_session_start_disabled(kb: KB, golden: Golden, observe: str) -> N
     result = _hook(kb, "codex", "start", {"session_id": session_id}, KNOWLEDGE_OBSERVE=observe)
     assert result.returncode == 0
     assert "additionalContext" in json.loads(result.out)["hookSpecificOutput"]
-    golden.check("buffer", _buffer(kb, session_id))
+    golden.contract("buffer", _buffer(kb, session_id))
 
 
 @pytest.mark.bats("adapters.bats", "Codex adapters capture and flush a multi-turn transcript")
@@ -144,11 +144,11 @@ def test_codex_multi_turn(kb: KB, golden: Golden, observe: str | None) -> None:
     ]
     results.append(_hook(kb, "codex", "end", {"session_id": session_id}, **env))
     golden.check("results", _summary(kb, *results))
-    golden.check("buffer", _buffer(kb, session_id))
+    golden.contract("buffer", _buffer(kb, session_id))
     pending = _pending(kb)
     assert len(pending) == 1
-    golden.check("observation", kb.norm(pending[0].read_text(encoding="utf-8")))
-    golden.check(
+    golden.contract("observation", kb.norm(pending[0].read_text(encoding="utf-8")))
+    golden.contract(
         "sessions",
         "\n".join(sorted(p.name.replace(session_id, "<ID>") for p in kb.layout.sessions.iterdir()))
         + "\n",
@@ -182,7 +182,7 @@ def test_codex_swept_buffer(kb: KB, golden: Golden) -> None:
     _hook(kb, "codex", "start", {"session_id": session_id}, **env)
     (kb.layout.sessions / f"session-{session_id}.jsonl").unlink()
     _hook(kb, "codex", "prompt", {"session_id": session_id, "prompt": "After sweep"}, **env)
-    golden.check("buffer", _buffer(kb, session_id))
+    golden.contract("buffer", _buffer(kb, session_id))
     _hook(
         kb,
         "codex",
@@ -193,7 +193,7 @@ def test_codex_swept_buffer(kb: KB, golden: Golden) -> None:
     _hook(kb, "codex", "end", {"session_id": session_id}, **env)
     pending = _pending(kb)
     assert len(pending) == 1
-    golden.check("observation", kb.norm(pending[0].read_text(encoding="utf-8")))
+    golden.contract("observation", kb.norm(pending[0].read_text(encoding="utf-8")))
 
 
 @pytest.mark.bats(

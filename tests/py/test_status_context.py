@@ -26,7 +26,7 @@ verified: 2020-01-01
 
 
 def _check(kb: KB, golden: Golden, result: Result) -> None:
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     golden.check("stdout", kb.norm(result.out))
     golden.check("stderr", kb.norm_err(result.err))
 

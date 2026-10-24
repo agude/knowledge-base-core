@@ -17,12 +17,12 @@ def _today(kb: KB) -> None:
 
 
 def _check(kb: KB, golden: Golden, result: Result, *, state: bool = True) -> None:
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     golden.check("stdout", kb.norm(result.out))
     golden.check("stderr", kb.norm_err(result.err))
     if state:
-        golden.check("questions", kb.norm(tree(kb.layout.content / "questions")))
-        golden.check("log", kb.norm(git_log(kb.layout.content, kb.git_env())))
+        golden.contract("questions", kb.norm(tree(kb.layout.content / "questions")))
+        golden.contract("log", kb.norm(git_log(kb.layout.content, kb.git_env())))
 
 
 def _only_question(kb: KB, area: str = "open") -> str:
@@ -105,7 +105,7 @@ def test_questions_unknown_option(kb: KB, golden: Golden) -> None:
 @pytest.mark.bats("questions.bats", "ask creates question file")
 def test_ask_creates_question(kb: KB, golden: Golden) -> None:
     _check(kb, golden, kb.run("ask", "--title", "New question?", "--no-commit"))
-    golden.check("file", _only_question(kb))
+    golden.contract("file", _only_question(kb))
 
 
 @pytest.mark.bats("questions.bats", "ask includes --context in frontmatter")
@@ -113,7 +113,7 @@ def test_ask_context(kb: KB, golden: Golden) -> None:
     kb.create_article("topic.md", "# Topic")
     result = kb.run("ask", "--title", "About topic?", "--context", "topic.md", "--no-commit")
     _check(kb, golden, result)
-    golden.check("file", _only_question(kb))
+    golden.contract("file", _only_question(kb))
 
 
 def test_ask_context_missing(kb: KB, golden: Golden) -> None:
@@ -125,7 +125,7 @@ def test_ask_context_missing(kb: KB, golden: Golden) -> None:
 def test_ask_body(kb: KB, golden: Golden) -> None:
     result = kb.run("ask", "--title", "Question?", "--body", "Extra context here", "--no-commit")
     _check(kb, golden, result)
-    golden.check("file", _only_question(kb))
+    golden.contract("file", _only_question(kb))
 
 
 def test_ask_body_from_stdin(kb: KB, golden: Golden) -> None:
@@ -133,20 +133,20 @@ def test_ask_body_from_stdin(kb: KB, golden: Golden) -> None:
         "ask", "--title", "Question?", "--body", "-", "--no-commit", stdin="Line one.\nLine two.\n"
     )
     _check(kb, golden, result)
-    golden.check("file", _only_question(kb))
+    golden.contract("file", _only_question(kb))
 
 
 @pytest.mark.audit("A-014")
 def test_ask_body_that_looks_like_an_echo_option(kb: KB, golden: Golden) -> None:
     result = kb.run("ask", "--title", "Question?", "--body", "-n", "--no-commit")
     _check(kb, golden, result)
-    golden.check("file", _only_question(kb))
+    golden.contract("file", _only_question(kb))
 
 
 def test_ask_escapes_title(kb: KB, golden: Golden) -> None:
     title = 'Why "quoted" and back\\slash?'
     _check(kb, golden, kb.run("ask", "--title", title, "--source", "curator"))
-    golden.check("file", _only_question(kb))
+    golden.contract("file", _only_question(kb))
 
 
 def test_ask_requires_title(kb: KB, golden: Golden) -> None:
@@ -166,13 +166,13 @@ def test_resolve_with_answer(kb: KB, golden: Golden) -> None:
     _today(kb)
     kb.create_question("q1.md", "Test question")
     _check(kb, golden, kb.run("resolve", "--file", "q1.md", "--answer", "Answered.", "--no-commit"))
-    golden.check("file", _only_question(kb, "resolved"))
+    golden.contract("file", _only_question(kb, "resolved"))
 
 
 def test_resolve_without_answer(kb: KB, golden: Golden) -> None:
     kb.create_question("q1.md", "Test question")
     _check(kb, golden, kb.run("resolve", "--file", "q1.md", "--no-commit"))
-    golden.check("file", _only_question(kb, "resolved"))
+    golden.contract("file", _only_question(kb, "resolved"))
 
 
 def test_resolve_answer_from_stdin_and_commit(kb: KB, golden: Golden) -> None:
@@ -182,7 +182,7 @@ def test_resolve_answer_from_stdin_and_commit(kb: KB, golden: Golden) -> None:
     kb.git("commit", "-q", "-m", "Ask")
     result = kb.run("resolve", "--file", "q1.md", "--answer", "-", stdin="Long answer.\n")
     _check(kb, golden, result)
-    golden.check("file", _only_question(kb, "resolved"))
+    golden.contract("file", _only_question(kb, "resolved"))
 
 
 @pytest.mark.bats("questions.bats", "resolve fails for nonexistent question")

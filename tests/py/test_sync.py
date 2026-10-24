@@ -72,15 +72,15 @@ def _check(
 ) -> None:
     """git_stderr: stderr also carries git's own messages, which vary by git
     version; pin only sync's last line."""
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     golden.check("stdout", kb.norm(result.out))
     if git_stderr:
         golden.check("stderr-last", kb.norm(result.err.splitlines()[-1] + "\n"))
     else:
         golden.check("stderr", kb.norm_err(result.err))
-    golden.check("local-log", kb.git("log", "--format=%an %s"))
-    golden.check("remote-log", remote.log())
-    golden.check(
+    golden.contract("local-log", kb.git("log", "--format=%an %s"))
+    golden.contract("remote-log", remote.log())
+    golden.contract(
         "lock", "held\n" if (kb.layout.content / ".observe.lock").exists() else "released\n"
     )
 
@@ -197,10 +197,10 @@ def test_sync_rechecks_after_fetch(kb: KB, remote: Remote, golden: Golden) -> No
         if process.poll() is None:
             process.kill()
             process.wait()
-    golden.check("result", f"exit {process.returncode}\n")
+    golden.contract("result", f"exit {process.returncode}\n")
     golden.check("stdout", kb.norm(stdout.decode()))
     golden.check("stderr", kb.norm_err(stderr.decode()))
-    golden.check("pending", kb.norm(tree(kb.layout.content / "observations" / "pending")))
+    golden.contract("pending", kb.norm(tree(kb.layout.content / "observations" / "pending")))
 
 
 @pytest.mark.bats("sync.bats", "sync leaves rebase conflicts for resolution")
@@ -220,7 +220,7 @@ def test_sync_leaves_conflicts(kb: KB, remote: Remote, golden: Golden) -> None:
     remote.git("push", "-q", "origin", "HEAD", cwd=other)
 
     result = kb.run("sync")
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     # Between sync's own lines, git prints merge and rebase text whose
     # wording varies by git version; pin only sync's lines.
     golden.check("stdout-first", kb.norm(result.out.splitlines()[0] + "\n"))
@@ -246,5 +246,5 @@ def test_sync_outside_git_repository(kb: KB, golden: Golden) -> None:
     plain = kb.layout.root / "plain"
     plain.mkdir()
     result = kb.run("sync", env={"KB_CONTENT_DIR": str(plain)})
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     golden.check("stderr", kb.norm_err(result.err))

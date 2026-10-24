@@ -47,7 +47,7 @@ LONG = front("Long") + "# Long\n\n## Big Section\n\n" + FILLER
 
 
 def _check(kb: KB, golden: Golden, result: Result) -> None:
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     golden.check("stdout", kb.norm(result.out))
     golden.check("stderr", kb.norm_err(result.err))
 
@@ -138,7 +138,7 @@ def test_lint_batch_future_source(kb: KB, golden: Golden) -> None:
         ("without-batch", without_batch),
         ("archived", after_archive),
     ):
-        golden.check(f"{name}-result", f"exit {result.returncode}\n")
+        golden.contract(f"{name}-result", f"exit {result.returncode}\n")
         golden.check(f"{name}-stderr", kb.norm_err(result.err))
         golden.check(f"{name}-stdout", kb.norm(result.out))
 

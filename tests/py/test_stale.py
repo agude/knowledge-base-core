@@ -34,7 +34,7 @@ def article(verified: str | None, *, title: str = "", ttl: str = "", body: str =
 
 
 def _check(kb: KB, golden: Golden, result: Result) -> None:
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     golden.check("stdout", kb.norm(result.out))
     golden.check("stderr", kb.norm_err(result.err))
 
@@ -148,16 +148,16 @@ def test_freshness_boundary_shared(kb: KB, golden: Golden) -> None:
         "# Boundary Stale\n\n## Facts\n\nboundary",
     )
     env = {"FRESHNESS_TODAY_EPOCH": "1768089600"}  # 2026-01-11, 10 days after 2026-01-01
-    golden.check("stale-count", kb.run("stale", "--count", env=env).out)
+    golden.contract("stale-count", kb.run("stale", "--count", env=env).out)
     search = json.loads(kb.run("search", "--json", "boundary", env=env).out)
     statuses = {r["path"]: r["freshness"]["status"] for r in search["results"]}
-    golden.check("search-status", json.dumps(statuses, indent=2, sort_keys=True) + "\n")
+    golden.contract("search-status", json.dumps(statuses, indent=2, sort_keys=True) + "\n")
     section = json.loads(
         kb.run(
             "section", "--json", "--file", "knowledge/boundary-fresh.md", "--number", "1", env=env
         ).out
     )
-    golden.check("section-freshness", json.dumps(section["freshness"], indent=2) + "\n")
+    golden.contract("section-freshness", json.dumps(section["freshness"], indent=2) + "\n")
 
 
 @pytest.mark.bats("stale.bats", "stale --sections reports the affected locator")

@@ -50,10 +50,10 @@ def _commit(kb: KB, *args: str) -> Commit:
 
 
 def _check(kb: KB, golden: Golden, result: Commit) -> None:
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     golden.check("stdout", kb.norm(result.stdout))
     golden.check("stderr", kb.norm_err(result.stderr))
-    golden.check("log", kb.norm(kb.git("log", "--format=%s", "--name-status")))
+    golden.contract("log", kb.norm(kb.git("log", "--format=%s", "--name-status")))
 
 
 def _committed(kb: KB, path: str) -> str:
@@ -66,8 +66,8 @@ def test_stamps_updated(hooked: KB, golden: Golden) -> None:
     hooked.create_article("net.md", good_article("How DNS works."))
     hooked.git("add", "knowledge/net.md")
     _check(hooked, golden, _commit(hooked, "-m", "Add networking"))
-    golden.check("committed", _committed(hooked, "knowledge/net.md"))
-    golden.check(
+    golden.contract("committed", _committed(hooked, "knowledge/net.md"))
+    golden.contract(
         "worktree", hooked.norm((hooked.layout.content / "knowledge" / "net.md").read_text())
     )
 
@@ -101,9 +101,9 @@ def test_ignores_commits_without_articles(hooked: KB, golden: Golden) -> None:
 @pytest.mark.bats("pre_commit.bats", "observe still commits with the hook installed")
 def test_observe_with_hook(hooked: KB, golden: Golden) -> None:
     result = hooked.run("observe", "--title", "Test", "--body", "Body")
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     golden.check("stderr", hooked.norm_err(result.err))
-    golden.check("log", hooked.norm(hooked.git("log", "--format=%s", "--name-status")))
+    golden.contract("log", hooked.norm(hooked.git("log", "--format=%s", "--name-status")))
 
 
 @pytest.mark.bats("pre_commit.bats", "pre-commit does not restamp an article already dated today")
@@ -124,7 +124,7 @@ def test_partial_commit_skips_stamp(hooked: KB, golden: Golden) -> None:
     hooked.create_article("net.md", good_article("How DNS works."))
     hooked.git("add", "knowledge/net.md")
     _check(hooked, golden, _commit(hooked, "-m", "Add", "--", "knowledge/net.md"))
-    golden.check("committed", _committed(hooked, "knowledge/net.md"))
+    golden.contract("committed", _committed(hooked, "knowledge/net.md"))
 
 
 @pytest.mark.bats(
@@ -186,7 +186,7 @@ def test_stamps_non_ascii_name(hooked: KB, golden: Golden) -> None:
     )
     hooked.git("add", "-A", "knowledge/")
     _check(hooked, golden, _commit(hooked, "-m", "Add"))
-    golden.check("committed", _committed(hooked, "knowledge/café.md"))
+    golden.contract("committed", _committed(hooked, "knowledge/café.md"))
 
 
 @pytest.mark.bats("pre_commit.bats", "pre-commit lints an article with a non-ASCII filename")
@@ -222,7 +222,7 @@ def test_symlinked_article_stays_a_link(hooked: KB, golden: Golden) -> None:
     hooked.git("add", "-A")
     _check(hooked, golden, _commit(hooked, "-m", "Add"))
     assert link.is_symlink()
-    golden.check("real", hooked.norm(real.read_text(encoding="utf-8")))
+    golden.contract("real", hooked.norm(real.read_text(encoding="utf-8")))
 
 
 def test_alternate_index_commit(hooked: KB, golden: Golden) -> None:
@@ -242,4 +242,4 @@ def test_alternate_index_commit(hooked: KB, golden: Golden) -> None:
         check=False,
     )
     _check(hooked, golden, Commit(completed.returncode, completed.stdout, completed.stderr))
-    golden.check("committed", _committed(hooked, "knowledge/net.md"))
+    golden.contract("committed", _committed(hooked, "knowledge/net.md"))

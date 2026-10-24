@@ -73,7 +73,7 @@ def test_buffer_persists_after_stop(session: Session, golden: Golden) -> None:
     session.start_buffer()
     results = [session.prompt("Hello"), session.stop("Hi there")]
     golden.check("results", _results(session.kb, *results))
-    golden.check("buffer", session.buffer())
+    golden.contract("buffer", session.buffer())
 
 
 @pytest.mark.bats("session_flow.bats", "session file accumulates messages across turns")
@@ -83,7 +83,7 @@ def test_buffer_accumulates(session: Session, golden: Golden) -> None:
     session.stop("First answer")
     session.prompt("Second question")
     session.stop("Second answer")
-    golden.check("buffer", session.buffer())
+    golden.contract("buffer", session.buffer())
 
 
 @pytest.mark.bats("session_flow.bats", "multi-turn session creates observation with all messages")
@@ -96,9 +96,11 @@ def test_session_end_flushes(session: Session, golden: Golden) -> None:
     session.stop("6")
     result = session.end()
     golden.check("results", _results(session.kb, result))
-    golden.check("buffer", session.buffer())
-    golden.check("observations", _observations(session.kb))
-    golden.check("log", session.kb.norm(git_log(session.kb.layout.content, session.kb.git_env())))
+    golden.contract("buffer", session.buffer())
+    golden.contract("observations", _observations(session.kb))
+    golden.contract(
+        "log", session.kb.norm(git_log(session.kb.layout.content, session.kb.git_env()))
+    )
 
 
 @pytest.mark.bats("session_flow.bats", "session-end drops a one-exchange transcript")
@@ -108,9 +110,9 @@ def test_session_end_drops_one_exchange(session: Session, golden: Golden) -> Non
     session.stop("4")
     result = session.end()
     golden.check("results", _results(session.kb, result))
-    golden.check("buffer", session.buffer())
-    golden.check("observations", _observations(session.kb))
-    golden.check("syslog", session.kb.norm(_read(session.kb.layout.syslog)))
+    golden.contract("buffer", session.buffer())
+    golden.contract("observations", _observations(session.kb))
+    golden.contract("syslog", session.kb.norm(_read(session.kb.layout.syslog)))
 
 
 @pytest.mark.bats("session_flow.bats", "KNOWLEDGE_MIN_MESSAGES=0 keeps a one-exchange transcript")
@@ -119,7 +121,7 @@ def test_min_messages_zero(session: Session, golden: Golden) -> None:
     session.prompt("What is 2+2?")
     session.stop("4")
     session.end(KNOWLEDGE_MIN_MESSAGES="0")
-    golden.check("observations", _observations(session.kb))
+    golden.contract("observations", _observations(session.kb))
 
 
 @pytest.mark.bats("session_flow.bats", "session-end keeps a transcript at the threshold")
@@ -129,21 +131,21 @@ def test_session_end_at_threshold(session: Session, golden: Golden) -> None:
     session.stop("Answer")
     session.prompt("Second")
     session.end()
-    golden.check("observations", _observations(session.kb))
+    golden.contract("observations", _observations(session.kb))
 
 
 @pytest.mark.bats("session_flow.bats", "session-stop recreates a swept buffer")
 def test_stop_recreates_buffer(session: Session, golden: Golden) -> None:
     result = session.stop("Response")
     golden.check("results", _results(session.kb, result))
-    golden.check("buffer", session.buffer())
+    golden.contract("buffer", session.buffer())
 
 
 @pytest.mark.bats("session_flow.bats", "session-prompt recreates a swept buffer")
 def test_prompt_recreates_buffer(session: Session, golden: Golden) -> None:
     result = session.prompt("Hello")
     golden.check("results", _results(session.kb, result))
-    golden.check("buffer", session.buffer())
+    golden.contract("buffer", session.buffer())
 
 
 @pytest.mark.bats(
@@ -156,7 +158,7 @@ def test_capture_continues_after_sweep(session: Session, golden: Golden) -> None
     session.file.unlink()
     session.prompt("After the sweep")
     session.stop("Second answer")
-    golden.check("buffer", session.buffer())
+    golden.contract("buffer", session.buffer())
 
 
 @pytest.mark.bats("session_flow.bats", "capture stays off when session-start never ran")

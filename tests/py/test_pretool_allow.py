@@ -148,7 +148,7 @@ def test_section_cannot_read_outside(kb: KB, golden: Golden) -> None:
     result = kb.run("section", "--file", str(outside), "--heading", "Secret")
     assert result.returncode != 0
     assert "top secret" not in result.out + result.err
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     golden.check("stderr", kb.norm_err(result.err))
 
 

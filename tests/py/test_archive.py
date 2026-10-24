@@ -48,13 +48,13 @@ def _seed(kb: KB, *names: str) -> None:
 
 
 def _check(kb: KB, golden: Golden, result: Result) -> None:
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     golden.check("stdout", kb.norm(result.out))
     golden.check("stderr", kb.norm_err(result.err))
-    golden.check("observations", kb.norm(tree(kb.layout.content / "observations")))
-    golden.check("log", kb.norm(git_log(kb.layout.content, kb.git_env())))
+    golden.contract("observations", kb.norm(tree(kb.layout.content / "observations")))
+    golden.contract("log", kb.norm(git_log(kb.layout.content, kb.git_env())))
     lock = kb.layout.content / ".observe.lock"
-    golden.check("lock", "held\n" if lock.exists() else "released\n")
+    golden.contract("lock", "held\n" if lock.exists() else "released\n")
 
 
 @pytest.mark.bats("archive.bats", "archive moves file from pending to archived")
@@ -64,7 +64,7 @@ def test_archive_one(kb: KB, golden: Golden) -> None:
     _seed(kb, "obs1.md")
     _check(kb, golden, kb.run("archive", "obs1.md", "--no-commit"))
     archived = kb.layout.content / "observations" / "archived" / "obs1.md"
-    golden.check("archived", archived.read_text(encoding="utf-8"))
+    golden.contract("archived", archived.read_text(encoding="utf-8"))
 
 
 @pytest.mark.bats("archive.bats", "archive handles multiple files")
@@ -123,8 +123,8 @@ def test_archive_without_front_matter(kb: KB, golden: Golden) -> None:
     result = kb.run("archive", "plain.md", "rule.md", "--no-commit")
     _check(kb, golden, result)
     archived = kb.layout.content / "observations" / "archived"
-    golden.check("plain", (archived / "plain.md").read_text(encoding="utf-8"))
-    golden.check("rule", (archived / "rule.md").read_text(encoding="utf-8"))
+    golden.contract("plain", (archived / "plain.md").read_text(encoding="utf-8"))
+    golden.contract("rule", (archived / "rule.md").read_text(encoding="utf-8"))
 
 
 def test_archive_unknown_option(kb: KB, golden: Golden) -> None:
@@ -158,7 +158,7 @@ def test_archive_disposition_recorded(kb: KB, golden: Golden) -> None:
     )
     _check(kb, golden, result)
     archived = kb.layout.content / "observations" / "archived" / "a.md"
-    golden.check("archived", archived.read_text(encoding="utf-8"))
+    golden.contract("archived", archived.read_text(encoding="utf-8"))
 
 
 @pytest.mark.bats("archive.bats", "archive auto-commit ignores unrelated legacy broken references")
@@ -188,6 +188,6 @@ def test_removing_archived_source_is_rejected(hooked: KB, golden: Golden) -> Non
         text=True,
         check=False,
     )
-    golden.check("result", f"exit {completed.returncode}\n")
+    golden.contract("result", f"exit {completed.returncode}\n")
     golden.check("stderr", hooked.norm_err(completed.stderr))
-    golden.check("log", hooked.norm(git_log(hooked.layout.content, hooked.git_env())))
+    golden.contract("log", hooked.norm(git_log(hooked.layout.content, hooked.git_env())))

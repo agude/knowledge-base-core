@@ -15,7 +15,7 @@ EPOCH_2026_09_06 = "1788652800"
 
 
 def _check(kb: KB, golden: Golden, result: Result) -> None:
-    golden.check("result", f"exit {result.returncode}\n")
+    golden.contract("result", f"exit {result.returncode}\n")
     golden.check("stdout", kb.norm(result.out))
     golden.check("stderr", kb.norm_err(result.err))
 
@@ -90,7 +90,7 @@ def test_nested_observations(kb: KB, golden: Golden) -> None:
         "created: 2025-01-01T00:00:00Z\n---\n\nBody\n",
         encoding="utf-8",
     )
-    golden.check("count", kb.run("pending", "--count").out)
+    golden.contract("count", kb.run("pending", "--count").out)
     golden.check("list", kb.norm(kb.run("pending").out))
     golden.check("full", kb.norm(kb.run("pending", "--full").out))
     result = kb.run("pending", "--preview", env={"FRESHNESS_TODAY_EPOCH": EPOCH_2026_09_06})
