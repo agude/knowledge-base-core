@@ -214,7 +214,6 @@ def _sort_indented(text: str) -> str:
         "ambiguous",
     ],
 )
-@pytest.mark.audit("A-029")
 def test_context_resolution(kb: KB, golden: Golden, context: str) -> None:
     kb.create_article("topic.md", "# Topic")
     kb.create_article("sub/deep.md", "# Deep")

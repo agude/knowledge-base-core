@@ -453,8 +453,12 @@ Observed: `Ambiguous match for 'dup.md' — 2 files found:` lists matches in
 the order `find` returns them, which depends on the filesystem, then also
 prints `Not found: dup.md`.
 Expected: sorted matches and one message.
-Class: undecided
-Decision:
+Class: accidental (unused)
+Decision: the message is for a person or agent to read; no caller parses
+it, and the exit code and the absence of a question file are the contract.
+Python prints the matches in code-point order (A-005) and omits the
+trailing `Not found:` line. The test already sorts the match lines and
+compares stderr through a reference golden; audit mark removed.
 
 ## A-030: an option takes the next word even when it is another option
 
@@ -463,10 +467,15 @@ Test: `test_lib.py::test_option_arguments`
 Observed: `need_arg` checks only that a word follows, so `observe --title
 --body B` sets the title to `--body` and then rejects `B` as an unknown
 option; `observe --title --no-commit` sets the title to `--no-commit`.
-Expected: unknown. Values that begin with `--` are legitimate for `--body`
-and `--answer`.
-Class: undecided
-Decision:
+Expected: as observed: an option's value is the next word, whatever it
+starts with.
+Class: intended
+Decision: one simple rule that lets text values begin with dashes
+(`--body "--flag explained"`, `--answer -`). Python's option parsing
+follows it rather than `argparse`'s, which rejects values that look like
+options. A mistyped command still fails, as `flag-as-value` shows, because
+the displaced value is then an unknown option. Tests unchanged; audit mark
+removed.
 
 ## A-031: a signal to session-flush alone waits for its child
 
