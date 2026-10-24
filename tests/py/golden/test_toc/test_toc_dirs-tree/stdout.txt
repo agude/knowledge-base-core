@@ -1,0 +1,10 @@
+<CONTENT>/knowledge
+├── empty
+├── home
+│   ├── a.md
+│   └── remodel
+│       ├── b.md
+│       └── c.md
+├── loose.md
+└── shell
+    └── c.md

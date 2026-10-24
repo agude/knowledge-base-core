@@ -184,3 +184,24 @@ Expected: unknown. CommonMark treats `## ##` as an empty H2; the bats test
 name implies it should not be listed.
 Class: undecided
 Decision:
+
+## A-018: toc does not validate --depth
+
+Script: `toc`  Test: `test_toc.py::test_toc_argument_errors`
+Observed: `--depth x` aborts with Bash's `x: unbound variable` (including the
+script's absolute path) after printing a file header, exit 1. `--depth 0`
+prints file headers with no headings, exit 0.
+Expected: reject a non-positive or non-numeric depth with a usage error.
+Class: undecided
+Decision:
+
+## A-019: toc --dirs output depends on whether `tree` is installed
+
+Script: `toc`  Test: `test_toc.py::test_toc_dirs`
+Observed: with the `tree` utility on `PATH`, `--dirs` prints `tree`'s
+box-drawing output with an absolute root, including empty directories.
+Without it, a `find` fallback prints an indented list with a different
+format.
+Expected: one format on every host.
+Class: undecided
+Decision:
