@@ -707,6 +707,21 @@ flush into one committed observation or a failure that keeps the buffer
 unchanged with a message, and its contract goldens are removed (found in
 unit 4.7).
 
+## A-044: on BSD date, ages are a day low
+
+Script: `_lib.sh` (`date_to_epoch`, used by `stale`, `status`, `context`,
+`pending`)  Test: every freshness age and `Oldest pending age` golden
+Observed: on macOS, `date -u -j -f "%Y-%m-%d"` fills the omitted hour,
+minute, and second from the current clock, so a date converts to that day
+at the current time of day. Ages counted from it are one day low; about 70
+goldens failed under `KB_IMPL=bash` on the macOS CI runner. GNU date
+returns midnight.
+Expected: a date converts to midnight UTC on every host.
+Class: platform artifact
+Decision: bash passes an explicit `00:00:00` to BSD date, and the
+`bash-frozen` tag moves to that commit. Python already converts to
+midnight; no golden changes (found by the macOS CI run, plan 2.4).
+
 ## Accepted reference differences
 
 Reference goldens that the Python port does not reproduce, each by a
