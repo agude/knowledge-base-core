@@ -396,3 +396,25 @@ script line numbers (`scripts/toc: line 168: ...: Permission denied`).
 Expected: unknown. Probably skip the file with one clear warning.
 Class: undecided
 Decision:
+
+## A-037: a lock directory without a pid file is never broken
+
+Script: `_lib.sh` (`acquire_lock`)  Test: `test_concurrency.py::test_lock_without_pid_is_never_broken`
+Observed: a stale lock is broken only when its `pid` file names a dead
+process. A writer killed between `mkdir` and writing its pid leaves
+`.observe.lock/` with no pid file; every later writer waits
+`KNOWLEDGE_LOCK_WAIT` seconds and fails, until someone removes the
+directory by hand.
+Expected: unknown. Probably break a pid-less lock older than a bound.
+Class: undecided
+Decision:
+
+## A-038: lock waits poll once a second
+
+Script: `_lib.sh` (`acquire_lock`)  Test: `test_concurrency.py::test_concurrent_observe_loses_nothing`
+Observed: a writer that finds the lock held sleeps a whole second before
+retrying, so five concurrent `observe` calls take about four seconds,
+almost all of it waiting.
+Expected: unknown. A shorter retry interval keeps the same safety.
+Class: undecided
+Decision:
