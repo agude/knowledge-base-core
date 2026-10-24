@@ -43,6 +43,7 @@ COMMANDS: dict[str, str] = {
     "archive": "kb.commands.archive",
     "commit": "kb.commands.commit",
     "context": "kb.commands.context",
+    "lint": "kb.commands.lint",
     "observe": "kb.commands.observe",
     "pending": "kb.commands.pending",
     "session-append": "kb.commands.session_append",

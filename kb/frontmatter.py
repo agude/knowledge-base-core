@@ -28,8 +28,12 @@ def field(text: str, name: str) -> str | None:
             inside = True
             continue
         if inside and (match := pattern.match(line)):
-            value = match.group(1)
-            if quoted := re.fullmatch(r'"(.*)"', value, re.DOTALL):
-                value = quoted.group(1).replace('\\"', '"').replace("\\\\", "\\")
-            return value
+            return unquote(match.group(1))
     return None
+
+
+def unquote(value: str) -> str:
+    """A double-quoted value without its quotes, with yaml_escape reversed."""
+    if quoted := re.fullmatch(r'"(.*)"', value, re.DOTALL):
+        return quoted.group(1).replace('\\"', '"').replace("\\\\", "\\")
+    return value

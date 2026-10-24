@@ -133,12 +133,6 @@ PROVENANCE_KINDS = (
 )
 
 
-def _unquote(value: str) -> str:
-    if quoted := re.fullmatch(r'"(.*)"', value, re.DOTALL):
-        return quoted.group(1).replace('\\"', '"').replace("\\\\", "\\")
-    return value
-
-
 def provenance(relpath: str, text: str) -> Provenance:
     result = Provenance()
     for prefix, scope, label, state in PROVENANCE_KINDS:
@@ -161,7 +155,7 @@ def provenance(relpath: str, text: str) -> Provenance:
             continue
         if in_sources:
             if item := re.fullmatch(r"\s*-\s+(.*)", line, re.DOTALL):
-                result.references.append(_unquote(item.group(1)))
+                result.references.append(frontmatter.unquote(item.group(1)))
                 continue
             in_sources = False
     if relpath.startswith("observations/archived/"):

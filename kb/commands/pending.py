@@ -60,12 +60,6 @@ def _decode(data: bytes) -> str:
     return data.decode("utf-8", errors="surrogateescape")
 
 
-def _unquote(value: str) -> str:
-    if quoted := re.fullmatch(r'"(.*)"', value, re.DOTALL):
-        return quoted.group(1).replace('\\"', '"').replace("\\\\", "\\")
-    return value
-
-
 def _normalise(text: str) -> str:
     """ASCII lowercase; every run of other bytes becomes one space (GNU tr is bytewise)."""
     data = text.encode("utf-8", errors="surrogateescape").lower()
@@ -103,7 +97,7 @@ def article_label(path: Path) -> str:
         if heading is not None and heading.level == 1:
             return heading.text
         if inside and (match := re.fullmatch(r"title:\s*(.*)", line, re.DOTALL)):
-            fallback = _unquote(match.group(1))
+            fallback = frontmatter.unquote(match.group(1))
     return fallback or path.name.removesuffix(".md")
 
 
@@ -127,7 +121,7 @@ def read_metadata(path: Path) -> Metadata:
             inside = True
             continue
         if inside and (match := METADATA_FIELD.fullmatch(line)):
-            metadata.values[match.group(1)] = _unquote(match.group(2))
+            metadata.values[match.group(1)] = frontmatter.unquote(match.group(2))
     return metadata
 
 
