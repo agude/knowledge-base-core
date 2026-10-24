@@ -731,6 +731,7 @@ is ticked (plan step 4).
 | `test_adapters.py::test_buffer_creation_failure` | results | 4.8 | A-021: one append attempt, one message |
 | `test_session_flow.py::test_session_end_flushes` | results | 4.8 | A-040: Claude SessionEnd prints nothing |
 | `test_session_flow.py::test_session_end_drops_one_exchange` | syslog | 4.8 | A-004 |
+| `test_help.py::test_help[hooks-pre-commit]`, `test_unknown_option[hooks-pre-commit]` | stderr | 4.17 | outside a repository: one message instead of git's errors and usage text (as A-036) |
 
 ## null_ok review (plan item 2.3)
 

@@ -42,6 +42,7 @@ COMMANDS: dict[str, str] = {
     "section": "kb.commands.section",
     "archive": "kb.commands.archive",
     "commit": "kb.commands.commit",
+    "hooks/pre-commit": "kb.commands.hooks.pre_commit",
     "context": "kb.commands.context",
     "lint": "kb.commands.lint",
     "observe": "kb.commands.observe",
