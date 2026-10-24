@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import subprocess
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -179,6 +180,21 @@ class KB:
         for repo in repos:
             hashes += self.commits(repo)
         return hashes
+
+    # Locks
+
+    @contextmanager
+    def hold_lock(self) -> Iterator[int]:
+        """Hold .observe.lock on behalf of a live process, as a concurrent writer would."""
+        holder = subprocess.Popen(["sleep", "600"])
+        lockdir = self.layout.content / ".observe.lock"
+        try:
+            lockdir.mkdir()
+            (lockdir / "pid").write_text(f"{holder.pid}\n", encoding="utf-8")
+            yield holder.pid
+        finally:
+            holder.kill()
+            holder.wait()
 
     # Content
 
