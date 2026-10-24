@@ -680,6 +680,18 @@ five-writer runs failed. Both tests lose their `xfail`, and
 Residual: a breaker killed while holding the guard blocks breaking until
 the guard is removed by hand. Commit e4c2a54.
 
+## A-042: batch status with an invalid id prints a second error
+
+Script: `batch`  Test: `test_batch.py::test_batch_usage_errors[status-path]`
+Observed: `batch status ../x.tsv` prints `Error: invalid batch id: ../x.tsv`
+and then `Error: batch not found: ` with an empty name. `batch_file` dies
+inside `$(...)`, which exits only the command substitution, so
+`status_batch` runs with an empty path. The exit code is 1 either way.
+Expected: one message.
+Class: accidental (unused)
+Decision: Python prints only the first message (found in unit 4.6). The
+output is a reference golden, so no test changes.
+
 ## Accepted reference differences
 
 Reference goldens that the Python port does not reproduce, each by a
@@ -691,6 +703,7 @@ is ticked (plan step 4).
 | `test_help.py::test_help[archive]` | stdout | 4.2 | A-011 header; A-001 example names |
 | `test_help.py::test_help[questions]`, `[resolve]` | stdout | 4.5 | A-001 example names |
 | `test_lib.py::test_context_resolution[ambiguous]`, `[symlink-out]` | stderr | 4.5 | A-029: one message per failure |
+| `test_batch.py::test_batch_usage_errors[status-path]` | commands | 4.6 | A-042 |
 
 ## null_ok review (plan item 2.3)
 
