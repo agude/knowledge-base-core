@@ -10,6 +10,7 @@ import pytest
 from kbtest import facts
 from kbtest.golden import Golden
 from kbtest.impl import REPO
+from kbtest.marks import xfail_bash
 from kbtest.runner import KB, Result
 
 FIXTURES = REPO / "tests" / "fixtures"
@@ -87,11 +88,25 @@ def _json(result: Result) -> dict:
 @pytest.mark.bats("section.bats", "section --number with dot notation extracts H3")
 @pytest.mark.bats("section.bats", "section --number 1.2 gets second H3 under first H2")
 @pytest.mark.bats("section.bats", "section fails for nonexistent number")
-@pytest.mark.audit("A-018")
-@pytest.mark.parametrize("number", ["1", "2", "3", "2.1", "1.2", "2.3", "99", "0", "x"])
+@pytest.mark.parametrize(
+    "number",
+    [
+        "1",
+        "2",
+        "3",
+        "2.1",
+        "1.2",
+        "2.3",
+        "99",
+        "0",
+        pytest.param("x", marks=xfail_bash("A-018: bash does not validate numeric arguments")),
+    ],
+)
 def test_section_number(kb: KB, golden: Golden, number: str) -> None:
     kb.create_article("net.md", ARTICLE)
-    _check(kb, golden, _section(kb, "--file", "knowledge/net.md", "--number", number))
+    result = _section(kb, "--file", "knowledge/net.md", "--number", number)
+    assert "unbound variable" not in result.err
+    _check(kb, golden, result)
 
 
 @pytest.mark.bats("section.bats", "section --heading does substring match")

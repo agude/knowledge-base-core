@@ -9,7 +9,8 @@ import pytest
 
 from kbtest import env as envmod
 from kbtest import facts
-from kbtest.golden import Golden
+from kbtest.golden import Golden, directory_for
+from kbtest.marks import xfail_bash
 from kbtest.runner import KB, Result
 
 ARTICLE = """---
@@ -115,15 +116,34 @@ def test_toc_path(kb: KB, golden: Golden, path: str) -> None:
     _check(kb, golden, kb.run("toc", "--path", path))
 
 
-@pytest.mark.audit("A-019")
-@pytest.mark.parametrize("renderer", ["tree", "find"])
+@pytest.mark.parametrize(
+    "renderer",
+    [
+        pytest.param(
+            "tree", marks=xfail_bash("A-019: with tree installed, bash prints tree's format")
+        ),
+        "find",
+    ],
+)
 def test_toc_dirs(kb: KB, golden: Golden, without_tools: Callable[..., KB], renderer: str) -> None:
+    """One --dirs format, the find fallback's, whether or not tree is installed (A-019)."""
     if renderer == "tree" and shutil.which("tree", path=envmod.SYSTEM_PATH) is None:
         pytest.skip("the tree utility is not installed on this host")
     if renderer == "find":
         without_tools("tree")
     _areas(kb)
-    _check(kb, golden, kb.run("toc", "--dirs"))
+    result = kb.run("toc", "--dirs")
+    # Both renderers compare against one contract, recorded without tree.
+    shared = Golden(
+        directory_for("test_toc", "toc_dirs"),
+        update=golden.update and renderer == "find",
+        mode=golden.mode,
+        report=golden.report,
+        nodeid=golden.nodeid,
+    )
+    shared.contract("result", f"exit {result.returncode}\n")
+    shared.contract("stdout", kb.norm(result.out))
+    shared.contract("stderr", kb.norm_err(result.err))
 
 
 @pytest.mark.bats("toc.bats", "toc --map lists areas with counts")
@@ -157,8 +177,20 @@ def test_toc_article_without_h1(kb: KB, golden: Golden) -> None:
     _check(kb, golden, kb.run("toc", "--depth", "2"))
 
 
-@pytest.mark.audit("A-018")
-@pytest.mark.parametrize("args", [["--depth"], ["--depth", "x"], ["--depth", "0"], ["--bogus"]])
+BAD_NUMBER = xfail_bash("A-018: bash does not validate numeric arguments")
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--depth"],
+        pytest.param(["--depth", "x"], marks=BAD_NUMBER),
+        pytest.param(["--depth", "0"], marks=BAD_NUMBER),
+        ["--bogus"],
+    ],
+)
 def test_toc_argument_errors(kb: KB, golden: Golden, args: list[str]) -> None:
     kb.create_article("networking.md", ARTICLE)
-    _check(kb, golden, kb.run("toc", *args))
+    result = kb.run("toc", *args)
+    assert "unbound variable" not in result.err
+    _check(kb, golden, result)

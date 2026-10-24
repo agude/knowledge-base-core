@@ -6,6 +6,7 @@ import pytest
 
 from kbtest import facts
 from kbtest.golden import Golden
+from kbtest.marks import xfail_bash
 from kbtest.runner import KB, Result
 
 FENCED = """# Shell Recipes
@@ -171,7 +172,7 @@ def test_section_exact_after_closing_hashes(kb: KB, golden: Golden) -> None:
 
 
 @pytest.mark.bats("fences.bats", "a heading of only hashes does not become a heading name")
-@pytest.mark.audit("A-017")
+@xfail_bash("A-017: bash lists a hashes-only heading as an empty section")
 def test_hashes_only_heading(kb: KB, golden: Golden) -> None:
     # The bats original has no hashes-only line; this adds one.
     kb.create_article("h.md", "# H\n\n## ##\n\n## Real Section\n\nbody")

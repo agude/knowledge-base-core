@@ -274,10 +274,14 @@ Test: `test_fences.py::test_hashes_only_heading`
 Observed: `## ##` is listed as section `1. ` with an empty name, and shifts
 the numbering of the following sections. The bats test "a heading of only
 hashes does not become a heading name" never included such a line.
-Expected: unknown. CommonMark treats `## ##` as an empty H2; the bats test
-name implies it should not be listed.
-Class: undecided
-Decision:
+Expected: a heading with an empty name is not a section: it is not listed
+and does not shift the numbering; its lines belong to the section above.
+Class: bug
+Decision: the bats test name states the intent; its fixture lost the
+`## ##` line. The facts contract now lists only `1. Real Section`, and the
+test is a strict `xfail` under bash. Python's shared heading parser applies
+the same rule to `section`, `search`, and `lint`, so numbering agrees
+across commands. The heading is malformed input, so bash is not fixed.
 
 ## A-018: toc and section do not validate numeric arguments
 
@@ -288,8 +292,11 @@ the script's absolute path) after printing a file header, exit 1. `toc
 --depth 0` prints file headers with no headings, exit 0. `section --number
 x` aborts with the same unbound-variable error.
 Expected: reject a non-positive or non-numeric depth with a usage error.
-Class: undecided
-Decision:
+Class: bug
+Decision: `toc --depth x`, `toc --depth 0`, and `section --number x` now
+expect exit 1 with no output and no `unbound variable` message; the three
+cases are strict `xfail` under bash. Only agent typos reach these paths, and
+bash already exits nonzero for two of them, so bash is not fixed.
 
 ## A-019: toc --dirs output depends on whether `tree` is installed
 
@@ -299,8 +306,12 @@ box-drawing output with an absolute root, including empty directories.
 Without it, a `find` fallback prints an indented list with a different
 format.
 Expected: one format on every host.
-Class: undecided
-Decision:
+Class: platform artifact
+Decision: the `find` fallback's format: relative names, two-space indent,
+`/` after directories, empty directories included. It needs no external
+tool. Both renderer cases compare stdout, stderr, and exit code against one
+contract (`golden/test_toc/toc_dirs`), and the `tree` case is a strict
+`xfail` under bash. Bash is not changed.
 
 ## A-020: pre-commit stamps through a symlinked article
 
