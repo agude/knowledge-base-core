@@ -17,8 +17,15 @@ The help examples of `archive`, `questions`, and `resolve` use names such
 as `20260412T000000-abcd.md`, which no command produces
 (`test_help.py::test_help`).
 Expected: the comment and help examples match the code.
-Class: undecided
-Decision:
+Class: intended
+Decision: the 8-hex-digit suffix is deliberate: the comment at `observe:95`
+gives the reason (collision avoidance, `od` over `xxd`), and it replaced the
+4-character form that older archived observations still carry. The line-93
+comment and the help examples are stale text, not behavior. Python writes
+8-hex-digit names, and its comments and help examples show them. Readers
+accept any `*.md` name, including the old 4-character form. Bash is left
+unchanged; `test_help.py` compares help text through reference goldens only,
+so no test changes.
 
 ## A-002: session-append writes two buffer formats
 
