@@ -26,6 +26,7 @@ EXECUTABLES = ROOT / "python"
 
 # Executable path under python/ -> the module whose main(argv) it runs.
 COMMANDS: dict[str, str] = {
+    "commit": "kb.commands.commit",
     "adapters/claude/session-end": "kb.commands.adapters.claude.session_end",
 }
 

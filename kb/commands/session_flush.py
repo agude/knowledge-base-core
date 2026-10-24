@@ -28,7 +28,7 @@ import os
 import sys
 from pathlib import Path
 
-from kb import platform, session
+from kb import cli, platform, session
 
 USAGE = "Usage: session-flush [--preserve-initialization] <session-file>"
 
@@ -38,7 +38,7 @@ def main(argv: list[str]) -> int:
     preserve = False
     args = list(argv)
     if args[:1] in (["-h"], ["--help"]):
-        print(__doc__.strip("\n"))
+        cli.print_help(__doc__)
         return 0
     if args[:1] == ["--preserve-initialization"]:
         preserve = True

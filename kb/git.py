@@ -50,3 +50,21 @@ def commit_paths(repo: Path, message: str, paths: list[str]) -> int:
     if status:
         print(f"locked_commit: commit failed ({status}) for: {message}", file=sys.stderr)
     return status
+
+
+def commit_index(repo: Path, message: str, paths: list[str]) -> int:
+    """Stage every change under paths and commit the whole index.
+
+    A whole-index commit keeps the pre-commit hook's `updated:` stamping,
+    which a pathspec commit would discard. The caller holds the lock.
+    """
+    status = 0
+    for path in paths:
+        status = run(repo, "add", "-A", path)
+        if status:
+            break
+    if not status:
+        status = run(repo, "commit", "-q", "-m", message)
+    if status:
+        print(f"locked_commit_index: commit failed ({status}) for: {message}", file=sys.stderr)
+    return status
