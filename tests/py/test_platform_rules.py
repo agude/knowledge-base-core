@@ -62,7 +62,16 @@ def violations(path: Path) -> list[str]:
             for keyword in ("encoding", "newline"):
                 if _keyword(node, keyword) is None:
                     found.append(f"{node.lineno}: open() without {keyword}")
-        if isinstance(func, ast.Attribute) and func.attr in TEXT_METHODS_NEEDING_ENCODING:
+        on_platform = (
+            isinstance(func, ast.Attribute)
+            and isinstance(func.value, ast.Name)
+            and func.value.id == "platform"
+        )
+        if (
+            isinstance(func, ast.Attribute)
+            and func.attr in TEXT_METHODS_NEEDING_ENCODING
+            and not on_platform
+        ):
             needed = ("encoding", "newline") if func.attr == "write_text" else ("encoding",)
             for keyword in needed:
                 if _keyword(node, keyword) is None:
@@ -86,7 +95,8 @@ def test_rules_catch_each_reserved_call(tmp_path: Path) -> None:
         "import os\nimport syslog\nfrom pathlib import Path\n"
         "os.kill(1, 0)\nos.getuid()\nos.chmod('x', 0)\nos.symlink('a', 'b')\n"
         "open('x')\nopen('x', 'rb')\nPath('x').open(encoding='utf-8')\n"
-        "Path('x').read_text()\nPath('x').write_text('t', encoding='utf-8')\n",
+        "Path('x').read_text()\nPath('x').write_text('t', encoding='utf-8')\n"
+        "platform.write_text(Path('x'), 't')\n",
         encoding="utf-8",
     )
     assert violations(sample) == [
