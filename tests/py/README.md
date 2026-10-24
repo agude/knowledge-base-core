@@ -49,8 +49,8 @@ inherited.
 - `KNOWLEDGE_BASE` is the implementation's root. `KB_CONTENT_DIR` is a fresh
   content repository with the standard tree and one commit.
 - `FRESHNESS_TODAY_EPOCH` is fixed at 2026-10-23T00:00:00Z.
-- `TZ=UTC`. `LANG` and `LC_ALL` are `C.UTF-8`, or `en_US.UTF-8` where
-  `C.UTF-8` is missing.
+- `TZ=UTC`. `LANG` and `LC_ALL` are `KB_LOCALE` when it is set, otherwise
+  `C.UTF-8`, or `en_US.UTF-8` where `C.UTF-8` is missing.
 - Git author and committer names, emails, and dates are fixed, with
   `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_NOSYSTEM=1`.
 

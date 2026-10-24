@@ -54,9 +54,15 @@ Decision:
 ## A-005: output order follows the user's collation
 
 Scripts: `toc`, `stale`, `pending`, `archive`, `questions`, `lint`
-Test: (1d.4)
+Test: `test_locale.py::test_order_follows_collation`
 Observed: 12 `sort -z`/`sort -V` calls run without `LC_ALL=C`, so output
 order depends on the locale. Python's `sorted()` uses code-point order.
+Articles or observations named `B`, `_x`, `a-c`, `a`, `ab` list in that
+order under C.UTF-8 and as `a`, `ab`, `a-c`, `B`, `_x` under en_US.UTF-8,
+in both `toc` and `pending`. The full suite under
+`KB_LOCALE=en_US.UTF-8` (2026-10-24, 953 tests, strict goldens) shows no
+other golden difference: its file names are lowercase, date-stamped, and
+order the same under both collations.
 Expected: one canonical order.
 Class: undecided
 Decision:

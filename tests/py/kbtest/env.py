@@ -123,7 +123,10 @@ def tools() -> Tools:
 
 @functools.cache
 def utf8_locale() -> str:
-    """Return C.UTF-8 where available, otherwise en_US.UTF-8."""
+    """Return KB_LOCALE if set, else C.UTF-8 where available, else en_US.UTF-8."""
+    configured = os.environ.get("KB_LOCALE")
+    if configured:
+        return configured
     result = subprocess.run(["locale", "-a"], capture_output=True, text=True, check=False)
     names = {line.strip().lower() for line in result.stdout.splitlines()}
     if names & {"c.utf-8", "c.utf8"}:
