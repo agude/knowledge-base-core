@@ -6,6 +6,7 @@ import pytest
 
 from kbtest.golden import Golden
 from kbtest.inspect import git_log
+from kbtest.marks import xfail_bash
 from kbtest.runner import KB, Result
 
 ARTICLE = """---
@@ -76,7 +77,6 @@ def test_commit_article(hooked: KB, golden: Golden) -> None:
 
 @pytest.mark.bats("commit.bats", "commit fails when an article does not lint")
 @pytest.mark.bats("commit.bats", "commit releases the lock when the hook rejects")
-@pytest.mark.audit("A-010")
 def test_commit_lint_failure(hooked: KB, golden: Golden) -> None:
     hooked.create_article("bad.md", TWO_H1)
     _check(hooked, golden, hooked.run("commit", "-m", "Curate: bad"))
@@ -102,12 +102,12 @@ def test_commit_all_areas(hooked: KB, golden: Golden) -> None:
     _check(hooked, golden, hooked.run("commit", "-m", "Curate: all"))
 
 
-@pytest.mark.audit("A-009")
+@xfail_bash("A-009: bash runs git commit with nothing staged and exits 1")
 def test_commit_ignores_files_outside_content_areas(hooked: KB, golden: Golden) -> None:
+    """A change outside the four content areas is not curation work."""
     (hooked.layout.content / "notes.txt").write_text("loose\n", encoding="utf-8")
     result = hooked.run("commit", "-m", "Curate: loose")
-    # stdout is git's own status text, whose wording varies by git version.
-    assert "nothing added to commit" in result.out
+    assert result.out == "Nothing to commit.\n"
     _check(hooked, golden, result, stdout=False)
 
 

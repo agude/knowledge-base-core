@@ -156,10 +156,14 @@ the whole repository but stages only `knowledge/`, `observations/`,
 `git commit` with nothing staged: exit 1, git's status text on stdout, and
 `locked_commit_index: commit failed (1)` on stderr. Git's status also lists
 `.observe.lock/` as untracked; the content repository does not ignore it.
-Expected: unknown. Probably "Nothing to commit." when nothing in the four
-areas changed.
-Class: undecided
-Decision:
+Expected: "Nothing to commit." and exit 0 when nothing in the four areas
+changed; the loose file stays untracked.
+Class: bug
+Decision: the header says commit stages the four areas, so a change
+elsewhere is not its work. The test now expects the clean-tree outcome and
+is a strict `xfail` under bash. Python decides from the status of the four
+areas only, so `.observe.lock/` showing as untracked does not matter to it.
+A failed curation commit is recoverable by hand, so bash is not fixed.
 
 ## A-010: a rejected commit leaves its paths staged
 
@@ -167,9 +171,12 @@ Script: `commit`  Test: `test_commit.py::test_commit_lint_failure`
 Observed: when the pre-commit hook rejects the commit, the paths `commit`
 staged stay in the index (`A  knowledge/bad.md`), although the hook prints
 "nothing modified".
-Expected: unknown.
-Class: undecided
-Decision:
+Expected: as observed.
+Class: intended
+Decision: git itself leaves the index as it was when a pre-commit hook
+rejects a commit, and the hook's "nothing modified" refers to the working
+tree, which it does not change. A rerun after the fix stages again. The
+status contract stays; audit mark removed.
 
 ## A-011: archive's header says it uses git mv
 
