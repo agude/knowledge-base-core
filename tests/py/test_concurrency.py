@@ -27,7 +27,7 @@ def test_concurrent_observe_loses_nothing(kb: KB, attempt: int) -> None:
     env = kb.env(tree)
     processes = [
         subprocess.Popen(
-            [str(tree.executable("observe")), "--title", f"Writer {n}", "--body", f"Body {n}"],
+            [str(kb.executable("observe")), "--title", f"Writer {n}", "--body", f"Body {n}"],
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -60,7 +60,7 @@ def test_stale_lock_race_loses_nothing(kb: KB, attempt: int) -> None:
     env = kb.env(tree)
     processes = [
         subprocess.Popen(
-            [str(tree.executable("observe")), "--title", f"Racer {n}", "--body", "Body"],
+            [str(kb.executable("observe")), "--title", f"Racer {n}", "--body", "Body"],
             env=env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,

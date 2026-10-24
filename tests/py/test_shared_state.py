@@ -54,7 +54,7 @@ def test_lock_released_on_signal(kb: KB) -> None:
     hook.chmod(0o755)
     tree = kb.resolve_impl(kb.default_impl)
     process = subprocess.Popen(
-        [str(tree.executable("observe")), "--title", "Interrupted", "--body", "Body"],
+        [str(kb.executable("observe")), "--title", "Interrupted", "--body", "Body"],
         env=kb.env(tree),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

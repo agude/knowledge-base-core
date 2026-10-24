@@ -157,7 +157,7 @@ def test_init_before_sweep(kb: KB) -> None:
     with kb.hold_lock():
         process = subprocess.Popen(
             [
-                str(tree.executable("session-init")),
+                str(kb.executable("session-init")),
                 "--session-id",
                 current,
                 "--persist-initialization",
@@ -492,6 +492,7 @@ def test_flush_without_argument(kb: KB, golden: Golden) -> None:
 @pytest.mark.bats("session_core.bats", "session-flush commits through the default content path")
 def test_flush_default_content_path(kb: KB, golden: Golden) -> None:
     """Hooks run without KB_CONTENT_DIR; the default is <tooling root>/content."""
+    kb.executable("session-flush")  # Skips until it is ported.
     tree = kb.resolve_impl(kb.default_impl)
     checkout = kb.layout.root / "checkout"
     shutil.copytree(
@@ -642,7 +643,7 @@ def _without_job_messages(text: str) -> str:
 def _blocked_flush(kb: KB, path: Path, lock_wait: str) -> subprocess.Popen[bytes]:
     tree = kb.resolve_impl(kb.default_impl)
     process = subprocess.Popen(
-        [str(tree.executable("session-flush")), str(path)],
+        [str(kb.executable("session-flush")), str(path)],
         env=kb.env(tree, {"KNOWLEDGE_MIN_MESSAGES": "0", "KNOWLEDGE_LOCK_WAIT": lock_wait}),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -705,7 +706,7 @@ def test_flush_interrupted_during_commit(kb: KB) -> None:
     hook.chmod(0o700)
     tree = kb.resolve_impl(kb.default_impl)
     process = subprocess.Popen(
-        [str(tree.executable("session-flush")), str(path)],
+        [str(kb.executable("session-flush")), str(path)],
         env=kb.env(tree, {"KNOWLEDGE_MIN_MESSAGES": "0"}),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

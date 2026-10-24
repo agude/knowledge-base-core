@@ -96,7 +96,7 @@ def test_lock_held_by_one_blocks_the_other(kb: KB, holder: str, waiter: str) -> 
     hook.chmod(0o755)
     tree = kb.resolve_impl(_name(kb, holder))
     process = subprocess.Popen(
-        [str(tree.executable("observe")), "--title", "Holder", "--body", "Body"],
+        [str(kb.executable("observe", _name(kb, holder))), "--title", "Holder", "--body", "Body"],
         env=kb.env(tree),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

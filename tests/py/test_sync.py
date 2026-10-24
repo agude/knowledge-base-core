@@ -180,7 +180,7 @@ def test_sync_rechecks_after_fetch(kb: KB, remote: Remote, golden: Golden) -> No
     wrapper.chmod(0o755)
     tree_obj = kb.resolve_impl(kb.default_impl)
     process = subprocess.Popen(
-        [str(tree_obj.executable("sync"))],
+        [str(kb.executable("sync"))],
         env=kb.env(tree_obj),
         cwd=kb.layout.root,
         stdout=subprocess.PIPE,

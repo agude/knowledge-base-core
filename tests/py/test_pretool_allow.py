@@ -119,7 +119,7 @@ def test_approves_through_a_symlinked_hook(kb: KB) -> None:
     tree = kb.resolve_impl(kb.default_impl)
     link_dir = kb.layout.root / "hooks"
     link_dir.mkdir()
-    (link_dir / "010.knowledge").symlink_to(tree.executable(HOOK))
+    (link_dir / "010.knowledge").symlink_to(kb.executable(HOOK))
     payload = json.dumps({"tool_input": {"command": f"{tree.scripts_dir}/status"}})
     completed = subprocess.run(
         [str(link_dir / "010.knowledge")],

@@ -113,6 +113,20 @@ class KB:
         envmod.assert_confined(result, self.layout.root)
         return result
 
+    def executable(self, script: str, impl: str | None = None) -> Path:
+        """The path of script in an implementation's tree, for tests that start it themselves.
+
+        Applies run()'s rule: an executable missing from python/ skips the test.
+        """
+        tree = self.resolve_impl(impl or self.default_impl)
+        if not tree.has(script):
+            if tree.name == "python":
+                pytest.skip(f"not ported to python: {script}")
+            raise AssertionError(f"{tree.name} has no executable {script} in {tree.scripts_dir}")
+        self.normalizer.add_path(tree.kb_root, "<KB>")
+        self.normalizer.add_path(tree.scripts_dir, "<KB>/scripts")
+        return tree.executable(script)
+
     def run(
         self,
         script: str,
@@ -123,18 +137,12 @@ class KB:
         cwd: Path | None = None,
         timeout: float = 60,
     ) -> Result:
+        path = self.executable(script, impl)
         tree = self.resolve_impl(impl or self.default_impl)
-        if not tree.has(script):
-            if tree.name == "python":
-                pytest.skip(f"not ported to python: {script}")
-            raise AssertionError(f"{tree.name} has no executable {script} in {tree.scripts_dir}")
-        self.normalizer.add_path(tree.kb_root, "<KB>")
-        # Python's executables live in python/, not scripts/; outputs name either as one.
-        self.normalizer.add_path(tree.scripts_dir, "<KB>/scripts")
         self.invocations.append((tree.name, script))
         data = stdin.encode("utf-8") if isinstance(stdin, str) else stdin
         completed = subprocess.run(
-            [str(tree.executable(script)), *args],
+            [str(path), *args],
             input=data if data is not None else b"",
             capture_output=True,
             env=self.env(tree, env),
