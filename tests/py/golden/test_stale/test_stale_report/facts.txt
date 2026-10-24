@@ -1,0 +1,5 @@
+knowledge/month.md 61
+knowledge/nodate.md no verified
+knowledge/old.md 2487
+knowledge/year.md 400
+totals 3 stale, 1 missing date

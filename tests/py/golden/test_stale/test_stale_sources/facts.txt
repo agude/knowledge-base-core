@@ -1,0 +1,3 @@
+sources/manual.md 90
+sources/nodate.md no synced
+totals 1 stale, 1 missing date

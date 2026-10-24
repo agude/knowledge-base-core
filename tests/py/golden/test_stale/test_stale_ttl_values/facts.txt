@@ -1,0 +1,7 @@
+knowledge/plain.md 90
+knowledge/process.md 90
+knowledge/short.md 30
+knowledge/status.md 30
+knowledge/weird.md 90
+knowledge/who.md 30
+totals 6 stale, 0 missing date

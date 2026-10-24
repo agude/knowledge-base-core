@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from kbtest.golden import Golden
@@ -25,8 +27,36 @@ verified: 2020-01-01
 # Old"""
 
 
+def _facts(text: str) -> str:
+    """Counts, dates, topics, and the brief line: the values status and context report."""
+    rows = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if re.fullmatch(
+            r"\d+ articles \| \d+ pending \| \d+ stale \| \d+ open question\(s\)", stripped
+        ):
+            rows.append(f"brief {stripped}")
+        elif match := re.fullmatch(
+            r"([A-Z][A-Za-z ]+):\s+(\d+|never|\d{4}-\d{2}-\d{2} .+)", stripped
+        ):
+            rows.append(f"{match.group(1)}={match.group(2)}")
+        elif match := re.fullmatch(r"Topics \((\d+) files\):", stripped):
+            rows.append(f"topic files={match.group(1)}")
+        elif stripped == "Topics: (none yet)":
+            rows.append("topic files=0")
+        elif (
+            line.startswith("  ")
+            and ":" not in stripped
+            and rows
+            and rows[-1].startswith(("topic", "  "))
+        ):
+            rows.append(f"  {stripped}")
+    return "\n".join(rows) + "\n"
+
+
 def _check(kb: KB, golden: Golden, result: Result) -> None:
     golden.contract("result", f"exit {result.returncode}\n")
+    golden.contract("facts", _facts(result.out))
     golden.check("stdout", kb.norm(result.out))
     golden.check("stderr", kb.norm_err(result.err))
 

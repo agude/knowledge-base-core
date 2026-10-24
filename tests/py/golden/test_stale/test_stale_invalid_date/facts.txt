@@ -1,0 +1,2 @@
+knowledge/bad.md bad date
+totals 0 stale, 1 missing date

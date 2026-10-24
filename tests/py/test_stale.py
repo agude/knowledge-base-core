@@ -7,6 +7,7 @@ executables read through FRESHNESS_TODAY_EPOCH.
 from __future__ import annotations
 
 import json
+import re
 from datetime import timedelta
 
 import pytest
@@ -33,8 +34,31 @@ def article(verified: str | None, *, title: str = "", ttl: str = "", body: str =
     return text + f"# {heading}\n\n## Section\n\n{body or 'Content.'}"
 
 
+ROW = re.compile(r"^ +(?:(\d+) days|\[([a-z ]+)\]) +(\S+)", re.MULTILINE)
+TOTALS = re.compile(
+    r"(\d+) stale, (\d+) missing date|(\d+) section\(s\) needing attention|No stale articles"
+)
+
+
+def _stale_facts(text: str) -> str:
+    """What stale flagged: each path with its age or label, and the totals.
+
+    Layout and wording are reference; which items are flagged, how old they
+    are, and the totals are contract.
+    """
+    if re.fullmatch(r"\d+\n", text):
+        return f"count {text}"
+    rows = [f"{path} {age or label}" for age, label, path in ROW.findall(text)]
+    totals = TOTALS.search(text)
+    rows.append(f"totals {totals.group(0) if totals else 'none'}")
+    return "\n".join(rows) + "\n"
+
+
 def _check(kb: KB, golden: Golden, result: Result) -> None:
     golden.contract("result", f"exit {result.returncode}\n")
+    golden.contract("facts", _stale_facts(result.out))
+    if result.returncode != 0:
+        assert result.err.strip(), "a failing run must say why"
     golden.check("stdout", kb.norm(result.out))
     golden.check("stderr", kb.norm_err(result.err))
 

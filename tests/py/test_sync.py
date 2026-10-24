@@ -91,7 +91,9 @@ def _observe(kb: KB, title: str = "Local") -> None:
 
 @pytest.mark.bats("sync.bats", "sync reports being in sync")
 def test_sync_in_sync(kb: KB, remote: Remote, golden: Golden) -> None:
-    _check(kb, golden, kb.run("sync"), remote)
+    result = kb.run("sync")
+    assert "origin/main" in result.out, "the report names the remote branch"
+    _check(kb, golden, result, remote)
 
 
 @pytest.mark.bats("sync.bats", "sync --status reports counts without changing anything")
@@ -103,7 +105,9 @@ def test_sync_status(kb: KB, remote: Remote, golden: Golden) -> None:
 
 
 def test_sync_status_in_sync(kb: KB, remote: Remote, golden: Golden) -> None:
-    _check(kb, golden, kb.run("sync", "--status"), remote)
+    result = kb.run("sync", "--status")
+    assert "origin/main" in result.out, "the report names the remote branch"
+    _check(kb, golden, result, remote)
 
 
 @pytest.mark.bats("sync.bats", "sync pulls another machine's observations")

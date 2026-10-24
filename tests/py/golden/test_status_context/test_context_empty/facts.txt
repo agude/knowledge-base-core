@@ -1,0 +1,3 @@
+topic files=0
+Source documents=0
+Pending observations=0

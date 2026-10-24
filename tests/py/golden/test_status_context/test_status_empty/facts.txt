@@ -1,0 +1,5 @@
+Knowledge articles=0
+Pending observations=0
+Archived observations=0
+Last knowledge update=never
+Last observation=never

@@ -1,0 +1,6 @@
+topic files=3
+  Disk
+  NAS
+  Networking
+Source documents=0
+Pending observations=1

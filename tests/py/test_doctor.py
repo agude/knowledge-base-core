@@ -103,6 +103,7 @@ def test_doctor_missing_node_is_a_warning(sessions: KB, golden: Golden) -> None:
     result = sessions.run("doctor")
     assert result.returncode == 0
     lines = [line for line in result.out.splitlines() if "[adapters]" in line and "node" in line]
+    assert any(line.startswith("WARN [adapters]") for line in lines), result.out
     golden.check("node", "\n".join(lines) + "\n")
 
 
@@ -134,6 +135,11 @@ def test_doctor_installed_curation(sessions: KB, golden: Golden) -> None:
 def test_doctor_dirty_content_tree(sessions: KB, golden: Golden) -> None:
     sessions.create_article("a.md", "# A")
     result = sessions.run("doctor")
+    assert result.returncode == 0
+    assert any(
+        line.startswith("WARN [curation]") and "uncommitted" in line
+        for line in result.out.splitlines()
+    ), result.out
     golden.check("curation", _findings(sessions, result, ("curation",)))
 
 
