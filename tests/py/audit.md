@@ -586,15 +586,25 @@ articles are written by the curator and are readable in practice.
 
 ## A-037: a lock directory without a pid file is never broken
 
-Script: `_lib.sh` (`acquire_lock`)  Test: `test_concurrency.py::test_lock_without_pid_is_never_broken`
+Script: `_lib.sh` (`acquire_lock`)
+Test: `test_concurrency.py::test_old_lock_without_pid_is_broken`,
+`test_concurrency.py::test_fresh_lock_without_pid_is_respected`
 Observed: a stale lock is broken only when its `pid` file names a dead
 process. A writer killed between `mkdir` and writing its pid leaves
 `.observe.lock/` with no pid file; every later writer waits
 `KNOWLEDGE_LOCK_WAIT` seconds and fails, until someone removes the
 directory by hand.
-Expected: unknown. Probably break a pid-less lock older than a bound.
-Class: undecided
-Decision:
+Expected: a pid-less lock whose directory is older than 60 seconds is
+broken, under the same guard as A-041; a younger one is respected, because
+its owner may be about to write the pid.
+Class: bug
+Decision: the window is a few instructions wide, but one kill there blocks
+every writer until a person intervenes. Python breaks such a lock under the
+guard after rechecking that it still has no pid and is still old.
+`test_old_lock_without_pid_is_broken` is a strict `xfail` under bash; the
+fresh-lock case passes under both. Bash is not fixed: the window is tiny,
+and the bash fallback during the trial only fails to break, it never breaks
+wrongly.
 
 ## A-038: lock waits poll once a second
 
@@ -602,9 +612,12 @@ Script: `_lib.sh` (`acquire_lock`)  Test: `test_concurrency.py::test_concurrent_
 Observed: a writer that finds the lock held sleeps a whole second before
 retrying, so five concurrent `observe` calls take about four seconds,
 almost all of it waiting.
-Expected: unknown. A shorter retry interval keeps the same safety.
-Class: undecided
-Decision:
+Expected: any interval; only outcomes are contract.
+Class: bash-only
+Decision: `sleep 1` is the shortest portable sleep in Bash 3.2. Python
+retries every 50 ms, with `KNOWLEDGE_LOCK_WAIT` still bounding the total
+wait in seconds. The concurrency tests assert outcomes, not timing; audit
+mark removed.
 
 ## A-039: observe and ask outside a git repository write, then fail
 
@@ -643,13 +656,20 @@ writers then run git together: one fails with `fatal: Unable to create
 file or directory` and the writer proceeds without a lock. With a stale
 lock and 8 concurrent `observe` runs, 14 of 40 runs failed (2026-10-24).
 Without a stale lock it needs load: 1 failure in the 20 five-writer runs of
-one full parallel suite run, 0 in 200 runs alone. Both tests are non-strict
-`xfail` under bash.
-Expected: every writer commits; a lock is broken only if it still holds
+one full parallel suite run, 0 in 200 runs alone. Expected: every writer commits; a lock is broken only if it still holds
 the pid that was found dead (for example, rename the lock away atomically
 and recheck).
-Class: undecided
-Decision:
+Class: bug
+Decision: fixed in bash, because both implementations take this lock
+during the trial, so a correct Python breaker alone cannot prevent the
+race. `break_stale_lock` in `_lib.sh` breaks only while holding the guard
+directory `.observe.lock.break`, and only if the lock still names the pid
+found dead; a guard that is busy makes the caller wait. Python must use the
+same guard. After the fix, 0 of 40 eight-writer races and 0 of 80
+five-writer runs failed. Both tests lose their `xfail`, and
+`test_stale_lock_is_broken_only_under_the_guard` pins the guard protocol.
+Residual: a breaker killed while holding the guard blocks breaking until
+the guard is removed by hand.
 
 ## Coverage note (plan item 1b.11)
 

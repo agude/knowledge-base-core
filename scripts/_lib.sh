@@ -301,8 +301,8 @@ acquire_lock() {
         if [[ -f "$pidfile" ]]; then
             local owner
             owner="$(cat "$pidfile" 2>/dev/null || echo "")"
-            if [[ -n "$owner" ]] && ! kill -0 "$owner" 2>/dev/null; then
-                rm -rf "$lockdir"
+            if [[ -n "$owner" ]] && ! kill -0 "$owner" 2>/dev/null \
+                && break_stale_lock "$lockdir" "$owner"; then
                 continue
             fi
         fi
@@ -319,6 +319,31 @@ acquire_lock() {
 
     # Clean up stale git locks before operating
     break_stale_git_lock "$CONTENT_DIR"
+    return 0
+}
+
+# break_stale_lock - Remove a lock whose owner was found dead, safely.
+#
+# Between reading a dead owner's pid and removing the lock, the owner's lock
+# can be released and taken by a live writer; removing it then would let
+# two writers run git together. So breaking happens only while holding the
+# guard directory <lockdir>.break, and only if the lock still names the pid
+# that was found dead. A new owner's lock never names it: the owner writes
+# its own pid into a directory it just created. Any implementation that
+# takes this lock must break it the same way.
+#
+# Returns 1 without breaking when another process holds the guard, so the
+# caller waits instead of spinning.
+#
+# Usage: break_stale_lock LOCKDIR DEAD_PID
+break_stale_lock() {
+    local lockdir="$1" owner="$2" guard="$1.break" current
+    mkdir "$guard" 2>/dev/null || return 1
+    current="$(cat "$lockdir/pid" 2>/dev/null || echo "")"
+    if [[ "$current" == "$owner" ]]; then
+        rm -rf "$lockdir"
+    fi
+    rmdir "$guard" 2>/dev/null || true
     return 0
 }
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import time
 
@@ -10,11 +11,8 @@ import pytest
 from kbtest.marks import xfail_bash
 from kbtest.runner import KB
 
-# A-041: the Bash lock break races with a new owner, so these outcome tests
-# fail intermittently under bash. Any other implementation must pass them.
-BASH_LOCK_RACE = xfail_bash(
-    "A-041: breaking a stale lock can delete a live owner's lock", strict=False
-)
+# A lock directory with no pid file and an mtime this old has lost its owner.
+STALE_PIDLESS_SECONDS = 60
 
 WRITERS = 5
 
@@ -23,9 +21,6 @@ def _observations(kb: KB) -> list[str]:
     return sorted(p.name for p in (kb.layout.content / "observations" / "pending").glob("*.md"))
 
 
-@pytest.mark.audit("A-038")
-@pytest.mark.audit("A-041")
-@BASH_LOCK_RACE
 @pytest.mark.parametrize("attempt", range(20))
 def test_concurrent_observe_loses_nothing(kb: KB, attempt: int) -> None:
     tree = kb.resolve_impl(kb.default_impl)
@@ -53,8 +48,6 @@ def test_concurrent_observe_loses_nothing(kb: KB, attempt: int) -> None:
 RACERS = 8
 
 
-@pytest.mark.audit("A-041")
-@BASH_LOCK_RACE
 @pytest.mark.parametrize("attempt", range(10))
 def test_stale_lock_race_loses_nothing(kb: KB, attempt: int) -> None:
     """Writers that all find a dead owner's lock break it once, not each other's."""
@@ -112,18 +105,53 @@ def test_held_lock_times_out_within_bound(kb: KB) -> None:
     assert _observations(kb) == []
 
 
-@pytest.mark.audit("A-037")
-def test_lock_without_pid_is_never_broken(kb: KB) -> None:
+def test_fresh_lock_without_pid_is_respected(kb: KB) -> None:
+    """A lock just created, before its owner writes the pid, is held (A-037)."""
     (kb.layout.content / ".observe.lock").mkdir()
-    start = time.monotonic()
     result = kb.run(
         "observe", "--title", "Blocked", "--body", "Body", env={"KNOWLEDGE_LOCK_WAIT": "1"}
     )
-    elapsed = time.monotonic() - start
     assert result.returncode == 1 and result.err.strip()
-    assert elapsed >= 1
     assert (kb.layout.content / ".observe.lock").is_dir()
     assert _observations(kb) == []
+
+
+@xfail_bash("A-037: bash never breaks a lock without a pid file")
+def test_old_lock_without_pid_is_broken(kb: KB) -> None:
+    """An owner killed between mkdir and writing its pid leaves a lock to break."""
+    lock = kb.layout.content / ".observe.lock"
+    lock.mkdir()
+    then = time.time() - 2 * STALE_PIDLESS_SECONDS
+    os.utime(lock, (then, then))
+    result = kb.run(
+        "observe", "--title", "After crash", "--body", "Body", env={"KNOWLEDGE_LOCK_WAIT": "5"}
+    )
+    assert result.returncode == 0, result.err
+    assert len(_observations(kb)) == 1
+    assert not lock.exists()
+
+
+def test_stale_lock_is_broken_only_under_the_guard(kb: KB) -> None:
+    """Breaking is serialized by .observe.lock.break, shared by every implementation (A-041)."""
+    finished = subprocess.Popen(["true"])
+    finished.wait()
+    lock = kb.layout.content / ".observe.lock"
+    lock.mkdir()
+    (lock / "pid").write_text(f"{finished.pid}\n", encoding="utf-8")
+    guard = kb.layout.content / ".observe.lock.break"
+    guard.mkdir()
+    held = kb.run(
+        "observe", "--title", "Guarded", "--body", "Body", env={"KNOWLEDGE_LOCK_WAIT": "1"}
+    )
+    assert held.returncode == 1 and held.err.strip()
+    assert (lock / "pid").is_file(), "another breaker holds the guard"
+    guard.rmdir()
+    freed = kb.run(
+        "observe", "--title", "Freed", "--body", "Body", env={"KNOWLEDGE_LOCK_WAIT": "5"}
+    )
+    assert freed.returncode == 0, freed.err
+    assert not lock.exists() and not guard.exists()
+    assert len(_observations(kb)) == 1
 
 
 def test_lock_released_after_each_writer(kb: KB) -> None:
