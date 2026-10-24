@@ -1,0 +1,8 @@
+Metadata: path=knowledge/recipes.md; corpus=curated article; locator=2 "Second Section" (H2)
+Freshness: curated article; verified=unknown; ttl=60d; freshness=unknown
+Section metadata: section-status=current; section-scope=article
+Provenance: scope=article; refs=none (article)
+---
+## Second Section
+
+Content.

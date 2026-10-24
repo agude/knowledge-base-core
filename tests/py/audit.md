@@ -172,3 +172,15 @@ so the list changes at cutover.
 Expected: unknown. Probably a fixed list of the agent-facing commands.
 Class: undecided
 Decision:
+
+## A-017: a hashes-only heading becomes an empty section
+
+Script: `toc` (and the shared heading parser)
+Test: `test_fences.py::test_hashes_only_heading`
+Observed: `## ##` is listed as section `1. ` with an empty name, and shifts
+the numbering of the following sections. The bats test "a heading of only
+hashes does not become a heading name" never included such a line.
+Expected: unknown. CommonMark treats `## ##` as an empty H2; the bats test
+name implies it should not be listed.
+Class: undecided
+Decision:
