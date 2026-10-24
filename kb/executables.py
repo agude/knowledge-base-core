@@ -39,6 +39,7 @@ COMMANDS: dict[str, str] = {
     "session-file": "kb.commands.session_file",
     "session-flush": "kb.commands.session_flush",
     "session-init": "kb.commands.session_init",
+    "toc": "kb.commands.toc",
     "adapters/claude/session-end": "kb.commands.adapters.claude.session_end",
 }
 
