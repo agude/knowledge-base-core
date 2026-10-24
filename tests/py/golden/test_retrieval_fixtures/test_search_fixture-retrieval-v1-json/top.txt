@@ -1,0 +1,100 @@
+exact-command-01
+  first knowledge/operations.md | Deployment commands
+  top knowledge/operations.md | Deployment commands
+exact-command-02
+  first knowledge/operations.md | Deployment commands
+  top knowledge/operations.md | Deployment commands
+exact-command-03
+  first knowledge/operations.md | Deployment commands
+  top knowledge/operations.md | Deployment commands
+exact-command-04
+  first knowledge/tooling.md | Music tagger commands
+  top knowledge/tooling.md | Music tagger commands
+exact-command-05
+  first knowledge/tooling.md | Path configuration
+  top knowledge/tooling.md | Path configuration
+exact-command-06
+  first knowledge/network.md | WireGuard peers
+  top knowledge/network.md | WireGuard peers
+exact-command-07
+  first knowledge/tooling.md | Named hosts
+  top knowledge/tooling.md | Named hosts
+exact-command-08
+  first knowledge/operations.md | Encrypted backups
+  top knowledge/operations.md | Encrypted backups
+paraphrase-01
+  first none
+paraphrase-02
+  first none
+paraphrase-03
+  first none
+paraphrase-04
+  first none
+paraphrase-05
+  first none
+paraphrase-06
+  first none
+paraphrase-07
+  first none
+paraphrase-08
+  first none
+cross-article-01
+  first knowledge/media.md | Startup prerequisites
+  top knowledge/media.md | Startup prerequisites
+  top knowledge/operations.md | Restart order
+cross-article-02
+  first knowledge/operations.md | Encrypted backups
+  top knowledge/operations.md | Encrypted backups
+  top knowledge/people.md | Recovery ownership
+  top knowledge/storage.md | Backup recovery
+cross-article-03
+  first knowledge/temporal.md | Current deploy target
+  top knowledge/operations.md | Deployment target
+  top knowledge/temporal.md | Current deploy target
+cross-article-04
+  first knowledge/people.md | Pager owner
+  top knowledge/legacy.md | Historical pager record
+  top knowledge/people.md | Pager owner
+cross-article-05
+  first none
+cross-article-06
+  first knowledge/network.md | DNS resolution
+  top knowledge/network.md | DNS resolution
+  top knowledge/operations.md | Network configuration
+changed-fact-01
+  first none
+changed-fact-02
+  first none
+changed-fact-03
+  first none
+changed-fact-04
+  first knowledge/temporal.md | Current queue policy
+  top knowledge/temporal.md | Current queue policy
+changed-fact-05
+  first knowledge/temporal.md | Current rollout label
+  top knowledge/temporal.md | Current rollout label
+conflict-01
+  first knowledge/people.md | Pager owner
+  top knowledge/legacy.md | Historical pager record
+  top knowledge/people.md | Pager owner
+conflict-02
+  first knowledge/storage.md | Canonical backup destination
+  top knowledge/conflicts.md | Backup destination conflict
+  top knowledge/storage.md | Canonical backup destination
+conflict-03
+  first none
+conflict-04
+  first knowledge/conflicts.md | Retention conflict
+  top knowledge/conflicts.md | Retention conflict
+  top knowledge/storage.md | Current retention
+absent-01
+  first none
+absent-02
+  first knowledge/legacy.md | Blue Comet project note
+  top knowledge/legacy.md | Blue Comet project note
+absent-03
+  first none
+absent-04
+  first none
+absent-05
+  first none

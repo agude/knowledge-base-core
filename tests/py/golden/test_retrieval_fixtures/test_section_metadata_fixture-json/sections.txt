@@ -1,0 +1,250 @@
+## 1
+{
+  "conflict": {
+    "status": "none"
+  },
+  "content": "## Current guidance\n\n<!-- kb-section: verified=2026-10-03; ttl=process; effective=2026-09-01; status=current; supersedes=2; sources=observations/archived/current.md -->\n\nCurrent guidance.\n\n",
+  "corpus": "curated article",
+  "freshness": {
+    "age_days": 20,
+    "field": "verified",
+    "status": "fresh",
+    "ttl": "process",
+    "ttl_days": 60,
+    "value": "2026-10-03"
+  },
+  "locator": {
+    "heading": "Current guidance",
+    "level": 2,
+    "number": "1"
+  },
+  "path": "knowledge/metadata.md",
+  "provenance": {
+    "label": "section-level references",
+    "reference_count": 1,
+    "references": [
+      "observations/archived/current.md"
+    ],
+    "references_truncated": false,
+    "scope": "section"
+  },
+  "section_metadata": {
+    "available": true,
+    "effective": "2026-09-01",
+    "field_scopes": {
+      "effective": "section",
+      "sources": "section",
+      "status": "section",
+      "supersedes": "section",
+      "ttl": "section",
+      "verified": "section"
+    },
+    "locator": "1",
+    "scope": "section",
+    "source_scope": "section",
+    "sources": [
+      "observations/archived/current.md"
+    ],
+    "status": "current",
+    "supersedes": "2",
+    "ttl": "process",
+    "valid": true,
+    "verified": "2026-10-03"
+  }
+}
+## 2
+{
+  "conflict": {
+    "status": "none"
+  },
+  "content": "## Historical guidance\n\n<!-- kb-section: verified=2026-01-01; status=superseded -->\n\nHistorical guidance.\n\n### Historical detail\n\nInherited section metadata.\n\n",
+  "corpus": "curated article",
+  "freshness": {
+    "age_days": 295,
+    "field": "verified",
+    "status": "stale",
+    "ttl": "domain",
+    "ttl_days": 180,
+    "value": "2026-01-01"
+  },
+  "locator": {
+    "heading": "Historical guidance",
+    "level": 2,
+    "number": "2"
+  },
+  "path": "knowledge/metadata.md",
+  "provenance": {
+    "label": "article-level references",
+    "reference_count": 1,
+    "references": [
+      "observations/archived/article.md"
+    ],
+    "references_truncated": false,
+    "scope": "article"
+  },
+  "section_metadata": {
+    "available": true,
+    "field_scopes": {
+      "sources": "article",
+      "status": "section",
+      "ttl": "article",
+      "verified": "section"
+    },
+    "locator": "2",
+    "scope": "section",
+    "sources": [
+      "observations/archived/article.md"
+    ],
+    "status": "superseded",
+    "ttl": "domain",
+    "valid": true,
+    "verified": "2026-01-01"
+  }
+}
+## 2.1
+{
+  "conflict": {
+    "status": "none"
+  },
+  "content": "### Historical detail\n\nInherited section metadata.\n\n",
+  "corpus": "curated article",
+  "freshness": {
+    "age_days": 295,
+    "field": "verified",
+    "status": "stale",
+    "ttl": "domain",
+    "ttl_days": 180,
+    "value": "2026-01-01"
+  },
+  "locator": {
+    "heading": "Historical detail",
+    "level": 3,
+    "number": "2.1"
+  },
+  "path": "knowledge/metadata.md",
+  "provenance": {
+    "label": "article-level references",
+    "reference_count": 1,
+    "references": [
+      "observations/archived/article.md"
+    ],
+    "references_truncated": false,
+    "scope": "article"
+  },
+  "section_metadata": {
+    "available": true,
+    "field_scopes": {
+      "sources": "article",
+      "status": "section",
+      "ttl": "article",
+      "verified": "section"
+    },
+    "locator": "2.1",
+    "scope": "section",
+    "sources": [
+      "observations/archived/article.md"
+    ],
+    "status": "superseded",
+    "ttl": "domain",
+    "valid": true,
+    "verified": "2026-01-01"
+  }
+}
+## 3
+{
+  "conflict": {
+    "status": "none"
+  },
+  "content": "## Duplicate heading\n\nFirst duplicate.\n\n",
+  "corpus": "curated article",
+  "freshness": {
+    "age_days": 20,
+    "field": "verified",
+    "status": "fresh",
+    "ttl": "domain",
+    "ttl_days": 180,
+    "value": "2026-10-03"
+  },
+  "locator": {
+    "heading": "Duplicate heading",
+    "level": 2,
+    "number": "3"
+  },
+  "path": "knowledge/metadata.md",
+  "provenance": {
+    "label": "article-level references",
+    "reference_count": 1,
+    "references": [
+      "observations/archived/article.md"
+    ],
+    "references_truncated": false,
+    "scope": "article"
+  },
+  "section_metadata": {
+    "available": true,
+    "field_scopes": {
+      "sources": "article",
+      "status": "article",
+      "ttl": "article",
+      "verified": "article"
+    },
+    "locator": "3",
+    "scope": "article",
+    "sources": [
+      "observations/archived/article.md"
+    ],
+    "status": "current",
+    "ttl": "domain",
+    "valid": true,
+    "verified": "2026-10-03"
+  }
+}
+## 4
+{
+  "conflict": {
+    "status": "unresolved"
+  },
+  "content": "## Duplicate heading\n\n<!-- kb-section: status=unresolved -->\n\nUnresolved duplicate.\n\n```markdown\n## Example\n\n<!-- kb-section: verified=1900-01-01; status=superseded -->\n```\n",
+  "corpus": "curated article",
+  "freshness": {
+    "age_days": 20,
+    "field": "verified",
+    "status": "fresh",
+    "ttl": "domain",
+    "ttl_days": 180,
+    "value": "2026-10-03"
+  },
+  "locator": {
+    "heading": "Duplicate heading",
+    "level": 2,
+    "number": "4"
+  },
+  "path": "knowledge/metadata.md",
+  "provenance": {
+    "label": "article-level references",
+    "reference_count": 1,
+    "references": [
+      "observations/archived/article.md"
+    ],
+    "references_truncated": false,
+    "scope": "article"
+  },
+  "section_metadata": {
+    "available": true,
+    "field_scopes": {
+      "sources": "article",
+      "status": "section",
+      "ttl": "article",
+      "verified": "article"
+    },
+    "locator": "4",
+    "scope": "section",
+    "sources": [
+      "observations/archived/article.md"
+    ],
+    "status": "unresolved",
+    "ttl": "domain",
+    "valid": true,
+    "verified": "2026-10-03"
+  }
+}

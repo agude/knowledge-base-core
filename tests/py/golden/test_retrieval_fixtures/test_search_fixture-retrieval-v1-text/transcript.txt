@@ -1,0 +1,207 @@
+$ search --limit 5 --per-file 0 -- systemctl restart kb-api
+exit 0
+--- stdout
+knowledge/operations.md | Deployment commands | The `kb-api` service restarts with `systemctl restart kb-api`. [section-number=1] [curated article; verified=2026-09-01; ttl=60d; freshness=fresh; refs=none (article); section-status=current; section-scope=article]
+--- stderr
+
+$ search --limit 5 --per-file 0 -- scripts/search --json --limit 5
+exit 0
+--- stdout
+knowledge/operations.md | Deployment commands | Use `scripts/search --json --limit 5` to inspect a deploy. [section-number=1] [curated article; verified=2026-09-01; ttl=60d; freshness=fresh; refs=none (article); section-status=current; section-scope=article]
+--- stderr
+
+$ search --limit 5 --per-file 0 -- --no-push
+exit 0
+--- stdout
+knowledge/operations.md | Deployment commands | The manual sync command accepts `--no-push`. [section-number=1] [curated article; verified=2026-09-01; ttl=60d; freshness=fresh; refs=none (article); section-status=current; section-scope=article]
+--- stderr
+
+$ search --limit 5 --per-file 0 -- music-tagger --rename
+exit 0
+--- stdout
+knowledge/tooling.md | Music tagger commands | To tag music files, run `music-tagger --rename` with the normalized album name. [section-number=1] [curated article; verified=2026-09-01; ttl=60d; freshness=fresh; refs=none (article); section-status=current; section-scope=article]
+--- stderr
+
+$ search --limit 5 --per-file 0 -- KB_CONTENT_DIR
+exit 0
+--- stdout
+knowledge/tooling.md | Path configuration | Set the content root with `KB_CONTENT_DIR` before running a command. [section-number=2] [curated article; verified=2026-09-01; ttl=60d; freshness=fresh; refs=none (article); section-status=current; section-scope=article]
+--- stderr
+
+$ search --limit 5 --per-file 0 -- wg-kb-prod
+exit 0
+--- stdout
+knowledge/network.md | WireGuard peers | The production WireGuard peer is `wg-kb-prod`. [section-number=1] [curated article; verified=2026-09-01; ttl=180d; freshness=fresh; refs=none (article); section-status=current; section-scope=article]
+--- stderr
+
+$ search --limit 5 --per-file 0 -- Aurora
+exit 0
+--- stdout
+knowledge/tooling.md | Named hosts | The synthetic named host is `Aurora`. [section-number=3] [curated article; verified=2026-09-01; ttl=60d; freshness=fresh; refs=none (article); section-status=current; section-scope=article]
+--- stderr
+
+$ search --limit 5 --per-file 0 -- /srv/backups/kb
+exit 0
+--- stdout
+knowledge/operations.md | Encrypted backups | Encrypted backup recovery reads `vault-kb-02` under `/srv/backups/kb`. [section-number=3] [curated article; verified=2026-09-01; ttl=60d; freshness=fresh; refs=none (article); section-status=current; section-scope=article]
+--- stderr
+
+$ search --limit 5 --per-file 0 -- how do I restart the api
+exit 0
+--- stdout
+--- stderr
+
+$ search --limit 5 --per-file 0 -- where are the backups kept
+exit 0
+--- stdout
+--- stderr
+
+$ search --limit 5 --per-file 0 -- what starts before plex
+exit 0
+--- stdout
+--- stderr
+
+$ search --limit 5 --per-file 0 -- rename music tracks
+exit 0
+--- stdout
+--- stderr
+
+$ search --limit 5 --per-file 0 -- configure the knowledge root
+exit 0
+--- stdout
+--- stderr
+
+$ search --limit 5 --per-file 0 -- production tunnel peer
+exit 0
+--- stdout
+--- stderr
+
+$ search --limit 5 --per-file 0 -- who is on call
+exit 0
+--- stdout
+--- stderr
+
+$ search --limit 5 --per-file 0 -- how long are backups retained
+exit 0
+--- stdout
+--- stderr
+
+$ search --limit 5 --per-file 0 -- media services startup order
+exit 0
+--- stdout
+knowledge/media.md | Startup prerequisites | The media services startup order requires Traefik before Plex. [section-number=1] [curated article; verified=2026-09-01; ttl=60d; freshness=fresh; refs=none (article); section-status=current; section-scope=article]
+knowledge/operations.md | Restart order | The media services startup order is Traefik, Syncthing, then Plex. [section-number=2] [curated article; verified=2026-09-01; ttl=60d; freshness=fresh; refs=none (article); section-status=current; section-scope=article]
+--- stderr
+
+$ search --limit 5 --per-file 0 -- encrypted backup recovery
+exit 0
+--- stdout
+knowledge/operations.md | Encrypted backups | Encrypted backup recovery reads `vault-kb-02` under `/srv/backups/kb`. [section-number=3] [curated article; verified=2026-09-01; ttl=60d; freshness=fresh; refs=none (article); section-status=current; section-scope=article]
+knowledge/people.md | Recovery ownership | Morgan Lee owns encrypted backup recovery for the synthetic service. [section-number=2] [curated article; verified=2026-09-01; ttl=14d; freshness=stale; refs=none (article); section-status=current; section-scope=article]
+knowledge/storage.md | Backup recovery | Encrypted backup recovery uses `vault-kb-02` and the documented restore key. [section-number=1] [curated article; verified=2026-09-01; ttl=180d; freshness=fresh; refs=none (article); section-status=current; section-scope=article]
+--- stderr
+
+$ search --limit 5 --per-file 0 -- current deploy target
+exit 0
+--- stdout
+knowledge/temporal.md | Current deploy target | ## Current deploy target ... The current deploy target is `kb-api-v2` as of 2026-09-01. [section-number=1] [curated article; verified=2026-09-01; ttl=14d; freshness=stale; refs=none (article); section-status=current; section-scope=article]
+knowledge/operations.md | Deployment target | The current deploy target is `kb-api-v2` in the synthetic environment. [section-number=4] [curated article; verified=2026-09-01; ttl=60d; freshness=fresh; refs=none (article); section-status=current; section-scope=article]
+--- stderr
+
+$ search --limit 5 --per-file 0 -- pager owner
+exit 0
+--- stdout
+knowledge/people.md | Pager owner | ## Pager owner ... The canonical pager owner is Morgan Lee. [section-number=3] [curated article; verified=2026-09-01; ttl=14d; freshness=stale; refs=none (article); section-status=current; section-scope=article]
+knowledge/legacy.md | Historical pager record | The historical pager owner record names Priya Shah and conflicts with the canonical pager owner. [section-number=1] [curated article; verified=2026-09-01; ttl=180d; freshness=fresh; refs=none (article); section-status=current; section-scope=article]
+--- stderr
+
+$ search --limit 5 --per-file 0 -- current backup retention 35 days
+exit 0
+--- stdout
+--- stderr
+
+$ search --limit 5 --per-file 0 -- configure internal DNS resolver
+exit 0
+--- stdout
+knowledge/network.md | DNS resolution | Configure internal DNS resolver for synthetic hosts. [section-number=2] [curated article; verified=2026-09-01; ttl=180d; freshness=fresh; refs=none (article); section-status=current; section-scope=article]
+knowledge/operations.md | Network configuration | Configure internal DNS resolver before deployment. [section-number=5] [curated article; verified=2026-09-01; ttl=60d; freshness=fresh; refs=none (article); section-status=current; section-scope=article]
+--- stderr
+
+$ search --limit 5 --per-file 0 -- deploy target kb-api-v2 as of 2026-09-01
+exit 0
+--- stdout
+--- stderr
+
+$ search --limit 5 --per-file 0 -- current API hostname api.internal.example
+exit 0
+--- stdout
+--- stderr
+
+$ search --limit 5 --per-file 0 -- current backup retention keeps snapshots 35 days
+exit 0
+--- stdout
+--- stderr
+
+$ search --limit 5 --per-file 0 -- current queue policy allows 200 records
+exit 0
+--- stdout
+knowledge/temporal.md | Current queue policy | The current queue policy allows 200 records. [section-number=5] [curated article; verified=2026-09-01; ttl=14d; freshness=stale; refs=none (article); section-status=current; section-scope=article]
+--- stderr
+
+$ search --limit 5 --per-file 0 -- current rollout label is green
+exit 0
+--- stdout
+knowledge/temporal.md | Current rollout label | The current rollout label is green. [section-number=7] [curated article; verified=2026-09-01; ttl=14d; freshness=stale; refs=none (article); section-status=current; section-scope=article]
+--- stderr
+
+$ search --limit 5 --per-file 0 -- pager owner
+exit 0
+--- stdout
+knowledge/people.md | Pager owner | ## Pager owner ... The canonical pager owner is Morgan Lee. [section-number=3] [curated article; verified=2026-09-01; ttl=14d; freshness=stale; refs=none (article); section-status=current; section-scope=article]
+knowledge/legacy.md | Historical pager record | The historical pager owner record names Priya Shah and conflicts with the canonical pager owner. [section-number=1] [curated article; verified=2026-09-01; ttl=180d; freshness=fresh; refs=none (article); section-status=current; section-scope=article]
+--- stderr
+
+$ search --limit 5 --per-file 0 -- canonical backup destination
+exit 0
+--- stdout
+knowledge/storage.md | Canonical backup destination | ## Canonical backup destination ... The canonical backup destination is `vault-kb-02`. [section-number=4] [curated article; verified=2026-09-01; ttl=180d; freshness=fresh; refs=none (article); section-status=current; section-scope=article]
+knowledge/conflicts.md | Backup destination conflict | The conflicting canonical backup destination record says `cold-store-legacy` instead of `vault-kb-02`. [section-number=1] [curated article; verified=2026-09-01; ttl=180d; freshness=fresh; refs=none (article); section-status=current; section-scope=article]
+--- stderr
+
+$ search --limit 5 --per-file 0 -- service owner Morgan Lee
+exit 0
+--- stdout
+--- stderr
+
+$ search --limit 5 --per-file 0 -- retention policy records 35 days
+exit 0
+--- stdout
+knowledge/conflicts.md | Retention conflict | The retention policy records 35 days for the current snapshot. ... The retention policy records 35 days in the local runbook. [section-number=3] [curated article; verified=2026-09-01; ttl=180d; freshness=fresh; refs=none (article); section-status=current; section-scope=article]
+knowledge/storage.md | Current retention | Current retention policy records 35 days for the synthetic corpus. [section-number=2] [curated article; verified=2026-09-01; ttl=180d; freshness=fresh; refs=none (article); section-status=current; section-scope=article]
+--- stderr
+
+$ search --limit 5 --per-file 0 -- quantum orchard scheduler
+exit 0
+--- stdout
+--- stderr
+
+$ search --limit 5 --per-file 0 -- blue comet retention
+exit 0
+--- stdout
+knowledge/legacy.md | Blue Comet project note | Blue Comet retention documentation is not recorded in the corpus because the project is retired. [section-number=2] [curated article; verified=2026-09-01; ttl=180d; freshness=fresh; refs=none (article); section-status=current; section-scope=article]
+--- stderr
+
+$ search --limit 5 --per-file 0 -- unicorn database owner
+exit 0
+--- stdout
+--- stderr
+
+$ search --limit 5 --per-file 0 -- mars telemetry key
+exit 0
+--- stdout
+--- stderr
+
+$ search --limit 5 --per-file 0 -- saffron hyperdrive command
+exit 0
+--- stdout
+--- stderr

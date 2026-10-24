@@ -1,0 +1,99 @@
+$ section --file knowledge/conflicts.md --heading Backup destination conflict --exact
+exit 0
+--- stdout
+Metadata: path=knowledge/conflicts.md; corpus=curated article; locator=1 "Backup destination conflict" (H2)
+Freshness: curated article; verified=2026-10-03; ttl=180d; freshness=fresh
+Conflict: status=unresolved
+Section metadata: section-status=unresolved; section-scope=section; effective=2026-09-15
+Provenance: scope=article; refs=none (article)
+---
+## Backup destination conflict
+
+<!-- kb-section: status=unresolved; effective=2026-09-15 -->
+The unresolved backup destination conflict concerns `/srv/backups/kb` and `/srv/archive/kb`.
+--- stderr
+
+$ section --file knowledge/question-operations.md --heading API hostname --exact
+exit 0
+--- stdout
+Metadata: path=knowledge/question-operations.md; corpus=curated article; locator=4 "API hostname" (H2)
+Freshness: curated article; verified=2026-10-03; ttl=60d; freshness=fresh
+Section metadata: section-status=current; section-scope=article
+Provenance: scope=article; refs=none (article)
+---
+## API hostname
+
+The API hostname is `api.internal.example`.
+--- stderr
+
+$ section --file knowledge/question-operations.md --heading Backup location --exact
+exit 0
+--- stdout
+Metadata: path=knowledge/question-operations.md; corpus=curated article; locator=3 "Backup location" (H2)
+Freshness: curated article; verified=2026-10-03; ttl=60d; freshness=fresh
+Section metadata: section-status=current; section-scope=article
+Provenance: scope=article; refs=none (article)
+---
+## Backup location
+
+Backups live at `/srv/backups/kb`.
+
+--- stderr
+
+$ section --file knowledge/question-operations.md --heading Deploy the API service --exact
+exit 0
+--- stdout
+Metadata: path=knowledge/question-operations.md; corpus=curated article; locator=2 "Deploy the API service" (H2)
+Freshness: curated article; verified=2026-10-03; ttl=60d; freshness=fresh
+Section metadata: section-status=current; section-scope=article
+Provenance: scope=article; refs=none (article)
+---
+## Deploy the API service
+
+Deploy the API service with the standard release workflow.
+
+--- stderr
+
+$ section --file knowledge/question-operations.md --heading Restart the API service --exact
+exit 0
+--- stdout
+Metadata: path=knowledge/question-operations.md; corpus=curated article; locator=1 "Restart the API service" (H2)
+Freshness: curated article; verified=2026-10-03; ttl=60d; freshness=fresh
+Section metadata: section-status=current; section-scope=article
+Provenance: scope=article; refs=none (article)
+---
+## Restart the API service
+
+The API service uses `restart --no-verify` on 2026-10-03 from
+`/srv/backups/kb`.
+
+--- stderr
+
+$ section --file knowledge/temporal.md --heading Current deploy target --exact
+exit 0
+--- stdout
+Metadata: path=knowledge/temporal.md; corpus=curated article; locator=1 "Current deploy target" (H2)
+Freshness: curated article; verified=2026-10-03; ttl=14d; freshness=stale
+Section metadata: section-status=current; section-scope=section; effective=2026-09-01; supersedes=2
+Provenance: scope=article; refs=none (article)
+---
+## Current deploy target
+
+<!-- kb-section: verified=2026-10-03; effective=2026-09-01; status=current; supersedes=2 -->
+The current deploy target is `kb-api-v2` as of 2026-09-01.
+
+--- stderr
+
+$ section --file knowledge/temporal.md --heading Previous deploy target --exact
+exit 0
+--- stdout
+Metadata: path=knowledge/temporal.md; corpus=curated article; locator=2 "Previous deploy target" (H2)
+Freshness: curated article; verified=2026-01-01; ttl=14d; freshness=stale
+Section metadata: section-status=superseded; section-scope=section; effective=2026-01-01
+Provenance: scope=article; refs=none (article)
+---
+## Previous deploy target
+
+<!-- kb-section: verified=2026-01-01; effective=2026-01-01; status=superseded -->
+The previous deploy target was `kb-api-v1` before 2026-09-01.
+--- stderr

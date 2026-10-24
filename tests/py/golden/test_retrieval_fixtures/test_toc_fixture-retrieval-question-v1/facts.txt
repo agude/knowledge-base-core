@@ -1,0 +1,16 @@
+file knowledge/conflicts.md
+line Unresolved Deployment Conflicts
+heading 1 Backup destination conflict
+file knowledge/network.md
+line Network Routing
+heading 1 Peer details
+file knowledge/question-operations.md
+line Question Operations
+heading 1 Restart the API service
+heading 2 Deploy the API service
+heading 3 Backup location
+heading 4 API hostname
+file knowledge/temporal.md
+line Temporal Deployment Facts
+heading 1 Current deploy target
+heading 2 Previous deploy target

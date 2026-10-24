@@ -1,0 +1,41 @@
+$ section --json --file knowledge/conflicts.md --heading Backup destination conflict --exact
+exit 0
+--- stdout
+{"path":"knowledge/conflicts.md","corpus":"curated article","locator":{"number":"1","heading":"Backup destination conflict","level":2},"freshness":{"field":"verified","value":"2026-10-03","ttl":"domain","ttl_days":180,"status":"fresh","age_days":20},"conflict":{"status":"unresolved"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"1","scope":"section","field_scopes":{ "verified":"article", "ttl":"article", "effective":"section", "status":"section" },"verified":"2026-10-03","ttl":"domain","effective":"2026-09-15","status":"unresolved","sources":[],"valid":true},"content":"## Backup destination conflict\n\n<!-- kb-section: status=unresolved; effective=2026-09-15 -->\nThe unresolved backup destination conflict concerns `/srv/backups/kb` and `/srv/archive/kb`.\n"}
+--- stderr
+
+$ section --json --file knowledge/question-operations.md --heading API hostname --exact
+exit 0
+--- stdout
+{"path":"knowledge/question-operations.md","corpus":"curated article","locator":{"number":"4","heading":"API hostname","level":2},"freshness":{"field":"verified","value":"2026-10-03","ttl":"process","ttl_days":60,"status":"fresh","age_days":20},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"4","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-10-03","ttl":"process","status":"current","sources":[],"valid":true},"content":"## API hostname\n\nThe API hostname is `api.internal.example`.\n"}
+--- stderr
+
+$ section --json --file knowledge/question-operations.md --heading Backup location --exact
+exit 0
+--- stdout
+{"path":"knowledge/question-operations.md","corpus":"curated article","locator":{"number":"3","heading":"Backup location","level":2},"freshness":{"field":"verified","value":"2026-10-03","ttl":"process","ttl_days":60,"status":"fresh","age_days":20},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"3","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-10-03","ttl":"process","status":"current","sources":[],"valid":true},"content":"## Backup location\n\nBackups live at `/srv/backups/kb`.\n\n"}
+--- stderr
+
+$ section --json --file knowledge/question-operations.md --heading Deploy the API service --exact
+exit 0
+--- stdout
+{"path":"knowledge/question-operations.md","corpus":"curated article","locator":{"number":"2","heading":"Deploy the API service","level":2},"freshness":{"field":"verified","value":"2026-10-03","ttl":"process","ttl_days":60,"status":"fresh","age_days":20},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"2","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-10-03","ttl":"process","status":"current","sources":[],"valid":true},"content":"## Deploy the API service\n\nDeploy the API service with the standard release workflow.\n\n"}
+--- stderr
+
+$ section --json --file knowledge/question-operations.md --heading Restart the API service --exact
+exit 0
+--- stdout
+{"path":"knowledge/question-operations.md","corpus":"curated article","locator":{"number":"1","heading":"Restart the API service","level":2},"freshness":{"field":"verified","value":"2026-10-03","ttl":"process","ttl_days":60,"status":"fresh","age_days":20},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"1","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-10-03","ttl":"process","status":"current","sources":[],"valid":true},"content":"## Restart the API service\n\nThe API service uses `restart --no-verify` on 2026-10-03 from\n`/srv/backups/kb`.\n\n"}
+--- stderr
+
+$ section --json --file knowledge/temporal.md --heading Current deploy target --exact
+exit 0
+--- stdout
+{"path":"knowledge/temporal.md","corpus":"curated article","locator":{"number":"1","heading":"Current deploy target","level":2},"freshness":{"field":"verified","value":"2026-10-03","ttl":"status","ttl_days":14,"status":"stale","age_days":20},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"1","scope":"section","field_scopes":{ "verified":"section", "ttl":"article", "effective":"section", "status":"section", "supersedes":"section" },"verified":"2026-10-03","ttl":"status","effective":"2026-09-01","status":"current","supersedes":"2","sources":[],"valid":true},"content":"## Current deploy target\n\n<!-- kb-section: verified=2026-10-03; effective=2026-09-01; status=current; supersedes=2 -->\nThe current deploy target is `kb-api-v2` as of 2026-09-01.\n\n"}
+--- stderr
+
+$ section --json --file knowledge/temporal.md --heading Previous deploy target --exact
+exit 0
+--- stdout
+{"path":"knowledge/temporal.md","corpus":"curated article","locator":{"number":"2","heading":"Previous deploy target","level":2},"freshness":{"field":"verified","value":"2026-01-01","ttl":"status","ttl_days":14,"status":"stale","age_days":295},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"2","scope":"section","field_scopes":{ "verified":"section", "ttl":"article", "effective":"section", "status":"section" },"verified":"2026-01-01","ttl":"status","effective":"2026-01-01","status":"superseded","sources":[],"valid":true},"content":"## Previous deploy target\n\n<!-- kb-section: verified=2026-01-01; effective=2026-01-01; status=superseded -->\nThe previous deploy target was `kb-api-v1` before 2026-09-01.\n"}
+--- stderr

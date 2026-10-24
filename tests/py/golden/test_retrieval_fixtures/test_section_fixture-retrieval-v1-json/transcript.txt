@@ -1,0 +1,155 @@
+$ section --json --file knowledge/conflicts.md --heading Backup destination conflict --exact
+exit 0
+--- stdout
+{"path":"knowledge/conflicts.md","corpus":"curated article","locator":{"number":"1","heading":"Backup destination conflict","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"domain","ttl_days":180,"status":"fresh","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"1","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"domain","status":"current","sources":[],"valid":true},"content":"## Backup destination conflict\n\nThe conflicting canonical backup destination record says `cold-store-legacy` instead of `vault-kb-02`.\n\n"}
+--- stderr
+
+$ section --json --file knowledge/conflicts.md --heading Retention conflict --exact
+exit 0
+--- stdout
+{"path":"knowledge/conflicts.md","corpus":"curated article","locator":{"number":"3","heading":"Retention conflict","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"domain","ttl_days":180,"status":"fresh","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"3","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"domain","status":"current","sources":[],"valid":true},"content":"## Retention conflict\n\nConflicting retention policy records list 35 days and 90 days.\nThe retention policy records 35 days for the current snapshot.\nThe retention policy records 35 days in the local runbook.\nThe retention policy records 35 days for the synthetic service.\nThe retention policy records 35 days in the retention export.\nThe retention policy records 35 days for the test archive.\n"}
+--- stderr
+
+$ section --json --file knowledge/conflicts.md --heading Service owner conflict --exact
+exit 0
+--- stdout
+{"path":"knowledge/conflicts.md","corpus":"curated article","locator":{"number":"2","heading":"Service owner conflict","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"domain","ttl_days":180,"status":"fresh","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"2","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"domain","status":"current","sources":[],"valid":true},"content":"## Service owner conflict\n\nThe conflicting service owner record names Priya Shah instead of Morgan Lee.\n\n"}
+--- stderr
+
+$ section --json --file knowledge/legacy.md --heading Historical pager record --exact
+exit 0
+--- stdout
+{"path":"knowledge/legacy.md","corpus":"curated article","locator":{"number":"1","heading":"Historical pager record","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"domain","ttl_days":180,"status":"fresh","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"1","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"domain","status":"current","sources":[],"valid":true},"content":"## Historical pager record\n\nThe historical pager owner record names Priya Shah and conflicts with the canonical pager owner.\n\n"}
+--- stderr
+
+$ section --json --file knowledge/media.md --heading Startup prerequisites --exact
+exit 0
+--- stdout
+{"path":"knowledge/media.md","corpus":"curated article","locator":{"number":"1","heading":"Startup prerequisites","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"process","ttl_days":60,"status":"fresh","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"1","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"process","status":"current","sources":[],"valid":true},"content":"## Startup prerequisites\n\nThe media services startup order requires Traefik before Plex.\n"}
+--- stderr
+
+$ section --json --file knowledge/network.md --heading DNS resolution --exact
+exit 0
+--- stdout
+{"path":"knowledge/network.md","corpus":"curated article","locator":{"number":"2","heading":"DNS resolution","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"domain","ttl_days":180,"status":"fresh","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"2","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"domain","status":"current","sources":[],"valid":true},"content":"## DNS resolution\n\nConfigure internal DNS resolver for synthetic hosts.\n"}
+--- stderr
+
+$ section --json --file knowledge/network.md --heading WireGuard peers --exact
+exit 0
+--- stdout
+{"path":"knowledge/network.md","corpus":"curated article","locator":{"number":"1","heading":"WireGuard peers","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"domain","ttl_days":180,"status":"fresh","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"1","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"domain","status":"current","sources":[],"valid":true},"content":"## WireGuard peers\n\nThe production WireGuard peer is `wg-kb-prod`.\n\n"}
+--- stderr
+
+$ section --json --file knowledge/operations.md --heading Deployment commands --exact
+exit 0
+--- stdout
+{"path":"knowledge/operations.md","corpus":"curated article","locator":{"number":"1","heading":"Deployment commands","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"process","ttl_days":60,"status":"fresh","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"1","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"process","status":"current","sources":[],"valid":true},"content":"## Deployment commands\n\nThe `kb-api` service restarts with `systemctl restart kb-api`.\nUse `scripts/search --json --limit 5` to inspect a deploy.\nThe manual sync command accepts `--no-push`.\n\n"}
+--- stderr
+
+$ section --json --file knowledge/operations.md --heading Deployment target --exact
+exit 0
+--- stdout
+{"path":"knowledge/operations.md","corpus":"curated article","locator":{"number":"4","heading":"Deployment target","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"process","ttl_days":60,"status":"fresh","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"4","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"process","status":"current","sources":[],"valid":true},"content":"## Deployment target\n\nThe current deploy target is `kb-api-v2` in the synthetic environment.\n\n"}
+--- stderr
+
+$ section --json --file knowledge/operations.md --heading Encrypted backups --exact
+exit 0
+--- stdout
+{"path":"knowledge/operations.md","corpus":"curated article","locator":{"number":"3","heading":"Encrypted backups","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"process","ttl_days":60,"status":"fresh","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"3","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"process","status":"current","sources":[],"valid":true},"content":"## Encrypted backups\n\nEncrypted backup recovery reads `vault-kb-02` under `/srv/backups/kb`.\n\n"}
+--- stderr
+
+$ section --json --file knowledge/operations.md --heading Network configuration --exact
+exit 0
+--- stdout
+{"path":"knowledge/operations.md","corpus":"curated article","locator":{"number":"5","heading":"Network configuration","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"process","ttl_days":60,"status":"fresh","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"5","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"process","status":"current","sources":[],"valid":true},"content":"## Network configuration\n\nConfigure internal DNS resolver before deployment.\n"}
+--- stderr
+
+$ section --json --file knowledge/operations.md --heading Restart order --exact
+exit 0
+--- stdout
+{"path":"knowledge/operations.md","corpus":"curated article","locator":{"number":"2","heading":"Restart order","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"process","ttl_days":60,"status":"fresh","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"2","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"process","status":"current","sources":[],"valid":true},"content":"## Restart order\n\nThe media services startup order is Traefik, Syncthing, then Plex.\nThe startup order starts network services before media services.\n\n"}
+--- stderr
+
+$ section --json --file knowledge/people.md --heading On-call ownership --exact
+exit 0
+--- stdout
+{"path":"knowledge/people.md","corpus":"curated article","locator":{"number":"1","heading":"On-call ownership","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"people","ttl_days":14,"status":"stale","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"1","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"people","status":"current","sources":[],"valid":true},"content":"## On-call ownership\n\nMorgan Lee is the current on-call service owner.\n\n"}
+--- stderr
+
+$ section --json --file knowledge/people.md --heading Pager owner --exact
+exit 0
+--- stdout
+{"path":"knowledge/people.md","corpus":"curated article","locator":{"number":"3","heading":"Pager owner","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"people","ttl_days":14,"status":"stale","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"3","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"people","status":"current","sources":[],"valid":true},"content":"## Pager owner\n\nThe canonical pager owner is Morgan Lee.\n\n"}
+--- stderr
+
+$ section --json --file knowledge/people.md --heading Recovery ownership --exact
+exit 0
+--- stdout
+{"path":"knowledge/people.md","corpus":"curated article","locator":{"number":"2","heading":"Recovery ownership","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"people","ttl_days":14,"status":"stale","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"2","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"people","status":"current","sources":[],"valid":true},"content":"## Recovery ownership\n\nMorgan Lee owns encrypted backup recovery for the synthetic service.\n\n"}
+--- stderr
+
+$ section --json --file knowledge/people.md --heading Service owner --exact
+exit 0
+--- stdout
+{"path":"knowledge/people.md","corpus":"curated article","locator":{"number":"4","heading":"Service owner","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"people","ttl_days":14,"status":"stale","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"4","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"people","status":"current","sources":[],"valid":true},"content":"## Service owner\n\nThe current service owner is Morgan Lee.\n"}
+--- stderr
+
+$ section --json --file knowledge/storage.md --heading Canonical backup destination --exact
+exit 0
+--- stdout
+{"path":"knowledge/storage.md","corpus":"curated article","locator":{"number":"4","heading":"Canonical backup destination","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"domain","ttl_days":180,"status":"fresh","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"4","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"domain","status":"current","sources":[],"valid":true},"content":"## Canonical backup destination\n\nThe canonical backup destination is `vault-kb-02`.\n"}
+--- stderr
+
+$ section --json --file knowledge/storage.md --heading Current retention --exact
+exit 0
+--- stdout
+{"path":"knowledge/storage.md","corpus":"curated article","locator":{"number":"2","heading":"Current retention","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"domain","ttl_days":180,"status":"fresh","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"2","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"domain","status":"current","sources":[],"valid":true},"content":"## Current retention\n\nCurrent backup retention keeps snapshots for 35 days.\nCurrent retention policy records 35 days for the synthetic corpus.\n\n"}
+--- stderr
+
+$ section --json --file knowledge/temporal.md --heading Current API hostname --exact
+exit 0
+--- stdout
+{"path":"knowledge/temporal.md","corpus":"curated article","locator":{"number":"3","heading":"Current API hostname","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"status","ttl_days":14,"status":"stale","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"3","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"status","status":"current","sources":[],"valid":true},"content":"## Current API hostname\n\nThe current API hostname is `api.internal.example`.\n\n"}
+--- stderr
+
+$ section --json --file knowledge/temporal.md --heading Current backup retention --exact
+exit 0
+--- stdout
+{"path":"knowledge/temporal.md","corpus":"curated article","locator":{"number":"9","heading":"Current backup retention","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"status","ttl_days":14,"status":"stale","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"9","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"status","status":"current","sources":[],"valid":true},"content":"## Current backup retention\n\nThe current backup retention keeps snapshots for 35 days.\n"}
+--- stderr
+
+$ section --json --file knowledge/temporal.md --heading Current deploy target --exact
+exit 0
+--- stdout
+{"path":"knowledge/temporal.md","corpus":"curated article","locator":{"number":"1","heading":"Current deploy target","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"status","ttl_days":14,"status":"stale","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"1","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"status","status":"current","sources":[],"valid":true},"content":"## Current deploy target\n\nThe current deploy target is `kb-api-v2` as of 2026-09-01.\n\n"}
+--- stderr
+
+$ section --json --file knowledge/temporal.md --heading Current queue policy --exact
+exit 0
+--- stdout
+{"path":"knowledge/temporal.md","corpus":"curated article","locator":{"number":"5","heading":"Current queue policy","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"status","ttl_days":14,"status":"stale","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"5","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"status","status":"current","sources":[],"valid":true},"content":"## Current queue policy\n\nThe current queue policy allows 200 records.\n\n"}
+--- stderr
+
+$ section --json --file knowledge/temporal.md --heading Current rollout label --exact
+exit 0
+--- stdout
+{"path":"knowledge/temporal.md","corpus":"curated article","locator":{"number":"7","heading":"Current rollout label","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"status","ttl_days":14,"status":"stale","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"7","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"status","status":"current","sources":[],"valid":true},"content":"## Current rollout label\n\nThe current rollout label is green.\n\n"}
+--- stderr
+
+$ section --json --file knowledge/tooling.md --heading Music tagger commands --exact
+exit 0
+--- stdout
+{"path":"knowledge/tooling.md","corpus":"curated article","locator":{"number":"1","heading":"Music tagger commands","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"process","ttl_days":60,"status":"fresh","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"1","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"process","status":"current","sources":[],"valid":true},"content":"## Music tagger commands\n\nTo tag music files, run `music-tagger --rename` with the normalized album name.\n\n"}
+--- stderr
+
+$ section --json --file knowledge/tooling.md --heading Named hosts --exact
+exit 0
+--- stdout
+{"path":"knowledge/tooling.md","corpus":"curated article","locator":{"number":"3","heading":"Named hosts","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"process","ttl_days":60,"status":"fresh","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"3","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"process","status":"current","sources":[],"valid":true},"content":"## Named hosts\n\nThe synthetic named host is `Aurora`.\nThe synthetic runner name is `synthetic-runner-07`.\n"}
+--- stderr
+
+$ section --json --file knowledge/tooling.md --heading Path configuration --exact
+exit 0
+--- stdout
+{"path":"knowledge/tooling.md","corpus":"curated article","locator":{"number":"2","heading":"Path configuration","level":2},"freshness":{"field":"verified","value":"2026-09-01","ttl":"process","ttl_days":60,"status":"fresh","age_days":52},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"2","scope":"article","field_scopes":{ "verified":"article", "ttl":"article", "status":"article" },"verified":"2026-09-01","ttl":"process","status":"current","sources":[],"valid":true},"content":"## Path configuration\n\nSet the content root with `KB_CONTENT_DIR` before running a command.\n\n"}
+--- stderr

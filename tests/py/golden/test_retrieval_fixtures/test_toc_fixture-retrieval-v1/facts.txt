@@ -1,0 +1,51 @@
+file knowledge/conflicts.md
+line Synthetic Unresolved Conflicts
+heading 1 Backup destination conflict
+heading 2 Service owner conflict
+heading 3 Retention conflict
+file knowledge/legacy.md
+line Synthetic Historical Conflicts
+heading 1 Historical pager record
+heading 2 Blue Comet project note
+file knowledge/media.md
+line Synthetic Media Runbook
+heading 1 Startup prerequisites
+file knowledge/network.md
+line Synthetic Network Inventory
+heading 1 WireGuard peers
+heading 2 DNS resolution
+file knowledge/operations.md
+line Synthetic Operations Runbook
+heading 1 Deployment commands
+heading 2 Restart order
+heading 3 Encrypted backups
+heading 4 Deployment target
+heading 5 Network configuration
+file knowledge/people.md
+line Synthetic Ownership Records
+heading 1 On-call ownership
+heading 2 Recovery ownership
+heading 3 Pager owner
+heading 4 Service owner
+file knowledge/storage.md
+line Synthetic Storage Records
+heading 1 Backup recovery
+heading 2 Current retention
+heading 3 Historical retention
+heading 4 Canonical backup destination
+file knowledge/temporal.md
+line Synthetic Changed Facts
+heading 1 Current deploy target
+heading 2 Previous deploy target
+heading 3 Current API hostname
+heading 4 Former API hostname
+heading 5 Current queue policy
+heading 6 Previous queue policy
+heading 7 Current rollout label
+heading 8 Previous rollout label
+heading 9 Current backup retention
+file knowledge/tooling.md
+line Synthetic Tooling Notes
+heading 1 Music tagger commands
+heading 2 Path configuration
+heading 3 Named hosts

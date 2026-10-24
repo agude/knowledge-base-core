@@ -1,0 +1,40 @@
+question-normalization-01
+  first knowledge/question-operations.md | Restart the API service
+  top knowledge/question-operations.md | Backup location
+  top knowledge/question-operations.md | Restart the API service
+question-unanswerable-01
+  first none
+question-backup-location-01
+  first knowledge/conflicts.md | Backup destination conflict
+  top knowledge/conflicts.md | Backup destination conflict
+  top knowledge/question-operations.md | Backup location
+  top knowledge/question-operations.md | Restart the API service
+question-api-hostname-01
+  first knowledge/question-operations.md | API hostname
+  top knowledge/question-operations.md | API hostname
+  top knowledge/question-operations.md | Deploy the API service
+  top knowledge/question-operations.md | Restart the API service
+question-deploy-workflow-01
+  first knowledge/question-operations.md | Deploy the API service
+  top knowledge/question-operations.md | API hostname
+  top knowledge/question-operations.md | Deploy the API service
+  top knowledge/question-operations.md | Restart the API service
+question-alias-routing-01
+  first knowledge/network.md | alias
+  top knowledge/network.md | alias
+temporal-current-01
+  first knowledge/temporal.md | Current deploy target
+  top knowledge/temporal.md | Current deploy target
+  top knowledge/temporal.md | Previous deploy target
+  top knowledge/temporal.md | top
+temporal-historical-01
+  first knowledge/temporal.md | Previous deploy target
+  top knowledge/temporal.md | Current deploy target
+  top knowledge/temporal.md | Previous deploy target
+  top knowledge/temporal.md | top
+conflict-unresolved-01
+  first knowledge/conflicts.md | Backup destination conflict
+  top knowledge/conflicts.md | Backup destination conflict
+  top knowledge/conflicts.md | top
+question-unanswerable-02
+  first none
