@@ -91,7 +91,7 @@ each port unit must come after the units of everything it uses.
 | `init` | `install` |
 | `install` | links `hooks/pre-commit` and the Claude adapters; starts none |
 | `evaluate-retrieval` | `search`, `section` (kept as subprocesses; see the plan's constraints) |
-| `doctor` | `search`, `session-append`, `hooks/pre-commit` (probes; redesigned in step 5) |
+| `doctor` | none in Python: the capture smoke test calls `kb.session` in process; bash probes `search`, `session-append`, and `hooks/pre-commit` |
 | every other executable | none |
 
 ## Cutover criteria

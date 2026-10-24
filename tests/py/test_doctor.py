@@ -1,21 +1,27 @@
 """doctor: report format, exit codes, and installation findings.
 
-doctor's tool probes (sort -z, sort -V, readlink -f, date, od, Bash version)
-check the Bash runtime and are redesigned for Python (plan step 5). These
-tests pin what survives the redesign: the line format, the summary, exit
-codes, and the findings about the installation and content repository.
-Lines from tool probes are filtered out of the goldens because they vary by
-host.
+doctor's tool probes check the runtime: the Bash version and the GNU and
+BSD tools for bash, the interpreter and `.python-interpreter` for Python
+(plan 5.1). Probe lines are filtered out of the goldens because their
+presence and wording depend on the host. The goldens pin what both
+implementations share: the line format, the summary, exit codes, and the
+findings about the installation and content repository. The Python runtime
+checks are tested line by line and expected to fail under bash.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Callable, Iterator
+from pathlib import Path
 
 import pytest
 
 from kbtest.golden import Golden
+from kbtest.marks import xfail_bash
 from kbtest.runner import KB, Result
+
+PYTHON_RUNTIME = "plan 5.1: doctor checks the Python runtime, not the Bash tools"
 
 LINE = re.compile(
     r"^(PASS|WARN|FAIL) \[(retrieval|capture|curation|sync|development|adapters)\] \S.*$"
@@ -62,6 +68,32 @@ def _fake_node(kb: KB, version: str) -> None:
 def sessions(kb: KB) -> KB:
     kb.layout.sessions.mkdir(mode=0o700, parents=True)
     return kb
+
+
+@pytest.fixture
+def record(sessions: KB) -> Iterator[Path]:
+    """The tree's .python-interpreter, absent at the start and restored after.
+
+    The tree is shared by the tests on one worker, and install writes it.
+    """
+    path = sessions.resolve_impl(sessions.default_impl).kb_root / ".python-interpreter"
+    saved = path.read_bytes() if path.is_file() else None
+    path.unlink(missing_ok=True)
+    yield path
+    path.unlink(missing_ok=True)
+    if saved is not None:
+        path.write_bytes(saved)
+
+
+def _lines(result: Result, text: str) -> list[str]:
+    return [line for line in result.out.splitlines() if text in line]
+
+
+def _running_interpreter(result: Result) -> str:
+    """The interpreter path from doctor's runtime line."""
+    (line,) = _lines(result, "meets the 3.11 minimum")
+    assert line.startswith("PASS [retrieval] Python 3."), line
+    return line.rsplit(": ", 1)[1]
 
 
 @pytest.mark.bats("doctor.bats", "doctor reports a passing retrieval and capture setup")
@@ -161,3 +193,97 @@ def test_doctor_argument_errors(kb: KB, golden: Golden, args: list[str]) -> None
     golden.contract("result", f"exit {result.returncode}\n")
     golden.check("stdout", kb.norm(result.out))
     golden.check("stderr", kb.norm_err(result.err))
+
+
+@xfail_bash(PYTHON_RUNTIME)
+def test_doctor_reports_the_running_interpreter(sessions: KB, record: Path) -> None:
+    # The failing case, no qualifying interpreter, never reaches doctor: the
+    # preamble and _bootstrap reject it (test_invocation.py).
+    result = sessions.run("doctor", "--require", "retrieval")
+    assert result.returncode == 0
+    _assert_format(result)
+    assert Path(_running_interpreter(result)).is_file()
+
+
+@xfail_bash(PYTHON_RUNTIME)
+def test_doctor_missing_interpreter_record_warns(sessions: KB, record: Path) -> None:
+    result = sessions.run("doctor", "--require", "retrieval")
+    assert result.returncode == 0
+    _assert_format(result)
+    assert _lines(result, ".python-interpreter") == [
+        f"WARN [retrieval] {record} does not exist; run install to record the interpreter"
+    ]
+
+
+@xfail_bash(PYTHON_RUNTIME)
+def test_doctor_current_interpreter_record(sessions: KB, record: Path) -> None:
+    running = _running_interpreter(sessions.run("doctor"))
+    record.write_text(running + "\n", encoding="utf-8")
+    result = sessions.run("doctor", "--require", "retrieval")
+    assert result.returncode == 0
+    _assert_format(result)
+    assert _lines(result, ".python-interpreter") == [
+        "PASS [retrieval] .python-interpreter names the running interpreter"
+    ]
+
+
+@xfail_bash(PYTHON_RUNTIME)
+def test_doctor_unusable_interpreter_record(sessions: KB, record: Path) -> None:
+    missing = sessions.layout.root / "gone" / "python3.12"
+    record.write_text(f"{missing}\n", encoding="utf-8")
+    result = sessions.run("doctor", "--require", "retrieval")
+    assert result.returncode == 1
+    _assert_format(result)
+    assert _lines(result, ".python-interpreter") == [
+        f"FAIL [retrieval] .python-interpreter names an interpreter the preamble cannot use: {missing}"
+    ]
+
+
+def test_doctor_reports_git(sessions: KB) -> None:
+    result = sessions.run("doctor", "--require", "curation", "--require", "sync")
+    git = _lines(result, "git is available")
+    assert [line.split(" git ")[0] for line in git] == ["PASS [curation]", "PASS [sync]"], (
+        result.out
+    )
+
+
+def test_doctor_missing_git_is_fatal_when_required(
+    sessions: KB, without_tools: Callable[..., KB]
+) -> None:
+    without_tools("git")
+    result = sessions.run("doctor", "--require", "curation", "--require", "sync")
+    assert result.returncode == 1
+    _assert_format(result)
+    assert _lines(result, "missing command: git") == [
+        "FAIL [curation] missing command: git",
+        "FAIL [sync] missing command: git",
+    ]
+
+
+def test_doctor_missing_content_directory(sessions: KB) -> None:
+    (sessions.layout.content / "questions" / "open").rmdir()
+    result = sessions.run("doctor", "--require", "curation")
+    assert result.returncode == 1
+    _assert_format(result)
+    assert _lines(result, "content directory") == [
+        "PASS [curation] content directory exists: knowledge",
+        "PASS [curation] content directory exists: sources",
+        "PASS [curation] content directory exists: observations/pending",
+        "PASS [curation] content directory exists: observations/archived",
+        "FAIL [curation] missing content directory: questions/open",
+        "PASS [curation] content directory exists: questions/resolved",
+    ]
+
+
+def test_doctor_foreign_pre_commit_hook(sessions: KB) -> None:
+    hook = sessions.layout.content / ".git" / "hooks" / "pre-commit"
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    hook.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    hook.chmod(0o755)
+    result = sessions.run("doctor", "--require", "curation")
+    assert result.returncode == 1
+    _assert_format(result)
+    lines = [sessions.norm(line) for line in _lines(result, "pre-commit hook")]
+    assert len(lines) == 1 and lines[0].startswith(
+        "FAIL [curation] content pre-commit hook does not point to "
+    ), lines

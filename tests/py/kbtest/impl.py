@@ -133,9 +133,17 @@ def describe_scripts() -> str:
 
 
 # What a Python tree needs at run time: the package, its executables, the
-# root markers, the instructions session-context prints, and the skills
-# install links.
-PYTHON_TREE = ("kb", "python", "skills", "pyproject.toml", "AGENTS.md", "CLAUDE.md")
+# root markers, the instructions session-context prints, the skills
+# install links, and the Pi adapter files doctor checks.
+PYTHON_TREE = (
+    "kb",
+    "python",
+    "skills",
+    "pyproject.toml",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "scripts/adapters/pi",
+)
 
 
 def copy_python_tree(dest: Path) -> Path:
@@ -150,7 +158,10 @@ def copy_python_tree(dest: Path) -> Path:
             source = REPO / name
             if source.is_dir():
                 shutil.copytree(
-                    source, dest / name, symlinks=True, ignore=shutil.ignore_patterns("__pycache__")
+                    source,
+                    dest / name,
+                    symlinks=True,
+                    ignore=shutil.ignore_patterns("__pycache__", "node_modules"),
                 )
             elif source.is_file():
                 dest.mkdir(parents=True, exist_ok=True)
