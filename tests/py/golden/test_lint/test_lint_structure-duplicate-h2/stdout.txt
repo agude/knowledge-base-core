@@ -1,0 +1,3 @@
+  warning  knowledge/duplicate-h2.md:17  duplicate H2 text: Setup
+
+1 file(s): 0 error(s), 1 warning(s)

@@ -1,0 +1,3 @@
+  error    knowledge/second-h1.md:17  second H1 (one article, one H1): Second Title
+
+1 file(s): 1 error(s), 0 warning(s)

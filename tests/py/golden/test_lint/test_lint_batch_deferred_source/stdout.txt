@@ -1,0 +1,3 @@
+  error    knowledge/deferred-source.md:6  missing local source reference: observations/archived/deferred.md
+
+1 file(s): 1 error(s), 0 warning(s)

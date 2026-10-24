@@ -288,3 +288,22 @@ Expected: unknown. Distinguish "larger than the budget" from "did not fit
 the remainder".
 Class: undecided
 Decision:
+
+## A-027: lint reports a missing file as outside the content root
+
+Script: `lint`  Test: `test_lint.py::test_lint_argument_errors`
+Observed: `lint --file missing.md` prints `Path outside content root:
+missing.md` and exits 1. The file does not exist; it is not outside the
+root.
+Expected: a not-found message, as `toc --path` and `stale --path` print.
+Class: undecided
+Decision:
+
+## A-028: a malformed verified date is reported twice
+
+Script: `lint`  Test: `test_lint.py::test_lint_structure` (case `bad-verified`)
+Observed: `verified: last Tuesday` yields two errors: `verified is not a
+YYYY-MM-DD date` and `section metadata invalid: invalid verification date`.
+Expected: unknown. Probably one error.
+Class: undecided
+Decision:
