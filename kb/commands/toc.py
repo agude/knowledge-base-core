@@ -69,30 +69,15 @@ def _pad(text: str, width: int) -> str:
     return text + " " * max(0, width - len(text.encode("utf-8", errors="surrogateescape")))
 
 
-def _markdown_files(top: Path) -> list[Path]:
-    """Regular *.md files under top, as `find -name '*.md' -type f`, in code-point order."""
-    found = []
-    for directory, _, files in os.walk(top):
-        for name in files:
-            path = Path(directory) / name
-            if name.endswith(".md") and path.is_file() and not path.is_symlink():
-                found.append(path)
-    return sorted(found, key=bytes)
-
-
 def _directories(top: Path) -> list[Path]:
     found = [Path(directory) for directory, _, _ in os.walk(top)]
     return sorted(found, key=bytes)
 
 
-def _relative(content: Path, path: Path) -> str:
-    return str(path).removeprefix(f"{content}/")
-
-
 def area_map(content: Path, target: Path) -> list[str]:
     """--map: one line per directory holding articles, then the loose files and total."""
     out = []
-    files = _markdown_files(target) if target.is_dir() else []
+    files = paths.markdown_files(target) if target.is_dir() else []
     counts: dict[Path, int] = {}
     for path in files:
         for parent in path.parents:
@@ -106,14 +91,14 @@ def area_map(content: Path, target: Path) -> list[str]:
         relative = str(directory).removeprefix(f"{target}/")
         depth = relative.count("/")
         if depth == 0:
-            out.append(f"  {_pad(_relative(content, directory) + '/', 38)} {count:3d}")
+            out.append(f"  {_pad(paths.relative(content, directory) + '/', 38)} {count:3d}")
         else:
             out.append(
                 f"  {' ' * (depth * 2)}{_pad(directory.name + '/', 38 - depth * 2)} {count:3d}"
             )
     loose = sum(1 for f in files if f.parent == target)
     if loose:
-        out.append(f"  {_pad(_relative(content, target) + '/ (loose files)', 38)} {loose:3d}")
+        out.append(f"  {_pad(paths.relative(content, target) + '/ (loose files)', 38)} {loose:3d}")
     out += ["", f"  {len(files)} articles. Drill in with: toc --path <area>"]
     return out
 
@@ -143,7 +128,7 @@ def headings(content: Path, path: Path, depth: int, flat: bool) -> list[str] | N
         text = platform.read_text(path)
     except OSError:
         return None
-    out = [] if flat else ["", f"[{_relative(content, path)}]"]
+    out = [] if flat else ["", f"[{paths.relative(content, path)}]"]
     parser = Headings()
     h2 = h3 = 0
     for line in frontmatter.lines(text):
@@ -195,7 +180,7 @@ def main(argv: list[str]) -> int:
         print("\n".join(lines))
         return 0
     if target.is_dir():
-        files = _markdown_files(target)
+        files = paths.markdown_files(target)
     elif target.is_file():
         files = [target]
     elif target == content / "knowledge":
@@ -207,7 +192,7 @@ def main(argv: list[str]) -> int:
         lines = headings(content, path, depth, "flat" in args.flags)
         if lines is None:
             # One warning, and the rest still listed (audit A-036).
-            print(f"toc: cannot read {_relative(content, path)}", file=sys.stderr)
+            print(f"toc: cannot read {paths.relative(content, path)}", file=sys.stderr)
             continue
         out += lines
     if out:

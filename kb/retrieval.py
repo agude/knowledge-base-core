@@ -47,7 +47,7 @@ def ttl_days(value: str) -> int | None:
     return days if days <= MAX_TTL_DAYS else None
 
 
-def _trunc_days(seconds: int) -> int:
+def trunc_days(seconds: int) -> int:
     """seconds // 86400, rounding toward zero as bash's arithmetic does."""
     days = abs(seconds) // 86400
     return days if seconds >= 0 else -days
@@ -99,7 +99,7 @@ def freshness(relpath: str, text: str, threshold_override: int | None = None) ->
         threshold = threshold_override
         result.ttl, result.ttl_days = "override", threshold
     age = dates.today_epoch() - epoch
-    result.age_days = _trunc_days(age)
+    result.age_days = trunc_days(age)
     result.status = "stale" if age > threshold * 86400 else "fresh"
     return result
 
@@ -230,7 +230,7 @@ class Record:
             fresh.field = "synced" if self.relpath.startswith("sources/") else "verified"
             epoch = dates.date_epoch(chosen.verified.split("T", 1)[0]) or 0
             age = dates.today_epoch() - epoch
-            fresh.age_days = _trunc_days(age)
+            fresh.age_days = trunc_days(age)
             fresh.status = "stale" if age > (fresh.ttl_days or 0) * 86400 else "fresh"
         conflict = "unresolved" if chosen.status == "unresolved" else self.conflict
         return replace(result, freshness=fresh, provenance=provenance_, conflict=conflict)

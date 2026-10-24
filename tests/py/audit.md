@@ -724,6 +724,8 @@ is ticked (plan step 4).
 | `section --json --max-bytes` in `test_section.py` | value, stdout, stderr | 4.11 | A-033: budgets count Python's bytes, so a line more can fit and the reported sizes differ |
 | `search --json` output in `test_search.py`, `test_edge_input.py`, `test_retrieval_fixtures.py` | stdout, transcript | 4.12 | A-033: compact JSON (only the `field_scopes` spaces differ) |
 | `search --json --max-bytes` in `test_search.py` | transcript | 4.12 | A-033: budgets and reported sizes count Python's bytes |
+| `context` stdout in `test_status_context.py`, `test_edge_input.py`, `test_state.py` | stdout | 4.13 | A-016: the fixed Scripts list (only that line differs) |
+| `test_help.py::test_help[stale]` | stdout | 4.13 | A-024 header |
 
 ## null_ok review (plan item 2.3)
 

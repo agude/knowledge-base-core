@@ -79,3 +79,18 @@ def resolve(content: Path, value: str) -> str | None:
     for match in matches:
         print(f"  {match.relative_to(content).as_posix()}", file=sys.stderr)
     raise PathError()
+
+
+def markdown_files(top: Path) -> list[Path]:
+    """Regular *.md files under top, as `find -name '*.md' -type f`, in code-point order."""
+    found = []
+    for directory, _, files in os.walk(top):
+        for name in files:
+            path = Path(directory) / name
+            if name.endswith(".md") and path.is_file() and not path.is_symlink():
+                found.append(path)
+    return sorted(found, key=bytes)
+
+
+def relative(content: Path, path: Path) -> str:
+    return str(path).removeprefix(f"{content}/")
