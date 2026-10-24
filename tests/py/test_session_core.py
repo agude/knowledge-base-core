@@ -565,6 +565,30 @@ def _body(path: Path) -> str:
     return text.split("---\n", 2)[2]
 
 
+@pytest.mark.bats(
+    "session_core.bats", "session-flush retains evidence when the observation body copy fails"
+)
+def test_flush_keeps_buffer_when_observation_cannot_be_written(kb: KB) -> None:
+    """A failed observation write keeps the buffer as evidence.
+
+    The bats original stubs `cat` inside the Bash writer; an unwritable
+    pending directory fails the same write without reaching into Bash.
+    """
+    if os.geteuid() == 0:
+        pytest.skip("root writes regardless of mode")
+    path, original = _rich_buffer(kb)
+    pending = kb.layout.content / "observations" / "pending"
+    pending.chmod(0o555)
+    try:
+        result = kb.run("session-flush", str(path), env={"KNOWLEDGE_MIN_MESSAGES": "0"})
+    finally:
+        pending.chmod(0o755)
+    assert result.returncode != 0 and result.err.strip()
+    assert path.read_bytes() == original
+    assert _pending(kb) == []
+    assert kb.git("status", "--porcelain") == ""
+
+
 @pytest.mark.bats("session_core.bats", "session-flush keeps the buffer when jq is unavailable")
 def test_flush_without_jq(kb: KB, without_tools, golden: Golden) -> None:
     path, original = _rich_buffer(kb)

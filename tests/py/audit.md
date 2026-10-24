@@ -679,6 +679,30 @@ five-writer runs failed. Both tests lose their `xfail`, and
 Residual: a breaker killed while holding the guard blocks breaking until
 the guard is removed by hand. Commit e4c2a54.
 
+## null_ok review (plan item 2.3)
+
+Reviewed 2026-10-24. Each mark below covers a test whose contract is
+silence: exit 0 with no output and no file written, which the null0
+control also produces. Every reason matches an intended or decided
+behavior, so all marks stay.
+
+| Test | Reason | Behavior |
+|---|---|---|
+| `test_edge_input.py::test_edge[empty-toc]` | toc of an empty knowledge base prints nothing | A-035 |
+| `test_hook_contracts.py::test_hook_protocol` (Claude prompt, stop, end; empty stdin) | a Claude hook without input exits 0 silently | intended: hooks never fail the host |
+| `test_help.py` (adapters, `session-context`) | a host entry point ignores options | A-034 |
+| `test_pre_commit.py::test_ignores_commits_without_articles` | silent exit 0 when no article is staged | intended |
+| `test_session_core.py::test_append_to_missing_file` | silent exit 0 that writes nothing | intended: capture is off |
+| `test_session_core.py::test_append_uninitialized_session` | silent exit 0 that creates no buffer | intended: capture is off |
+| `test_session_core.py::test_append_empty_message` | silent exit 0 that writes nothing | intended |
+| `test_session_core.py::test_flush_missing_file` | silent exit 0 for a missing buffer | A-032: a race with the orphan sweep |
+| `test_session_flow.py::test_capture_off_without_start` | silent exit 0 that creates no buffer | intended |
+| `test_session_flow.py::test_capture_off_when_disabled` | silent exit 0 that creates no buffer | intended |
+| `test_toc.py::test_toc_empty` | an empty knowledge directory produces no output | intended; A-035 |
+
+The `session-flush` `--help` case lost its mark when A-034 made it a usage
+case, and `test_flush_without_argument` lost its mark in A-032.
+
 ## Coverage note (plan item 1b.11)
 
 kcov is not installed on the development host or in CI, so no line-coverage

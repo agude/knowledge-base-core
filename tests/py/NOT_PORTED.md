@@ -3,7 +3,13 @@
 Bats tests whose assertion is about how the Bash code works internally, not
 about observable behavior: which tool or fallback it uses, scratch-file
 allocation, or a `_lib.sh` function that no executable exposes. See
-`plan.md`, step 1a. The behavior audit reviews every row.
+`plan.md`, step 1a.
+
+Reviewed in the behavior audit (plan 2.3, 2026-10-24): every row is
+bash-only and stays. One former row, "session-flush retains evidence when
+the observation body copy fails", was converted:
+`test_session_core.py::test_flush_keeps_buffer_when_observation_cannot_be_written`
+fails the same write through an unwritable pending directory.
 
 | Bats file | Test | Reason |
 |---|---|---|
@@ -26,5 +32,4 @@ allocation, or a `_lib.sh` function that no executable exposes. See
 | `session_core.bats` | session-append does not append when od is missing | Removes `od`, which only the Bash JSON encoder uses. |
 | `session_core.bats` | session-append does not append partial output from a failing od | Injects an `od` failure into the Bash JSON encoder. |
 | `session_core.bats` | session-flush keeps the buffer when interrupted during observation writing | Stubs `cat` to pause inside the Bash observation writer. Interruption is pinned by `test_flush_interrupted_while_blocked` and `test_flush_interrupted_during_commit`. |
-| `session_core.bats` | session-flush retains evidence when the observation body copy fails | Stubs `cat` to fail inside the Bash observation writer. |
 | `search.bats` | search reports a parser failure instead of a false zero result | Replaces `awk`, the Bash search parser, with a failing stub. |
