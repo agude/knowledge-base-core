@@ -43,7 +43,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def pytest_report_header(config: pytest.Config) -> list[str]:
-    tools = envmod.tools()
+    try:
+        tools = envmod.tools()
+    except envmod.HarnessError as error:
+        # Tests that run executables fail on it; the static checks still run.
+        return [f"KB_IMPL: {implmod.selected_name()}", f"tools unavailable: {error}"]
     return [
         f"KB_IMPL: {implmod.selected_name()}  scripts: {implmod.describe_scripts()}",
         f"bash: {tools.bash}  python3: {tools.python}  jq: {tools.jq}",

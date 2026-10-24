@@ -14,7 +14,8 @@ def real_session_dir(environ: dict[str, str] | None = None) -> Path:
     """The session directory the host's own sessions use (session_dir() in _lib.sh)."""
     environ = dict(os.environ) if environ is None else environ
     runtime = environ.get("XDG_RUNTIME_DIR") or "/tmp"
-    return Path(runtime) / f"knowledge-sessions-{os.getuid()}"
+    user = os.getuid() if hasattr(os, "getuid") else os.environ.get("USERNAME", "user")
+    return Path(runtime) / f"knowledge-sessions-{user}"
 
 
 def find_leaks(directory: Path, prefix: str, *, strict: bool) -> list[Path]:
