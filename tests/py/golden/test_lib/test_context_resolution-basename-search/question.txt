@@ -1,0 +1,6 @@
+---
+title: "Q?"
+source: session
+context: knowledge/sub/deep.md
+created: <TIMESTAMP>
+---

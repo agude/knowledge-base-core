@@ -1,0 +1,4 @@
+Ambiguous match for 'dup.md' — 2 files found:
+  knowledge/a/dup.md
+  knowledge/b/dup.md
+Not found: dup.md

@@ -15,3 +15,10 @@ allocation, or a `_lib.sh` function that no executable exposes. See
 | `adapters.bats` | Codex retries an append that fails before persistence | Same stub as the Claude retry test. A-021. |
 | `adapters.bats` | Codex preserves a duplicate after a post-persistence append failure | Same stub as the Claude duplicate test. A-021. |
 | `adapters.bats` | enabled adapters report message allocation and extraction failures | Injects failures into `mktemp` and `jq` through `PATH` stubs; asserts how the Bash adapters handle those tools failing. |
+| `lib.bats` | every script that sources _lib.sh sets REPO_ROOT first | A static check of Bash source order. |
+| `lib.bats` | string byte counts preserve locale and match file counts | Tests `byte_count_text` and its `LC_ALL` handling directly. Byte budgets are pinned through `search --max-bytes` and `pending --preview --max-bytes`. |
+| `lib.bats` | sha256_file falls back to shasum | Tests the Bash fallback from `sha256sum` to `shasum`. |
+| `lib.bats` | streaming JSON encoder propagates partial upstream failure without pipefail | Injects an `od` failure into the Bash JSON encoder. |
+| `lib.bats` | metadata cache restores selected sections and full articles without rereading | Tests the Bash metadata cache's internal variables. Retrieval results are pinned through `search` and `section`. |
+| `lib.bats` | retrieval loads article state once before lazy section parsing | Tests the Bash cache's laziness by stubbing internal functions. |
+| `lib.bats` | article cache preserves interleaved question and archive provenance | Tests the Bash cache's internal variables. Provenance is pinned through `search` and `section` output. |

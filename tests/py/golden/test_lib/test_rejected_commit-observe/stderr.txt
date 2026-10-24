@@ -1,0 +1,2 @@
+rejected by test hook
+locked_commit: commit failed (1) for: Observe: Obs

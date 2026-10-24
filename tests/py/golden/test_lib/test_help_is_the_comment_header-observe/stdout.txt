@@ -1,0 +1,20 @@
+
+observe - Record a new observation in the knowledge base.
+
+Creates a timestamped markdown file in observations/pending/ and
+auto-commits it. The body can come from --body or stdin.
+
+Usage:
+  observe --title "..." --body "..."
+  observe --title "..." --body - < file.txt
+
+Options:
+  --title TEXT   Observation title (required)
+  --body TEXT    Observation body (required). Use - to read stdin.
+  --source TEXT  Where this came from (default: "session")
+  --no-commit    Skip the auto-commit
+
+Examples:
+  observe --title "DNS caching issue" --body "Discovered that..."
+  observe --title "Meeting notes" --body - < /tmp/notes.txt
+  observe --title "Quick note" --body "Remember to check X"

@@ -307,3 +307,26 @@ YYYY-MM-DD date` and `section metadata invalid: invalid verification date`.
 Expected: unknown. Probably one error.
 Class: undecided
 Decision:
+
+## A-029: an ambiguous path lists matches in filesystem order
+
+Script: `_lib.sh` (`resolve_path`), through `ask --context`, `toc`, and
+`section`  Test: `test_lib.py::test_context_resolution` (case `ambiguous`)
+Observed: `Ambiguous match for 'dup.md' — 2 files found:` lists matches in
+the order `find` returns them, which depends on the filesystem, then also
+prints `Not found: dup.md`.
+Expected: sorted matches and one message.
+Class: undecided
+Decision:
+
+## A-030: an option takes the next word even when it is another option
+
+Scripts: every script using `need_arg`
+Test: `test_lib.py::test_option_arguments`
+Observed: `need_arg` checks only that a word follows, so `observe --title
+--body B` sets the title to `--body` and then rejects `B` as an unknown
+option; `observe --title --no-commit` sets the title to `--no-commit`.
+Expected: unknown. Values that begin with `--` are legitimate for `--body`
+and `--answer`.
+Class: undecided
+Decision:

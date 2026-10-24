@@ -1,0 +1,8 @@
+{
+  "field": "verified",
+  "value": "2026-10-04",
+  "ttl": "106751991167300",
+  "ttl_days": 106751991167300,
+  "status": "fresh",
+  "age_days": 19
+}
