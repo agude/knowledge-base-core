@@ -1,0 +1,1 @@
+Rebase failed. Resolve it in <CONTENT>, then run sync again.

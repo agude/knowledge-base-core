@@ -1,0 +1,2 @@
+Other Observe: from another machine
+Test init
