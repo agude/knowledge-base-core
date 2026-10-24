@@ -319,10 +319,13 @@ Script: `hooks/pre-commit`  Test: `test_pre_commit.py::test_symlinked_article_st
 Observed: for a staged `knowledge/link.md` that is a symlink to
 `../real.md`, the hook keeps the symlink but rewrites `updated:` in the
 target, a file outside `knowledge/`.
-Expected: unknown. The hook may skip symlinked articles, or stamp only
-targets inside `knowledge/`.
-Class: undecided
-Decision:
+Expected: as observed.
+Class: intended
+Decision: commit bf879fe ("Fix five ways the pre-commit hook damaged
+files") writes the stamp back through the existing inode on purpose, so a
+symlinked article stays a link and keeps its mode. The stamp belongs to the
+article's content wherever it lives. Python writes through the link the
+same way. Contract goldens stay; audit mark removed.
 
 ## A-021: adapters retry a failed append, so failures print twice
 
