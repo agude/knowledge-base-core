@@ -389,3 +389,59 @@ def test_contract_fails_in_reference_mode(tmp_path: Path) -> None:
 def test_unknown_golden_mode_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="golden mode"):
         Golden(tmp_path, update=False, mode="loose")
+
+
+# Surface inventory
+
+
+def _surface_rows(text: str) -> dict[str, list[tuple[str, list[str]]]]:
+    sections: dict[str, list[tuple[str, list[str]]]] = {}
+    current = None
+    for line in text.splitlines():
+        if line.startswith("## "):
+            current = line[3:].strip()
+            sections[current] = []
+        elif current and line.startswith("| ") and not line.startswith(("| Entry", "|---")):
+            entry, tests = line[2:].rsplit(" | ", 1)
+            refs = [ref.strip().strip("`") for ref in tests.rstrip(" |").split(",") if ref.strip()]
+            sections[current].append((entry, refs))
+    return sections
+
+
+def _test_exists(ref: str) -> bool:
+    import ast
+
+    module, _, function = ref.partition("::")
+    path = Path(__file__).parent / module
+    if not path.is_file() or not function:
+        return False
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return any(isinstance(node, ast.FunctionDef) and node.name == function for node in tree.body)
+
+
+def test_surface_inventory() -> None:
+    """Every executable has inventory rows, and every row names existing tests."""
+    text = (Path(__file__).parent / "SURFACE.md").read_text(encoding="utf-8")
+    sections = _surface_rows(text)
+    problems = []
+    executables = set(implmod.interface_executables())
+    for name in sorted(executables):
+        if not sections.get(name):
+            problems.append(f"{name}: no rows")
+    for name, rows in sections.items():
+        if name not in executables:
+            problems.append(f"{name}: not an executable")
+        for entry, refs in rows:
+            if not refs:
+                problems.append(f"{name} {entry}: no tests")
+            problems += [f"{name} {entry}: no test {ref}" for ref in refs if not _test_exists(ref)]
+    assert problems == []
+
+
+def test_surface_inventory_rejects_unknown_tests(tmp_path: Path) -> None:
+    rows = _surface_rows(
+        "## demo\n\n| Entry | Tests |\n|---|---|\n| `--x` | `test_harness.py::nope` |\n"
+    )
+    assert rows == {"demo": [("`--x`", ["test_harness.py::nope"])]}
+    assert not _test_exists("test_harness.py::nope")
+    assert _test_exists("test_harness.py::test_surface_inventory")

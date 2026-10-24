@@ -740,3 +740,17 @@ def test_flush_malformed_buffer(kb: KB, golden: Golden, min_messages: str | None
     _check(kb, golden, result)
     assert path.read_text(encoding="utf-8") == '{"role":"user","message":"valid"}\nnot json\n'
     assert _pending(kb) == []
+
+
+def test_flush_preserve_initialization(kb: KB, golden: Golden) -> None:
+    """The orphan sweep flushes with --preserve-initialization: the marker stays."""
+    session_id = kb.session_id()
+    path = Path(
+        kb.run("session-init", "--session-id", session_id, "--persist-initialization").out.strip()
+    )
+    path.write_text("".join(json.dumps(m) + "\n" for m in _transcript(3)), encoding="utf-8")
+    result = kb.run("session-flush", "--preserve-initialization", str(path))
+    _check(kb, golden, result)
+    assert not path.exists()
+    assert (kb.layout.sessions / f"session-{session_id}.initialized").is_file()
+    assert len(_pending(kb)) == 1
