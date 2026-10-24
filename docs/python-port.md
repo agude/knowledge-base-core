@@ -71,6 +71,29 @@ rewrite" from the memory-system plan.
   one interpreter. The preamble is `kb/preamble.sh`; `kb/executables.py`
   generates every executable in `python/` from it.
 
+## Spawn graph
+
+Which bash executables start which siblings (plan item 3.8, measured at
+`bash-frozen`). Python calls the same logic in-process through `kb`, so
+each port unit must come after the units of everything it uses.
+
+| Executable | Starts |
+|---|---|
+| `adapters/claude/session-start`, `adapters/codex/session-start` | `session-init`, `session-context` |
+| `adapters/claude/session-prompt`, `-stop`; `adapters/codex/session-prompt`, `-stop` | `session-append` |
+| `adapters/claude/session-end`, `adapters/codex/session-end` | `session-file`, `session-flush` |
+| `session-init` | `session-flush` (orphan sweep) |
+| `session-flush` | `observe` |
+| `session-context` | `toc`, `status` |
+| `context` | `toc` |
+| `status` | `stale` |
+| `hooks/pre-commit` | `lint` |
+| `init` | `install` |
+| `install` | links `hooks/pre-commit` and the Claude adapters; starts none |
+| `evaluate-retrieval` | `search`, `section` (kept as subprocesses; see the plan's constraints) |
+| `doctor` | `search`, `session-append`, `hooks/pre-commit` (probes; redesigned in step 5) |
+| every other executable | none |
+
 ## Cutover criteria
 
 Measured on the live knowledge base and on a synthetic corpus ten times its
