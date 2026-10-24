@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 
 import pytest
@@ -16,6 +17,8 @@ EPOCH_2026_09_06 = "1788652800"
 
 def _check(kb: KB, golden: Golden, result: Result) -> None:
     golden.contract("result", f"exit {result.returncode}\n")
+    if result.returncode != 0:
+        assert result.err.strip(), "a failing run must say why"
     golden.check("stdout", kb.norm(result.out))
     golden.check("stderr", kb.norm_err(result.err))
 
@@ -24,18 +27,64 @@ def _pending_dir(kb: KB):
     return kb.layout.content / "observations" / "pending"
 
 
+def _listed(text: str) -> list[str]:
+    """Observation files named in the listing, in order."""
+    return re.findall(r"\[([^\]]+)\]$", text, re.MULTILINE)
+
+
+def _preview(text: str) -> dict[str, object]:
+    """Parse --preview into its fields and item lists."""
+    fields: dict[str, object] = {"selected": [], "skipped": [], "topics": [], "warnings": []}
+    section = ""
+    for line in text.splitlines():
+        if line.startswith("Selected size: "):
+            fields["selected"].append(line.split(": ", 1)[1].split(":")[0])  # type: ignore[union-attr]
+        elif line.startswith("Skipped oversized: "):
+            fields["skipped"].append(line.split(": ", 1)[1].rsplit(":", 1)[0])  # type: ignore[union-attr]
+        elif line.startswith("Topic hints"):
+            section = "topics"
+        elif line.startswith("Metadata warnings: "):
+            section = "warnings"
+            fields["Metadata warnings"] = line.split(": ", 1)[1]
+        elif line.startswith("  ") and section:
+            fields[section].append(line.strip())  # type: ignore[union-attr]
+        elif ": " in line and not line.startswith(" "):
+            key, value = line.split(": ", 1)
+            fields[key] = value
+            section = ""
+    return fields
+
+
+def _items(fields: dict[str, object]) -> int:
+    return int(str(fields["Batch-selectable items"]))
+
+
 @pytest.mark.bats("pending.bats", "pending reports no observations when the directory is missing")
 @pytest.mark.bats("pending.bats", "pending --count reports 0 when the directory is missing")
 @pytest.mark.parametrize("args", [[], ["--count"], ["--full"], ["--preview"]])
 def test_pending_missing_directory(kb: KB, golden: Golden, args: list[str]) -> None:
     shutil.rmtree(_pending_dir(kb))
-    _check(kb, golden, kb.run("pending", *args))
+    result = kb.run("pending", *args)
+    assert result.returncode == 0
+    if args == ["--count"]:
+        assert result.out == "0\n"
+    elif args == ["--preview"]:
+        assert _items(_preview(result.out)) == 0
+    else:
+        assert result.out.strip() and _listed(result.out) == []
+    _check(kb, golden, result)
 
 
 @pytest.mark.bats("pending.bats", "pending shows 0 when empty")
 @pytest.mark.parametrize("args", [[], ["--count"], ["--full"]])
 def test_pending_empty(kb: KB, golden: Golden, args: list[str]) -> None:
-    _check(kb, golden, kb.run("pending", *args))
+    result = kb.run("pending", *args)
+    assert result.returncode == 0
+    if args == ["--count"]:
+        assert result.out == "0\n"
+    else:
+        assert result.out.strip() and _listed(result.out) == []
+    _check(kb, golden, result)
 
 
 @pytest.mark.bats("pending.bats", "pending --count returns correct number")
@@ -45,7 +94,17 @@ def test_pending_empty(kb: KB, golden: Golden, args: list[str]) -> None:
 def test_pending_listing(kb: KB, golden: Golden, args: list[str]) -> None:
     kb.create_observation("b.md", "Second", "Body two")
     kb.create_observation("a.md", "First observation", "Full body text here")
-    _check(kb, golden, kb.run("pending", *args))
+    result = kb.run("pending", *args)
+    assert result.returncode == 0
+    if args == ["--count"]:
+        assert result.out == "2\n"
+    elif args == ["--full"]:
+        for name in ("a.md", "b.md"):
+            assert (_pending_dir(kb) / name).read_text(encoding="utf-8") in result.out
+    else:
+        assert _listed(result.out) == ["a.md", "b.md"]
+        assert "First observation" in result.out and "Second" in result.out
+    _check(kb, golden, result)
 
 
 @pytest.mark.bats(
@@ -60,6 +119,13 @@ def test_preview_metrics(kb: KB, golden: Golden) -> None:
         encoding="utf-8",
     )
     result = kb.run("pending", "--preview", env={"FRESHNESS_TODAY_EPOCH": EPOCH_2026_09_05})
+    fields = _preview(result.out)
+    assert _items(fields) == 2
+    assert str(fields["Oldest pending age"]).startswith("146 day(s) (2026-04-12; a.md)")
+    assert str(fields["Observation items"]).startswith("1 ")
+    assert str(fields["Transcript items"]).startswith("1 ")
+    assert fields["topics"] == ["Networking Setup (1 pending item(s))"]
+    assert fields["Metadata warnings"] == "none"
     _check(kb, golden, result)
 
 
@@ -74,6 +140,10 @@ def test_preview_malformed_and_large(kb: KB, golden: Golden) -> None:
         encoding="utf-8",
     )
     result = kb.run("pending", "--preview", env={"FRESHNESS_TODAY_EPOCH": EPOCH_2026_09_05})
+    fields = _preview(result.out)
+    assert _items(fields) == 2
+    assert str(fields["Metadata warnings"]).startswith("1 malformed")
+    assert any(w.startswith("broken.md:") for w in fields["warnings"])  # type: ignore[union-attr]
     _check(kb, golden, result)
     assert "xxxxxxxxxx" not in result.out
     assert len(result.out) < 2000
@@ -104,7 +174,9 @@ def test_preview_escaped_topic(kb: KB, golden: Golden) -> None:
         'topic: "Team \\"Core\\""\n---\n\nBody\n',
         encoding="utf-8",
     )
-    _check(kb, golden, kb.run("pending", "--preview"))
+    result = kb.run("pending", "--preview")
+    assert _preview(result.out)["topics"] == ['Team "Core" (1 pending item(s))']
+    _check(kb, golden, result)
 
 
 @pytest.mark.bats("pending.bats", "pending --preview caps metadata and topic corpus work")
@@ -117,13 +189,24 @@ def test_preview_caps_topic_corpus(kb: KB, golden: Golden) -> None:
         encoding="utf-8",
     )
     result = kb.run("pending", "--preview", env={"FRESHNESS_TODAY_EPOCH": EPOCH_2026_09_05})
+    fields = _preview(result.out)
+    topics = fields["topics"]
+    assert _items(fields) == 1
+    assert "topic article metadata capped at 256 file(s)" in topics  # type: ignore[operator]
+    assert sum("pending item(s)" in t for t in topics) == 8  # type: ignore[union-attr]
     _check(kb, golden, result)
     assert len(result.out) < 2000
 
 
 @pytest.mark.bats("pending.bats", "pending --preview reports an empty queue without warnings")
 def test_preview_empty(kb: KB, golden: Golden) -> None:
-    _check(kb, golden, kb.run("pending", "--preview"))
+    result = kb.run("pending", "--preview")
+    fields = _preview(result.out)
+    assert _items(fields) == 0
+    assert str(fields["Oldest pending age"]).startswith("unknown")
+    assert fields["topics"] == ["none available"]
+    assert fields["Metadata warnings"] == "none"
+    _check(kb, golden, result)
 
 
 @pytest.mark.bats("pending.bats", "pending --preview selects input within a byte budget")
@@ -131,7 +214,12 @@ def test_preview_byte_budget(kb: KB, golden: Golden) -> None:
     small = kb.create_observation("a.md", "A", "small")
     kb.create_observation("b.md", "B", "a larger observation body that exceeds the budget")
     cap = str(small.stat().st_size)
-    _check(kb, golden, kb.run("pending", "--preview", "--max-bytes", cap))
+    result = kb.run("pending", "--preview", "--max-bytes", cap)
+    fields = _preview(result.out)
+    assert _items(fields) == 1
+    assert (fields["selected"], fields["skipped"]) == (["a.md"], ["b.md"])
+    assert fields["Input budget"] == f"{cap} bytes" and fields["Selected input bytes"] == cap
+    _check(kb, golden, result)
 
 
 @pytest.mark.bats(
@@ -139,7 +227,10 @@ def test_preview_byte_budget(kb: KB, golden: Golden) -> None:
 )
 def test_preview_zero_budget(kb: KB, golden: Golden) -> None:
     kb.create_observation("a.md", "A", "Body")
-    _check(kb, golden, kb.run("pending", "--preview", "--max-bytes", "0"))
+    result = kb.run("pending", "--preview", "--max-bytes", "0")
+    fields = _preview(result.out)
+    assert _items(fields) == 0 and fields["skipped"] == ["a.md"]
+    _check(kb, golden, result)
 
 
 @pytest.mark.bats("pending.bats", "pending preview rejects an invalid byte budget")
@@ -153,6 +244,10 @@ def test_preview_bounds_oversized_report(kb: KB, golden: Golden) -> None:
     for index in range(1, 26):
         kb.create_observation(f"oversized-{index}.md", f"Observation {index}", f"Body {index}")
     result = kb.run("pending", "--preview", "--max-bytes", "0")
+    fields = _preview(result.out)
+    assert _items(fields) == 0
+    assert len(fields["skipped"]) <= 8  # type: ignore[arg-type]
+    assert "17 more oversized item(s)" in result.out
     _check(kb, golden, result)
     assert len(result.out) < 2500
 
@@ -169,7 +264,12 @@ def test_preview_topic_matching(kb: KB, golden: Golden) -> None:
     ]:
         path = kb.create_observation(name, title, body)
         path.write_text(path.read_text(encoding="utf-8").replace("2026-04-12", "2026-09-06"))
-    _check(kb, golden, kb.run("pending", "--preview"))
+    result = kb.run("pending", "--preview")
+    topics = _preview(result.out)["topics"]
+    assert "Canyon Neuron 6 (2026) (1 pending item(s))" in topics  # type: ignore[operator]
+    assert "PDF Skill (1 pending item(s))" in topics  # type: ignore[operator]
+    assert not any("Handing a Claude" in t for t in topics)  # type: ignore[union-attr]
+    _check(kb, golden, result)
 
 
 @pytest.mark.bats(
@@ -181,6 +281,7 @@ def test_preview_matches_batch_selection(kb: KB, golden: Golden) -> None:
     kb.create_observation("c.md", "Oversized", "large" * 100)
     cap = str(a.stat().st_size + b.stat().st_size)
     preview = kb.run("pending", "--preview", "--max-bytes", cap)
+    assert _preview(preview.out)["selected"] == ["a.md", "b.md"]
     _check(kb, golden, preview)
     batch = kb.run("batch", "start", "--max-bytes", cap)
     assert batch.returncode == 0

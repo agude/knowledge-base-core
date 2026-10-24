@@ -52,6 +52,24 @@ def _record(kb: KB, *results: Result) -> str:
     return kb.norm("\n".join(parts))
 
 
+def _commands(kb: KB, golden: Golden, *results: Result) -> None:
+    """Exit codes are contract; a failing run must say why; the text is reference."""
+    golden.contract("exits", " ".join(str(r.returncode) for r in results) + "\n")
+    for r in results:
+        if r.returncode != 0:
+            assert r.err.strip() or r.out.strip(), f"{r.script} {r.args} failed silently"
+    golden.check("commands", _record(kb, *results))
+
+
+STATUS = re.compile(r"^Batch \S+: (\d+) complete, (\d+) pending, (\d+) deferred$", re.MULTILINE)
+
+
+def _status_counts(result: Result) -> tuple[int, int, int]:
+    match = STATUS.search(result.out)
+    assert match, result.out
+    return tuple(int(n) for n in match.groups())  # type: ignore[return-value]
+
+
 def _state(kb: KB) -> str:
     parts = []
     for area in ("pending", "archived", "batches"):
@@ -76,7 +94,7 @@ def test_batch_snapshot_complete_defer(kb: KB, golden: Golden) -> None:
     defer = kb.run("batch", "defer", batch, "b.md")
     kb.create_observation("c.md", "C", "Body C")
     status = kb.run("batch", "status", batch)
-    golden.check("commands", _record(kb, start, archive, defer, status))
+    _commands(kb, golden, start, archive, defer, status)
     golden.contract("state", _state(kb))
 
 
@@ -87,7 +105,7 @@ def test_batch_explicit_subset(kb: KB, golden: Golden) -> None:
     _commit(kb)
     start, batch = _start(kb, "--files", "c.md", "a.md")
     status = kb.run("batch", "status", batch)
-    golden.check("commands", _record(kb, start, status))
+    _commands(kb, golden, start, status)
     golden.contract("manifest", kb.norm(_manifest(kb, batch).read_text(encoding="utf-8")))
 
 
@@ -101,7 +119,7 @@ def test_batch_invalid_selection(kb: KB, golden: Golden, files: list[str]) -> No
     kb.create_observation("a.md", "A", "Body A")
     _commit(kb)
     start, _ = _start(kb, "--files", *files)
-    golden.check("commands", _record(kb, start))
+    _commands(kb, golden, start)
     golden.contract("state", _state(kb))
 
 
@@ -117,7 +135,7 @@ def test_batch_changed_input(kb: KB, golden: Golden) -> None:
     )
     defer = kb.run("batch", "defer", batch, "a.md")
     status = kb.run("batch", "status", batch)
-    golden.check("commands", _record(kb, start, archive, defer, status))
+    _commands(kb, golden, start, archive, defer, status)
     golden.contract("state", _state(kb))
 
 
@@ -139,7 +157,7 @@ def test_budgeted_batch_rejections(kb: KB, golden: Golden) -> None:
     ]
     status = kb.run("batch", "status", batch)
     assert a.read_bytes() == changed
-    golden.check("commands", _record(kb, start, *results, status))
+    _commands(kb, golden, start, *results, status)
     golden.contract("state", _state(kb))
 
 
@@ -155,7 +173,7 @@ def test_repeat_completion(kb: KB, golden: Golden) -> None:
         "archive", "--batch", batch, "--disposition", "ephemeral", "a.md", "--no-commit"
     )
     assert archived.read_text(encoding="utf-8") == original
-    golden.check("commands", _record(kb, first, second))
+    _commands(kb, golden, first, second)
 
 
 @pytest.mark.bats("batch.bats", "incorporated completion records its destination and batch status")
@@ -175,7 +193,7 @@ def test_incorporated_completion(kb: KB, golden: Golden) -> None:
         "--no-commit",
     )
     status = kb.run("batch", "status", batch)
-    golden.check("commands", _record(kb, archive, status))
+    _commands(kb, golden, archive, status)
     golden.contract("state", _state(kb))
 
 
@@ -192,7 +210,7 @@ def test_archive_resumes_after_move(kb: KB, golden: Golden) -> None:
         "archive", "--batch", batch, "--disposition", "duplicate", "a.md", "--no-commit"
     )
     status = kb.run("batch", "status", batch)
-    golden.check("commands", _record(kb, archive, status))
+    _commands(kb, golden, archive, status)
 
 
 @pytest.mark.bats("batch.bats", "budgeted archive recovery preserves selection sizes and arrivals")
@@ -214,7 +232,7 @@ def test_budgeted_recovery(kb: KB, golden: Golden) -> None:
     )
     status = kb.run("batch", "status", batch)
     assert meta.read_bytes() == original_meta
-    golden.check("commands", _record(kb, arrived, recovered, status))
+    _commands(kb, golden, arrived, recovered, status)
     golden.contract("state", _state(kb))
 
 
@@ -226,7 +244,7 @@ def test_batch_rejects_processed(kb: KB, golden: Golden) -> None:
     archive = kb.run(
         "archive", "--batch", batch, "--disposition", "processed", "a.md", "--no-commit"
     )
-    golden.check("commands", _record(kb, archive))
+    _commands(kb, golden, archive)
     assert (_pending(kb) / "a.md").is_file()
 
 
@@ -240,7 +258,7 @@ def test_recovery_rejects_non_member(kb: KB, golden: Golden) -> None:
     archive = kb.run(
         "archive", "--batch", batch, "--disposition", "duplicate", "outsider.md", "--no-commit"
     )
-    golden.check("commands", _record(kb, archive))
+    _commands(kb, golden, archive)
     golden.contract("manifest", kb.norm(_manifest(kb, batch).read_text(encoding="utf-8")))
 
 
@@ -263,7 +281,7 @@ def test_recovery_rejects_wrong_hash(kb: KB, golden: Golden) -> None:
     archive = kb.run(
         "archive", "--batch", batch, "--disposition", "duplicate", "a.md", "--no-commit"
     )
-    golden.check("commands", _record(kb, archive))
+    _commands(kb, golden, archive)
     golden.contract("manifest", kb.norm(_manifest(kb, batch).read_text(encoding="utf-8")))
 
 
@@ -288,7 +306,11 @@ def test_batch_status_report(kb: KB, golden: Golden) -> None:
     )
     kb.run("archive", "--batch", batch, "--disposition", "duplicate", "c.md", "--no-commit")
     kb.run("batch", "defer", batch, "b.md")
-    golden.check("commands", _record(kb, kb.run("batch", "status", batch)))
+    status = kb.run("batch", "status", batch)
+    assert _status_counts(status) == (2, 0, 1)
+    assert "incorporated=1, duplicate=1, ephemeral=0" in status.out
+    assert "knowledge/topic.md#Section" in status.out
+    _commands(kb, golden, status)
 
 
 @pytest.mark.bats("batch.bats", "batch status rejects an invalid persisted disposition")
@@ -298,7 +320,7 @@ def test_batch_status_invalid_disposition(kb: KB, golden: Golden) -> None:
     _, batch = _start(kb)
     kb.run("archive", "--batch", batch, "--disposition", "duplicate", "a.md", "--no-commit")
     _rewrite_rows(_manifest(kb, batch), {2: "complete", 3: "corrupt"})
-    golden.check("commands", _record(kb, kb.run("batch", "status", batch)))
+    _commands(kb, golden, kb.run("batch", "status", batch))
 
 
 @pytest.mark.bats("batch.bats", "batch start selects deterministic files within a byte budget")
@@ -308,7 +330,7 @@ def test_batch_byte_budget(kb: KB, golden: Golden) -> None:
     _commit(kb)
     start, batch = _start(kb, "--max-bytes", str(a.stat().st_size))
     status = kb.run("batch", "status", batch)
-    golden.check("commands", _record(kb, start, status))
+    _commands(kb, golden, start, status)
     golden.contract("state", _state(kb))
 
 
@@ -320,7 +342,11 @@ def test_batch_bounds_oversized_report(kb: KB, golden: Golden) -> None:
     cap = str((_pending(kb) / "oversized-1.md").stat().st_size)
     start, batch = _start(kb, "--max-bytes", cap)
     status = kb.run("batch", "status", batch)
-    golden.check("commands", _record(kb, start, status))
+    for result in (start, status):
+        assert result.out.count("Skipped oversized:") <= 8
+        assert "16 more oversized item(s)" in result.out
+    assert _status_counts(status) == (0, 1, 0)
+    _commands(kb, golden, start, status)
 
 
 @pytest.mark.bats("batch.bats", "batch start rejects an explicit over-budget selection")
@@ -335,7 +361,7 @@ def test_batch_budget_errors(kb: KB, golden: Golden, args: list[str]) -> None:
     kb.create_observation("a.md", "A", "observation")
     _commit(kb)
     start, _ = _start(kb, *args)
-    golden.check("commands", _record(kb, start))
+    _commands(kb, golden, start)
     golden.contract("state", _state(kb))
 
 
@@ -353,7 +379,7 @@ def test_batch_orders_by_creation_time(kb: KB, golden: Golden) -> None:
     )
     _commit(kb)
     start, batch = _start(kb, "--max-bytes", str(old.stat().st_size))
-    golden.check("commands", _record(kb, start))
+    _commands(kb, golden, start)
     golden.contract("manifest", kb.norm(_manifest(kb, batch).read_text(encoding="utf-8")))
 
 
@@ -375,7 +401,7 @@ def test_batch_tie_break_and_invalid_dates(kb: KB, golden: Golden) -> None:
     )
     _commit(kb)
     start, batch = _start(kb, "--max-bytes", str(equal.stat().st_size))
-    golden.check("commands", _record(kb, start))
+    _commands(kb, golden, start)
     golden.contract("manifest", kb.norm(_manifest(kb, batch).read_text(encoding="utf-8")))
     _, everything = _start(kb)
     golden.contract("order", kb.norm(_manifest(kb, everything).read_text(encoding="utf-8")))
@@ -391,7 +417,7 @@ def test_batch_exact_fit(kb: KB, golden: Golden) -> None:
     size = exact.stat().st_size
     fit, _ = _start(kb, "--files", "exact.md", "--max-bytes", str(size))
     short, _ = _start(kb, "--files", "short.md", "--max-bytes", str(size - 1))
-    golden.check("commands", _record(kb, fit, short))
+    _commands(kb, golden, fit, short)
 
 
 @pytest.mark.bats("batch.bats", "legacy manifests remain usable without budget metadata")
@@ -428,7 +454,7 @@ def test_legacy_manifest(kb: KB, golden: Golden) -> None:
         kb.run("batch", "status", legacy_id),
         kb.run("batch", "status", budgeted_id),
     ]
-    golden.check("commands", _record(kb, *results))
+    _commands(kb, golden, *results)
 
 
 @pytest.mark.bats(
@@ -444,7 +470,7 @@ def test_batch_excludes_arrivals(kb: KB, golden: Golden) -> None:
         kb.run("archive", "--batch", batch, "--disposition", "duplicate", name, "--no-commit")
         for name in ("z-excluded.md", "arrived.md")
     ]
-    golden.check("commands", _record(kb, *results))
+    _commands(kb, golden, *results)
     golden.contract("state", _state(kb))
 
 
@@ -461,4 +487,4 @@ def test_batch_excludes_arrivals(kb: KB, golden: Golden) -> None:
     ids=["none", "unknown", "status-no-id", "status-missing", "status-path", "defer-no-file"],
 )
 def test_batch_usage_errors(kb: KB, golden: Golden, args: list[str]) -> None:
-    golden.check("commands", _record(kb, kb.run("batch", *args)))
+    _commands(kb, golden, kb.run("batch", *args))
