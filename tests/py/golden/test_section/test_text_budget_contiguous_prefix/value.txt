@@ -1,0 +1,5 @@
+## Evidence
+
+<!-- kb-section: status=unresolved; sources=observations/archived/evidence.md -->
+Do not perform this action until the current deployment has been verified and the rollback procedure is ready.
+[content truncated: retrieve without --max-bytes]

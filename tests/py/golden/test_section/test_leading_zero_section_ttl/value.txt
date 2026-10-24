@@ -1,0 +1,43 @@
+{
+  "conflict": {
+    "status": "none"
+  },
+  "content": "## Service\n<!-- kb-section: ttl=08 -->\nBody evidence.\n",
+  "corpus": "curated article",
+  "freshness": {
+    "age_days": 11,
+    "field": "verified",
+    "status": "stale",
+    "ttl": "08",
+    "ttl_days": 8,
+    "value": "2026-10-04"
+  },
+  "locator": {
+    "heading": "Service",
+    "level": 2,
+    "number": "1"
+  },
+  "path": "knowledge/decimal-ttl.md",
+  "provenance": {
+    "label": "article-level references",
+    "reference_count": 0,
+    "references": [],
+    "references_truncated": false,
+    "scope": "article"
+  },
+  "section_metadata": {
+    "available": true,
+    "field_scopes": {
+      "status": "article",
+      "ttl": "section",
+      "verified": "article"
+    },
+    "locator": "1",
+    "scope": "section",
+    "sources": [],
+    "status": "current",
+    "ttl": "08",
+    "valid": true,
+    "verified": "2026-10-04"
+  }
+}

@@ -7,6 +7,7 @@ import shutil
 
 import pytest
 
+from kbtest import facts
 from kbtest.golden import Golden
 from kbtest.impl import REPO
 from kbtest.runner import KB, Result
@@ -50,9 +51,25 @@ TLS overview."""
 TRUNCATED_MARKER = "[content truncated: retrieve without --max-bytes]"
 
 
+def _value(result: Result) -> str:
+    """The contract view of section output.
+
+    JSON output is compared by parsed value; text output by the content after
+    its metadata header (the header's facts are pinned through --json tests).
+    """
+    try:
+        data = json.loads(result.out)
+    except ValueError:
+        return facts.section_body(result.out)
+    return json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+
+
 def _check(kb: KB, golden: Golden, result: Result, name: str = "") -> None:
     prefix = f"{name}-" if name else ""
     golden.contract(f"{prefix}result", f"exit {result.returncode}\n")
+    golden.contract(f"{prefix}value", kb.norm(_value(result)))
+    if result.returncode != 0:
+        assert result.err.strip(), "a failing run must say why"
     golden.check(f"{prefix}stdout", kb.norm(result.out))
     golden.check(f"{prefix}stderr", kb.norm_err(result.err))
 

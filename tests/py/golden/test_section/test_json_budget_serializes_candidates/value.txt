@@ -1,0 +1,45 @@
+{
+  "conflict": {
+    "status": "none"
+  },
+  "content": "## Evidence\n\nx\ny\n[content truncated: retrieve without --max-bytes]\n",
+  "content_truncated": true,
+  "corpus": "curated article",
+  "freshness": {
+    "age_days": 20,
+    "field": "verified",
+    "status": "fresh",
+    "ttl": "default",
+    "ttl_days": 60,
+    "value": "2026-10-03"
+  },
+  "locator": {
+    "heading": "Evidence",
+    "level": 2,
+    "number": "1"
+  },
+  "max_bytes": 751,
+  "omitted_content_bytes": 295,
+  "path": "knowledge/a.md",
+  "provenance": {
+    "label": "article-level references",
+    "reference_count": 0,
+    "references": [],
+    "references_truncated": false,
+    "scope": "article"
+  },
+  "section_metadata": {
+    "available": true,
+    "field_scopes": {
+      "status": "article",
+      "verified": "article"
+    },
+    "locator": "1",
+    "scope": "article",
+    "sources": [],
+    "status": "current",
+    "ttl": null,
+    "valid": true,
+    "verified": "2026-10-03"
+  }
+}

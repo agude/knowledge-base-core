@@ -1,0 +1,43 @@
+{
+  "conflict": {
+    "status": "none"
+  },
+  "content": "## Section\n\n<!-- kb-section: status=current; status=superseded -->\nContradictory guidance.\n",
+  "corpus": "curated article",
+  "freshness": {
+    "age_days": 20,
+    "field": "verified",
+    "status": "invalid",
+    "ttl": "default",
+    "ttl_days": 60,
+    "value": "2026-10-03"
+  },
+  "locator": {
+    "heading": "Section",
+    "level": 2,
+    "number": "1"
+  },
+  "path": "knowledge/malformed.md",
+  "provenance": {
+    "label": "article-level references",
+    "reference_count": 0,
+    "references": [],
+    "references_truncated": false,
+    "scope": "article"
+  },
+  "section_metadata": {
+    "available": true,
+    "field_scopes": {
+      "status": "section",
+      "verified": "article"
+    },
+    "invalid": "conflicting values for field 'status': 'current' and 'superseded'",
+    "locator": "1",
+    "scope": "section",
+    "sources": [],
+    "status": "superseded",
+    "ttl": null,
+    "valid": false,
+    "verified": "2026-10-03"
+  }
+}

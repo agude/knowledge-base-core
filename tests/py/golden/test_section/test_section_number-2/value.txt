@@ -1,0 +1,12 @@
+## TCP Handshake
+
+Three-way handshake.
+
+### Client Hello
+
+SYN packet.
+
+### Server Hello
+
+SYN-ACK packet.
+

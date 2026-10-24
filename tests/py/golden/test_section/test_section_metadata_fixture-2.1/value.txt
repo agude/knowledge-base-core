@@ -1,0 +1,48 @@
+{
+  "conflict": {
+    "status": "none"
+  },
+  "content": "### Historical detail\n\nInherited section metadata.\n\n",
+  "corpus": "curated article",
+  "freshness": {
+    "age_days": 295,
+    "field": "verified",
+    "status": "stale",
+    "ttl": "domain",
+    "ttl_days": 180,
+    "value": "2026-01-01"
+  },
+  "locator": {
+    "heading": "Historical detail",
+    "level": 3,
+    "number": "2.1"
+  },
+  "path": "knowledge/metadata.md",
+  "provenance": {
+    "label": "article-level references",
+    "reference_count": 1,
+    "references": [
+      "observations/archived/article.md"
+    ],
+    "references_truncated": false,
+    "scope": "article"
+  },
+  "section_metadata": {
+    "available": true,
+    "field_scopes": {
+      "sources": "article",
+      "status": "section",
+      "ttl": "article",
+      "verified": "section"
+    },
+    "locator": "2.1",
+    "scope": "section",
+    "sources": [
+      "observations/archived/article.md"
+    ],
+    "status": "superseded",
+    "ttl": "domain",
+    "valid": true,
+    "verified": "2026-01-01"
+  }
+}

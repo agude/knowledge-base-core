@@ -1,0 +1,43 @@
+{
+  "conflict": {
+    "status": "none"
+  },
+  "content": "## Status override\n\n<!-- kb-section: status=superseded -->\nHistorical guidance.\n",
+  "corpus": "curated article",
+  "freshness": {
+    "age_days": 20,
+    "field": "verified",
+    "status": "fresh",
+    "ttl": "domain",
+    "ttl_days": 180,
+    "value": "2026-10-03"
+  },
+  "locator": {
+    "heading": "Status override",
+    "level": 2,
+    "number": "1"
+  },
+  "path": "knowledge/field-origins.md",
+  "provenance": {
+    "label": "article-level references",
+    "reference_count": 0,
+    "references": [],
+    "references_truncated": false,
+    "scope": "article"
+  },
+  "section_metadata": {
+    "available": true,
+    "field_scopes": {
+      "status": "section",
+      "ttl": "article",
+      "verified": "article"
+    },
+    "locator": "1",
+    "scope": "section",
+    "sources": [],
+    "status": "superseded",
+    "ttl": "domain",
+    "valid": true,
+    "verified": "2026-10-03"
+  }
+}

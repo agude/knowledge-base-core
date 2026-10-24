@@ -1,0 +1,12 @@
+## Evidence
+
+Budget line 01 with enough content to force truncation.
+Budget line 02 with enough content to force truncation.
+Budget line 03 with enough content to force truncation.
+Budget line 04 with enough content to force truncation.
+Budget line 05 with enough content to force truncation.
+Budget line 06 with enough content to force truncation.
+Budget line 07 with enough content to force truncation.
+Budget line 08 with enough content to force truncation.
+Budget line 09 with enough content to force truncation.
+[content truncated: retrieve without --max-bytes]

@@ -1,0 +1,48 @@
+{
+  "conflict": {
+    "status": "none"
+  },
+  "content": "## Duplicate heading\n\nFirst duplicate.\n\n",
+  "corpus": "curated article",
+  "freshness": {
+    "age_days": 20,
+    "field": "verified",
+    "status": "fresh",
+    "ttl": "domain",
+    "ttl_days": 180,
+    "value": "2026-10-03"
+  },
+  "locator": {
+    "heading": "Duplicate heading",
+    "level": 2,
+    "number": "3"
+  },
+  "path": "knowledge/metadata.md",
+  "provenance": {
+    "label": "article-level references",
+    "reference_count": 1,
+    "references": [
+      "observations/archived/article.md"
+    ],
+    "references_truncated": false,
+    "scope": "article"
+  },
+  "section_metadata": {
+    "available": true,
+    "field_scopes": {
+      "sources": "article",
+      "status": "article",
+      "ttl": "article",
+      "verified": "article"
+    },
+    "locator": "3",
+    "scope": "article",
+    "sources": [
+      "observations/archived/article.md"
+    ],
+    "status": "current",
+    "ttl": "domain",
+    "valid": true,
+    "verified": "2026-10-03"
+  }
+}

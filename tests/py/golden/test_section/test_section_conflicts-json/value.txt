@@ -1,0 +1,49 @@
+{
+  "conflict": {
+    "status": "unresolved"
+  },
+  "content": "## Unresolved conflict\n\n**Status: unresolved; the transfer date is not verified.**\n\nThe ownership roster and a contemporaneous team message disagree about the\neffective transfer date. The date conflict remains explicitly unresolved;\nthis article does not manufacture agreement or mark the conflicting claims\nverified.\n",
+  "corpus": "curated article",
+  "freshness": {
+    "age_days": 48,
+    "field": "verified",
+    "status": "fresh",
+    "ttl": "default",
+    "ttl_days": 60,
+    "value": "2026-09-05"
+  },
+  "locator": {
+    "heading": "Unresolved conflict",
+    "level": 2,
+    "number": "3"
+  },
+  "path": "knowledge/corrections.md",
+  "provenance": {
+    "label": "article-level references",
+    "reference_count": 2,
+    "references": [
+      "observations/archived/old-claim.md",
+      "observations/archived/new-claim.md"
+    ],
+    "references_truncated": false,
+    "scope": "article"
+  },
+  "section_metadata": {
+    "available": true,
+    "field_scopes": {
+      "sources": "article",
+      "status": "article",
+      "verified": "article"
+    },
+    "locator": "3",
+    "scope": "article",
+    "sources": [
+      "observations/archived/old-claim.md",
+      "observations/archived/new-claim.md"
+    ],
+    "status": "current",
+    "ttl": null,
+    "valid": true,
+    "verified": "2026-09-05"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "conflict": {
+    "status": "none"
+  },
+  "content": "## Cité\n\nLine \"one\".\nLine two.\n",
+  "corpus": "curated article",
+  "freshness": {
+    "age_days": 2487,
+    "field": "verified",
+    "status": "stale",
+    "ttl": "people",
+    "ttl_days": 14,
+    "value": "2020-01-01"
+  },
+  "locator": {
+    "heading": "Cité",
+    "level": 2,
+    "number": "1"
+  },
+  "path": "knowledge/résumé notes.md",
+  "provenance": {
+    "label": "article-level references",
+    "reference_count": 1,
+    "references": [
+      "observations/archived/evidence file.md"
+    ],
+    "references_truncated": false,
+    "scope": "article"
+  },
+  "section_metadata": {
+    "available": true,
+    "field_scopes": {
+      "sources": "article",
+      "status": "article",
+      "ttl": "article",
+      "verified": "article"
+    },
+    "locator": "1",
+    "scope": "article",
+    "sources": [
+      "observations/archived/evidence file.md"
+    ],
+    "status": "current",
+    "ttl": "people",
+    "valid": true,
+    "verified": "2020-01-01"
+  }
+}

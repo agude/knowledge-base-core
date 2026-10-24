@@ -1,0 +1,30 @@
+{
+  "conflict": {
+    "status": "none"
+  },
+  "corpus": "curated article",
+  "freshness": {
+    "age_days": null,
+    "field": "verified",
+    "status": "unknown",
+    "ttl": "default",
+    "ttl_days": 60,
+    "value": null
+  },
+  "path": "knowledge/many-sources.md",
+  "provenance": {
+    "label": "article-level references",
+    "reference_count": 7,
+    "references": [
+      "observations/evidence-1.md",
+      "observations/evidence-2.md",
+      "observations/evidence-3.md",
+      "observations/evidence-4.md",
+      "observations/evidence-5.md",
+      "observations/evidence-6.md",
+      "observations/evidence-7.md"
+    ],
+    "references_truncated": false,
+    "scope": "article"
+  }
+}
