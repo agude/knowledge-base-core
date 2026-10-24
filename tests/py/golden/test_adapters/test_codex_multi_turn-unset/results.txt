@@ -1,0 +1,5 @@
+adapters/codex/session-prompt: exit 0 stdout='{}\n' stderr=''
+adapters/codex/session-stop: exit 0 stdout='{}\n' stderr=''
+adapters/codex/session-prompt: exit 0 stdout='{}\n' stderr=''
+adapters/codex/session-stop: exit 0 stdout='{}\n' stderr=''
+adapters/codex/session-end: exit 0 stdout='{}\n' stderr=''

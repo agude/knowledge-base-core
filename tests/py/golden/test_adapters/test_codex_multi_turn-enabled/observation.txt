@@ -1,0 +1,27 @@
+---
+title: "Session transcript (4 messages)"
+source: session-transcript
+created: <TIMESTAMP>
+---
+
+### user
+
+First
+
+
+### assistant
+
+Answer
+
+
+### user
+
+Second
+
+
+### assistant
+
+Reply
+
+
+

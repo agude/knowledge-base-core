@@ -189,6 +189,16 @@ class KB:
             hashes += self.commits(repo)
         return hashes
 
+    def placeholder_instructions(self, text: str) -> str:
+        """Replace the tooling repo's AGENTS.md, printed verbatim, with a placeholder.
+
+        Session context starts with that file. Goldens pin that it appears
+        verbatim without changing whenever the instructions change.
+        """
+        tree = self.resolve_impl(self.default_impl)
+        instructions = (tree.kb_root / "AGENTS.md").read_text(encoding="utf-8")
+        return text.replace(instructions, "<KB AGENTS.md verbatim>\n")
+
     # Locks
 
     @contextmanager

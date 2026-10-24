@@ -216,3 +216,18 @@ Expected: unknown. The hook may skip symlinked articles, or stamp only
 targets inside `knowledge/`.
 Class: undecided
 Decision:
+
+## A-021: adapters retry a failed append, so failures print twice
+
+Scripts: `adapters/claude/session-{prompt,stop}`, `adapters/codex/session-{prompt,stop}`
+Test: `test_adapters.py::test_buffer_creation_failure`
+Observed: each adapter runs `session-append` a second time when the first
+call fails, so one failure prints its error twice. The retry covers a
+transient failure before the record is written; after the record is
+written, a retry duplicates it (see the NOT_PORTED rows for
+`adapters.bats`). The in-process Python design (plan 3.5) has no
+subprocess to retry.
+Expected: unknown. Decide whether the retry stays, and whether a failure
+reports once.
+Class: undecided
+Decision:

@@ -23,17 +23,9 @@ def _start(kb: KB, session_id: str, **env: str | None) -> Result:
     )
 
 
-def _instructions(kb: KB) -> str:
-    tree = kb.resolve_impl(kb.default_impl)
-    return (tree.kb_root / "AGENTS.md").read_text(encoding="utf-8")
-
-
 def _check(kb: KB, golden: Golden, result: Result) -> None:
     """Pin output; the tooling repo's AGENTS.md, printed verbatim, is a placeholder."""
-    out = result.out
-    instructions = _instructions(kb)
-    if out.startswith(instructions):
-        out = "<KB AGENTS.md verbatim>\n" + out[len(instructions) :]
+    out = kb.placeholder_instructions(result.out)
     golden.check("result", f"exit {result.returncode}\n")
     golden.check("stdout", kb.norm(out).replace(kb.session_prefix, "<SESSION>-"))
     golden.check("stderr", kb.norm_err(result.err))

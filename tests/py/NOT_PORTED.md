@@ -10,3 +10,8 @@ allocation, or a `_lib.sh` function that no executable exposes. See
 | `doctor.bats` | doctor fails retrieval when date parsing returns no value | Probes the host `date` for the Bash runtime's freshness parsing; the Python runtime parses dates itself, and step 5 replaces the probe. |
 | `doctor.bats` | doctor fails retrieval when sort features are unavailable | Probes `sort -z` and `sort -V` for the Bash runtime; step 5 replaces the probe. |
 | `doctor.bats` | doctor makes a missing retrieval JSON encoder dependency fatal | Probes `od`, which only the Bash JSON encoder uses; step 5 replaces the probe. |
+| `adapters.bats` | Claude retries an append that fails before persistence | Replaces the sibling `session-append` with a stub to count subprocess retries; the Python adapters append in-process (plan 3.5). Retry semantics are A-021. |
+| `adapters.bats` | Claude preserves a duplicate after a post-persistence append failure | Same stub; asserts the retry's effect on a failed subprocess. A-021. |
+| `adapters.bats` | Codex retries an append that fails before persistence | Same stub as the Claude retry test. A-021. |
+| `adapters.bats` | Codex preserves a duplicate after a post-persistence append failure | Same stub as the Claude duplicate test. A-021. |
+| `adapters.bats` | enabled adapters report message allocation and extraction failures | Injects failures into `mktemp` and `jq` through `PATH` stubs; asserts how the Bash adapters handle those tools failing. |
