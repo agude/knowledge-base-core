@@ -516,10 +516,14 @@ Test: `test_search.py::test_match_in_article`
 Observed: the JSON is assembled by hand. Most of it is compact, but some
 objects carry spaces (`"field_scopes":{ "status":"article" }`). Byte budgets
 (`--max-bytes`) count these exact bytes, so the goldens pin them.
-Expected: unknown. Probably compact JSON throughout; budgets then shift by
-the removed bytes.
-Class: undecided
-Decision:
+Expected: compact JSON throughout.
+Class: accidental (unused)
+Decision: the spaces come from hand assembly; every consumer parses the
+JSON. The search and section tests compare JSON by parsed value and check
+`--max-bytes` as an invariant on the bytes actually printed, and the byte
+transcripts are reference goldens, so no test pins the spaces. Python
+writes compact JSON (`separators=(",", ":")`), and its budgets count its
+own bytes. Audit mark removed.
 
 ## A-034: some entry points do not parse options
 

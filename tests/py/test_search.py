@@ -32,7 +32,6 @@ FRESH_FRONT = '---\ntitle: "{title}"\nupdated: 2026-08-08\nverified: 2026-08-08\
 
 
 @pytest.mark.bats("search.bats", "search finds match in knowledge article")
-@pytest.mark.audit("A-033")
 def test_match_in_article(kb: KB, golden: Golden) -> None:
     kb.create_article(
         "topic.md",
