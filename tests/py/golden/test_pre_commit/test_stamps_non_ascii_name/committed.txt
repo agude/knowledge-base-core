@@ -1,0 +1,11 @@
+---
+title: "Cafe"
+updated: <TODAY>
+verified: 2026-08-08
+---
+
+# Cafe
+
+## Section
+
+Content.

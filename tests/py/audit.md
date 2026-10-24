@@ -205,3 +205,14 @@ format.
 Expected: one format on every host.
 Class: undecided
 Decision:
+
+## A-020: pre-commit stamps through a symlinked article
+
+Script: `hooks/pre-commit`  Test: `test_pre_commit.py::test_symlinked_article_stays_a_link`
+Observed: for a staged `knowledge/link.md` that is a symlink to
+`../real.md`, the hook keeps the symlink but rewrites `updated:` in the
+target, a file outside `knowledge/`.
+Expected: unknown. The hook may skip symlinked articles, or stamp only
+targets inside `knowledge/`.
+Class: undecided
+Decision:

@@ -1,0 +1,6 @@
+Add long article
+
+A	knowledge/long.md
+init
+
+A	.gitkeep

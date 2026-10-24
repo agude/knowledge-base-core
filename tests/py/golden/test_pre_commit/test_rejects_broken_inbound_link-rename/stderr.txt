@@ -1,0 +1,5 @@
+  error    knowledge/a.md:11  missing local Markdown link target: b.md
+
+2 file(s): 1 error(s), 0 warning(s)
+
+pre-commit: lint errors — commit rejected, nothing modified.
