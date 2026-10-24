@@ -1,0 +1,5 @@
+$ search needle
+exit 0
+--- stdout
+knowledge/many-sources.md | top | needle [section-command=--top] [curated article; verified=2026-01-01; ttl=60d; freshness=stale; refs=observations/evidence-1.md, observations/evidence-2.md, observations/evidence-3.md, observations/evidence-4.md, observations/evidence-5.md (+2 more; article)]
+--- stderr

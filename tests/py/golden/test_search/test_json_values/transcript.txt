@@ -1,0 +1,11 @@
+$ search --json needle
+exit 0
+--- stdout
+{"results":[{"path":"knowledge/résumé notes.md","corpus":"curated article","title":"Résumé Notes","match_count":1,"locator":{"section":"Cité","number":"1","line":10},"freshness":{"field":"verified","value":"not-a-date","ttl":"default","ttl_days":60,"status":"invalid","age_days":null},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"1","scope":"article","field_scopes":{ "verified":"article", "status":"article" },"verified":"not-a-date","ttl":null,"status":"current","sources":[],"valid":false,"invalid":"invalid verification date 'not-a-date'"},"text":"Needle \"quoted\".","routing":false,"query_mode":"literal","query":null,"query_terms":["needle"],"alias_matches":[],"match_mode":"strict","relaxed":false}],"query_mode":"literal","query":null,"query_terms":["needle"],"alias_matches":[],"match_mode":"strict","relaxed":false,"total_files":1,"total_lines":1,"returned":1,"truncated":false}
+--- stderr
+
+$ search --json absent
+exit 0
+--- stdout
+{"results":[],"query_mode":"literal","query":null,"query_terms":["absent"],"alias_matches":[],"match_mode":"strict","relaxed":false,"total_files":0,"total_lines":0,"returned":0,"truncated":false}
+--- stderr

@@ -1,0 +1,12 @@
+$ search --query how restart api --explain --json
+exit 0
+--- stdout
+{"results":[{"path":"knowledge/explain.md","corpus":"curated article","title":"","match_count":1,"locator":{"section":"Evidence","number":"1","line":5},"freshness":{"field":"verified","value":null,"ttl":"default","ttl_days":60,"status":"unknown","age_days":null},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"1","scope":"article","field_scopes":{ "status":"article" },"verified":null,"ttl":null,"status":"current","sources":[],"valid":true},"text":"restart api","routing":false,"query_mode":"question","query":"how restart api","query_terms":["restart","api"],"alias_matches":[],"match_mode":"strict","relaxed":false}],"query_mode":"question","query":"how restart api","query_terms":["restart","api"],"alias_matches":[],"match_mode":"strict","relaxed":false,"total_files":1,"total_lines":1,"returned":1,"truncated":false}
+--- stderr
+search explain: mode=question
+  original query: how restart api
+  retained terms: restart api
+  alias matches: none
+  matching mode: strict
+  scope: path=all topic=all corpora=knowledge sources pending
+  candidates: 1; returned: 1; output limits: limit=20 per-file=3

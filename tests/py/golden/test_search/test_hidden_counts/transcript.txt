@@ -1,0 +1,19 @@
+$ search --limit 4 needle
+exit 0
+--- stdout
+knowledge/f1.md | S | needle here [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
+knowledge/f10.md | S | needle here [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
+knowledge/f2.md | S | needle here [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
+knowledge/f3.md | S | needle here [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
+
+... 6 more result section(s) in 6 unshown file(s). Raise --limit/--per-file, or narrow the query.
+--- stderr
+
+$ search --files --limit 2 needle
+exit 0
+--- stdout
+knowledge/f1.md  [1]  [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article)]
+knowledge/f10.md  [1]  [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article)]
+
+... 8 more file(s). Raise --limit, or narrow the query.
+--- stderr

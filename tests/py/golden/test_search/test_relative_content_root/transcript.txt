@@ -1,0 +1,5 @@
+$ search needle
+exit 0
+--- stdout
+knowledge/relative.md | top | needle [section-command=--top] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article)]
+--- stderr

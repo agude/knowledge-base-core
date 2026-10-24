@@ -1,0 +1,5 @@
+$ search --json --max-bytes 400 --path knowledge/one --topic two needle
+exit 0
+--- stdout
+{"results":[],"query_mode":"literal","query":null,"query_terms":["needle"],"alias_matches":[],"match_mode":"strict","relaxed":false,"total_files":0,"total_lines":0,"returned":0,"truncated":false,"omitted_results":0,"max_bytes":400}
+--- stderr

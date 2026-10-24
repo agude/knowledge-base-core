@@ -25,3 +25,4 @@ lint.bats
 lib.bats
 section.bats
 session_core.bats
+search.bats

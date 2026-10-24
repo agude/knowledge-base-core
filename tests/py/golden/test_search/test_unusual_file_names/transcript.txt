@@ -1,0 +1,7 @@
+$ search --limit 0 docker
+exit 0
+--- stdout
+knowledge/docker.md | S | docker notes [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
+knowledge/has space.md | S | docker in a spaced name [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
+knowledge/it's.md | S | docker in a quoted name [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
+--- stderr

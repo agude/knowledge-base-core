@@ -1,0 +1,5 @@
+$ search --json --max-bytes 0 needle
+exit 1
+--- stdout
+--- stderr
+Error: --max-bytes 0 is smaller than the minimum valid JSON response (229 bytes)

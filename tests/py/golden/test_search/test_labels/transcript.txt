@@ -1,0 +1,13 @@
+$ search --limit 2 needle
+exit 0
+--- stdout
+knowledge/old.md | top | needle [section-command=--top] [curated article; verified=2020-01-01; ttl=60d; freshness=stale; refs=none (article)]
+observations/pending/<OBS-1>.md | top | needle [section-command=--top] [pending observation; uncurated evidence; refs=none (observation)]
+--- stderr
+
+$ search --text-only needle
+exit 0
+--- stdout
+knowledge/old.md | top | needle
+observations/pending/<OBS-1>.md | top | needle
+--- stderr

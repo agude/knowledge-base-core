@@ -1,0 +1,11 @@
+$ search --query how restart api database tunnel --json
+exit 0
+--- stdout
+{"results":[],"query_mode":"question","query":"how restart api database tunnel","query_terms":["restart","api","database","tunnel"],"alias_matches":[],"match_mode":"strict","relaxed":false,"total_files":0,"total_lines":0,"returned":0,"truncated":false}
+--- stderr
+
+$ search --query how restart api database tunnel --relax --json --limit 0
+exit 0
+--- stdout
+{"results":[{"path":"knowledge/complete.md","corpus":"curated article","title":"","match_count":1,"locator":{"section":"Evidence","number":"1","line":5},"freshness":{"field":"verified","value":null,"ttl":"default","ttl_days":60,"status":"unknown","age_days":null},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"1","scope":"article","field_scopes":{ "status":"article" },"verified":null,"ttl":null,"status":"current","sources":[],"valid":true},"text":"restart api database","routing":false,"query_mode":"question","query":"how restart api database tunnel","query_terms":["restart","api","database","tunnel"],"alias_matches":[],"match_mode":"relaxed","relaxed":true},{"path":"knowledge/partial.md","corpus":"curated article","title":"","match_count":1,"locator":{"section":"Evidence","number":"1","line":5},"freshness":{"field":"verified","value":null,"ttl":"default","ttl_days":60,"status":"unknown","age_days":null},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"1","scope":"article","field_scopes":{ "status":"article" },"verified":null,"ttl":null,"status":"current","sources":[],"valid":true},"text":"restart service","routing":false,"query_mode":"question","query":"how restart api database tunnel","query_terms":["restart","api","database","tunnel"],"alias_matches":[],"match_mode":"relaxed","relaxed":true}],"query_mode":"question","query":"how restart api database tunnel","query_terms":["restart","api","database","tunnel"],"alias_matches":[],"match_mode":"relaxed","relaxed":true,"total_files":2,"total_lines":2,"returned":2,"truncated":false}
+--- stderr

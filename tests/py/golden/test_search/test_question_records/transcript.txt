@@ -1,0 +1,5 @@
+$ search --json --archive kafka
+exit 0
+--- stdout
+{"results":[{"path":"questions/open/<OBS-1>.md","corpus":"question","title":"Who owns the kafka cluster?","match_count":1,"locator":{"section":"title","number":null,"command":"--title","line":1},"freshness":{"field":null,"value":null,"ttl":null,"ttl_days":null,"status":"not-applicable","age_days":null},"conflict":{"status":"none"},"provenance":{"scope":"question","label":"unresolved knowledge gap","references":[],"reference_count":0,"references_truncated":false,"state":"open"},"section_metadata":null,"text":"Who owns the kafka cluster?","routing":false,"query_mode":"literal","query":null,"query_terms":["kafka"],"alias_matches":[],"match_mode":"strict","relaxed":false}],"query_mode":"literal","query":null,"query_terms":["kafka"],"alias_matches":[],"match_mode":"strict","relaxed":false,"total_files":1,"total_lines":1,"returned":1,"truncated":false}
+--- stderr

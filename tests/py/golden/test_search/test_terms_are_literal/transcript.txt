@@ -1,0 +1,10 @@
+$ search C:\new
+exit 0
+--- stdout
+knowledge/win.md | S | path C:\new\table here [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
+--- stderr
+
+$ search a\tb
+exit 0
+--- stdout
+--- stderr

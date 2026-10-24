@@ -1,0 +1,5 @@
+$ search --max-bytes 408 --limit 0 --per-file 0 needle
+exit 1
+--- stdout
+--- stderr
+Error: --max-bytes 408 is too small for one complete output record and its truncation marker

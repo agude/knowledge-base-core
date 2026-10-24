@@ -1,0 +1,5 @@
+$ search --query How do I restart --no-verify on 2026-10-03 from /srv/backups/kb?
+exit 0
+--- stdout
+knowledge/question.md | Evidence | restart --no-verify on 2026-10-03 from /srv/backups/kb; keep not current. [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article] [query-mode=question; match-mode=strict]
+--- stderr
