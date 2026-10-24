@@ -526,14 +526,22 @@ Decision:
 Scripts: `hooks/pre-commit`, `session-context`, `session-flush`, `context`,
 and the Claude and Codex adapters  Test: `test_help.py`
 Observed: `--help` and unknown options are ignored: the hooks run as if
-invoked by their host, `session-context` and `context` print the context,
+invoked by their host, `session-context` prints the context, `context`
+prints help for `--help` but the normal report for an unknown option,
 and `session-flush` takes `--help` as the buffer path and exits 0 because
 no such buffer exists. Every other command prints help or rejects the
 option.
-Expected: unknown. Hook entry points need not parse options; `session-flush`
-and `context` probably should.
-Class: undecided
-Decision:
+Expected: host entry points ignore options; `context` and `session-flush`
+print help for `--help` and reject unknown options with exit 1.
+Class: intended (host entry points); bug (`context`, `session-flush`)
+Decision: hosts and git invoke the hooks, the adapters, and
+`session-context` without options, and ignoring arguments keeps them from
+failing on an unexpected one; Python keeps that, and those cases keep their
+`null_ok` marks. `context` and `session-flush` are commands a person or the
+curator runs, and every other such command parses options (see A-015 and
+A-032). Their `test_unknown_option` cases and `session-flush`'s `test_help`
+case now expect a rejection or help, with hand-written goldens, and are
+strict `xfail` under bash. Bash is not fixed.
 
 ## A-035: a missing knowledge directory is an error for some commands only
 

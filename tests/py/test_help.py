@@ -10,38 +10,41 @@ import pytest
 
 from kbtest.golden import Golden
 from kbtest.impl import interface_executables
+from kbtest.marks import xfail_bash
 from kbtest.runner import KB
 
-# Entry points that do not parse options (A-034). Hooks read their input from
-# stdin; session-context takes no arguments; session-flush reads its first
-# argument as a buffer path.
+# Host entry points, which do not parse options (A-034): hooks read their
+# input from stdin, and session-context takes no arguments.
 NO_OPTIONS = {
     "hooks/pre-commit",
     "session-context",
-    "session-flush",
-    "context",
 }
+
+# Commands that should parse options but do not under bash (A-034). Bash's
+# context already prints help; it ignores unknown options.
+UNPARSED = xfail_bash("A-034: bash's context and session-flush do not parse options")
+SHOULD_PARSE = {"help": {"session-flush"}, "unknown": {"context", "session-flush"}}
 
 
 def _no_options(name: str) -> bool:
     return name.startswith("adapters/") or name in NO_OPTIONS
 
 
-def _params() -> list[object]:
+def _params(test: str) -> list[object]:
     params = []
     for name in interface_executables():
         marks = []
-        if _no_options(name):
-            marks = [pytest.mark.audit("A-034")]
+        if name in SHOULD_PARSE[test]:
+            marks = [UNPARSED]
+        elif _no_options(name) and name != "hooks/pre-commit":
             # pre-commit fails outside a repository, so the null controls
             # catch it; the others exit 0 silently or as if invoked normally.
-            if name != "hooks/pre-commit":
-                marks.append(pytest.mark.null_ok("this entry point does not parse options (A-034)"))
+            marks = [pytest.mark.null_ok("a host entry point ignores options (A-034)")]
         params.append(pytest.param(name, marks=marks, id=name.replace("/", "-")))
     return params
 
 
-@pytest.mark.parametrize("script", _params())
+@pytest.mark.parametrize("script", _params("help"))
 def test_help(kb: KB, golden: Golden, script: str) -> None:
     result = kb.run(script, "--help", stdin="")
     golden.contract("result", f"exit {result.returncode}\n")
@@ -55,7 +58,7 @@ def test_help(kb: KB, golden: Golden, script: str) -> None:
         assert "usage" in result.out.lower(), "help shows how to call the command"
 
 
-@pytest.mark.parametrize("script", _params())
+@pytest.mark.parametrize("script", _params("unknown"))
 def test_unknown_option(kb: KB, golden: Golden, script: str) -> None:
     result = kb.run(script, "--no-such-option", stdin="")
     golden.contract("result", f"exit {result.returncode}\n")
