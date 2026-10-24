@@ -362,3 +362,30 @@ def test_transcript_renders_runs(kb: KB, tmp_path: Path) -> None:
     kb.resolve_impl = lambda name: tree
     text = kb.transcript(kb.run("status", "--flag"))
     assert text == "$ status --flag\nexit 3\n--- stdout\nout\n--- stderr\nerr\n"
+
+
+# Golden tiers
+
+
+def test_reference_mode_records_without_failing(tmp_path: Path) -> None:
+    from kbtest.golden import ReferenceReport
+
+    Golden(tmp_path, update=True).check("out", "bash output\n")
+    report = ReferenceReport()
+    golden = Golden(tmp_path, update=False, mode="reference", report=report, nodeid="t::x")
+    golden.check("out", "python output\n")
+    assert len(report.entries) == 1
+    assert report.entries[0][0] == "t::x [out]"
+    assert "-bash output" in report.render()
+
+
+def test_contract_fails_in_reference_mode(tmp_path: Path) -> None:
+    Golden(tmp_path, update=True).contract("format", "a: 1\n")
+    golden = Golden(tmp_path, update=False, mode="reference")
+    with pytest.raises(AssertionError, match="contract golden"):
+        golden.contract("format", "a: 2\n")
+
+
+def test_unknown_golden_mode_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="golden mode"):
+        Golden(tmp_path, update=False, mode="loose")

@@ -8,7 +8,11 @@ null0 must carry @pytest.mark.null_ok("<reason>"), and a null_ok mark on a
 test that fails under null0 is stale. Harness self-tests and fixture-data
 checks (markers harness and data) are excluded.
 
-Usage: python tests/py/nullcheck.py [pytest args...]
+With --contract, reference goldens record instead of failing, so every test
+must fail the controls through contract goldens or semantic assertions. That
+is the rule the Python port is gated on.
+
+Usage: python tests/py/nullcheck.py [--contract] [pytest args...]
 """
 
 from __future__ import annotations
@@ -23,7 +27,9 @@ from pathlib import Path
 PYTEST_USAGE_ERRORS = {2, 3, 4}
 
 
-def run_control(name: str, report: Path, extra: list[str]) -> dict[str, dict[str, object]]:
+def run_control(
+    name: str, report: Path, extra: list[str], golden_mode: str
+) -> dict[str, dict[str, object]]:
     env = dict(os.environ, KB_IMPL=name, KB_NULL_REPORT=str(report))
     env.pop("KB_SCRIPTS_DIR", None)
     completed = subprocess.run(
@@ -35,6 +41,7 @@ def run_control(name: str, report: Path, extra: list[str]) -> dict[str, dict[str
             "-m",
             "not harness and not data",
             "--no-header",
+            f"--golden-mode={golden_mode}",
             *extra,
         ],
         env=env,
@@ -54,9 +61,14 @@ def run_control(name: str, report: Path, extra: list[str]) -> dict[str, dict[str
 
 
 def main(argv: list[str]) -> int:
+    # --contract: reference goldens do not fail, so each test must fail the
+    # null controls through contract goldens or semantic assertions alone.
+    golden_mode = "strict"
+    if argv[:1] == ["--contract"]:
+        golden_mode, argv = "reference", argv[1:]
     with tempfile.TemporaryDirectory() as scratch:
-        null0 = run_control("null0", Path(scratch) / "null0.jsonl", argv)
-        null1 = run_control("null1", Path(scratch) / "null1.jsonl", argv)
+        null0 = run_control("null0", Path(scratch) / "null0.jsonl", argv, golden_mode)
+        null1 = run_control("null1", Path(scratch) / "null1.jsonl", argv, golden_mode)
 
     if not null0:
         print("nullcheck: no tests ran", file=sys.stderr)

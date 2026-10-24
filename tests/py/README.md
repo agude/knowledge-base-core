@@ -73,11 +73,32 @@ prefix exists in the real session directory
 no live session runs, the run fails if that directory holds any file at all.
 The check detects a leak after the fact; it cannot prevent one.
 
+## Assertion tiers
+
+The suite separates what the Python port must reproduce from what it may
+change:
+
+| Tier | How | Gates `KB_IMPL=python`? |
+|---|---|---|
+| Contract formats | `golden.contract(name, text)`: byte-exact goldens for formats other processes read (files written to the content repository, session buffers, locks, hook JSON, commit messages). | Yes |
+| Behavior | Semantic assertions: parsed JSON values, which files or sections are returned and in what order where ranking is the point, files and commits made, exit codes, budget invariants. | Yes |
+| Reference | `golden.check(name, text)`: snapshots of the Bash output (presentation, wording, ordering details). | No |
+
+Reference goldens are strict by default and under `KB_IMPL=bash`, so a Bash
+change still fails. With `--golden-mode=reference` (the default under
+`KB_IMPL=python`), a mismatch is listed in the terminal summary, and
+`--reference-report FILE` writes the diffs to a Markdown file for the
+behavior audit.
+
+`just test-py-null-contract` runs the null controls with reference goldens
+disabled. A test it reports depends only on reference goldens: it needs a
+contract golden or a semantic assertion before it can gate the port.
+
 ## Golden files
 
-Every exact-output assertion is a golden file under `golden/<module>/<test>/`.
-A run without `--update-golden` never writes one, and a missing golden file is
-a failure. Review every golden diff as part of the change that produced it.
+Golden files live under `golden/<module>/<test>/`. A run without
+`--update-golden` never writes one, and a missing golden file is a failure.
+Review every golden diff as part of the change that produced it.
 
 ## Normalization rules
 

@@ -52,6 +52,11 @@ test-py *args:
 test-py-null *args:
     uv run --locked python tests/py/nullcheck.py {{ args }}
 
+# The same check with reference goldens disabled: every test must fail the
+# null controls through contract goldens or semantic assertions.
+test-py-null-contract *args:
+    uv run --locked python tests/py/nullcheck.py --contract {{ args }}
+
 lint: shellcheck portability py-lint
 
 check: lint test test-py test-py-null

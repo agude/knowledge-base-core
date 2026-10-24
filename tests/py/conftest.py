@@ -17,7 +17,7 @@ import pytest
 
 from kbtest import env as envmod
 from kbtest import impl as implmod
-from kbtest.golden import Golden, directory_for
+from kbtest.golden import Golden, ReferenceReport, directory_for
 from kbtest.leaks import find_leaks, real_session_dir
 from kbtest.runner import KB
 
@@ -27,6 +27,18 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--update-golden",
         action="store_true",
         help="Write golden files from actual output instead of comparing.",
+    )
+    parser.addoption(
+        "--golden-mode",
+        choices=("strict", "reference"),
+        default=None,
+        help="strict: reference goldens fail on mismatch. reference: mismatches go to "
+        "the reference report. Default: reference for KB_IMPL=python, strict otherwise.",
+    )
+    parser.addoption(
+        "--reference-report",
+        default=None,
+        help="Write reference-golden mismatches to this Markdown file.",
     )
 
 
@@ -130,13 +142,38 @@ def hooked(kb: KB) -> KB:
     return kb
 
 
+def golden_mode(config: pytest.Config) -> str:
+    chosen = config.getoption("--golden-mode")
+    if chosen:
+        return chosen
+    return "reference" if implmod.selected_name() == "python" else "strict"
+
+
+_REFERENCE_REPORT = ReferenceReport()
+
+
 @pytest.fixture
 def golden(request: pytest.FixtureRequest) -> Golden:
     module = Path(request.node.path).stem
     return Golden(
         directory_for(module, request.node.name),
         update=request.config.getoption("--update-golden"),
+        mode=golden_mode(request.config),
+        report=_REFERENCE_REPORT,
+        nodeid=request.node.nodeid,
     )
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus: int, config: pytest.Config) -> None:
+    if not _REFERENCE_REPORT.entries:
+        return
+    terminalreporter.write_sep("-", f"{len(_REFERENCE_REPORT.entries)} reference difference(s)")
+    for nodeid, _ in _REFERENCE_REPORT.entries:
+        terminalreporter.write_line(nodeid)
+    target = config.getoption("--reference-report")
+    if target:
+        Path(target).write_text(_REFERENCE_REPORT.render(), encoding="utf-8")
+        terminalreporter.write_line(f"report: {target}")
 
 
 # Null-control reporting. tests/py/nullcheck.py sets KB_NULL_REPORT and reads
