@@ -135,7 +135,11 @@ def hooked(kb: KB) -> KB:
     """The kb fixture with the implementation's pre-commit hook installed."""
     hooks = kb.layout.content / ".git" / "hooks"
     hooks.mkdir(parents=True, exist_ok=True)
-    (hooks / "pre-commit").symlink_to(kb.executable("hooks/pre-commit"))
+    # git, not the test, runs the hook. Until the hook is ported (plan 4.17),
+    # ported commands run with the bash one, as they will in production.
+    tree = kb.resolve_impl(kb.default_impl)
+    owner = kb.default_impl if tree.has("hooks/pre-commit") or tree.name != "python" else "bash"
+    (hooks / "pre-commit").symlink_to(kb.executable("hooks/pre-commit", owner))
     # The hook stamps `updated:` with the real UTC date.
     kb.normalizer.extra[datetime.now(UTC).strftime("%Y-%m-%d")] = "<TODAY>"
     return kb
