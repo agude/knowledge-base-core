@@ -185,12 +185,14 @@ name implies it should not be listed.
 Class: undecided
 Decision:
 
-## A-018: toc does not validate --depth
+## A-018: toc and section do not validate numeric arguments
 
-Script: `toc`  Test: `test_toc.py::test_toc_argument_errors`
-Observed: `--depth x` aborts with Bash's `x: unbound variable` (including the
-script's absolute path) after printing a file header, exit 1. `--depth 0`
-prints file headers with no headings, exit 0.
+Scripts: `toc`, `section`
+Tests: `test_toc.py::test_toc_argument_errors`, `test_section.py::test_section_number`
+Observed: `toc --depth x` aborts with Bash's `x: unbound variable` (including
+the script's absolute path) after printing a file header, exit 1. `toc
+--depth 0` prints file headers with no headings, exit 0. `section --number
+x` aborts with the same unbound-variable error.
 Expected: reject a non-positive or non-numeric depth with a usage error.
 Class: undecided
 Decision:

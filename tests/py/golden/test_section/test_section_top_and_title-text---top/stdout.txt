@@ -1,0 +1,9 @@
+Metadata: path=knowledge/top.md; corpus=curated article; locator=--top "top"
+Freshness: curated article; verified=unknown; ttl=60d; freshness=unknown
+Provenance: scope=article; refs=none (article)
+---
+
+# Top
+
+Preamble text.
+

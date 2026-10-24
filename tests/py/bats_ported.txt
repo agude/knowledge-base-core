@@ -23,3 +23,4 @@ pretool_allow.bats
 batch.bats
 lint.bats
 lib.bats
+section.bats

@@ -22,3 +22,4 @@ allocation, or a `_lib.sh` function that no executable exposes. See
 | `lib.bats` | metadata cache restores selected sections and full articles without rereading | Tests the Bash metadata cache's internal variables. Retrieval results are pinned through `search` and `section`. |
 | `lib.bats` | retrieval loads article state once before lazy section parsing | Tests the Bash cache's laziness by stubbing internal functions. |
 | `lib.bats` | article cache preserves interleaved question and archive provenance | Tests the Bash cache's internal variables. Provenance is pinned through `search` and `section` output. |
+| `section.bats` | section text budgets clean scratch files after finalizer write failures | Injects a `cp` failure into the Bash budget finalizer. Scratch cleanup after normal truncated runs is pinned by `test_section.py::test_text_budget_truncates_and_cleans_up`. |
