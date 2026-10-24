@@ -129,6 +129,8 @@ class KB:
                 pytest.skip(f"not ported to python: {script}")
             raise AssertionError(f"{tree.name} has no executable {script} in {tree.scripts_dir}")
         self.normalizer.add_path(tree.kb_root, "<KB>")
+        # Python's executables live in python/, not scripts/; outputs name either as one.
+        self.normalizer.add_path(tree.scripts_dir, "<KB>/scripts")
         self.invocations.append((tree.name, script))
         data = stdin.encode("utf-8") if isinstance(stdin, str) else stdin
         completed = subprocess.run(
