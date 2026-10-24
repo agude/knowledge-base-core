@@ -38,6 +38,7 @@ def test_match_in_article(kb: KB, golden: Golden) -> None:
         "topic.md",
         "---\ntitle: Test\n---\n\n# Topic\n\n## Section One\n\nThe server uses PostgreSQL for storage.",
     )
+    assert _hits(kb, "PostgreSQL") == [("knowledge/topic.md", "Section One")]
     _pin(kb, golden, _search(kb, "PostgreSQL"), _search(kb, "--json", "PostgreSQL"))
 
 
@@ -46,12 +47,17 @@ def test_match_in_pending(kb: KB, golden: Golden) -> None:
     kb.create_observation(
         "20260412T000000-0000aaaa.md", "Test obs", "Found a bug in the deploy script."
     )
+    assert [path for path, _ in _hits(kb, "deploy script")] == [
+        "observations/pending/20260412T000000-0000aaaa.md"
+    ]
     _pin(kb, golden, _search(kb, "deploy script"), _search(kb, "--json", "deploy script"))
 
 
 @pytest.mark.bats("search.bats", "search is case-insensitive")
 def test_case_insensitive(kb: KB, golden: Golden) -> None:
     kb.create_article("topic.md", "# Topic\n\n## Info\n\nPostgreSQL is the database.")
+    for term in ("postgresql", "POSTGRESQL"):
+        assert [path for path, _ in _hits(kb, term)] == ["knowledge/topic.md"]
     _pin(kb, golden, _search(kb, "postgresql"), _search(kb, "POSTGRESQL"))
 
 
@@ -60,6 +66,8 @@ def test_case_insensitive(kb: KB, golden: Golden) -> None:
 def test_no_match(kb: KB, golden: Golden) -> None:
     empty = _search(kb, "anything")
     kb.create_article("topic.md", "# Topic\n\n## Info\n\nSome content.")
+    assert _hits(kb, "zzzznonexistent") == []
+    assert empty.returncode == 0 and _paths(empty) == []
     _pin(
         kb, golden, empty, _search(kb, "zzzznonexistent"), _search(kb, "--json", "zzzznonexistent")
     )
@@ -71,6 +79,7 @@ def test_first_file_without_match(kb: KB, golden: Golden) -> None:
     kb.create_article(
         "zzz-has-match.md", "# Has Match\n\n## Found It\n\nThe PostgreSQL server is running."
     )
+    assert [path for path, _ in _hits(kb, "PostgreSQL")] == ["knowledge/zzz-has-match.md"]
     _pin(kb, golden, _search(kb, "PostgreSQL"))
 
 
@@ -81,6 +90,7 @@ def test_multiple_terms(kb: KB, golden: Golden) -> None:
         "both.md", "# Both\n\n## Info\n\nThe Synology NAS is upstairs.\nIt runs Docker containers."
     )
     kb.create_article("one.md", "# One\n\n## Info\n\nThe Synology unit is upstairs.")
+    assert [path for path, _ in _hits(kb, "synology", "docker")] == ["knowledge/both.md"]
     _pin(kb, golden, _search(kb, "synology", "docker"), _search(kb, "--json", "synology", "docker"))
 
 
@@ -88,6 +98,7 @@ def test_multiple_terms(kb: KB, golden: Golden) -> None:
 def test_phrase_argument(kb: KB, golden: Golden) -> None:
     kb.create_article("phrase.md", "# Phrase\n\n## Info\n\nA Synology NAS lives here.")
     kb.create_article("split.md", "# Split\n\n## Info\n\nSynology makes it. A NAS is a NAS.")
+    assert [path for path, _ in _hits(kb, "synology nas")] == ["knowledge/phrase.md"]
     _pin(kb, golden, _search(kb, "synology nas"))
 
 
@@ -101,6 +112,17 @@ def test_phrase_argument(kb: KB, golden: Golden) -> None:
 @pytest.mark.bats("search.bats", "search rejects an invalid byte budget")
 def test_arguments(kb: KB, golden: Golden) -> None:
     kb.create_article("flags.md", "# Flags\n\n## Info\n\nNever pass --no-verify to git commit.")
+    for args in (
+        ["--all"],
+        [],
+        ["--limit", "lots", "x"],
+        ["--per-file", "x", "x"],
+        ["--max-bytes", "nope", "x"],
+        ["--limit"],
+    ):
+        rejected = _search(kb, *args)
+        assert rejected.returncode != 0 and rejected.err.strip(), args
+    assert [path for path, _ in _hits(kb, "--", "--no-verify")] == ["knowledge/flags.md"]
     _pin(
         kb,
         golden,
@@ -117,6 +139,7 @@ def test_arguments(kb: KB, golden: Golden) -> None:
 @pytest.mark.bats("search.bats", "search treats leading-zero byte budgets as decimal")
 def test_leading_zero_budget(kb: KB, golden: Golden) -> None:
     kb.create_article("budget.md", "# Budget\n\nneedle")
+    assert _json(_search(kb, "--json", "--max-bytes", "01000", "needle"))["max_bytes"] == 1000
     _pin(kb, golden, _search(kb, "--json", "--max-bytes", "01000", "needle"))
 
 
@@ -129,6 +152,8 @@ def test_top_locator(kb: KB, golden: Golden) -> None:
         "topic.md",
         '---\ntitle: "Matched in frontmatter"\n---\n\n# Topic\n\nPreamble with target_word here.',
     )
+    top = _json(_search(kb, "--json", "target_word"))["results"][0]["locator"]
+    assert (top["section"], top["number"], top["command"]) == ("top", None, "--top")
     _pin(kb, golden, _search(kb, "--json", "target_word"), _search(kb, "target_word"))
 
 
@@ -138,6 +163,11 @@ def test_duplicate_heading_numbers(kb: KB, golden: Golden) -> None:
         "duplicate.md",
         "# Duplicate\n\n## Same heading\n\nfirst needle\n\n## Same heading\n\nsecond needle",
     )
+    results = _json(_search(kb, "--json", "--limit", "0", "--per-file", "0", "needle"))["results"]
+    assert [(r["locator"]["section"], r["locator"]["number"]) for r in results] == [
+        ("Same heading", "1"),
+        ("Same heading", "2"),
+    ]
     _pin(
         kb,
         golden,
@@ -161,6 +191,9 @@ def test_title_above_body(kb: KB, golden: Golden) -> None:
         FRESH_FRONT.format(title="Home Lab Overview")
         + "# Home Lab Overview\n\n## Machines\n\nOne line mentions bind mounts in passing.",
     )
+    # Files rank by their best section: the title match first.
+    files = list(dict.fromkeys(path for path, _ in _hits(kb, "--limit", "0", "bind mounts")))
+    assert files == ["knowledge/exact.md", "knowledge/passing.md"]
     _pin(kb, golden, _search(kb, "--files", "bind mounts"), _search(kb, "bind mounts"))
 
 
@@ -168,6 +201,14 @@ def test_title_above_body(kb: KB, golden: Golden) -> None:
 def test_exact_title_above_repetition(kb: KB, golden: Golden) -> None:
     kb.create_article("exact.md", '---\ntitle: "Bind Mounts"\n---\n\n# Notes\n\nDocumentation.')
     kb.create_article("repeated.md", "# Repeated\n\n## Notes\n\n" + "bind mounts\n" * 5)
+    top = _json(_search(kb, "--json", "--limit", "2", "--per-file", "0", "bind mounts"))["results"][
+        0
+    ]
+    assert (top["path"], top["locator"]["section"], top["locator"]["command"]) == (
+        "knowledge/exact.md",
+        "title",
+        "--title",
+    )
     _pin(
         kb,
         golden,
@@ -181,6 +222,8 @@ def test_repeated_evidence_once(kb: KB, golden: Golden) -> None:
     kb.create_article(
         "repeated.md", "# Repeated\n\n## Notes\n\nsame evidence\nsame evidence\nsame evidence"
     )
+    results = _json(_search(kb, "--json", "--per-file", "0", "same evidence"))["results"]
+    assert len(results) == 1 and results[0]["match_count"] == 1
     _pin(kb, golden, _search(kb, "--json", "--per-file", "0", "same evidence"))
 
 
@@ -190,6 +233,10 @@ def test_repeated_evidence_once(kb: KB, golden: Golden) -> None:
 def test_complete_section_above_fallback(kb: KB, golden: Golden) -> None:
     kb.create_article("split.md", "# Split\n\n## First\n\nalpha\n\n## Second\n\nbeta")
     kb.create_article("complete.md", "# Complete\n\n## All terms\n\nalpha beta")
+    assert _hits(kb, "--limit", "0", "--per-file", "0", "alpha", "beta")[0] == (
+        "knowledge/complete.md",
+        "All terms",
+    )
     _pin(kb, golden, _search(kb, "--json", "--limit", "0", "--per-file", "0", "alpha", "beta"))
 
 
@@ -200,6 +247,10 @@ def test_complete_coverage_above_title_heading(kb: KB, golden: Golden) -> None:
         '---\ntitle: "alpha"\n---\n\n# Notes\n\n## beta\n\nThe terms are split between the title and heading.',
     )
     kb.create_article("complete.md", "# Complete\n\n## Unrelated\n\nalpha beta")
+    assert _hits(kb, "--limit", "0", "--per-file", "0", "alpha", "beta")[0] == (
+        "knowledge/complete.md",
+        "Unrelated",
+    )
     _pin(kb, golden, _search(kb, "--json", "--limit", "0", "--per-file", "0", "alpha", "beta"))
 
 
@@ -209,6 +260,8 @@ def test_strongest_excerpt(kb: KB, golden: Golden) -> None:
         "excerpt.md",
         "# Excerpt\n\n## Notes\n\nrelevant\ncontext\nrelevant context is the useful evidence\nother relevant line",
     )
+    top = _json(_search(kb, "--json", "--per-file", "0", "relevant", "context"))["results"][0]
+    assert "relevant context is the useful evidence" in top["text"]
     _pin(kb, golden, _search(kb, "--json", "--per-file", "0", "relevant", "context"))
 
 
@@ -216,6 +269,7 @@ def test_strongest_excerpt(kb: KB, golden: Golden) -> None:
 def test_heading_above_body(kb: KB, golden: Golden) -> None:
     kb.create_article("heading.md", "# A\n\n## Docker networking\n\nContent.")
     kb.create_article("body.md", "# B\n\n## Other\n\nWe mention docker here in prose.")
+    assert _hits(kb, "docker")[0] == ("knowledge/heading.md", "Docker networking")
     _pin(kb, golden, _search(kb, "--files", "docker"), _search(kb, "docker"))
 
 
@@ -226,6 +280,11 @@ def test_no_front_matter_results(kb: KB, golden: Golden) -> None:
         FRESH_FRONT.format(title="Postgres Notes")
         + "# Postgres Notes\n\n## Setup\n\nThe server runs Postgres.",
     )
+    texts = [
+        r["text"] for r in _json(_search(kb, "--json", "--per-file", "0", "postgres"))["results"]
+    ]
+    assert all("title:" not in text for text in texts)
+    assert any("The server runs Postgres" in text for text in texts)
     _pin(kb, golden, _search(kb, "postgres"))
 
 
@@ -241,12 +300,17 @@ def _widgets(kb: KB, count: int, lines: int) -> None:
 @pytest.mark.bats("search.bats", "search caps output at --limit and says what it dropped")
 def test_limit(kb: KB, golden: Golden) -> None:
     _widgets(kb, 8, 4)
+    data = _json(_search(kb, "--json", "--limit", "5", "widgets"))
+    assert (data["returned"], data["total_lines"], data["truncated"]) == (5, 8, True)
     _pin(kb, golden, _search(kb, "--limit", "5", "widgets"), _search(kb, "widgets"))
 
 
 @pytest.mark.bats("search.bats", "search --limit 0 prints everything")
 def test_limit_zero(kb: KB, golden: Golden) -> None:
     _widgets(kb, 8, 1)
+    assert (
+        _json(_search(kb, "--json", "--limit", "0", "--per-file", "0", "widgets"))["returned"] == 8
+    )
     _pin(kb, golden, _search(kb, "--limit", "0", "--per-file", "0", "widgets"))
 
 
@@ -256,6 +320,10 @@ def test_per_file(kb: KB, golden: Golden) -> None:
         "many.md",
         "# Many\n\n## First\n\nwidgets one\n\n## Second\n\nwidgets two\n\n## Third\n\nwidgets three",
     )
+    assert (
+        _json(_search(kb, "--json", "--per-file", "2", "--limit", "0", "widgets"))["returned"] == 2
+    )
+    assert _json(_search(kb, "--json", "--limit", "0", "widgets"))["returned"] >= 2
     _pin(
         kb,
         golden,
@@ -274,6 +342,9 @@ def test_archive_and_questions(kb: KB, golden: Golden) -> None:
         '---\ntitle: "Old note"\n---\n\nSomething about kubernetes and kafka.\n', encoding="utf-8"
     )
     kb.create_question("20260412T000000-0000dddd.md", "Who owns the kafka cluster?")
+    assert _hits(kb, "kubernetes") == [] and _hits(kb, "kafka") == []
+    corpora = [r["corpus"] for r in _json(_search(kb, "--json", "--archive", "kafka"))["results"]]
+    assert sorted(corpora) == ["archive", "question"]
     _pin(
         kb,
         golden,
@@ -285,6 +356,12 @@ def test_archive_and_questions(kb: KB, golden: Golden) -> None:
 
 
 # Semantic helpers (behavior tier)
+
+
+def _hits(kb: KB, *args: str) -> list[tuple[str, str]]:
+    """(path, section) of each JSON result, in rank order."""
+    data = _json(_search(kb, "--json", *args))
+    return [(r["path"], r["locator"]["section"]) for r in data["results"]]
 
 
 def _json(result: Result) -> dict:
