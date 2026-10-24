@@ -643,9 +643,12 @@ Observed: when the flush writes an observation, the hook's stdout carries
 `Wrote: observations/pending/<name>.md`, passed through from `observe`.
 Claude does not read SessionEnd stdout. The Codex session-end hook
 discards the same output and prints only `{}`.
-Expected: unknown. Probably print nothing.
-Class: undecided
-Decision:
+Expected: anything; Claude ignores it. Python prints nothing.
+Class: accidental (unused)
+Decision: the line is `observe`'s confirmation passing through the flush.
+The Claude prompt, stop, and end hooks' stdout is no longer part of the
+protocol contract (`not read`); the exit code, buffer, and observation
+contracts stay. Audit mark removed.
 
 ## A-041: breaking a stale lock can delete a live owner's lock
 

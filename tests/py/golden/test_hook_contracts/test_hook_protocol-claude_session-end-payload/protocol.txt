@@ -1,1 +1,1 @@
-unread: 'Wrote: observations/pending/<OBS-1>.md\n'
+not read

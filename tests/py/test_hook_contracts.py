@@ -39,8 +39,9 @@ def _protocol(kb: KB, adapter: str, result: Result) -> str:
         return json.dumps(data, indent=2, sort_keys=True) + "\n"
     if adapter == "claude/session-start":
         return kb.context_facts(result.out) if result.out else "empty\n"
-    # Claude reads nothing from these hooks; anything printed is unused (A-040).
-    return "empty\n" if result.out == "" else f"unread: {kb.norm(result.out)!r}\n"
+    # Claude reads nothing from these hooks, so what they print is not contract
+    # (A-040); Python prints nothing.
+    return "not read\n"
 
 
 def _params() -> list[object]:
@@ -61,7 +62,6 @@ def _params() -> list[object]:
 TRANSCRIPT = [("user", "Q1"), ("assistant", "A1"), ("user", "Q2")]
 
 
-@pytest.mark.audit("A-040")
 @pytest.mark.parametrize(("adapter", "given"), _params())
 def test_hook_protocol(kb: KB, golden: Golden, adapter: str, given: str) -> None:
     session_id = kb.session_id()
