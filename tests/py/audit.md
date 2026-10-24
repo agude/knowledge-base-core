@@ -337,10 +337,15 @@ transient failure before the record is written; after the record is
 written, a retry duplicates it (see the NOT_PORTED rows for
 `adapters.bats`). The in-process Python design (plan 3.5) has no
 subprocess to retry.
-Expected: unknown. Decide whether the retry stays, and whether a failure
-reports once.
-Class: undecided
-Decision:
+Expected: one append attempt; a failure reports once.
+Class: bash-only
+Decision: the retry exists because the bash adapters call `session-append`
+as a subprocess. The Python adapters append in-process (plan 3.5), so there
+is nothing to retry and no duplicate record after a late failure. The test
+compares the messages through a reference golden and asserts only the exit
+code, a nonempty stderr, and the stdout protocol, so it already allows one
+report; audit mark removed. The four `adapters.bats` retry rows in
+`NOT_PORTED.md` are confirmed in 2.3.
 
 ## A-022: pending lists nested observations that batches never select
 

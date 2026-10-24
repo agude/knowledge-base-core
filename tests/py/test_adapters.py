@@ -44,7 +44,6 @@ def _buffer(kb: KB, session_id: str) -> str:
     "adapters.bats",
     "Codex prompt and stop retain protocol JSON on enabled buffer creation failures",
 )
-@pytest.mark.audit("A-021")
 @pytest.mark.parametrize("client", ["claude", "codex"])
 def test_buffer_creation_failure(kb: KB, golden: Golden, client: str) -> None:
     blocked = kb.layout.root / "blocked"
