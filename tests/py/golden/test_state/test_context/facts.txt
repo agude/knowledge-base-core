@@ -1,0 +1,8 @@
+topic files=5
+  Fresh
+  Stale
+  Owners
+  Domain
+  Undated
+Source documents=1
+Pending observations=3

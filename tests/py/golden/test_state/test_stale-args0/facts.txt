@@ -1,0 +1,4 @@
+knowledge/infra/stale.md 2487
+knowledge/people/owners.md 22
+knowledge/undated.md no verified
+totals 2 stale, 1 missing date

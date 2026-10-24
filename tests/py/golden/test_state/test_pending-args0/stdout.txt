@@ -1,0 +1,5 @@
+3 pending observation(s):
+
+  Pending fact                    2026-10-01T00:00:00Z  [<OBS-1>.md]
+  Session transcript (4 messages)  2026-10-02T00:00:00Z  [<OBS-2>.md]
+  Another fact                    2026-10-03T00:00:00Z  [<OBS-3>.md]

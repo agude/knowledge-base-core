@@ -1,0 +1,3 @@
+   114 days  sources/manual.md  (synced: 2026-07-01, ttl 60d)
+
+1 stale, 0 missing date.

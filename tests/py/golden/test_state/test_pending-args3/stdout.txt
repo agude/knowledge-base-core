@@ -1,0 +1,9 @@
+Batch-selectable queue preview
+Batch-selectable items: 3
+Oldest pending age: 22 day(s) (2026-10-01; <OBS-1>.md)
+Observation items: 2 (181 B; 181 bytes)
+Transcript items: 1 (138 B; 138 bytes)
+Input volume: 319 B (319 bytes)
+Topic hints (hints only; no LLM):
+  none available
+Metadata warnings: none

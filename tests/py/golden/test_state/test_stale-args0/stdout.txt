@@ -1,0 +1,5 @@
+  2487 days  knowledge/infra/stale.md  (verified: 2020-01-01, ttl 60d)
+    22 days  knowledge/people/owners.md  (verified: 2026-10-01, ttl 14d)
+  [no verified]  knowledge/undated.md
+
+2 stale, 1 missing date.

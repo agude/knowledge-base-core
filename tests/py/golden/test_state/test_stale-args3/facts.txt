@@ -1,0 +1,2 @@
+sources/manual.md 114
+totals 1 stale, 0 missing date

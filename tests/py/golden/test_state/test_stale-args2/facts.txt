@@ -1,0 +1,4 @@
+knowledge/infra/stale.md#1 2487
+knowledge/people/owners.md#1 22
+knowledge/undated.md#1 no verified
+totals 3 section(s) needing attention

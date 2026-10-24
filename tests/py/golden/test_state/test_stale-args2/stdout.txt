@@ -1,0 +1,5 @@
+  2487 days  knowledge/infra/stale.md#1  (verified: 2020-01-01, ttl 60d; status current)
+    22 days  knowledge/people/owners.md#1  (verified: 2026-10-01, ttl 14d; status current)
+  [no verified]  knowledge/undated.md#1  (status current)
+
+3 section(s) needing attention.

@@ -1,0 +1,5 @@
+Knowledge articles=5
+Pending observations=3
+Archived observations=2
+Last knowledge update=2026-10-05 00:00:00 +0000
+Last observation=2026-10-07 00:00:00 +0000

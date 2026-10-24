@@ -1,0 +1,36 @@
+3 pending observation(s):
+
+--- <OBS-1>.md ---
+---
+title: "Pending fact"
+source: session
+created: <TIMESTAMP>
+---
+
+A fact to curate.
+
+--- <OBS-2>.md ---
+---
+title: "Session transcript (4 messages)"
+source: session-transcript
+created: <TIMESTAMP>
+---
+
+### user
+
+Q
+
+### assistant
+
+A
+
+
+--- <OBS-3>.md ---
+---
+title: "Another fact"
+source: slack
+created: <TIMESTAMP>
+---
+
+From chat.
+

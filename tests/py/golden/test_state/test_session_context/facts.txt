@@ -1,0 +1,7 @@
+instructions verbatim
+area knowledge/infra/ 2
+area knowledge/people/ 1
+area knowledge/rules/ 1
+area knowledge/ (loose files) 1
+total 5
+state 5 articles | 3 pending | 3 stale | 2 open question(s)
