@@ -94,7 +94,8 @@ change:
 
 Reference goldens are strict by default and under `KB_IMPL=bash`, so a Bash
 change still fails. `just test-py` runs tests in parallel (`-n auto`); the
-reference report is collected in one process, so pass `-n 0` with
+reference report is collected in one process, so pass `-n 0` and the
+`tests/py` path (the option is defined in its conftest) with
 `--reference-report`. With `--golden-mode=reference` (the default under
 `KB_IMPL=python`), a mismatch is listed in the terminal summary, and
 `--reference-report FILE` writes the diffs to a Markdown file for the

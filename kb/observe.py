@@ -15,7 +15,12 @@ from kb.content import yaml_escape
 
 class ObserveError(Exception):
     """Nothing was committed. The message, when there is one, says why;
-    git has already reported a failed commit itself."""
+    git has already reported a failed commit itself. status is the exit
+    status to report: git's, for a failed commit."""
+
+    def __init__(self, message: str, status: int = 1) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 def _name(now: datetime) -> str:
@@ -71,8 +76,9 @@ def write(
                 git.break_stale_index_lock(content)
                 _publish(temp, pending / name, announce)
                 path = f"observations/pending/{name}"
-                if git.commit_paths(content, f"Observe: {title}", [path]):
-                    raise ObserveError("")
+                status = git.commit_paths(content, f"Observe: {title}", [path])
+                if status:
+                    raise ObserveError("", status)
         except lock.LockTimeout as error:
             raise ObserveError(str(error)) from error
         return name
@@ -92,4 +98,4 @@ def _publish(temp: Path, final: Path, announce: bool) -> None:
 def report(error: ObserveError) -> int:
     if str(error):
         print(error, file=sys.stderr)
-    return 1
+    return error.status

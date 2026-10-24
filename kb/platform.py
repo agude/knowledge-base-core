@@ -160,6 +160,22 @@ def git_running_in(repo: Path) -> bool:
     return result.returncode == 0
 
 
+def exit_on_signals() -> None:
+    """Turn HUP, INT, and TERM into SystemExit(128 + signal number).
+
+    The default actions end the process at once, skipping the finally
+    blocks that release the observe lock; bash's EXIT trap runs instead.
+    """
+    import signal
+
+    def handler(signum: int, frame: object) -> None:
+        raise SystemExit(128 + signum)
+
+    names = ("SIGINT", "SIGTERM") if WINDOWS else ("SIGHUP", "SIGINT", "SIGTERM")
+    for name in names:
+        signal.signal(getattr(signal, name), handler)
+
+
 # Logging
 
 

@@ -46,4 +46,12 @@ def run(module, script):
         )
     import importlib
 
-    return importlib.import_module(module).main(sys.argv[1:])
+    from kb import platform
+    from kb.content import UsageError
+
+    platform.exit_on_signals()
+    try:
+        return importlib.import_module(module).main(sys.argv[1:])
+    except UsageError as error:
+        sys.stderr.write(f"{error}\n")
+        return 1

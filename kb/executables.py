@@ -28,6 +28,7 @@ EXECUTABLES = ROOT / "python"
 COMMANDS: dict[str, str] = {
     "archive": "kb.commands.archive",
     "commit": "kb.commands.commit",
+    "observe": "kb.commands.observe",
     "adapters/claude/session-end": "kb.commands.adapters.claude.session_end",
 }
 
