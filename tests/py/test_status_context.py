@@ -6,6 +6,7 @@ import pytest
 
 from kbtest import facts
 from kbtest.golden import Golden
+from kbtest.marks import xfail_bash
 from kbtest.runner import KB, Result
 
 # Verified three days before the harness's fixed date (2026-10-23).
@@ -81,7 +82,6 @@ def test_status_unknown_option(kb: KB, golden: Golden) -> None:
 
 
 @pytest.mark.bats("status_context.bats", "context runs with empty content")
-@pytest.mark.audit("A-016")
 def test_context_empty(kb: KB, golden: Golden) -> None:
     _check(kb, golden, kb.run("context"))
 
@@ -122,6 +122,9 @@ def test_context_mixed(kb: KB, golden: Golden) -> None:
     _check(kb, golden, kb.run("context"))
 
 
-@pytest.mark.audit("A-015")
-def test_context_unknown_option(kb: KB, golden: Golden) -> None:
-    _check(kb, golden, kb.run("context", "--bogus"))
+@xfail_bash("A-015: bash's context ignores unknown arguments")
+def test_context_unknown_option(kb: KB) -> None:
+    result = kb.run("context", "--bogus")
+    assert result.returncode == 1
+    assert result.out == ""
+    assert "Unknown option: --bogus" in result.err

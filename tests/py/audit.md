@@ -243,9 +243,12 @@ are affected, so bash is not fixed.
 Script: `context`  Test: `test_status_context.py::test_context_unknown_option`
 Observed: `context --bogus` prints the normal report and exits 0. Every
 other command rejects an unknown option with exit 1.
-Expected: unknown. Probably exit 1 with `Unknown option: --bogus`.
-Class: undecided
-Decision:
+Expected: exit 1, no stdout, and `Unknown option: --bogus` on stderr.
+Class: bug
+Decision: every other command rejects unknown options, and no caller passes
+`context` arguments. The test now expects the rejection and is a strict
+`xfail` under bash; its goldens are removed. Harmless in practice, so bash
+is not fixed.
 
 ## A-016: context's script list comes from the directory listing
 
@@ -254,9 +257,15 @@ Observed: the `Scripts:` line lists every executable file in `scripts/`
 except `_*`, `session-*`, `pretool-allow`, and `install`, in glob order. It
 includes the development tool `portability-lint`, which retires with bash,
 so the list changes at cutover.
-Expected: unknown. Probably a fixed list of the agent-facing commands.
-Class: undecided
-Decision:
+Expected: a fixed list of the agent-facing commands.
+Class: accidental (unused)
+Decision: the line is generated from the directory only because that was
+easy in shell. Python prints a fixed alphabetical list: `archive`, `ask`,
+`batch`, `commit`, `context`, `doctor`, `evaluate-retrieval`, `init`,
+`lint`, `observe`, `pending`, `questions`, `resolve`, `search`, `section`,
+`stale`, `status`, `sync`, `toc`; `portability-lint` is dropped. The line is
+compared only through reference goldens, so no test changes; audit mark
+removed.
 
 ## A-017: a hashes-only heading becomes an empty section
 
