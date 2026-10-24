@@ -200,6 +200,16 @@ class KB:
             hashes += self.commits(repo)
         return hashes
 
+    def instructions(self) -> str:
+        """The tooling repo's AGENTS.md, which session context prints first."""
+        path = self.resolve_impl(self.default_impl).kb_root / "AGENTS.md"
+        return path.read_text(encoding="utf-8") if path.is_file() else ""
+
+    def context_facts(self, text: str) -> str:
+        from kbtest import facts
+
+        return self.norm(facts.session_context(text, self.instructions()))
+
     def placeholder_instructions(self, text: str) -> str:
         """Replace the tooling repo's AGENTS.md, printed verbatim, with a placeholder.
 
@@ -207,8 +217,10 @@ class KB:
         verbatim without changing whenever the instructions change.
         """
         tree = self.resolve_impl(self.default_impl)
-        instructions = (tree.kb_root / "AGENTS.md").read_text(encoding="utf-8")
-        return text.replace(instructions, "<KB AGENTS.md verbatim>\n")
+        path = tree.kb_root / "AGENTS.md"
+        if not path.is_file():
+            return text
+        return text.replace(path.read_text(encoding="utf-8"), "<KB AGENTS.md verbatim>\n")
 
     # Locks
 

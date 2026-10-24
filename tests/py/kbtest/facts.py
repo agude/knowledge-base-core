@@ -56,3 +56,29 @@ def section_body(text: str) -> str:
         if line == "---\n" and index > 0 and lines[0].startswith("Metadata: "):
             return "".join(lines[index + 1 :])
     return text
+
+
+def session_context(text: str, instructions: str) -> str:
+    """Session context as facts.
+
+    Keeps: whether the tooling instructions open the context verbatim, the
+    topic map (areas and total), the state line, and any further lines (the
+    content repository's own instructions). Drops: headings and blank lines
+    around them.
+    """
+    verbatim = bool(instructions) and text.startswith(instructions)
+    rows = [f"instructions {'verbatim' if verbatim else 'missing'}"]
+    rest = text[len(instructions) :] if verbatim else text
+    for line in rest.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped == "## Topic areas (auto-generated)":
+            continue
+        if stripped.startswith("State: "):
+            rows.append(f"state {stripped[len('State: ') :]}")
+        elif match := _AREA.match(line):
+            rows.append(f"area {match.group(1)} {match.group(2)}")
+        elif match := _TOTAL.match(line):
+            rows.append(f"total {match.group(1)}")
+        else:
+            rows.append(f"line {stripped}")
+    return "\n".join(rows) + "\n"

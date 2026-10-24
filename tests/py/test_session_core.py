@@ -82,6 +82,7 @@ def test_session_context(kb: KB, golden: Golden) -> None:
     kb.create_observation("20260412T000000-0000aaaa.md", "Obs", "Body")
     result = kb.run("session-context")
     golden.contract("result", f"exit {result.returncode}\n")
+    golden.contract("context", kb.context_facts(result.out))
     golden.check("stdout", kb.norm(kb.placeholder_instructions(result.out)))
     golden.check("stderr", kb.norm_err(result.err))
 
@@ -90,6 +91,7 @@ def test_session_context(kb: KB, golden: Golden) -> None:
 def test_session_context_content_instructions(kb: KB, golden: Golden) -> None:
     (kb.layout.content / "AGENTS.md").write_text("# Project Rules\n", encoding="utf-8")
     result = kb.run("session-context")
+    golden.contract("context", kb.context_facts(result.out))
     golden.check("stdout", kb.norm(kb.placeholder_instructions(result.out)))
 
 

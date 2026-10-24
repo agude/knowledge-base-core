@@ -27,6 +27,7 @@ def _check(kb: KB, golden: Golden, result: Result) -> None:
     """Pin output; the tooling repo's AGENTS.md, printed verbatim, is a placeholder."""
     out = kb.placeholder_instructions(result.out)
     golden.contract("result", f"exit {result.returncode}\n")
+    golden.contract("context", kb.context_facts(result.out))
     golden.check("stdout", kb.norm(out).replace(kb.session_prefix, "<SESSION>-"))
     golden.check("stderr", kb.norm_err(result.err))
 
