@@ -1,0 +1,8 @@
+---
+title: "Stdin test"
+source: session
+created: <TIMESTAMP>
+---
+
+Piped body content
+

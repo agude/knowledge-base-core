@@ -1,0 +1,7 @@
+---
+title: "Test title"
+source: session
+created: <TIMESTAMP>
+---
+
+Test body

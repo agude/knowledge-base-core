@@ -9,3 +9,4 @@ questions.bats
 doctor.bats
 status_context.bats
 fences.bats
+observe.bats
