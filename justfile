@@ -63,6 +63,10 @@ test-py-null *args:
 bench *args:
     uv run --locked python tests/py/bench.py {{ args }}
 
+# Time Python start-up and the SessionEnd hook (tests/py/bench_startup.py --help).
+bench-startup *args:
+    uv run --locked python tests/py/bench_startup.py {{ args }}
+
 # Run the benchmark once against the null implementation as a smoke test.
 bench-smoke:
     uv run --locked python tests/py/bench.py --impl null0 --scale 1 --runs 1 > /dev/null

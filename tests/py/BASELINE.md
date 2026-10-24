@@ -65,11 +65,38 @@ Corpus: synthetic scale=10 seed=0: 2100 articles, 24890 archived and 180 pending
 - `section` is flat. The SessionEnd flush doubles but stays under 210 ms at
   p95 with the pre-commit hook running.
 
+## Start-up and SessionEnd, dirac, 2026-10-24, commit 8d156e6
+
+`just bench-startup` (`tests/py/bench_startup.py`, plan 3.6): 20 runs after
+one warm-up. `.python-interpreter` names the uv CPython 3.15 build, as
+`install` will record it. The content repository's installed pre-commit hook
+is the bash one; every SessionEnd run flushes a 200-message buffer into one
+observation commit. "cold" removes kb's bytecode cache before each run.
+`shim` is the dotfiles Claude SessionEnd shim exec-ing a Python
+`session-flush`; the `bash-` rows are the same workloads in bash.
+
+| Workload | Cache | p50 ms | p95 ms |
+|---|---|---:|---:|
+| `empty` | cold | 38 | 41 |
+| `empty` | warm | 35 | 38 |
+| `session-end` | cold | 106 | 112 |
+| `session-end` | warm | 95 | 100 |
+| `bash-session-end` | warm | 114 | 125 |
+| `shim` | cold | 107 | 129 |
+| `shim` | warm | 98 | 110 |
+| `bash-shim` | warm | 98 | 118 |
+
+The cold-cache SessionEnd p95 (112 ms through the repo adapter, 129 ms
+through the shim) is within the 500 ms hook budget. Most of the time is git
+and the bash pre-commit hook: the empty executable starts in under 41 ms
+cold. The CI row needs a pushed branch.
+
 ## Reproduce
 
 ```bash
 just bench --impl bash --content "$KNOWLEDGE_BASE/content" > live.json
 just bench --impl bash --scale 10 > 10x.json
+just bench-startup > startup.json
 ```
 
 The raw reports are in `baseline/`.

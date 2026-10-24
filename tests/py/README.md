@@ -168,4 +168,6 @@ pseudo-words, and a seed always produces the same bytes. Three marker words
 appear in 50%, 5%, and 0.5% of articles, so searches have known hit rates.
 
 `just bench-smoke` runs one pass against `null0` and is part of `just check`.
+`just bench-startup` times Python start-up and the SessionEnd hook, cold
+and warm, through the repo adapter and the dotfiles Claude shim.
 Results for the Bash implementation are in `BASELINE.md`.

@@ -1,0 +1,87 @@
+{
+  "date": "2026-10-24T11:03:21Z",
+  "commit": "8d156e6",
+  "python": "/home/agude/.local/share/uv/python/cpython-3.15-linux-x86_64-gnu/bin/python3.15",
+  "runs": 20,
+  "shim": "/home/agude/.dotfiles/llm/claude/hooks.d/SessionEnd/010.knowledge.sh",
+  "results": [
+    {
+      "workload": "empty",
+      "cache": "cold",
+      "p50_ms": 37.9,
+      "p95_ms": 40.7,
+      "exit_codes": [
+        0
+      ]
+    },
+    {
+      "workload": "empty",
+      "cache": "warm",
+      "p50_ms": 35.3,
+      "p95_ms": 38.3,
+      "exit_codes": [
+        0
+      ]
+    },
+    {
+      "workload": "session-end",
+      "cache": "cold",
+      "p50_ms": 106.5,
+      "p95_ms": 112.3,
+      "exit_codes": [
+        0
+      ],
+      "last_run_commits": 1
+    },
+    {
+      "workload": "session-end",
+      "cache": "warm",
+      "p50_ms": 95.3,
+      "p95_ms": 100.5,
+      "exit_codes": [
+        0
+      ],
+      "last_run_commits": 1
+    },
+    {
+      "workload": "bash-session-end",
+      "cache": "warm",
+      "p50_ms": 114.0,
+      "p95_ms": 125.0,
+      "exit_codes": [
+        0
+      ],
+      "last_run_commits": 1
+    },
+    {
+      "workload": "shim",
+      "cache": "cold",
+      "p50_ms": 106.9,
+      "p95_ms": 129.0,
+      "exit_codes": [
+        0
+      ],
+      "last_run_commits": 1
+    },
+    {
+      "workload": "shim",
+      "cache": "warm",
+      "p50_ms": 97.7,
+      "p95_ms": 109.8,
+      "exit_codes": [
+        0
+      ],
+      "last_run_commits": 1
+    },
+    {
+      "workload": "bash-shim",
+      "cache": "warm",
+      "p50_ms": 98.5,
+      "p95_ms": 118.5,
+      "exit_codes": [
+        0
+      ],
+      "last_run_commits": 1
+    }
+  ]
+}
