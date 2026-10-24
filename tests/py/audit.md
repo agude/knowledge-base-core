@@ -441,3 +441,11 @@ discards the same output and prints only `{}`.
 Expected: unknown. Probably print nothing.
 Class: undecided
 Decision:
+
+## Coverage note (plan item 1b.11)
+
+kcov is not installed on the development host or in CI, so no line-coverage
+report of the Bash scripts under the pytest suite exists. Uncovered branches
+were looked for by hand through `SURFACE.md` instead. kcov cannot see inside
+the embedded awk and jq programs in any case, so no "dead code" claim is
+made from coverage.
