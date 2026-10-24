@@ -115,18 +115,23 @@ listing order changes; no reader depends on it.
 Script: `install`  Test: `test_install.py::test_install_is_idempotent`
 Observed: every re-run prints `Removed 2 prior skill symlink(s).`, because
 it deletes every skill link into the repo and then recreates the same links.
-Expected: unknown. A re-run with nothing to change may report nothing.
-Class: undecided
-Decision:
+Expected: a re-run with nothing to change may report nothing.
+Class: accidental (unused)
+Decision: the message is a side effect of remove-then-recreate, and
+nothing reads install's stdout. `test_install_is_idempotent` already
+compares stdout through a reference golden and the links through a
+contract, so Python may print only what changed. Audit mark removed.
 
 ## A-007: skill link targets end in a slash
 
 Script: `install`  Test: `test_install.py::test_install_fresh`
 Observed: `~/.agents/skills/<name>` links to `<repo>/skills/<name>/`, with a
 trailing slash, because the target comes from the glob `skills/*/`.
-Expected: unknown. Hosts resolve both forms.
-Class: undecided
-Decision:
+Expected: either form; hosts resolve both.
+Class: accidental (unused)
+Decision: the slash comes from the `skills/*/` glob. The links contract in
+`test_install.py` now strips a trailing slash from link targets, so both
+forms pass; Python writes the target without one. Audit mark removed.
 
 ## A-008: init --path installs the hook into the wrong repository
 

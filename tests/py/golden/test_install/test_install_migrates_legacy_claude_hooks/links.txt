@@ -3,6 +3,6 @@
 <ROOT>/config/coat-tree/hooks.d/SessionStart/010.knowledge -> <KB>/scripts/adapters/claude/session-start
 <ROOT>/config/coat-tree/hooks.d/Stop/010.knowledge -> <KB>/scripts/adapters/claude/session-stop
 <ROOT>/config/coat-tree/hooks.d/UserPromptSubmit/010.knowledge -> <KB>/scripts/adapters/claude/session-prompt
-<ROOT>/home/.agents/skills/curate -> <KB>/skills/curate/
-<ROOT>/home/.agents/skills/knowledge-base -> <KB>/skills/knowledge-base/
+<ROOT>/home/.agents/skills/curate -> <KB>/skills/curate
+<ROOT>/home/.agents/skills/knowledge-base -> <KB>/skills/knowledge-base
 <CONTENT>/.git/hooks/pre-commit -> <KB>/scripts/hooks/pre-commit
