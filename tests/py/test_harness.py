@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
 import sys
@@ -9,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from kbtest import bats_map
+from kbtest import bats_map, corpus
 from kbtest import env as envmod
 from kbtest import impl as implmod
 from kbtest.golden import Golden
@@ -445,3 +446,23 @@ def test_surface_inventory_rejects_unknown_tests(tmp_path: Path) -> None:
     assert rows == {"demo": [("`--x`", ["test_harness.py::nope"])]}
     assert not _test_exists("test_harness.py::nope")
     assert _test_exists("test_harness.py::test_surface_inventory")
+
+
+def _digest(root: Path) -> dict[str, str]:
+    return {
+        path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
+def test_corpus_is_deterministic(tmp_path: Path) -> None:
+    corpus.generate(tmp_path / "a", scale=1, seed=7)
+    corpus.generate(tmp_path / "b", scale=1, seed=7)
+    corpus.generate(tmp_path / "c", scale=1, seed=8)
+    first = _digest(tmp_path / "a")
+    assert first == _digest(tmp_path / "b")
+    assert first != _digest(tmp_path / "c")
+    articles = [name for name in first if name.startswith("knowledge/")]
+    archived = [name for name in first if name.startswith("observations/archived/")]
+    assert (len(articles), len(archived)) == (corpus.COUNTS["article"], corpus.COUNTS["archived"])
