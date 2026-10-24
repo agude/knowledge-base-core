@@ -41,6 +41,8 @@ def run_control(
             "-m",
             "not harness and not data",
             "--no-header",
+            "-n",
+            "auto",
             f"--golden-mode={golden_mode}",
             *extra,
         ],

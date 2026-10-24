@@ -46,7 +46,7 @@ py-format:
 
 # Run the characterization suite against KB_IMPL (default bash).
 test-py *args:
-    uv run --locked pytest {{ args }}
+    uv run --locked pytest -n auto {{ args }}
 
 # Check that every characterization test fails under a null implementation
 # through contract goldens or semantic assertions, not reference goldens.
