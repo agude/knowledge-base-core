@@ -8,7 +8,10 @@ import pytest
 
 from kbtest.golden import Golden
 from kbtest.inspect import git, git_log, tree
+from kbtest.marks import xfail_bash
 from kbtest.runner import KB
+
+WRONG_REPO = xfail_bash("A-008: bash installs the hook into KB_CONTENT_DIR, not --path")
 
 
 def _state(kb: KB, target: Path) -> str:
@@ -33,7 +36,7 @@ def _state(kb: KB, target: Path) -> str:
 @pytest.mark.bats("init.bats", "init creates all content directories")
 @pytest.mark.bats("init.bats", "init initializes a git repo")
 @pytest.mark.bats("init.bats", "init creates .gitkeep files")
-@pytest.mark.audit("A-008")
+@WRONG_REPO
 def test_init_with_path(kb: KB, golden: Golden) -> None:
     target = kb.layout.root / "target"
     result = kb.run("init", "--path", str(target))
@@ -41,11 +44,11 @@ def test_init_with_path(kb: KB, golden: Golden) -> None:
     golden.check("stdout", kb.norm(result.out, repos=(target,)))
     golden.check("stderr", kb.norm_err(result.err, repos=(target,)))
     golden.contract("state", _state(kb, target))
-    # install wires the configured content repository, not the --path one.
-    hook = kb.layout.content / ".git" / "hooks" / "pre-commit"
-    golden.contract("default-hook", kb.norm(f"{hook.readlink()}\n"))
+    # The configured content repository is not the one being created.
+    assert not (kb.layout.content / ".git" / "hooks" / "pre-commit").exists()
 
 
+@WRONG_REPO
 @pytest.mark.bats("init.bats", "init is safe to run twice")
 def test_init_twice(kb: KB, golden: Golden) -> None:
     target = kb.layout.root / "target"
@@ -72,6 +75,7 @@ def test_init_relative_path(kb: KB, golden: Golden) -> None:
     golden.contract("tree", tree(kb.layout.root / "relative"))
 
 
+@WRONG_REPO
 def test_init_existing_partial_directory(kb: KB, golden: Golden) -> None:
     target = kb.layout.root / "partial"
     (target / "knowledge").mkdir(parents=True)

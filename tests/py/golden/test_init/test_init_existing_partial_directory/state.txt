@@ -28,4 +28,4 @@ A	sources/.gitkeep
 user.name=Knowledge Base
 user.email=kb@localhost
 ## pre-commit
-absent
+<KB>/scripts/hooks/pre-commit

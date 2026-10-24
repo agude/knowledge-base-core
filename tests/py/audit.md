@@ -140,9 +140,12 @@ Observed: `init --path DIR` creates and commits DIR, then runs `install`,
 which links `pre-commit` into `$KB_CONTENT_DIR`, not DIR. DIR gets no
 hook. `install`'s comment says "init calls this again after creating it",
 which implies DIR was meant to get the hook.
-Expected: DIR gets the `pre-commit` hook.
-Class: undecided
-Decision:
+Expected: DIR gets the `pre-commit` hook; `$KB_CONTENT_DIR` is untouched.
+Class: bug
+Decision: the three `init --path` tests now expect the hook in DIR and no
+hook in the configured repository, and are strict `xfail` under bash. The
+unhooked repository only loses `updated:` stamping and lint until `install`
+runs with `KB_CONTENT_DIR` set to it, so bash is not fixed.
 
 ## A-009: commit fails on files outside the content areas
 
