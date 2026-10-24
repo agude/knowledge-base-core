@@ -49,6 +49,7 @@ class KB:
     resolve_impl: Callable[[str], Impl]
     default_impl: str
     session_prefix: str
+    mirror_root: Path | None = None
     system_path: str = envmod.SYSTEM_PATH
     normalizer: Normalizer = field(default_factory=Normalizer)
     invocations: list[tuple[str, str]] = field(default_factory=list)
@@ -59,6 +60,7 @@ class KB:
     def setup(self) -> None:
         self.layout.create()
         envmod.build_bin(self.layout.bin, self.layout.syslog)
+        self.system_path = self._system_path(frozenset())
         self.normalizer.add_path(self.layout.content, "<CONTENT>")
         self.normalizer.add_path(self.layout.root, "<ROOT>")
         self._init_content()
@@ -73,8 +75,15 @@ class KB:
             link = self.layout.bin / name
             if link.is_symlink() or link.exists():
                 link.unlink()
-        mirror = mirror_root / ("without-" + "-".join(sorted(names)))
-        self.system_path = str(envmod.system_bin_without(mirror, names))
+        self.mirror_root = mirror_root
+        self.system_path = self._system_path(names)
+
+    def _system_path(self, names: frozenset[str]) -> str:
+        """The system directories without names and without any Python."""
+        if self.mirror_root is None:
+            return envmod.SYSTEM_PATH
+        mirror = self.mirror_root / ("without-" + "-".join([*sorted(names), "python"]))
+        return str(envmod.system_bin_without(mirror, names | envmod.system_pythons()))
 
     def restore_tools(self) -> None:
         """Undo without_tools: the selected tools and the system PATH again."""
@@ -83,7 +92,7 @@ class KB:
             link = self.layout.bin / name
             if target is not None and not link.exists():
                 link.symlink_to(target)
-        self.system_path = envmod.SYSTEM_PATH
+        self.system_path = self._system_path(frozenset())
 
     def _init_content(self) -> None:
         content = self.layout.content

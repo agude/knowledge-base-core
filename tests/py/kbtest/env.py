@@ -134,11 +134,45 @@ def utf8_locale() -> str:
     return "en_US.UTF-8"
 
 
+@functools.cache
+def python_minor() -> int:
+    """The selected interpreter's minor version (3.x)."""
+    result = subprocess.run(
+        [str(tools().python), "-I", "-c", "import sys; print(sys.version_info[1])"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return int(result.stdout)
+
+
+@functools.cache
+def system_pythons() -> frozenset[str]:
+    """Python executables in the system directories, hidden from every test.
+
+    The Python executables' preamble searches PATH for python3.20 down to
+    python3.11 before python3, so a system interpreter would win over the
+    selected one.
+    """
+    return frozenset(
+        entry.name
+        for directory in SYSTEM_PATH.split(":")
+        if Path(directory).is_dir()
+        for entry in Path(directory).iterdir()
+        if entry.name.startswith("python")
+    )
+
+
 def build_bin(bin_dir: Path, syslog: Path, *, jq: bool = True) -> None:
     """Populate bin_dir with the selected tools and a logger stub."""
     selected = tools()
     bin_dir.mkdir(parents=True, exist_ok=True)
-    links = {"bash": selected.bash, "python3": selected.python, "git": selected.git}
+    links = {
+        "bash": selected.bash,
+        "python3": selected.python,
+        f"python3.{python_minor()}": selected.python,
+        "git": selected.git,
+    }
     if jq:
         if selected.jq is None:
             raise HarnessError("jq is not on PATH")
@@ -223,6 +257,8 @@ def base_env(layout: Layout, kb_root: Path, system_path: str = SYSTEM_PATH) -> d
         "TZ": "UTC",
         "LANG": locale,
         "LC_ALL": locale,
+        # The preamble's fixed directories hold host interpreters.
+        "KB_PYTHON_DIRS": "",
         "GIT_CONFIG_GLOBAL": "/dev/null",
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_AUTHOR_NAME": GIT_NAME,

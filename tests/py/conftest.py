@@ -94,6 +94,7 @@ def kb(
     tmp_path: Path,
     impls: dict[str, implmod.Impl],
     _impl_scratch: Path,
+    _mirror_root: Path,
     session_prefix: str,
 ) -> KB:
     """A fresh content repository and a runner for the selected implementation."""
@@ -108,6 +109,7 @@ def kb(
         resolve_impl=resolve,
         default_impl=implmod.selected_name(),
         session_prefix=session_prefix,
+        mirror_root=_mirror_root,
     )
     fixture.setup()
     return fixture

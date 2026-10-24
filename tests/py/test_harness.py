@@ -480,3 +480,18 @@ def test_bash_matches_frozen_tag() -> None:
         check=True,
     )
     assert result.stdout == "", f"scripts/ differs from {implmod.FROZEN_TAG}:\n{result.stdout}"
+
+
+def test_only_the_selected_python_is_visible(kb: KB) -> None:
+    """The preamble's interpreter search finds KB_PYTHON and nothing else."""
+    tree = kb.resolve_impl(kb.default_impl)
+    env = kb.env(tree)
+    found = []
+    for directory in env["PATH"].split(":"):
+        for minor in range(11, 21):
+            path = Path(directory) / f"python3.{minor}"
+            if path.exists():
+                found.append(path)
+    assert found == [kb.layout.bin / f"python3.{envmod.python_minor()}"]
+    assert env["KB_PYTHON_DIRS"] == ""
+    assert (kb.layout.bin / "python3").resolve() == envmod.tools().python.resolve()

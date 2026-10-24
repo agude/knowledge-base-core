@@ -40,9 +40,13 @@ implementation for one call.
 Every subprocess gets an environment built from scratch. Nothing is
 inherited.
 
-- `PATH` is `<root>/bin:/usr/bin:/bin`. `<root>/bin` holds symlinks to the
-  selected `bash`, `python3`, `git`, and `jq`, and a `logger` stub that
-  appends its arguments to `<root>/syslog`.
+- `PATH` is `<root>/bin` followed by a per-session mirror of
+  `/usr/bin:/bin` without any `python*` entry. `<root>/bin` holds symlinks
+  to the selected `bash`, `git`, and `jq`, the selected interpreter as both
+  `python3` and `python3.<minor>`, and a `logger` stub that appends its
+  arguments to `<root>/syslog`. `KB_PYTHON_DIRS` is empty. Together these
+  make the Python executables' preamble choose `KB_PYTHON`, never a host
+  interpreter (`test_harness.py::test_only_the_selected_python_is_visible`).
 - The `no_jq` fixture removes `jq`. Because `/usr/bin` can hold `jq`, it
   also replaces `/usr/bin:/bin` with a per-session mirror of those
   directories without `jq`. jq is optional in production, so this is a real
