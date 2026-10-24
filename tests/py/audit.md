@@ -227,12 +227,16 @@ bash is not fixed.
 ## A-014: ask and resolve drop text that looks like an echo option
 
 Scripts: `ask` (`--body`), `resolve` (`--answer`)
-Test: `test_questions.py::test_ask_body_that_looks_like_an_echo_option`
+Test: `test_questions.py::test_ask_body_that_looks_like_an_echo_option`,
+`test_questions.py::test_resolve_answer_that_looks_like_an_echo_option`
 Observed: the text is written with `echo "$BODY"`, so a body of `-n` (or
 `-e`, `-E`) is taken as an option and the file gets an empty body line.
 Expected: the text is written verbatim.
-Class: undecided
-Decision:
+Class: bug
+Decision: text the user passed is lost. The `ask` contract golden now holds
+`-n` as the body, a new `resolve` test expects `-n` as the answer, and both
+are strict `xfail` under bash. Only bodies that are exactly an echo option
+are affected, so bash is not fixed.
 
 ## A-015: context ignores unknown arguments
 

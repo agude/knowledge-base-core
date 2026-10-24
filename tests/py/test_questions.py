@@ -173,11 +173,22 @@ def test_ask_body_from_stdin(kb: KB, golden: Golden) -> None:
     golden.contract("file", _only_question(kb))
 
 
-@pytest.mark.audit("A-014")
+ECHO_OPTION = xfail_bash("A-014: bash writes the text with echo, which takes -n as an option")
+
+
+@ECHO_OPTION
 def test_ask_body_that_looks_like_an_echo_option(kb: KB, golden: Golden) -> None:
     result = kb.run("ask", "--title", "Question?", "--body", "-n", "--no-commit")
     _check(kb, golden, result)
     golden.contract("file", _only_question(kb))
+
+
+@ECHO_OPTION
+def test_resolve_answer_that_looks_like_an_echo_option(kb: KB) -> None:
+    kb.create_question("q1.md", "Test question")
+    result = kb.run("resolve", "--file", "q1.md", "--answer", "-n", "--no-commit")
+    assert result.returncode == 0, result.err
+    assert _only_question(kb, "resolved").endswith("\n\n-n\n")
 
 
 def test_ask_escapes_title(kb: KB, golden: Golden) -> None:
