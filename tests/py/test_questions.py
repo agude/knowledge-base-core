@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from kbtest import facts
 from kbtest.golden import Golden
 from kbtest.inspect import git_log, tree
 from kbtest.runner import KB, Result
@@ -34,20 +35,6 @@ def _only_question(kb: KB, area: str = "open") -> str:
 # questions
 
 
-def _titles(text: str) -> list[tuple[str, str]]:
-    """Listed questions as (title, context) from '- title (context)' lines."""
-    rows = []
-    for line in text.splitlines():
-        if not line.startswith("- "):
-            continue
-        item = line[2:]
-        context = ""
-        if item.endswith(")") and " (" in item:
-            item, context = item[:-1].rsplit(" (", 1)
-        rows.append((item, context))
-    return rows
-
-
 def _question_text(kb: KB, area: str, name: str) -> str:
     return (kb.layout.content / "questions" / area / name).read_text(encoding="utf-8")
 
@@ -56,7 +43,7 @@ def _question_text(kb: KB, area: str, name: str) -> str:
 def test_questions_empty(kb: KB, golden: Golden) -> None:
     result = kb.run("questions")
     assert result.returncode == 0
-    assert _titles(result.out) == []
+    assert facts.questions(result.out) == []
     assert result.out.strip(), "an empty list is reported"
     _check(kb, golden, result, state=False)
 
@@ -66,7 +53,7 @@ def test_questions_lists(kb: KB, golden: Golden) -> None:
     kb.create_question("q2.md", "Second?", "knowledge/b.md")
     kb.create_question("q1.md", "Who owns deploys?")
     result = kb.run("questions")
-    assert _titles(result.out) == [("Who owns deploys?", ""), ("Second?", "knowledge/b.md")]
+    assert facts.questions(result.out) == [("Who owns deploys?", ""), ("Second?", "knowledge/b.md")]
     _check(kb, golden, result, state=False)
 
 
@@ -77,7 +64,7 @@ def test_questions_path_filter(kb: KB, golden: Golden) -> None:
     kb.create_question("q2.md", "Unrelated question")
     kb.create_question("q3.md", "Sibling prefix", "knowledge/deploys-old/x.md")
     result = kb.run("questions", "--path", "knowledge/deploys")
-    titles = [title for title, _ in _titles(result.out)]
+    titles = [title for title, _ in facts.questions(result.out)]
     assert "Deploy question" in titles and "Unrelated question" not in titles
     _check(kb, golden, result, state=False)
 
@@ -86,7 +73,7 @@ def test_questions_path_filter_no_match(kb: KB, golden: Golden) -> None:
     kb.create_question("q1.md", "Deploy question", "knowledge/deploys/canary.md")
     result = kb.run("questions", "--path", "knowledge/other")
     assert result.returncode == 0
-    assert _titles(result.out) == []
+    assert facts.questions(result.out) == []
     assert "knowledge/other" in result.out, "the empty result names the filter"
     _check(kb, golden, result, state=False)
 
@@ -95,7 +82,7 @@ def test_questions_path_filter_resolves_bare_name(kb: KB, golden: Golden) -> Non
     kb.create_article("deploys/canary.md", "# Canary")
     kb.create_question("q1.md", "Deploy question", "knowledge/deploys/canary.md")
     result = kb.run("questions", "--path", "canary.md")
-    assert _titles(result.out) == [("Deploy question", "knowledge/deploys/canary.md")]
+    assert facts.questions(result.out) == [("Deploy question", "knowledge/deploys/canary.md")]
     _check(kb, golden, result, state=False)
 
 
@@ -132,7 +119,7 @@ def test_questions_full_and_all(kb: KB, golden: Golden) -> None:
     listing = kb.run("questions", "--all")
     full = kb.run("questions", "--full")
     full_all = kb.run("questions", "--full", "--all")
-    titles = [title for title, _ in _titles(listing.out)]
+    titles = [title for title, _ in facts.questions(listing.out)]
     assert titles[0] == "Open one" and titles[1].startswith("Resolved one")
     open_text = _question_text(kb, "open", "q1.md")
     resolved_text = _question_text(kb, "resolved", "q2.md")

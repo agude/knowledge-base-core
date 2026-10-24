@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import re
 import shutil
 
 import pytest
 
+from kbtest import facts
 from kbtest.golden import Golden
 from kbtest.runner import KB, Result
 
@@ -25,11 +25,6 @@ def _check(kb: KB, golden: Golden, result: Result) -> None:
 
 def _pending_dir(kb: KB):
     return kb.layout.content / "observations" / "pending"
-
-
-def _listed(text: str) -> list[str]:
-    """Observation files named in the listing, in order."""
-    return re.findall(r"\[([^\]]+)\]$", text, re.MULTILINE)
 
 
 def _preview(text: str) -> dict[str, object]:
@@ -71,7 +66,7 @@ def test_pending_missing_directory(kb: KB, golden: Golden, args: list[str]) -> N
     elif args == ["--preview"]:
         assert _items(_preview(result.out)) == 0
     else:
-        assert result.out.strip() and _listed(result.out) == []
+        assert result.out.strip() and facts.pending(result.out) == []
     _check(kb, golden, result)
 
 
@@ -83,7 +78,7 @@ def test_pending_empty(kb: KB, golden: Golden, args: list[str]) -> None:
     if args == ["--count"]:
         assert result.out == "0\n"
     else:
-        assert result.out.strip() and _listed(result.out) == []
+        assert result.out.strip() and facts.pending(result.out) == []
     _check(kb, golden, result)
 
 
@@ -102,7 +97,7 @@ def test_pending_listing(kb: KB, golden: Golden, args: list[str]) -> None:
         for name in ("a.md", "b.md"):
             assert (_pending_dir(kb) / name).read_text(encoding="utf-8") in result.out
     else:
-        assert _listed(result.out) == ["a.md", "b.md"]
+        assert facts.pending(result.out) == ["a.md", "b.md"]
         assert "First observation" in result.out and "Second" in result.out
     _check(kb, golden, result)
 

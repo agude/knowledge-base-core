@@ -82,3 +82,69 @@ def session_context(text: str, instructions: str) -> str:
         else:
             rows.append(f"line {stripped}")
     return "\n".join(rows) + "\n"
+
+
+_STALE_ROW = re.compile(r"^ +(?:(\d+) days|\[([a-z ]+)\]) +(\S+)", re.MULTILINE)
+_STALE_TOTALS = re.compile(
+    r"(\d+) stale, (\d+) missing date|(\d+) section\(s\) needing attention|No stale articles"
+)
+
+
+def stale(text: str) -> str:
+    """What stale flagged: each path with its age or label, and the totals.
+
+    Layout and wording are reference; which items are flagged, how old they
+    are, and the totals are contract.
+    """
+    if re.fullmatch(r"\d+\n", text):
+        return f"count {text}"
+    rows = [f"{path} {age or label}" for age, label, path in _STALE_ROW.findall(text)]
+    totals = _STALE_TOTALS.search(text)
+    rows.append(f"totals {totals.group(0) if totals else 'none'}")
+    return "\n".join(rows) + "\n"
+
+
+def status(text: str) -> str:
+    """Counts, dates, topics, and the brief line: the values status and context report."""
+    rows = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if re.fullmatch(
+            r"\d+ articles \| \d+ pending \| \d+ stale \| \d+ open question\(s\)", stripped
+        ):
+            rows.append(f"brief {stripped}")
+        elif match := re.fullmatch(
+            r"([A-Z][A-Za-z ]+):\s+(\d+|never|\d{4}-\d{2}-\d{2} .+)", stripped
+        ):
+            rows.append(f"{match.group(1)}={match.group(2)}")
+        elif match := re.fullmatch(r"Topics \((\d+) files\):", stripped):
+            rows.append(f"topic files={match.group(1)}")
+        elif stripped == "Topics: (none yet)":
+            rows.append("topic files=0")
+        elif (
+            line.startswith("  ")
+            and ":" not in stripped
+            and rows
+            and rows[-1].startswith(("topic", "  "))
+        ):
+            rows.append(f"  {stripped}")
+    return "\n".join(rows) + "\n"
+
+
+def questions(text: str) -> list[tuple[str, str]]:
+    """Listed questions as (title, context) from '- title (context)' lines."""
+    rows = []
+    for line in text.splitlines():
+        if not line.startswith("- "):
+            continue
+        item = line[2:]
+        context = ""
+        if item.endswith(")") and " (" in item:
+            item, context = item[:-1].rsplit(" (", 1)
+        rows.append((item, context))
+    return rows
+
+
+def pending(text: str) -> list[str]:
+    """Observation files named in the listing, in order."""
+    return re.findall(r"\[([^\]]+)\]$", text, re.MULTILINE)
