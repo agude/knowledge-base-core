@@ -9,7 +9,7 @@ and its Python replacement ([docs/python-port.md](../../docs/python-port.md)).
 ```bash
 just test-py                    # run against Bash
 just test-py --update-golden    # rewrite golden files from actual output
-just test-py-null               # enforce the null-control rule
+just test-py-null               # every test must fail the null controls without reference goldens
 KB_IMPL=python just test-py     # run against the Python tree
 ```
 
@@ -90,9 +90,9 @@ change still fails. With `--golden-mode=reference` (the default under
 `--reference-report FILE` writes the diffs to a Markdown file for the
 behavior audit.
 
-`just test-py-null-contract` runs the null controls with reference goldens
-disabled. A test it reports depends only on reference goldens: it needs a
-contract golden or a semantic assertion before it can gate the port.
+`just test-py-null` runs the null controls with reference goldens disabled.
+A test it reports depends only on reference goldens: it needs a contract
+golden or a semantic assertion before it can gate the port.
 
 ## Golden files
 

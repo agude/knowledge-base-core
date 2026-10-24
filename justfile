@@ -48,13 +48,9 @@ py-format:
 test-py *args:
     uv run --locked pytest {{ args }}
 
-# Check that every characterization test fails under a null implementation.
+# Check that every characterization test fails under a null implementation
+# through contract goldens or semantic assertions, not reference goldens.
 test-py-null *args:
-    uv run --locked python tests/py/nullcheck.py {{ args }}
-
-# The same check with reference goldens disabled: every test must fail the
-# null controls through contract goldens or semantic assertions.
-test-py-null-contract *args:
     uv run --locked python tests/py/nullcheck.py --contract {{ args }}
 
 lint: shellcheck portability py-lint
