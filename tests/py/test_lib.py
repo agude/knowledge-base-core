@@ -60,7 +60,12 @@ def test_out_of_range_section_ttl(kb: KB, golden: Golden, selector: list[str]) -
 @pytest.mark.bats("lib.bats", "show_help extracts comment header")
 @pytest.mark.parametrize("script", ["status", "observe", "ask"])
 def test_help_is_the_comment_header(kb: KB, golden: Golden, script: str) -> None:
-    _check(kb, golden, kb.run(script, "--help"))
+    result = kb.run(script, "--help")
+    assert result.returncode == 0
+    # Help opens with the command's one-line summary and shows its usage.
+    assert result.out.lstrip().startswith(f"{script} - "), result.out[:80]
+    assert "Usage:" in result.out
+    _check(kb, golden, result)
 
 
 # Option parsing (need_arg, parse_nonnegative_decimal)
@@ -88,7 +93,12 @@ def test_option_arguments(kb: KB, golden: Golden, args: list[str]) -> None:
 @pytest.mark.parametrize("value", ["01000", "000", "999999999999999999999999999999", "1e3", "+5"])
 def test_decimal_parsing(kb: KB, golden: Golden, value: str) -> None:
     kb.create_observation("a.md", "A", "Body")
-    _check(kb, golden, kb.run("pending", "--preview", "--max-bytes", value))
+    result = kb.run("pending", "--preview", "--max-bytes", value)
+    if result.returncode == 0:
+        assert f"Input budget: {int(value)} bytes" in result.out
+    else:
+        assert result.err.strip()
+    _check(kb, golden, result)
 
 
 # Escaping (yaml_escape) and front-matter reads (frontmatter_field)
@@ -123,7 +133,16 @@ def test_front_matter_reads(kb: KB, golden: Golden) -> None:
     (open_dir / "e.md").write_text(
         '---\ntitle: "Escaped \\"q\\" and \\\\"\n---\n', encoding="utf-8"
     )
-    _check(kb, golden, kb.run("questions"))
+    result = kb.run("questions")
+    titles = [line[2:] for line in result.out.splitlines() if line.startswith("- ")]
+    assert titles == [
+        "Hello World (knowledge/a.md)",
+        "Unquoted title",
+        "",
+        "",
+        'Escaped "q" and \\',
+    ]
+    _check(kb, golden, result)
 
 
 # Commits (commit_paths, locked_commit)
