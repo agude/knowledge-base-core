@@ -192,7 +192,9 @@ def benchmark(args: argparse.Namespace, scratch: Path) -> dict[str, object]:
     results = []
     for script, script_args in commands:
         record = _measure(args.runs, lambda s=script, a=script_args: bench.run(s, *a))
-        results.append({"command": " ".join([script, *script_args]), **record})
+        # The label names no corpus path, so reports from the live tree stay generic.
+        label = " ".join([script, *script_args]).replace(first_article, "<first-article>")
+        results.append({"command": label, **record})
 
     results.append({"command": "hook:session-start", **_measure(args.runs, bench.session_start)})
 

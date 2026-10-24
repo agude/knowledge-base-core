@@ -1,0 +1,135 @@
+{
+  "date": "2026-10-24T07:59:16Z",
+  "host": {
+    "system": "Linux",
+    "release": "7.0.0-38-generic",
+    "machine": "x86_64",
+    "node": "dirac"
+  },
+  "commit": "502ec0c",
+  "impl": "bash",
+  "corpus": {
+    "source": "copy",
+    "articles": 210,
+    "archived": 2489,
+    "pending": 18,
+    "questions": 57
+  },
+  "runs": 20,
+  "query": "commit",
+  "results": [
+    {
+      "command": "search commit",
+      "p50_ms": 2101.4,
+      "p95_ms": 2198.1,
+      "min_ms": 2057.0,
+      "max_ms": 2299.0,
+      "exit_codes": [
+        0
+      ]
+    },
+    {
+      "command": "search --json commit",
+      "p50_ms": 5189.8,
+      "p95_ms": 5549.5,
+      "min_ms": 5090.3,
+      "max_ms": 5557.0,
+      "exit_codes": [
+        0
+      ]
+    },
+    {
+      "command": "section --file <first-article> --number 1",
+      "p50_ms": 97.3,
+      "p95_ms": 104.2,
+      "min_ms": 93.5,
+      "max_ms": 106.2,
+      "exit_codes": [
+        0
+      ]
+    },
+    {
+      "command": "toc --map",
+      "p50_ms": 125.5,
+      "p95_ms": 142.6,
+      "min_ms": 121.0,
+      "max_ms": 276.0,
+      "exit_codes": [
+        0
+      ]
+    },
+    {
+      "command": "status --brief",
+      "p50_ms": 1280.7,
+      "p95_ms": 1320.2,
+      "min_ms": 1261.6,
+      "max_ms": 1360.3,
+      "exit_codes": [
+        0
+      ]
+    },
+    {
+      "command": "stale --count",
+      "p50_ms": 1218.6,
+      "p95_ms": 1276.7,
+      "min_ms": 1190.7,
+      "max_ms": 1395.4,
+      "exit_codes": [
+        0
+      ]
+    },
+    {
+      "command": "pending",
+      "p50_ms": 80.7,
+      "p95_ms": 97.6,
+      "min_ms": 74.5,
+      "max_ms": 99.0,
+      "exit_codes": [
+        0
+      ]
+    },
+    {
+      "command": "context",
+      "p50_ms": 3809.3,
+      "p95_ms": 4214.6,
+      "min_ms": 3610.3,
+      "max_ms": 4381.3,
+      "exit_codes": [
+        0
+      ]
+    },
+    {
+      "command": "session-context",
+      "p50_ms": 1370.3,
+      "p95_ms": 1431.5,
+      "min_ms": 1355.5,
+      "max_ms": 1472.9,
+      "exit_codes": [
+        0
+      ]
+    },
+    {
+      "command": "hook:session-start",
+      "p50_ms": 1422.9,
+      "p95_ms": 1475.7,
+      "min_ms": 1393.5,
+      "max_ms": 1478.0,
+      "exit_codes": [
+        0
+      ]
+    },
+    {
+      "command": "hook:session-end",
+      "p50_ms": 92.9,
+      "p95_ms": 98.1,
+      "min_ms": 89.5,
+      "max_ms": 100.3,
+      "exit_codes": [
+        0
+      ],
+      "commits": [
+        1
+      ]
+    }
+  ]
+}
