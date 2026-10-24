@@ -54,6 +54,15 @@ py-format:
 test-py *args:
     uv run --locked pytest -n auto {{ args }}
 
+# Run the characterization suite against the Python implementation in python/.
+# Tests that need an executable not yet ported are skipped.
+test-py-python *args:
+    KB_IMPL=python uv run --locked pytest -n auto {{ args }}
+
+# The part of the suite that runs on Windows (non-blocking CI job, plan 4.0).
+test-windows:
+    uv run --locked pytest -m "static"
+
 # Check that every characterization test fails under a null implementation
 # through contract goldens or semantic assertions, not reference goldens.
 test-py-null *args:
@@ -73,6 +82,6 @@ bench-smoke:
 
 lint: shellcheck portability py-lint
 
-check: lint test test-py test-py-null bench-smoke
+check: lint test test-py test-py-python test-py-null bench-smoke
 
 check-all: check pi-check
