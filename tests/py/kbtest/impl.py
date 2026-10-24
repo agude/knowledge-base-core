@@ -107,6 +107,30 @@ def build_null_tree(dest: Path, exit_code: int) -> Path:
     return scripts_dir
 
 
+def describe_scripts() -> str:
+    """Where the selected implementation's executables come from, for the report header."""
+    name = selected_name()
+    override = os.environ.get("KB_SCRIPTS_DIR")
+    if override:
+        return str(Path(override).resolve())
+    if name == "bash" and frozen_tag_exists():
+        sha = subprocess.run(
+            ["git", "rev-parse", "--short", f"{FROZEN_TAG}^{{commit}}"],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        return (
+            f"tag {FROZEN_TAG} ({sha}), a worktree per worker at <basetemp>/**/impls*/{FROZEN_TAG}"
+        )
+    if name == "bash":
+        return str(BASH_SCRIPTS)
+    if name == "python":
+        return str(PYTHON_SCRIPTS)
+    return "generated null tree"
+
+
 def resolve(name: str, scratch: Path) -> Impl:
     """Resolve an implementation name to a tree, creating it under scratch if needed."""
     override = os.environ.get("KB_SCRIPTS_DIR")

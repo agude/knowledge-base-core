@@ -466,3 +466,17 @@ def test_corpus_is_deterministic(tmp_path: Path) -> None:
     articles = [name for name in first if name.startswith("knowledge/")]
     archived = [name for name in first if name.startswith("observations/archived/")]
     assert (len(articles), len(archived)) == (corpus.COUNTS["article"], corpus.COUNTS["archived"])
+
+
+def test_bash_matches_frozen_tag() -> None:
+    """After the freeze, scripts/ changes only by moving the bash-frozen tag."""
+    if not implmod.frozen_tag_exists():
+        pytest.skip("bash is not frozen yet")
+    result = subprocess.run(
+        ["git", "diff", "--stat", implmod.FROZEN_TAG, "--", "scripts/"],
+        cwd=implmod.REPO,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout == "", f"scripts/ differs from {implmod.FROZEN_TAG}:\n{result.stdout}"

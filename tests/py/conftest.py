@@ -45,7 +45,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 def pytest_report_header(config: pytest.Config) -> list[str]:
     tools = envmod.tools()
     return [
-        f"KB_IMPL: {implmod.selected_name()}",
+        f"KB_IMPL: {implmod.selected_name()}  scripts: {implmod.describe_scripts()}",
         f"bash: {tools.bash}  python3: {tools.python}  jq: {tools.jq}",
         f"locale: {envmod.utf8_locale()}",
     ]

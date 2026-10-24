@@ -18,6 +18,11 @@ jobs:
       UV_PYTHON: "3.11"
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The suite runs bash from a worktree of the bash-frozen tag.
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
 
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
 
@@ -48,6 +53,11 @@ jobs:
       UV_PYTHON: ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The suite runs bash from a worktree of the bash-frozen tag.
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
 
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
 

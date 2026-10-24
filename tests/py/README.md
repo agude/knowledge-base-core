@@ -23,7 +23,11 @@ KB_IMPL=python just test-py     # run against the Python tree
 | `KB_PYTHON` | Python 3.11 or newer to use. Default: the base interpreter behind the uv environment (`sys._base_executable`). It must not be able to import pytest, which enforces "standard library only". |
 
 `bash` runs `scripts/` from the working tree until the tag `bash-frozen`
-exists; after that it runs a `git worktree` of the tag. `python` runs
+exists; after that it runs a `git worktree` of the tag, one per pytest
+worker, and the report header names the tag. The tag was created at the end
+of the behavior audit (plan 2.4). `test_harness.py::test_bash_matches_frozen_tag`
+fails if `scripts/` drifts from it; a deliberate bash change moves the tag
+(`git tag -f -a bash-frozen`). CI checks out tags so it uses the worktree too. `python` runs
 `python/`. A test that invokes an executable missing from `python/` is
 skipped with the missing name. `run(..., impl="bash")` overrides the
 implementation for one call.
