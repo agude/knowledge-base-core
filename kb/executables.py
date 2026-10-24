@@ -26,6 +26,7 @@ EXECUTABLES = ROOT / "python"
 
 # Executable path under python/ -> the module whose main(argv) it runs.
 COMMANDS: dict[str, str] = {
+    "adapters/claude/pretool-allow": "kb.commands.adapters.claude.pretool_allow",
     "ask": "kb.commands.ask",
     "batch": "kb.commands.batch",
     "questions": "kb.commands.questions",

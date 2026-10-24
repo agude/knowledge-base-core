@@ -136,9 +136,9 @@ def _approved(kb: KB, which: str, command: str) -> bool:
 
 FRAGMENTS = st.sampled_from(
     [
-        "{s}/status",
-        "{s}/search",
         "{s}/observe",
+        "{s}/pending",
+        "{s}/ask",
         " ",
         "--title",
         "'a b'",
@@ -168,11 +168,13 @@ FRAGMENTS = st.sampled_from(
 @pytest.mark.parametrize(("first", "second"), _pairings())
 def test_pretool_allow_differential(kb: KB, first: str, second: str) -> None:
     """No implementation approves a command the other rejects (fail closed)."""
-    assert _approved(kb, first, "{s}/status"), "control: a bare invocation is approved"
-    assert _approved(kb, second, "{s}/status"), "control: a bare invocation is approved"
+    assert _approved(kb, first, "{s}/observe"), "control: a bare invocation is approved"
+    assert _approved(kb, second, "{s}/observe"), "control: a bare invocation is approved"
 
     @settings(
-        max_examples=200, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
+        max_examples=int(os.environ.get("KB_DIFFERENTIAL_EXAMPLES", "200")),
+        deadline=None,
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
     )
     @given(st.lists(FRAGMENTS, min_size=1, max_size=6).map("".join))
     def check(command: str) -> None:
