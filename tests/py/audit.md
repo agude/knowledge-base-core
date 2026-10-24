@@ -732,6 +732,7 @@ is ticked (plan step 4).
 | `test_session_flow.py::test_session_end_flushes` | results | 4.8 | A-040: Claude SessionEnd prints nothing |
 | `test_session_flow.py::test_session_end_drops_one_exchange` | syslog | 4.8 | A-004 |
 | `test_help.py::test_help[hooks-pre-commit]`, `test_unknown_option[hooks-pre-commit]` | stderr | 4.17 | outside a repository: one message instead of git's errors and usage text (as A-036) |
+| `test_evaluate_retrieval.py` reports and baselines | report, baseline | 4.18 | A-033: response byte counts of compact search JSON; under `--max-bytes` the bounded result counts follow from them |
 
 ## null_ok review (plan item 2.3)
 

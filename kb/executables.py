@@ -46,6 +46,7 @@ COMMANDS: dict[str, str] = {
     "init": "kb.commands.init",
     "install": "kb.commands.install",
     "context": "kb.commands.context",
+    "evaluate-retrieval": "kb.commands.evaluate_retrieval",
     "lint": "kb.commands.lint",
     "observe": "kb.commands.observe",
     "pending": "kb.commands.pending",
