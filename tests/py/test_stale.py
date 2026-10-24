@@ -14,6 +14,7 @@ import pytest
 from kbtest import env as envmod
 from kbtest import facts
 from kbtest.golden import Golden
+from kbtest.marks import xfail_bash
 from kbtest.runner import KB, Result
 
 
@@ -72,7 +73,6 @@ def test_stale_recent(kb: KB, golden: Golden) -> None:
 @pytest.mark.bats("stale.bats", "stale flags article with old verified date")
 @pytest.mark.bats("stale.bats", "stale flags article with no verified date")
 @pytest.mark.bats("stale.bats", "stale shows correct day count")
-@pytest.mark.audit("A-024")
 def test_stale_report(kb: KB, golden: Golden) -> None:
     kb.create_article("old.md", article("2020-01-01", title="Old"))
     kb.create_article("nodate.md", article(None, title="No Date"))
@@ -178,7 +178,13 @@ def test_stale_sections(kb: KB, golden: Golden, args: list[str]) -> None:
     _check(kb, golden, kb.run("stale", *args, env={"FRESHNESS_TODAY_EPOCH": "1790985600"}))
 
 
-@pytest.mark.audit("A-023")
-@pytest.mark.parametrize("args", [["--days"], ["--days", "x"], ["--bogus"]])
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--days"],
+        pytest.param(["--days", "x"], marks=xfail_bash("A-023: bash accepts a non-numeric --days")),
+        ["--bogus"],
+    ],
+)
 def test_stale_argument_errors(kb: KB, golden: Golden, args: list[str]) -> None:
     _check(kb, golden, kb.run("stale", *args))

@@ -1,1 +1,1 @@
-totals No stale articles
+totals none

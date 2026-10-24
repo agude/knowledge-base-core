@@ -370,8 +370,10 @@ Observed: `stale --days x` prints `No stale articles.` and exits 0, as if no
 threshold applied. `KNOWLEDGE_LOCK_WAIT` and `--max-bytes` elsewhere reject
 non-numbers.
 Expected: a usage error, exit 1.
-Class: undecided
-Decision:
+Class: bug
+Decision: a typo silently disables the threshold. The case now expects
+exit 1 and no report, and is a strict `xfail` under bash. `--days 0`
+stays valid (`test_stale_days`). Bash is not fixed.
 
 ## A-024: stale's header says it groups by severity; it sorts by path
 
@@ -379,9 +381,11 @@ Script: `stale`  Test: `test_stale.py::test_stale_report`
 Observed: the header says "Articles are grouped by staleness severity";
 the report lists stale, undated, and badly dated articles together in path
 order.
-Expected: the header matches the output, or the output groups by severity.
-Class: undecided
-Decision:
+Expected: the header matches the output.
+Class: intended
+Decision: path order is the pinned report contract and what readers of
+`stale` see today; only the header text is stale. Python's header
+describes path order. Tests unchanged; audit mark removed.
 
 ## A-025: batch status measures input bytes from current files
 
