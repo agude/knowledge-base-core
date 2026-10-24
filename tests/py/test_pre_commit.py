@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import stat
 import subprocess
 from dataclasses import dataclass
@@ -49,8 +50,24 @@ def _commit(kb: KB, *args: str) -> Commit:
     return Commit(completed.returncode, completed.stdout, completed.stderr)
 
 
+SUMMARY = re.compile(r"^(\d+) file\(s\): (\d+) error\(s\), (\d+) warning\(s\)$", re.MULTILINE)
+FINDING = re.compile(r"^  (error|warning) +(\S+:\d+)  ", re.MULTILINE)
+
+
+def _lint_facts(text: str) -> str:
+    """Lint's verdict: the summary counts and each finding's severity and location.
+
+    Message wording is reference; what was found, where, and how severe is contract.
+    """
+    summary = SUMMARY.search(text)
+    lines = [f"summary {' '.join(summary.groups())}" if summary else "summary none"]
+    lines += [f"{severity} {location}" for severity, location in FINDING.findall(text)]
+    return "\n".join(lines) + "\n"
+
+
 def _check(kb: KB, golden: Golden, result: Commit) -> None:
     golden.contract("result", f"exit {result.returncode}\n")
+    golden.contract("lint", kb.norm(_lint_facts(result.stdout + result.stderr)))
     golden.check("stdout", kb.norm(result.stdout))
     golden.check("stderr", kb.norm_err(result.stderr))
     golden.contract("log", kb.norm(kb.git("log", "--format=%s", "--name-status")))

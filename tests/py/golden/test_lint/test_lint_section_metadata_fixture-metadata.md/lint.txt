@@ -1,0 +1,2 @@
+summary 1 0 1
+warning knowledge/metadata.md:32
