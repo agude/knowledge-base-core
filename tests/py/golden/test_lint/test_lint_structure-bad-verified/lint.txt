@@ -1,3 +1,2 @@
-summary 1 2 0
-error knowledge/bad-verified.md:1
+summary 1 1 0
 error knowledge/bad-verified.md:1

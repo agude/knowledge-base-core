@@ -9,6 +9,7 @@ import pytest
 
 from kbtest.golden import Golden
 from kbtest.impl import REPO
+from kbtest.marks import xfail_bash
 from kbtest.runner import KB, Result
 
 FIXTURES = REPO / "tests" / "fixtures"
@@ -215,8 +216,15 @@ STRUCTURE = {
 @pytest.mark.bats("lint.bats", "lint does not count headings inside fences as H1s")
 @pytest.mark.bats("lint.bats", "lint warns about an oversized H2 without failing")
 @pytest.mark.bats("lint.bats", "lint warns about duplicate H2 text")
-@pytest.mark.audit("A-028")
-@pytest.mark.parametrize("case", sorted(STRUCTURE))
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(case, marks=xfail_bash("A-028: bash reports a malformed verified date twice"))
+        if case == "bad-verified"
+        else case
+        for case in sorted(STRUCTURE)
+    ],
+)
 def test_lint_structure(kb: KB, golden: Golden, case: str) -> None:
     kb.create_article(f"{case}.md", STRUCTURE[case])
     _check(kb, golden, kb.run("lint"))
@@ -332,7 +340,19 @@ def test_lint_rejects_outside_content(kb: KB, golden: Golden, via: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "args", [["--max-lines"], ["--max-lines", "x"], ["--bogus"], ["--file", "missing.md"]]
+    "args",
+    [
+        ["--max-lines"],
+        ["--max-lines", "x"],
+        ["--bogus"],
+        pytest.param(
+            ["--file", "missing.md"],
+            marks=xfail_bash("A-027: bash reports a missing file as outside the content root"),
+        ),
+    ],
 )
 def test_lint_argument_errors(kb: KB, golden: Golden, args: list[str]) -> None:
-    _check(kb, golden, kb.run("lint", *args))
+    result = kb.run("lint", *args)
+    if "missing.md" in args:
+        assert "outside" not in result.err and "missing.md" in result.err
+    _check(kb, golden, result)

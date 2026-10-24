@@ -428,17 +428,22 @@ Observed: `lint --file missing.md` prints `Path outside content root:
 missing.md` and exits 1. The file does not exist; it is not outside the
 root.
 Expected: a not-found message, as `toc --path` and `stale --path` print.
-Class: undecided
-Decision:
+Class: bug
+Decision: the message names the wrong cause. The case now asserts that
+stderr names the file and does not say "outside"; it is a strict `xfail`
+under bash. The exit code is already right, so bash is not fixed.
 
 ## A-028: a malformed verified date is reported twice
 
 Script: `lint`  Test: `test_lint.py::test_lint_structure` (case `bad-verified`)
 Observed: `verified: last Tuesday` yields two errors: `verified is not a
 YYYY-MM-DD date` and `section metadata invalid: invalid verification date`.
-Expected: unknown. Probably one error.
-Class: undecided
-Decision:
+Expected: one error per malformed date.
+Class: bug
+Decision: the second message comes from the section-metadata parser
+re-reporting the same field, and the doubled count misstates the summary.
+The `bad-verified` case's lint contract now expects one error; it is a
+strict `xfail` under bash. Only the count is wrong, so bash is not fixed.
 
 ## A-029: an ambiguous path lists matches in filesystem order
 
