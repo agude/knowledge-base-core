@@ -1,0 +1,3 @@
+$ batch status
+exit 1
+Error: usage: batch status BATCH_ID

@@ -1,0 +1,8 @@
+## pending/a.md
+---
+title: "A"
+source: session
+created: <TIMESTAMP>
+---
+
+observation

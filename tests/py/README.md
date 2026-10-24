@@ -90,6 +90,7 @@ the stderr rules.
 | The test's root directory | `<ROOT>` |
 | The implementation's root (`KNOWLEDGE_BASE`) | `<KB>` |
 | Observation file names, `YYYYMMDDTHHMMSS-<8 lowercase hex>.md` | `<OBS-n>.md`, numbered by first appearance. A name of that shape that breaks the format fails the test. |
+| Batch IDs, `YYYYMMDDTHHMMSS-<pid>.tsv` | `<BATCH-n>.tsv`, numbered by first appearance |
 | `created: <UTC timestamp>` lines | `created: <TIMESTAMP>` |
 | `"timestamp":` values in session buffers, integer or float | `"timestamp":<EPOCH>` |
 | Prefixes of 7 or more hex digits of any commit in the content repository | `<COMMIT-n>`, numbered by first appearance |

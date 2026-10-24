@@ -1,0 +1,27 @@
+$ batch start
+exit 0
+Created batch: <BATCH-1>.tsv
+Selected: 2 observation(s)
+Selected bytes: 146
+  Size: a.md 73 bytes
+  Size: b.md 73 bytes
+
+$ archive --batch <BATCH-1>.tsv --disposition ephemeral a.md --no-commit
+exit 0
+Archived: observations/pending/a.md
+
+$ batch defer <BATCH-1>.tsv b.md
+exit 0
+Deferred: b.md
+
+$ batch status <BATCH-1>.tsv
+exit 0
+Batch <BATCH-1>.tsv: 1 complete, 0 pending, 1 deferred
+  Input bytes: 251
+  Item sizes:
+    a.md: 178 bytes
+    b.md: 73 bytes
+  Dispositions: incorporated=0, duplicate=0, ephemeral=1
+  Destinations: none
+  Deferred work: 1 item(s)
+    - b.md

@@ -203,6 +203,12 @@ def test_observation_name_outside_contract_is_rejected(name: str) -> None:
         Normalizer()(name)
 
 
+def test_batch_ids_get_stable_labels() -> None:
+    normalize = Normalizer()
+    text = "20261024T014331-1510271.tsv 20261024T014332-99.tsv.meta 20261024T014331-1510271.tsv"
+    assert normalize(text) == "<BATCH-1>.tsv <BATCH-2>.tsv.meta <BATCH-1>.tsv"
+
+
 def test_created_and_buffer_timestamps() -> None:
     normalize = Normalizer()
     text = (

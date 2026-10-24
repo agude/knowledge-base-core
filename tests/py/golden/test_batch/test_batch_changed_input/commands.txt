@@ -1,0 +1,27 @@
+$ batch start
+exit 0
+Created batch: <BATCH-1>.tsv
+Selected: 1 observation(s)
+Selected bytes: 73
+  Size: a.md 73 bytes
+
+$ archive --batch <BATCH-1>.tsv --disposition duplicate a.md --no-commit
+exit 1
+Input changed since batch selection: observations/pending/a.md
+Nothing archived.
+
+$ batch defer <BATCH-1>.tsv a.md
+exit 1
+Error: input changed since batch selection: observations/pending/a.md
+
+$ batch status <BATCH-1>.tsv
+exit 1
+CHANGED: observations/pending/a.md
+Batch <BATCH-1>.tsv: 0 complete, 0 pending, 0 deferred
+  Input bytes: 82
+  Item sizes:
+    a.md: 82 bytes
+  Dispositions: incorporated=0, duplicate=0, ephemeral=0
+  Destinations: none
+  Deferred work: none
+Batch requires attention: 1 invalid item(s).

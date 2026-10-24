@@ -1,0 +1,3 @@
+$ archive --batch <BATCH-1>.tsv --disposition processed a.md --no-commit
+exit 1
+Batch completion requires --disposition incorporated, duplicate, or ephemeral.

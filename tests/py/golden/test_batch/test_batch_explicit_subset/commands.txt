@@ -1,0 +1,18 @@
+$ batch start --files c.md a.md
+exit 0
+Created batch: <BATCH-1>.tsv
+Selected: 2 observation(s)
+Selected bytes: 146
+  Size: c.md 73 bytes
+  Size: a.md 73 bytes
+
+$ batch status <BATCH-1>.tsv
+exit 0
+Batch <BATCH-1>.tsv: 0 complete, 2 pending, 0 deferred
+  Input bytes: 146
+  Item sizes:
+    c.md: 73 bytes
+    a.md: 73 bytes
+  Dispositions: incorporated=0, duplicate=0, ephemeral=0
+  Destinations: none
+  Deferred work: none

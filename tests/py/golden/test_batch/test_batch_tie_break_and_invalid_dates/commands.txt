@@ -1,0 +1,9 @@
+$ batch start --max-bytes 77
+exit 0
+Created batch: <BATCH-1>.tsv
+Selected: 1 observation(s)
+Selected bytes: 77
+  Size: a-equal.md 77 bytes
+Input budget: 77 bytes
+Skipped oversized: z-equal.md:77
+Skipped oversized: 0-invalid.md:72

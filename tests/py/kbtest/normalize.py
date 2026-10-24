@@ -18,6 +18,9 @@ OBSERVATION_NAME = re.compile(r"\b\d{8}T\d{6}-[0-9a-f]{8}\.md\b")
 # the contract pattern replaces the exact ones.
 OBSERVATION_LIKE = re.compile(r"\b\d{8}T\d{6}-[^\s/\"']*\.md\b")
 
+# Batch IDs: UTC timestamp, a hyphen, the creating process ID (batch:69).
+BATCH_ID = re.compile(r"\b\d{8}T\d{6}-\d+\.tsv\b")
+
 CREATED = re.compile(r"^(created: )\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", re.MULTILINE)
 # Integer from the jq-free encoder, float from jq.
 BUFFER_TIMESTAMP = re.compile(r'("timestamp":)\d+(?:\.\d+)?')
@@ -45,6 +48,7 @@ class Normalizer:
     extra: dict[str, str] = field(default_factory=dict)
     _observations: dict[str, str] = field(default_factory=dict)
     _commit_labels: dict[str, str] = field(default_factory=dict)
+    _batches: dict[str, str] = field(default_factory=dict)
 
     def add_path(self, path: Path, placeholder: str) -> None:
         self.paths[path] = placeholder
@@ -55,6 +59,7 @@ class Normalizer:
     def __call__(self, text: str) -> str:
         text = self._replace_paths(text)
         text = self._replace_observations(text)
+        text = self._replace_batches(text)
         text = CREATED.sub(r"\1<TIMESTAMP>", text)
         text = BUFFER_TIMESTAMP.sub(r"\1<EPOCH>", text)
         text = self._replace_commits(text)
@@ -88,6 +93,15 @@ class Normalizer:
             return self._observations[name]
 
         return OBSERVATION_NAME.sub(label, text)
+
+    def _replace_batches(self, text: str) -> str:
+        def label(match: re.Match[str]) -> str:
+            name = match.group(0)
+            if name not in self._batches:
+                self._batches[name] = f"<BATCH-{len(self._batches) + 1}>.tsv"
+            return self._batches[name]
+
+        return BATCH_ID.sub(label, text)
 
     def _replace_commits(self, text: str) -> str:
         if not self.commits:

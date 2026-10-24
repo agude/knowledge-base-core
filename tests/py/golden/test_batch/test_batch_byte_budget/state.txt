@@ -1,0 +1,24 @@
+## pending/a.md
+---
+title: "A"
+source: session
+created: <TIMESTAMP>
+---
+
+small
+## pending/b.md
+---
+title: "B"
+source: session
+created: <TIMESTAMP>
+---
+
+a much larger observation body that exceeds the budget
+## batches/<BATCH-1>.tsv
+filename	original_sha256	status	disposition	destination
+a.md	416351a4cd58c522f3327e356a076c4553e51636cc0a47be0107c2ecd70249f7	pending		
+## batches/<BATCH-1>.tsv.meta
+max_bytes=72
+selected_bytes=72
+oversized_count=1
+oversized_item=b.md:121

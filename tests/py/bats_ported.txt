@@ -20,3 +20,4 @@ adapters.bats
 pending.bats
 stale.bats
 pretool_allow.bats
+batch.bats

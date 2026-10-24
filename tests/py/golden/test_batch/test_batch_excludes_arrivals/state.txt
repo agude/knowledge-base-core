@@ -1,0 +1,32 @@
+## pending/a-selected.md
+---
+title: "Selected"
+source: session
+created: <TIMESTAMP>
+---
+
+Body
+## pending/arrived.md
+---
+title: "Arrived later"
+source: session
+created: <TIMESTAMP>
+---
+
+Body
+## pending/z-excluded.md
+---
+title: "Excluded"
+source: session
+created: <TIMESTAMP>
+---
+
+Body
+## batches/<BATCH-1>.tsv
+filename	original_sha256	status	disposition	destination
+a-selected.md	d6373df8ef16ef76fde712b7f7f8f8ed69d7374942f3c76930dbdcd048669733	pending		
+## batches/<BATCH-1>.tsv.meta
+max_bytes=78
+selected_bytes=78
+oversized_count=1
+oversized_item=z-excluded.md:78

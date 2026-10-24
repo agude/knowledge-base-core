@@ -1,0 +1,11 @@
+$ batch start --files exact.md --max-bytes 75
+exit 0
+Created batch: <BATCH-1>.tsv
+Selected: 1 observation(s)
+Selected bytes: 75
+  Size: exact.md 75 bytes
+Input budget: 75 bytes
+
+$ batch start --files short.md --max-bytes 74
+exit 1
+Error: explicit selection is 75 bytes, over --max-bytes 74

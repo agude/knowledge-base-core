@@ -264,3 +264,27 @@ order.
 Expected: the header matches the output, or the output groups by severity.
 Class: undecided
 Decision:
+
+## A-025: batch status measures input bytes from current files
+
+Script: `batch status`  Test: `test_batch.py::test_batch_snapshot_complete_defer`
+Observed: `Input bytes` and `Item sizes` read each member's current file,
+pending or archived. Archiving adds metadata, so the reported size grows
+after completion (a 73-byte observation reports 178 bytes once archived),
+and the total no longer matches `Selected bytes` from `batch start`.
+Expected: unknown. Probably sizes at selection.
+Class: undecided
+Decision:
+
+## A-026: items over the remaining budget are reported as oversized
+
+Scripts: `batch start`, `pending --preview`
+Test: `test_batch.py::test_batch_excludes_arrivals`
+Observed: an item excluded because earlier items used the budget is
+reported as `Skipped oversized`, even when it alone fits (`z-excluded.md:78`
+under `--max-bytes 78`). `batch status` labels the same set
+`Oversized/deferred at creation`.
+Expected: unknown. Distinguish "larger than the budget" from "did not fit
+the remainder".
+Class: undecided
+Decision:

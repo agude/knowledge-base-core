@@ -1,0 +1,2 @@
+filename	original_sha256	status	disposition	destination
+a-equal.md	4ba791e405a56dfa4eb7ef06a8d16791519c3e4a9e0494aa64f3674b7ce6a882	pending		

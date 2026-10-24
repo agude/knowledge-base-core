@@ -1,0 +1,22 @@
+$ batch start --max-bytes 72
+exit 0
+Created batch: <BATCH-1>.tsv
+Selected: 1 observation(s)
+Selected bytes: 72
+  Size: a.md 72 bytes
+Input budget: 72 bytes
+Skipped oversized: b.md:121
+
+$ batch status <BATCH-1>.tsv
+exit 0
+Batch <BATCH-1>.tsv: 0 complete, 1 pending, 0 deferred
+  Input bytes: 72
+  Item sizes:
+    a.md: 72 bytes
+  Input budget: 72 bytes
+  Selected bytes at creation: 72
+  Oversized/deferred at creation: 1 item(s)
+  Skipped oversized: b.md:121
+  Dispositions: incorporated=0, duplicate=0, ephemeral=0
+  Destinations: none
+  Deferred work: none
