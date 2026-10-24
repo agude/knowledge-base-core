@@ -1,0 +1,7 @@
+$ search postgres
+exit 0
+--- stdout
+knowledge/fm.md | title | Postgres Notes [section-command=--title] [curated article; verified=2026-08-08; ttl=60d; freshness=stale; refs=none (article)]
+knowledge/fm.md | top | # Postgres Notes [section-command=--top] [curated article; verified=2026-08-08; ttl=60d; freshness=stale; refs=none (article)]
+knowledge/fm.md | Setup | The server runs Postgres. [section-number=1] [curated article; verified=2026-08-08; ttl=60d; freshness=stale; refs=none (article); section-status=current; section-scope=article]
+--- stderr

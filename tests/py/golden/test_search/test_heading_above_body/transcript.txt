@@ -1,0 +1,13 @@
+$ search --files docker
+exit 0
+--- stdout
+knowledge/heading.md  [1]  [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article)]
+knowledge/body.md  [1]  [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article)]
+--- stderr
+
+$ search docker
+exit 0
+--- stdout
+knowledge/heading.md | Docker networking | ## Docker networking [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
+knowledge/body.md | Other | We mention docker here in prose. [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
+--- stderr

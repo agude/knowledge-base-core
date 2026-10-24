@@ -1,0 +1,11 @@
+$ search --json target_word
+exit 0
+--- stdout
+{"results":[{"path":"knowledge/topic.md","corpus":"curated article","title":"Matched in frontmatter","match_count":1,"locator":{"section":"top","number":null,"command":"--top","line":7},"freshness":{"field":"verified","value":null,"ttl":"default","ttl_days":60,"status":"unknown","age_days":null},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":null,"text":"Preamble with target_word here.","routing":false,"query_mode":"literal","query":null,"query_terms":["target_word"],"alias_matches":[],"match_mode":"strict","relaxed":false}],"query_mode":"literal","query":null,"query_terms":["target_word"],"alias_matches":[],"match_mode":"strict","relaxed":false,"total_files":1,"total_lines":1,"returned":1,"truncated":false}
+--- stderr
+
+$ search target_word
+exit 0
+--- stdout
+knowledge/topic.md | top | Preamble with target_word here. [section-command=--top] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article)]
+--- stderr

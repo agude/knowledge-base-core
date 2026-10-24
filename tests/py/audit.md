@@ -343,3 +343,15 @@ Expected: unknown. A missing argument is a caller bug; a missing buffer is
 a normal race with the orphan sweep.
 Class: undecided
 Decision:
+
+## A-033: search and section JSON has irregular whitespace
+
+Scripts: `search`, `section` (`--json`)
+Test: `test_search.py::test_match_in_article`
+Observed: the JSON is assembled by hand. Most of it is compact, but some
+objects carry spaces (`"field_scopes":{ "status":"article" }`). Byte budgets
+(`--max-bytes`) count these exact bytes, so the goldens pin them.
+Expected: unknown. Probably compact JSON throughout; budgets then shift by
+the removed bytes.
+Class: undecided
+Decision:

@@ -1,0 +1,12 @@
+$ search --json --limit 0 --per-file 0 needle
+exit 0
+--- stdout
+{"results":[{"path":"knowledge/duplicate.md","corpus":"curated article","title":"","match_count":1,"locator":{"section":"Same heading","number":"1","line":5},"freshness":{"field":"verified","value":null,"ttl":"default","ttl_days":60,"status":"unknown","age_days":null},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"1","scope":"article","field_scopes":{ "status":"article" },"verified":null,"ttl":null,"status":"current","sources":[],"valid":true},"text":"first needle","routing":false,"query_mode":"literal","query":null,"query_terms":["needle"],"alias_matches":[],"match_mode":"strict","relaxed":false},{"path":"knowledge/duplicate.md","corpus":"curated article","title":"","match_count":1,"locator":{"section":"Same heading","number":"2","line":9},"freshness":{"field":"verified","value":null,"ttl":"default","ttl_days":60,"status":"unknown","age_days":null},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"2","scope":"article","field_scopes":{ "status":"article" },"verified":null,"ttl":null,"status":"current","sources":[],"valid":true},"text":"second needle","routing":false,"query_mode":"literal","query":null,"query_terms":["needle"],"alias_matches":[],"match_mode":"strict","relaxed":false}],"query_mode":"literal","query":null,"query_terms":["needle"],"alias_matches":[],"match_mode":"strict","relaxed":false,"total_files":1,"total_lines":2,"returned":2,"truncated":false}
+--- stderr
+
+$ search --limit 0 --per-file 0 needle
+exit 0
+--- stdout
+knowledge/duplicate.md | Same heading | first needle [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
+knowledge/duplicate.md | Same heading | second needle [section-number=2] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
+--- stderr

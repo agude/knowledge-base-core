@@ -1,0 +1,12 @@
+$ search --limit 0 --per-file 0 widgets
+exit 0
+--- stdout
+knowledge/topic1.md | Section | Line 1 about widgets here. [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
+knowledge/topic2.md | Section | Line 1 about widgets here. [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
+knowledge/topic3.md | Section | Line 1 about widgets here. [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
+knowledge/topic4.md | Section | Line 1 about widgets here. [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
+knowledge/topic5.md | Section | Line 1 about widgets here. [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
+knowledge/topic6.md | Section | Line 1 about widgets here. [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
+knowledge/topic7.md | Section | Line 1 about widgets here. [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
+knowledge/topic8.md | Section | Line 1 about widgets here. [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
+--- stderr

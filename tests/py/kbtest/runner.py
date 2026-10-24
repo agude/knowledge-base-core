@@ -183,6 +183,17 @@ class KB:
         self.normalizer.commits = self._all_commits(repos)
         return self.normalizer.stderr(text)
 
+    def transcript(self, *results: Result) -> str:
+        """Render runs as one normalized text: command, exit code, stdout, stderr."""
+        parts = []
+        for result in results:
+            command = " ".join([result.script, *result.args])
+            parts.append(
+                f"$ {command}\nexit {result.returncode}\n"
+                f"--- stdout\n{self.norm(result.out)}--- stderr\n{self.norm_err(result.err)}"
+            )
+        return "\n".join(parts).replace(self.session_prefix, "<SESSION>-")
+
     def _all_commits(self, repos: tuple[Path, ...]) -> list[str]:
         hashes = self.commits()
         for repo in repos:

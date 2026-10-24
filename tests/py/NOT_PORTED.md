@@ -27,3 +27,4 @@ allocation, or a `_lib.sh` function that no executable exposes. See
 | `session_core.bats` | session-append does not append partial output from a failing od | Injects an `od` failure into the Bash JSON encoder. |
 | `session_core.bats` | session-flush keeps the buffer when interrupted during observation writing | Stubs `cat` to pause inside the Bash observation writer. Interruption is pinned by `test_flush_interrupted_while_blocked` and `test_flush_interrupted_during_commit`. |
 | `session_core.bats` | session-flush retains evidence when the observation body copy fails | Stubs `cat` to fail inside the Bash observation writer. |
+| `search.bats` | search reports a parser failure instead of a false zero result | Replaces `awk`, the Bash search parser, with a failing stub. |

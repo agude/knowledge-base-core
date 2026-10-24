@@ -1,0 +1,15 @@
+$ search anything
+exit 0
+--- stdout
+--- stderr
+
+$ search zzzznonexistent
+exit 0
+--- stdout
+--- stderr
+
+$ search --json zzzznonexistent
+exit 0
+--- stdout
+{"results":[],"query_mode":"literal","query":null,"query_terms":["zzzznonexistent"],"alias_matches":[],"match_mode":"strict","relaxed":false,"total_files":0,"total_lines":0,"returned":0,"truncated":false}
+--- stderr

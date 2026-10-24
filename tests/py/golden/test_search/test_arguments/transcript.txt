@@ -1,0 +1,41 @@
+$ search --all
+exit 1
+--- stdout
+--- stderr
+Unknown option: --all (use -- to search for it literally)
+
+$ search -- --no-verify
+exit 0
+--- stdout
+knowledge/flags.md | Info | Never pass --no-verify to git commit. [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
+--- stderr
+
+$ search
+exit 1
+--- stdout
+--- stderr
+Usage: search <term> [term ...] or search --query QUESTION
+
+$ search --limit lots widgets
+exit 1
+--- stdout
+--- stderr
+Error: --limit and --per-file take a number
+
+$ search --per-file x widgets
+exit 1
+--- stdout
+--- stderr
+Error: --limit and --per-file take a number
+
+$ search --max-bytes nope widgets
+exit 1
+--- stdout
+--- stderr
+Error: --max-bytes takes a non-negative number
+
+$ search --limit
+exit 1
+--- stdout
+--- stderr
+Option --limit requires an argument

@@ -1,0 +1,11 @@
+$ search PostgreSQL
+exit 0
+--- stdout
+knowledge/topic.md | Section One | The server uses PostgreSQL for storage. [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
+--- stderr
+
+$ search --json PostgreSQL
+exit 0
+--- stdout
+{"results":[{"path":"knowledge/topic.md","corpus":"curated article","title":"Test","match_count":1,"locator":{"section":"Section One","number":"1","line":9},"freshness":{"field":"verified","value":null,"ttl":"default","ttl_days":60,"status":"unknown","age_days":null},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"1","scope":"article","field_scopes":{ "status":"article" },"verified":null,"ttl":null,"status":"current","sources":[],"valid":true},"text":"The server uses PostgreSQL for storage.","routing":false,"query_mode":"literal","query":null,"query_terms":["PostgreSQL"],"alias_matches":[],"match_mode":"strict","relaxed":false}],"query_mode":"literal","query":null,"query_terms":["PostgreSQL"],"alias_matches":[],"match_mode":"strict","relaxed":false,"total_files":1,"total_lines":1,"returned":1,"truncated":false}
+--- stderr

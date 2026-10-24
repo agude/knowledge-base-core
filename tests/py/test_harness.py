@@ -353,3 +353,12 @@ def test_bats_mapping() -> None:
         test_dir=tests_py,
     )
     assert bats_map.problems(sources) == []
+
+
+def test_transcript_renders_runs(kb: KB, tmp_path: Path) -> None:
+    tree = _fake_python_tree(
+        tmp_path / "fake", "status", "#!/bin/sh\necho out; echo err >&2; exit 3\n"
+    )
+    kb.resolve_impl = lambda name: tree
+    text = kb.transcript(kb.run("status", "--flag"))
+    assert text == "$ status --flag\nexit 3\n--- stdout\nout\n--- stderr\nerr\n"

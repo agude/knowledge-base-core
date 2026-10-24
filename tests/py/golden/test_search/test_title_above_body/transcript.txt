@@ -1,0 +1,14 @@
+$ search --files bind mounts
+exit 0
+--- stdout
+knowledge/exact.md  [2] Bind Mounts on Synology [curated article; verified=2026-08-08; ttl=60d; freshness=stale; refs=none (article)]
+knowledge/passing.md  [1] Home Lab Overview [curated article; verified=2026-08-08; ttl=60d; freshness=stale; refs=none (article)]
+--- stderr
+
+$ search bind mounts
+exit 0
+--- stdout
+knowledge/exact.md | title | Bind Mounts on Synology [section-command=--title] [curated article; verified=2026-08-08; ttl=60d; freshness=stale; refs=none (article)]
+knowledge/exact.md | top | # Bind Mounts on Synology [section-command=--top] [curated article; verified=2026-08-08; ttl=60d; freshness=stale; refs=none (article)]
+knowledge/passing.md | Machines | One line mentions bind mounts in passing. [section-number=1] [curated article; verified=2026-08-08; ttl=60d; freshness=stale; refs=none (article); section-status=current; section-scope=article]
+--- stderr
