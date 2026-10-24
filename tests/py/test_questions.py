@@ -9,6 +9,7 @@ import pytest
 from kbtest import facts
 from kbtest.golden import Golden
 from kbtest.inspect import git_log, tree
+from kbtest.marks import xfail_bash
 from kbtest.runner import KB, Result
 
 
@@ -58,7 +59,7 @@ def test_questions_lists(kb: KB, golden: Golden) -> None:
 
 
 @pytest.mark.bats("questions.bats", "questions --path filters by context")
-@pytest.mark.audit("A-013")
+@xfail_bash("A-013: bash matches a string prefix, so knowledge/deploys-old matches")
 def test_questions_path_filter(kb: KB, golden: Golden) -> None:
     kb.create_question("q1.md", "Deploy question", "knowledge/deploys/canary.md")
     kb.create_question("q2.md", "Unrelated question")
@@ -66,6 +67,7 @@ def test_questions_path_filter(kb: KB, golden: Golden) -> None:
     result = kb.run("questions", "--path", "knowledge/deploys")
     titles = [title for title, _ in facts.questions(result.out)]
     assert "Deploy question" in titles and "Unrelated question" not in titles
+    assert "Sibling prefix" not in titles, "the filter matches whole path segments"
     _check(kb, golden, result, state=False)
 
 

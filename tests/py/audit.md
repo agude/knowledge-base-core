@@ -215,9 +215,14 @@ front matter, so bash is not fixed.
 Script: `questions`  Test: `test_questions.py::test_questions_path_filter`
 Observed: `--path knowledge/deploys` also lists a question whose context is
 `knowledge/deploys-old/x.md`, because the filter is a plain string prefix.
-Expected: unknown. Probably match whole path segments.
-Class: undecided
-Decision:
+Expected: a context matches when it equals the filter or lies under it as
+a directory (`knowledge/deploys/...`), not when it merely starts with the
+same characters.
+Class: bug
+Decision: the help says "whose context falls under PATH", which is
+containment. The test now asserts the sibling is not listed and is a strict
+`xfail` under bash. The extra match only adds a question to a listing, so
+bash is not fixed.
 
 ## A-014: ask and resolve drop text that looks like an echo option
 
