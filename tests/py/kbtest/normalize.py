@@ -27,6 +27,9 @@ BUFFER_TIMESTAMP = re.compile(r'("timestamp":)\d+(?:\.\d+)?')
 # Messages printed by git and jq. Their wording changes between tool versions.
 TOOL_MESSAGE = re.compile(r"^(fatal|error|warning|hint): .*$", re.MULTILINE)
 JQ_MESSAGE = re.compile(r"^jq: .*$", re.MULTILINE)
+# A git usage dump: its wording changes between git releases. It runs until
+# the next normalized git message, a "name: message" line, or the end.
+GIT_USAGE = re.compile(r"^usage: git .*?(?=^<git |^[\w.-]+: |\Z)", re.MULTILINE | re.DOTALL)
 
 
 class NormalizationError(AssertionError):
@@ -71,6 +74,7 @@ class Normalizer:
         """Normalize stderr, which also carries git and jq messages."""
         text = self(text)
         text = TOOL_MESSAGE.sub(lambda m: f"<git {m.group(1)}>", text)
+        text = GIT_USAGE.sub("<git usage>\n", text)
         return JQ_MESSAGE.sub("<jq message>", text)
 
     def _replace_paths(self, text: str) -> str:

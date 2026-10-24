@@ -495,3 +495,15 @@ def test_only_the_selected_python_is_visible(kb: KB) -> None:
     assert found == [kb.layout.bin / f"python3.{envmod.python_minor()}"]
     assert env["KB_PYTHON_DIRS"] == ""
     assert (kb.layout.bin / "python3").resolve() == envmod.tools().python.resolve()
+
+
+def test_git_usage_dump_is_normalized() -> None:
+    """git's usage text changes between releases; it reads as one placeholder."""
+    text = (
+        "fatal: not a git repository\nusage: git diff --no-index [<options>] <path> <path>\n\n"
+        "Diff output format options\n    -p, --patch           generate patch\n\n"
+        "pre-commit: could not inspect staged link-target paths.\n"
+    )
+    assert Normalizer().stderr(text) == (
+        "<git fatal>\n<git usage>\npre-commit: could not inspect staged link-target paths.\n"
+    )
