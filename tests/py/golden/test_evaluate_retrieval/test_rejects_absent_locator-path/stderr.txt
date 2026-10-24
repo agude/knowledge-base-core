@@ -1,0 +1,1 @@
+Invalid retrieval fixture: case 'missing-path' expected locator path not found: knowledge/missing.md

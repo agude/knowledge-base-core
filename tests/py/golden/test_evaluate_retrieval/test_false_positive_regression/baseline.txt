@@ -1,0 +1,36 @@
+{
+  "format": "knowledge-base-retrieval-evaluation-baseline",
+  "version": 1,
+  "fixture_id": "focused-retrieval-v1",
+  "corpus_id": "focused-corpus-v1",
+  "evaluation_role": "unspecified",
+  "fixture_sha256": "e90cd544904028edaa3ee2563056a166f582b40cf4518a73ab0fcb1ce102ac90",
+  "corpus_sha256": "d88f5a6220eb5b447cb8fc3fd09b28974c546c7db64092f60d03528115a7d3ed",
+  "top_k": 5,
+  "cases": [
+    {
+      "id": "focused-absent",
+      "query_mode": "literal",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "status": "false_positive",
+      "any_required_evidence": null,
+      "all_required_evidence": null,
+      "routing_success": null,
+      "false_positive_retrieval": true,
+      "matched_required_evidence_count": null,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 987,
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 987,
+      "top_five": [
+        {
+          "path": "knowledge/false-positive.md",
+          "section": "Evidence"
+        }
+      ]
+    }
+  ]
+}

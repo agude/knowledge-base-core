@@ -5,7 +5,8 @@ null1: every executable exits 1 with no output.
 
 Rule: every test fails under at least one control. A test that passes under
 null0 must carry @pytest.mark.null_ok("<reason>"), and a null_ok mark on a
-test that fails under null0 is stale. Harness self-tests are excluded.
+test that fails under null0 is stale. Harness self-tests and fixture-data
+checks (markers harness and data) are excluded.
 
 Usage: python tests/py/nullcheck.py [pytest args...]
 """
@@ -26,7 +27,16 @@ def run_control(name: str, report: Path, extra: list[str]) -> dict[str, dict[str
     env = dict(os.environ, KB_IMPL=name, KB_NULL_REPORT=str(report))
     env.pop("KB_SCRIPTS_DIR", None)
     completed = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "-m", "not harness", "--no-header", *extra],
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-m",
+            "not harness and not data",
+            "--no-header",
+            *extra,
+        ],
         env=env,
         capture_output=True,
         text=True,

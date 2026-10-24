@@ -1,0 +1,139 @@
+{
+  "format": "knowledge-base-retrieval-evaluation-report",
+  "version": 1,
+  "fixture_id": "focused-retrieval-v1",
+  "corpus_id": "focused-corpus-v1",
+  "evaluation_role": "unspecified",
+  "fixture_sha256": "e3251d9306396d7b0782bb06d464c6c047c381e3443d7ab6075d5f9274997c8e",
+  "corpus_sha256": "f8a8d5c628345c1c267fb2ae3e7305bab00d3d1368e0aab39210166d4fc8b996",
+  "measurement": {
+    "top_k": 5,
+    "coverage_unit": "distinct search locators (path, section, number/command) from the bounded top-five response",
+    "full_ranking_command": "search --json --limit 0 --per-file 0 QUERY",
+    "top_five_command": "search --json --limit 5 --per-file 0 QUERY",
+    "full_ranking_latency_scope": "wall-clock time for the full-ranking search subprocess",
+    "top_five_latency_scope": "wall-clock time for the bounded top-five search subprocess",
+    "latency_clock": "<CLOCK>",
+    "response_bytes": "UTF-8 bytes in each search JSON stdout response, including its trailing newline",
+    "measured_at": "<TIMESTAMP>"
+  },
+  "summary": {
+    "total_cases": 1,
+    "answerable_cases": 1,
+    "unanswerable_cases": 0,
+    "passed_cases": 1,
+    "failed_cases": 0,
+    "any_required_evidence_cases": 1,
+    "all_required_evidence_cases": 1,
+    "routing_success_cases": 0,
+    "false_positive_unanswerable_cases": 0,
+    "any_required_evidence_rate": 1,
+    "all_required_evidence_rate": 1,
+    "routing_success_rate": 0,
+    "false_positive_unanswerable_rate": null,
+    "categories": [
+      {
+        "category": "focused-test",
+        "total_cases": 1,
+        "answerable_cases": 1,
+        "passed_cases": 1,
+        "any_required_evidence_cases": 1,
+        "all_required_evidence_cases": 1,
+        "routing_success_cases": 0,
+        "false_positive_unanswerable_cases": 0
+      }
+    ],
+    "query_modes": [
+      {
+        "mode": "literal",
+        "cases": 1
+      }
+    ],
+    "comparison_groups": [],
+    "relaxation": {
+      "compared_groups": 0,
+      "discovery_gain_groups": 0,
+      "added_false_positive_groups": 0
+    },
+    "output_budget_bytes": null,
+    "full_omitted_results_total": 0,
+    "top_five_omitted_results_total": 0,
+    "full_ranking_response_bytes_total": 979,
+    "top_five_response_bytes_total": 979,
+    "full_ranking_latency_ms_total": "<MS>",
+    "top_five_latency_ms_total": "<MS>"
+  },
+  "failures": [],
+  "cases": [
+    {
+      "id": "baseline",
+      "category": "focused-test",
+      "query": "focused baseline",
+      "query_mode": "literal",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "retained_terms": [
+        "focused baseline"
+      ],
+      "matching_mode": "strict",
+      "output_budget_bytes": null,
+      "full_omitted_results": 0,
+      "top_five_omitted_results": 0,
+      "expected_sections": [
+        {
+          "path": "knowledge/baseline.md",
+          "section": "Evidence"
+        }
+      ],
+      "requires_all_sections": false,
+      "unanswerable": false,
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "routing_success": false,
+      "false_positive_retrieval": null,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 979,
+      "full_ranking_latency_ms": "<MS>",
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 979,
+      "top_five_latency_ms": "<MS>",
+      "bounded_raw_results": [
+        {
+          "path": "knowledge/baseline.md",
+          "section": "Evidence",
+          "number": "1",
+          "command": null,
+          "line": 5,
+          "text": "focused baseline evidence"
+        }
+      ],
+      "top_five": [
+        {
+          "path": "knowledge/baseline.md",
+          "section": "Evidence"
+        }
+      ],
+      "failure": null
+    }
+  ],
+  "baseline_comparison": {
+    "fixture_match": true,
+    "evaluation_role_match": true,
+    "baseline_fixture_sha256": "e3251d9306396d7b0782bb06d464c6c047c381e3443d7ab6075d5f9274997c8e",
+    "current_fixture_sha256": "e3251d9306396d7b0782bb06d464c6c047c381e3443d7ab6075d5f9274997c8e",
+    "corpus_match": true,
+    "baseline_corpus_sha256": "f8a8d5c628345c1c267fb2ae3e7305bab00d3d1368e0aab39210166d4fc8b996",
+    "current_corpus_sha256": "f8a8d5c628345c1c267fb2ae3e7305bab00d3d1368e0aab39210166d4fc8b996",
+    "changed_cases": [],
+    "regressions": [],
+    "regression_details": [],
+    "improvements": [],
+    "missing_baseline_cases": [],
+    "extra_baseline_cases": [],
+    "unchanged_case_count": 1
+  }
+}

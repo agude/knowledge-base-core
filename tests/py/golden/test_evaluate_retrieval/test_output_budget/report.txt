@@ -1,0 +1,685 @@
+{
+  "format": "knowledge-base-retrieval-evaluation-report",
+  "version": 1,
+  "fixture_id": "synthetic-question-v1",
+  "corpus_id": "synthetic-question-corpus-v1",
+  "evaluation_role": "post_implementation",
+  "fixture_sha256": "b1feac4284db2a9a82e3d4d8aad7868078391fca097ab3a86d755dcfa9b65fde",
+  "corpus_sha256": "9a059a7faf719d2e42b6543cac80ce9aa162edcf411abff4a04b4a377a66aab9",
+  "measurement": {
+    "top_k": 5,
+    "coverage_unit": "distinct search locators (path, section, number/command) from the bounded top-five response",
+    "full_ranking_command": "search --json --limit 0 --per-file 0 QUERY",
+    "top_five_command": "search --json --limit 5 --per-file 0 QUERY",
+    "full_ranking_latency_scope": "wall-clock time for the full-ranking search subprocess",
+    "top_five_latency_scope": "wall-clock time for the bounded top-five search subprocess",
+    "latency_clock": "<CLOCK>",
+    "response_bytes": "UTF-8 bytes in each search JSON stdout response, including its trailing newline",
+    "measured_at": "<TIMESTAMP>"
+  },
+  "summary": {
+    "total_cases": 10,
+    "answerable_cases": 8,
+    "unanswerable_cases": 2,
+    "passed_cases": 7,
+    "failed_cases": 1,
+    "any_required_evidence_cases": 6,
+    "all_required_evidence_cases": 6,
+    "routing_success_cases": 1,
+    "false_positive_unanswerable_cases": 0,
+    "any_required_evidence_rate": 0.75,
+    "all_required_evidence_rate": 0.75,
+    "routing_success_rate": 0.125,
+    "false_positive_unanswerable_rate": 0,
+    "categories": [
+      {
+        "category": "question_abstention",
+        "total_cases": 2,
+        "answerable_cases": 0,
+        "passed_cases": 0,
+        "any_required_evidence_cases": 0,
+        "all_required_evidence_cases": 0,
+        "routing_success_cases": 0,
+        "false_positive_unanswerable_cases": 0
+      },
+      {
+        "category": "question_alias",
+        "total_cases": 1,
+        "answerable_cases": 1,
+        "passed_cases": 1,
+        "any_required_evidence_cases": 0,
+        "all_required_evidence_cases": 0,
+        "routing_success_cases": 1,
+        "false_positive_unanswerable_cases": 0
+      },
+      {
+        "category": "question_conflict",
+        "total_cases": 1,
+        "answerable_cases": 1,
+        "passed_cases": 1,
+        "any_required_evidence_cases": 1,
+        "all_required_evidence_cases": 1,
+        "routing_success_cases": 0,
+        "false_positive_unanswerable_cases": 0
+      },
+      {
+        "category": "question_normalization",
+        "total_cases": 1,
+        "answerable_cases": 1,
+        "passed_cases": 1,
+        "any_required_evidence_cases": 1,
+        "all_required_evidence_cases": 1,
+        "routing_success_cases": 0,
+        "false_positive_unanswerable_cases": 0
+      },
+      {
+        "category": "question_paraphrase",
+        "total_cases": 2,
+        "answerable_cases": 2,
+        "passed_cases": 1,
+        "any_required_evidence_cases": 1,
+        "all_required_evidence_cases": 1,
+        "routing_success_cases": 0,
+        "false_positive_unanswerable_cases": 0
+      },
+      {
+        "category": "question_punctuation",
+        "total_cases": 1,
+        "answerable_cases": 1,
+        "passed_cases": 1,
+        "any_required_evidence_cases": 1,
+        "all_required_evidence_cases": 1,
+        "routing_success_cases": 0,
+        "false_positive_unanswerable_cases": 0
+      },
+      {
+        "category": "temporal_current",
+        "total_cases": 1,
+        "answerable_cases": 1,
+        "passed_cases": 1,
+        "any_required_evidence_cases": 1,
+        "all_required_evidence_cases": 1,
+        "routing_success_cases": 0,
+        "false_positive_unanswerable_cases": 0
+      },
+      {
+        "category": "temporal_historical",
+        "total_cases": 1,
+        "answerable_cases": 1,
+        "passed_cases": 1,
+        "any_required_evidence_cases": 1,
+        "all_required_evidence_cases": 1,
+        "routing_success_cases": 0,
+        "false_positive_unanswerable_cases": 0
+      }
+    ],
+    "query_modes": [
+      {
+        "mode": "question",
+        "cases": 10
+      }
+    ],
+    "comparison_groups": [],
+    "relaxation": {
+      "compared_groups": 0,
+      "discovery_gain_groups": 0,
+      "added_false_positive_groups": 0
+    },
+    "output_budget_bytes": 2000,
+    "full_omitted_results_total": 12,
+    "top_five_omitted_results_total": 12,
+    "full_ranking_response_bytes_total": 10915,
+    "top_five_response_bytes_total": 10915,
+    "full_ranking_latency_ms_total": "<MS>",
+    "top_five_latency_ms_total": "<MS>"
+  },
+  "failures": [
+    {
+      "id": "question-backup-location-01",
+      "category": "question_paraphrase",
+      "query": "Where are the backups?",
+      "expected_sections": [
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "Backup location"
+        }
+      ],
+      "status": "fail",
+      "failure": "no expected section appears in the top five",
+      "false_positive_retrieval": null,
+      "first_relevant_rank": null,
+      "top_five": [
+        {
+          "path": "knowledge/conflicts.md",
+          "section": "Backup destination conflict"
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "question-normalization-01",
+      "category": "question_normalization",
+      "query": "How do I restart --no-verify on 2026-10-03 from /srv/backups/kb?",
+      "query_mode": "question",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "retained_terms": [
+        "restart",
+        "--no-verify",
+        "2026-10-03",
+        "/srv/backups/kb"
+      ],
+      "matching_mode": "strict",
+      "output_budget_bytes": 2000,
+      "full_omitted_results": 1,
+      "top_five_omitted_results": 1,
+      "expected_sections": [
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "Restart the API service"
+        }
+      ],
+      "requires_all_sections": false,
+      "unanswerable": false,
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "routing_success": false,
+      "false_positive_retrieval": null,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 1381,
+      "full_ranking_latency_ms": "<MS>",
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 1381,
+      "top_five_latency_ms": "<MS>",
+      "bounded_raw_results": [
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "Restart the API service",
+          "number": "1",
+          "command": null,
+          "line": 9,
+          "text": "## Restart the API service ... The API service uses `restart --no-verify` on 2026-10-03 from"
+        }
+      ],
+      "top_five": [
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "Restart the API service"
+        }
+      ],
+      "failure": null
+    },
+    {
+      "id": "question-unanswerable-01",
+      "category": "question_abstention",
+      "query": "What is a quantum orchard?",
+      "query_mode": "question",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "retained_terms": [
+        "quantum",
+        "orchard"
+      ],
+      "matching_mode": "strict",
+      "output_budget_bytes": 2000,
+      "full_omitted_results": 0,
+      "top_five_omitted_results": 0,
+      "expected_sections": [],
+      "requires_all_sections": false,
+      "unanswerable": true,
+      "status": "unanswerable",
+      "any_required_evidence": null,
+      "all_required_evidence": null,
+      "routing_success": null,
+      "false_positive_retrieval": false,
+      "matched_required_evidence_count": null,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 0,
+      "full_ranking_response_bytes": 269,
+      "full_ranking_latency_ms": "<MS>",
+      "top_five_raw_result_count": 0,
+      "top_five_section_count": 0,
+      "top_five_response_bytes": 269,
+      "top_five_latency_ms": "<MS>",
+      "bounded_raw_results": [],
+      "top_five": [],
+      "failure": null
+    },
+    {
+      "id": "question-backup-location-01",
+      "category": "question_paraphrase",
+      "query": "Where are the backups?",
+      "query_mode": "question",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "retained_terms": [
+        "backups"
+      ],
+      "matching_mode": "strict",
+      "output_budget_bytes": 2000,
+      "full_omitted_results": 2,
+      "top_five_omitted_results": 2,
+      "expected_sections": [
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "Backup location"
+        }
+      ],
+      "requires_all_sections": false,
+      "unanswerable": false,
+      "status": "fail",
+      "any_required_evidence": false,
+      "all_required_evidence": false,
+      "routing_success": false,
+      "false_positive_retrieval": null,
+      "matched_required_evidence_count": 0,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 1270,
+      "full_ranking_latency_ms": "<MS>",
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 1270,
+      "top_five_latency_ms": "<MS>",
+      "bounded_raw_results": [
+        {
+          "path": "knowledge/conflicts.md",
+          "section": "Backup destination conflict",
+          "number": "1",
+          "command": null,
+          "line": 12,
+          "text": "The unresolved backup destination conflict concerns `/srv/backups/kb` and `/srv/archive/kb`."
+        }
+      ],
+      "top_five": [
+        {
+          "path": "knowledge/conflicts.md",
+          "section": "Backup destination conflict"
+        }
+      ],
+      "failure": "no expected section appears in the top five"
+    },
+    {
+      "id": "question-api-hostname-01",
+      "category": "question_punctuation",
+      "query": "What is the API hostname?",
+      "query_mode": "question",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "retained_terms": [
+        "api",
+        "hostname"
+      ],
+      "matching_mode": "strict",
+      "output_budget_bytes": 2000,
+      "full_omitted_results": 2,
+      "top_five_omitted_results": 2,
+      "expected_sections": [
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "API hostname"
+        }
+      ],
+      "requires_all_sections": false,
+      "unanswerable": false,
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "routing_success": false,
+      "false_positive_retrieval": null,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 1188,
+      "full_ranking_latency_ms": "<MS>",
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 1188,
+      "top_five_latency_ms": "<MS>",
+      "bounded_raw_results": [
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "API hostname",
+          "number": "4",
+          "command": null,
+          "line": 22,
+          "text": "## API hostname ... The API hostname is `api.internal.example`."
+        }
+      ],
+      "top_five": [
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "API hostname"
+        }
+      ],
+      "failure": null
+    },
+    {
+      "id": "question-deploy-workflow-01",
+      "category": "question_paraphrase",
+      "query": "How do I deploy the API service?",
+      "query_mode": "question",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "retained_terms": [
+        "deploy",
+        "api",
+        "service"
+      ],
+      "matching_mode": "strict",
+      "output_budget_bytes": 2000,
+      "full_omitted_results": 2,
+      "top_five_omitted_results": 2,
+      "expected_sections": [
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "Deploy the API service"
+        }
+      ],
+      "requires_all_sections": false,
+      "unanswerable": false,
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "routing_success": false,
+      "false_positive_retrieval": null,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 1253,
+      "full_ranking_latency_ms": "<MS>",
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 1253,
+      "top_five_latency_ms": "<MS>",
+      "bounded_raw_results": [
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "Deploy the API service",
+          "number": "2",
+          "command": null,
+          "line": 14,
+          "text": "## Deploy the API service ... Deploy the API service with the standard release workflow."
+        }
+      ],
+      "top_five": [
+        {
+          "path": "knowledge/question-operations.md",
+          "section": "Deploy the API service"
+        }
+      ],
+      "failure": null
+    },
+    {
+      "id": "question-alias-routing-01",
+      "category": "question_alias",
+      "query": "Where is the production tunnel?",
+      "query_mode": "question",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "retained_terms": [
+        "production",
+        "tunnel"
+      ],
+      "matching_mode": "strict",
+      "output_budget_bytes": 2000,
+      "full_omitted_results": 0,
+      "top_five_omitted_results": 0,
+      "expected_sections": [
+        {
+          "path": "knowledge/network.md",
+          "section": "alias",
+          "command": "--alias"
+        }
+      ],
+      "requires_all_sections": false,
+      "unanswerable": false,
+      "status": "pass",
+      "any_required_evidence": false,
+      "all_required_evidence": false,
+      "routing_success": true,
+      "false_positive_retrieval": null,
+      "matched_required_evidence_count": 0,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 1019,
+      "full_ranking_latency_ms": "<MS>",
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 1019,
+      "top_five_latency_ms": "<MS>",
+      "bounded_raw_results": [
+        {
+          "path": "knowledge/network.md",
+          "section": "alias",
+          "number": null,
+          "command": "--alias",
+          "line": 0,
+          "text": "production tunnel"
+        }
+      ],
+      "top_five": [
+        {
+          "path": "knowledge/network.md",
+          "section": "alias"
+        }
+      ],
+      "failure": null
+    },
+    {
+      "id": "temporal-current-01",
+      "category": "temporal_current",
+      "query": "What is the current deploy target as of 2026-09-01?",
+      "query_mode": "question",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "retained_terms": [
+        "current",
+        "deploy",
+        "target",
+        "2026-09-01"
+      ],
+      "matching_mode": "strict",
+      "output_budget_bytes": 2000,
+      "full_omitted_results": 2,
+      "top_five_omitted_results": 2,
+      "expected_sections": [
+        {
+          "path": "knowledge/temporal.md",
+          "section": "Current deploy target"
+        }
+      ],
+      "requires_all_sections": false,
+      "unanswerable": false,
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "routing_success": false,
+      "false_positive_retrieval": null,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 1402,
+      "full_ranking_latency_ms": "<MS>",
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 1402,
+      "top_five_latency_ms": "<MS>",
+      "bounded_raw_results": [
+        {
+          "path": "knowledge/temporal.md",
+          "section": "Current deploy target",
+          "number": "1",
+          "command": null,
+          "line": 9,
+          "text": "## Current deploy target ... The current deploy target is `kb-api-v2` as of 2026-09-01."
+        }
+      ],
+      "top_five": [
+        {
+          "path": "knowledge/temporal.md",
+          "section": "Current deploy target"
+        }
+      ],
+      "failure": null
+    },
+    {
+      "id": "temporal-historical-01",
+      "category": "temporal_historical",
+      "query": "What was the previous deploy target before 2026-09-01?",
+      "query_mode": "question",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "retained_terms": [
+        "previous",
+        "deploy",
+        "target",
+        "before",
+        "2026-09-01"
+      ],
+      "matching_mode": "strict",
+      "output_budget_bytes": 2000,
+      "full_omitted_results": 2,
+      "top_five_omitted_results": 2,
+      "expected_sections": [
+        {
+          "path": "knowledge/temporal.md",
+          "section": "Previous deploy target"
+        }
+      ],
+      "requires_all_sections": false,
+      "unanswerable": false,
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "routing_success": false,
+      "false_positive_retrieval": null,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 1397,
+      "full_ranking_latency_ms": "<MS>",
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 1397,
+      "top_five_latency_ms": "<MS>",
+      "bounded_raw_results": [
+        {
+          "path": "knowledge/temporal.md",
+          "section": "Previous deploy target",
+          "number": "2",
+          "command": null,
+          "line": 14,
+          "text": "## Previous deploy target ... The previous deploy target was `kb-api-v1` before 2026-09-01."
+        }
+      ],
+      "top_five": [
+        {
+          "path": "knowledge/temporal.md",
+          "section": "Previous deploy target"
+        }
+      ],
+      "failure": null
+    },
+    {
+      "id": "conflict-unresolved-01",
+      "category": "question_conflict",
+      "query": "What is the unresolved backup destination conflict?",
+      "query_mode": "question",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "retained_terms": [
+        "unresolved",
+        "backup",
+        "destination",
+        "conflict"
+      ],
+      "matching_mode": "strict",
+      "output_budget_bytes": 2000,
+      "full_omitted_results": 1,
+      "top_five_omitted_results": 1,
+      "expected_sections": [
+        {
+          "path": "knowledge/conflicts.md",
+          "section": "Backup destination conflict"
+        }
+      ],
+      "requires_all_sections": false,
+      "unanswerable": false,
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "routing_success": false,
+      "false_positive_retrieval": null,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 1436,
+      "full_ranking_latency_ms": "<MS>",
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 1436,
+      "top_five_latency_ms": "<MS>",
+      "bounded_raw_results": [
+        {
+          "path": "knowledge/conflicts.md",
+          "section": "Backup destination conflict",
+          "number": "1",
+          "command": null,
+          "line": 9,
+          "text": "## Backup destination conflict ... The unresolved backup destination conflict concerns `/srv/backups/kb` and `/srv/archive/kb`."
+        }
+      ],
+      "top_five": [
+        {
+          "path": "knowledge/conflicts.md",
+          "section": "Backup destination conflict"
+        }
+      ],
+      "failure": null
+    },
+    {
+      "id": "question-unanswerable-02",
+      "category": "question_abstention",
+      "query": "Where is the blue comet retention policy?",
+      "query_mode": "question",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "retained_terms": [
+        "blue",
+        "comet",
+        "retention",
+        "policy"
+      ],
+      "matching_mode": "strict",
+      "output_budget_bytes": 2000,
+      "full_omitted_results": 0,
+      "top_five_omitted_results": 0,
+      "expected_sections": [],
+      "requires_all_sections": false,
+      "unanswerable": true,
+      "status": "unanswerable",
+      "any_required_evidence": null,
+      "all_required_evidence": null,
+      "routing_success": null,
+      "false_positive_retrieval": false,
+      "matched_required_evidence_count": null,
+      "first_relevant_rank": null,
+      "full_ranking_result_count": 0,
+      "full_ranking_response_bytes": 300,
+      "full_ranking_latency_ms": "<MS>",
+      "top_five_raw_result_count": 0,
+      "top_five_section_count": 0,
+      "top_five_response_bytes": 300,
+      "top_five_latency_ms": "<MS>",
+      "bounded_raw_results": [],
+      "top_five": [],
+      "failure": null
+    }
+  ]
+}

@@ -12,3 +12,4 @@ fences.bats
 observe.bats
 session_flow.bats
 toc.bats
+evaluate_retrieval.bats

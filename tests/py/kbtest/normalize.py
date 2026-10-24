@@ -6,6 +6,7 @@ here.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -102,3 +103,26 @@ class Normalizer:
             return token
 
         return re.sub(r"\b[0-9a-f]{7,40}\b", label, text)
+
+
+def report(text: str) -> str:
+    """Normalize an evaluate-retrieval JSON report and return it indented."""
+
+    def walk(value: object) -> object:
+        if isinstance(value, dict):
+            result = {}
+            for key, item in value.items():
+                if "latency_ms" in key:
+                    result[key] = "<MS>"
+                elif key == "measured_at":
+                    result[key] = "<TIMESTAMP>"
+                elif key == "latency_clock":
+                    result[key] = "<CLOCK>"
+                else:
+                    result[key] = walk(item)
+            return result
+        if isinstance(value, list):
+            return [walk(item) for item in value]
+        return value
+
+    return json.dumps(walk(json.loads(text)), indent=2, ensure_ascii=False) + "\n"

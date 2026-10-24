@@ -1,0 +1,36 @@
+{
+  "format": "knowledge-base-retrieval-evaluation-baseline",
+  "version": 1,
+  "fixture_id": "focused-retrieval-v1",
+  "corpus_id": "focused-corpus-v1",
+  "evaluation_role": "unspecified",
+  "fixture_sha256": "e3251d9306396d7b0782bb06d464c6c047c381e3443d7ab6075d5f9274997c8e",
+  "corpus_sha256": "f8a8d5c628345c1c267fb2ae3e7305bab00d3d1368e0aab39210166d4fc8b996",
+  "top_k": 5,
+  "cases": [
+    {
+      "id": "baseline",
+      "query_mode": "literal",
+      "relaxed_query": false,
+      "comparison_group": null,
+      "status": "pass",
+      "any_required_evidence": true,
+      "all_required_evidence": true,
+      "routing_success": false,
+      "false_positive_retrieval": null,
+      "matched_required_evidence_count": 1,
+      "first_relevant_rank": 1,
+      "full_ranking_result_count": 1,
+      "full_ranking_response_bytes": 979,
+      "top_five_raw_result_count": 1,
+      "top_five_section_count": 1,
+      "top_five_response_bytes": 979,
+      "top_five": [
+        {
+          "path": "knowledge/baseline.md",
+          "section": "Evidence"
+        }
+      ]
+    }
+  ]
+}

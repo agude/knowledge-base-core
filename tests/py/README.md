@@ -98,11 +98,17 @@ the stderr rules.
 
 Paths are replaced longest first.
 
+`kbtest.normalize.report()` normalizes an `evaluate-retrieval` JSON report:
+every value whose key contains `latency_ms` becomes `"<MS>"`, `measured_at` becomes
+`"<TIMESTAMP>"`, and `latency_clock`, which names the implementation's clock
+source, becomes `"<CLOCK>"`.
+
 ## Markers
 
 | Marker | Meaning |
 |---|---|
 | `harness` | A self-test of the harness. It runs no implementation, and the null controls skip it. |
+| `data` | A check of committed fixture data, such as retrieval fixtures. It runs no implementation, and the null controls skip it. |
 | `null_ok("reason")` | The test passes under `null0` by design, such as a command whose contract is a silent exit 0. Reviewed in the behavior audit. |
 | `audit("A-NNN")` | Pinned behavior that looks wrong or accidental; see `audit.md`. |
 
