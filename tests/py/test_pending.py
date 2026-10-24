@@ -145,7 +145,6 @@ def test_preview_malformed_and_large(kb: KB, golden: Golden) -> None:
 
 
 @pytest.mark.bats("pending.bats", "pending keeps recursive listing and bounds preview selection")
-@pytest.mark.audit("A-022")
 def test_nested_observations(kb: KB, golden: Golden) -> None:
     kb.create_observation("top-level.md", "Top-level observation", "Body")
     nested = _pending_dir(kb) / "nested"

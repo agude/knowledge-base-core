@@ -356,9 +356,12 @@ consider only top-level files. A nested observation is counted as pending
 but can never be curated through a batch. The bats test name ("keeps
 recursive listing and bounds preview selection") suggests this is
 deliberate.
-Expected: unknown. Confirm, or make the two views agree.
-Class: undecided
-Decision:
+Expected: as observed.
+Class: intended
+Decision: commit 6484f37 ("Preserve pending file discovery") restored the
+recursive listing and count on purpose and limited only preview selection
+to top-level files, to match `batch start`. Python keeps both halves. Tests
+unchanged; audit mark removed.
 
 ## A-023: stale accepts a non-numeric --days
 
