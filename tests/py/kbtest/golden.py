@@ -88,7 +88,8 @@ class Golden:
             raise AssertionError(
                 f"missing golden file {_display(path)}; run with --update-golden and review it"
             )
-        expected = path.read_text(encoding="utf-8", newline="")
+        with path.open(encoding="utf-8", newline="") as handle:
+            expected = handle.read()
         if actual == expected:
             return None
         return "".join(

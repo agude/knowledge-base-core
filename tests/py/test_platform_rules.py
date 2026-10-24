@@ -76,6 +76,8 @@ def violations(path: Path) -> list[str]:
             for keyword in needed:
                 if _keyword(node, keyword) is None:
                     found.append(f"{node.lineno}: {func.attr}() without {keyword}")
+            if func.attr == "read_text" and _keyword(node, "newline") is not None:
+                found.append(f"{node.lineno}: read_text(newline=) needs Python 3.13")
     return found
 
 
@@ -96,7 +98,8 @@ def test_rules_catch_each_reserved_call(tmp_path: Path) -> None:
         "os.kill(1, 0)\nos.getuid()\nos.chmod('x', 0)\nos.symlink('a', 'b')\n"
         "open('x')\nopen('x', 'rb')\nPath('x').open(encoding='utf-8')\n"
         "Path('x').read_text()\nPath('x').write_text('t', encoding='utf-8')\n"
-        "platform.write_text(Path('x'), 't')\n",
+        "platform.write_text(Path('x'), 't')\n"
+        "Path('x').read_text(encoding='utf-8', newline='')\n",
         encoding="utf-8",
     )
     assert violations(sample) == [
@@ -110,4 +113,5 @@ def test_rules_catch_each_reserved_call(tmp_path: Path) -> None:
         "10: open() without newline",
         "11: read_text() without encoding",
         "12: write_text() without newline",
+        "14: read_text(newline=) needs Python 3.13",
     ]

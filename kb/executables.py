@@ -74,7 +74,7 @@ def stale() -> list[str]:
     problems = []
     for name, module in sorted(COMMANDS.items()):
         path = EXECUTABLES / name
-        if not path.is_file() or path.read_text(encoding="utf-8", newline="") != render(module):
+        if not path.is_file() or path.read_bytes() != render(module).encode("utf-8"):
             problems.append(name)
     return problems
 
