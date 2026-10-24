@@ -76,6 +76,15 @@ class KB:
         mirror = mirror_root / ("without-" + "-".join(sorted(names)))
         self.system_path = str(envmod.system_bin_without(mirror, names))
 
+    def restore_tools(self) -> None:
+        """Undo without_tools: the selected tools and the system PATH again."""
+        selected = envmod.tools()
+        for name, target in (("jq", selected.jq), ("git", selected.git)):
+            link = self.layout.bin / name
+            if target is not None and not link.exists():
+                link.symlink_to(target)
+        self.system_path = envmod.SYSTEM_PATH
+
     def _init_content(self) -> None:
         content = self.layout.content
         for sub in (
