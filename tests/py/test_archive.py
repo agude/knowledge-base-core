@@ -86,11 +86,16 @@ def test_archive_missing(kb: KB, golden: Golden) -> None:
 
 @pytest.mark.bats("archive.bats", "archive with no args prints message")
 def test_archive_no_arguments(kb: KB, golden: Golden) -> None:
-    _check(kb, golden, kb.run("archive", "--no-commit"))
+    result = kb.run("archive", "--no-commit")
+    # Nothing to do is not an error, but it is reported.
+    assert result.err.strip()
+    _check(kb, golden, result)
 
 
 def test_archive_all_with_nothing_pending(kb: KB, golden: Golden) -> None:
-    _check(kb, golden, kb.run("archive", "--all"))
+    result = kb.run("archive", "--all")
+    assert result.err.strip()
+    _check(kb, golden, result)
 
 
 def test_archive_commits(kb: KB, golden: Golden) -> None:

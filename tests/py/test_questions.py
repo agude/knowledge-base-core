@@ -34,16 +34,40 @@ def _only_question(kb: KB, area: str = "open") -> str:
 # questions
 
 
+def _titles(text: str) -> list[tuple[str, str]]:
+    """Listed questions as (title, context) from '- title (context)' lines."""
+    rows = []
+    for line in text.splitlines():
+        if not line.startswith("- "):
+            continue
+        item = line[2:]
+        context = ""
+        if item.endswith(")") and " (" in item:
+            item, context = item[:-1].rsplit(" (", 1)
+        rows.append((item, context))
+    return rows
+
+
+def _question_text(kb: KB, area: str, name: str) -> str:
+    return (kb.layout.content / "questions" / area / name).read_text(encoding="utf-8")
+
+
 @pytest.mark.bats("questions.bats", "questions shows 'no open questions' when empty")
 def test_questions_empty(kb: KB, golden: Golden) -> None:
-    _check(kb, golden, kb.run("questions"), state=False)
+    result = kb.run("questions")
+    assert result.returncode == 0
+    assert _titles(result.out) == []
+    assert result.out.strip(), "an empty list is reported"
+    _check(kb, golden, result, state=False)
 
 
 @pytest.mark.bats("questions.bats", "questions lists open questions")
 def test_questions_lists(kb: KB, golden: Golden) -> None:
     kb.create_question("q2.md", "Second?", "knowledge/b.md")
     kb.create_question("q1.md", "Who owns deploys?")
-    _check(kb, golden, kb.run("questions"), state=False)
+    result = kb.run("questions")
+    assert _titles(result.out) == [("Who owns deploys?", ""), ("Second?", "knowledge/b.md")]
+    _check(kb, golden, result, state=False)
 
 
 @pytest.mark.bats("questions.bats", "questions --path filters by context")
@@ -52,31 +76,46 @@ def test_questions_path_filter(kb: KB, golden: Golden) -> None:
     kb.create_question("q1.md", "Deploy question", "knowledge/deploys/canary.md")
     kb.create_question("q2.md", "Unrelated question")
     kb.create_question("q3.md", "Sibling prefix", "knowledge/deploys-old/x.md")
-    _check(kb, golden, kb.run("questions", "--path", "knowledge/deploys"), state=False)
+    result = kb.run("questions", "--path", "knowledge/deploys")
+    titles = [title for title, _ in _titles(result.out)]
+    assert "Deploy question" in titles and "Unrelated question" not in titles
+    _check(kb, golden, result, state=False)
 
 
 def test_questions_path_filter_no_match(kb: KB, golden: Golden) -> None:
     kb.create_question("q1.md", "Deploy question", "knowledge/deploys/canary.md")
-    _check(kb, golden, kb.run("questions", "--path", "knowledge/other"), state=False)
+    result = kb.run("questions", "--path", "knowledge/other")
+    assert result.returncode == 0
+    assert _titles(result.out) == []
+    assert "knowledge/other" in result.out, "the empty result names the filter"
+    _check(kb, golden, result, state=False)
 
 
 def test_questions_path_filter_resolves_bare_name(kb: KB, golden: Golden) -> None:
     kb.create_article("deploys/canary.md", "# Canary")
     kb.create_question("q1.md", "Deploy question", "knowledge/deploys/canary.md")
-    _check(kb, golden, kb.run("questions", "--path", "canary.md"), state=False)
+    result = kb.run("questions", "--path", "canary.md")
+    assert _titles(result.out) == [("Deploy question", "knowledge/deploys/canary.md")]
+    _check(kb, golden, result, state=False)
 
 
 @pytest.mark.bats("questions.bats", "questions --file reads single question")
 def test_questions_file(kb: KB, golden: Golden) -> None:
     kb.create_question("q1.md", "Test question")
-    _check(kb, golden, kb.run("questions", "--file", "q1.md"), state=False)
+    result = kb.run("questions", "--file", "q1.md")
+    assert result.returncode == 0
+    assert result.out == _question_text(kb, "open", "q1.md")
+    _check(kb, golden, result, state=False)
 
 
 def test_questions_file_resolved(kb: KB, golden: Golden) -> None:
     kb.create_question("q1.md", "Done question")
     open_file = kb.layout.content / "questions" / "open" / "q1.md"
     open_file.rename(kb.layout.content / "questions" / "resolved" / "q1.md")
-    _check(kb, golden, kb.run("questions", "--file", "q1.md"), state=False)
+    result = kb.run("questions", "--file", "q1.md")
+    assert result.returncode == 0
+    assert result.out == _question_text(kb, "resolved", "q1.md")
+    _check(kb, golden, result, state=False)
 
 
 @pytest.mark.parametrize("name", ["missing.md", "../open/q1.md"], ids=["missing", "path"])
@@ -90,9 +129,18 @@ def test_questions_full_and_all(kb: KB, golden: Golden) -> None:
     kb.create_question("q2.md", "Resolved one")
     q2 = kb.layout.content / "questions" / "open" / "q2.md"
     q2.rename(kb.layout.content / "questions" / "resolved" / "q2.md")
-    golden.check("all", kb.norm(kb.run("questions", "--all").out))
-    golden.check("full", kb.norm(kb.run("questions", "--full").out))
-    golden.check("full-all", kb.norm(kb.run("questions", "--full", "--all").out))
+    listing = kb.run("questions", "--all")
+    full = kb.run("questions", "--full")
+    full_all = kb.run("questions", "--full", "--all")
+    titles = [title for title, _ in _titles(listing.out)]
+    assert titles[0] == "Open one" and titles[1].startswith("Resolved one")
+    open_text = _question_text(kb, "open", "q1.md")
+    resolved_text = _question_text(kb, "resolved", "q2.md")
+    assert open_text in full.out and resolved_text not in full.out
+    assert open_text in full_all.out and resolved_text in full_all.out
+    golden.check("all", kb.norm(listing.out))
+    golden.check("full", kb.norm(full.out))
+    golden.check("full-all", kb.norm(full_all.out))
 
 
 def test_questions_unknown_option(kb: KB, golden: Golden) -> None:

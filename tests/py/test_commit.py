@@ -60,7 +60,10 @@ def test_commit_requires_message(hooked: KB, golden: Golden) -> None:
 
 @pytest.mark.bats("commit.bats", "commit reports nothing to do on a clean tree")
 def test_commit_clean_tree(hooked: KB, golden: Golden) -> None:
-    _check(hooked, golden, hooked.run("commit", "-m", "Curate: nothing"))
+    result = hooked.run("commit", "-m", "Curate: nothing")
+    # A clean tree is reported, not an error.
+    assert result.out.strip()
+    _check(hooked, golden, result)
 
 
 @pytest.mark.bats("commit.bats", "commit stages and commits articles")
