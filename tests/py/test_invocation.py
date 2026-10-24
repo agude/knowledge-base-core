@@ -266,7 +266,8 @@ def test_one_interpreter_start(repo: Repo) -> None:
 
 def test_fixed_directories_are_searched(repo: Repo) -> None:
     directory = repo.home / ".local" / "bin"
-    found = repo.link_python(directory, "python3.13")
+    # The highest minor searched, so no interpreter on the host PATH outranks it.
+    found = repo.link_python(directory, "python3.20")
     del_dirs = repo.env()
     del_dirs.pop("KB_PYTHON_DIRS")
     result = subprocess.run(

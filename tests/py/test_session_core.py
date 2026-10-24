@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -637,14 +638,15 @@ def test_flush_rejected_commit(kb: KB, golden: Golden) -> None:
     assert len(_pending(kb)) == 2
 
 
-# Bash prints these when a child it waits on dies by a signal; they are not
-# session-flush's output.
-SHELL_JOB_MESSAGES = {"Hangup", "Terminated", "Interrupt", "Killed"}
+# Bash reports a child it waits on that dies by a signal; the report is not
+# session-flush's output. It is the bare word, or, from Bash 5.3, the word,
+# the signal number, and the job's command line.
+SHELL_JOB_MESSAGE = re.compile(r"^\s*(Hangup|Terminated|Interrupt|Killed)(: \d+\s.*)?\s*$")
 
 
 def _without_job_messages(text: str) -> str:
     return "".join(
-        line for line in text.splitlines(keepends=True) if line.strip() not in SHELL_JOB_MESSAGES
+        line for line in text.splitlines(keepends=True) if not SHELL_JOB_MESSAGE.match(line)
     )
 
 
@@ -664,11 +666,11 @@ def _blocked_flush(kb: KB, path: Path, lock_wait: str) -> subprocess.Popen[bytes
 @pytest.mark.bats(
     "session_core.bats", "session-flush keeps the buffer when interrupted during parsing"
 )
-@pytest.mark.parametrize(
-    "signum", [signal.SIGHUP, signal.SIGINT, signal.SIGTERM], ids=["HUP", "INT", "TERM"]
-)
-def test_flush_interrupted_while_blocked(kb: KB, golden: Golden, signum: int) -> None:
+# Signal names, not numbers: Windows has no SIGHUP, and collection must not fail there.
+@pytest.mark.parametrize("name", ["HUP", "INT", "TERM"])
+def test_flush_interrupted_while_blocked(kb: KB, golden: Golden, name: str) -> None:
     """A signal to the hook's process group, as a terminal or host sends it."""
+    signum = getattr(signal, f"SIG{name}")
     path, original = _rich_buffer(kb)
     with kb.hold_lock():
         process = _blocked_flush(kb, path, "60")
