@@ -50,22 +50,40 @@ its messages. Bash is not changed.
 
 ## A-003: stale index-lock breaking depends on pgrep
 
-Script: `_lib.sh` (`break_stale_git_lock`, line 251)  Test: (1b.7)
+Script: `_lib.sh` (`break_stale_git_lock`, line 251)
+Test: `test_git.py::test_stale_index_lock_is_removed`,
+`test_git.py::test_index_lock_kept_while_git_runs`
 Observed: a stale `.git/index.lock` is kept while `pgrep -f "git.*<repo>"`
 finds a process. The standard library has no process listing on macOS.
-Expected: unknown. Options: an age-only check, or `pgrep` as a Unix-only
-dependency.
-Class: undecided
-Decision:
+Expected: as observed on Linux and macOS.
+Class: intended
+Decision: the function comment names both checks (age and a running git
+process), and the process check is the only guard against removing the lock
+of a git command the user or an editor is running in the content
+repository, which `.observe.lock` does not serialize. Python keeps it:
+`kb/platform.py` runs `pgrep -f` on Linux and macOS, where it ships with the
+base system, and falls back to the age check alone on Windows. `pgrep`
+becomes a declared Unix runtime dependency in `docs/python-port.md`. Audit
+marks removed.
 
 ## A-004: session-flush writes to syslog
 
-Script: `session-flush` (line 92)  Test: (1b.10)
+Script: `session-flush` (line 92)
+Test: `test_session_flow.py::test_session_end_drops_one_exchange`,
+`test_session_core.py::test_flush_threshold`,
+`test_session_core.py::test_flush_without_jq`
 Observed: dropping a short transcript runs `logger -t knowledge`.
-Expected: unknown. Options: drop it, write to a log file, or keep syslog on
-Unix only.
-Class: undecided
-Decision:
+Expected: the drop is logged to syslog under the tag `knowledge`; the
+mechanism is free.
+Class: intended
+Decision: commit 7ec353a added the line with the threshold, as the only
+trace of a dropped transcript, best-effort (`|| true`). Nothing in this
+repository, the pi adapter, the skills, or the knowledge base reads it.
+Python sends the same message, with the same tag, through the standard
+`syslog` module on Linux and macOS, and logs nothing on Windows; it never
+runs `logger`. The harness observes `logger` through a stub, which cannot
+see `syslog(3)`, so the three `syslog` goldens moved from contract to
+reference.
 
 ## A-005: output order follows the user's collation
 

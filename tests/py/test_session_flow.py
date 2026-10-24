@@ -112,7 +112,8 @@ def test_session_end_drops_one_exchange(session: Session, golden: Golden) -> Non
     golden.check("results", _results(session.kb, result))
     golden.contract("buffer", session.buffer())
     golden.contract("observations", _observations(session.kb))
-    golden.contract("syslog", session.kb.norm(_read(session.kb.layout.syslog)))
+    # How the drop is logged is not a contract (A-004).
+    golden.check("syslog", session.kb.norm(_read(session.kb.layout.syslog)))
 
 
 @pytest.mark.bats("session_flow.bats", "KNOWLEDGE_MIN_MESSAGES=0 keeps a one-exchange transcript")

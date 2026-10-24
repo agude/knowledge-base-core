@@ -43,9 +43,12 @@ rewrite" from the memory-system plan.
 - Minimum Python version: 3.11. Debian 12 ships 3.11 and Ubuntu 24.04 ships
   3.12. macOS ships 3.9 with the Command Line Tools, so macOS hosts need a
   separately installed interpreter (uv, Homebrew, or python.org).
-- Runtime dependencies after the port: a Python 3.11+ interpreter and `git`.
-  Two current external commands (`pgrep` in stale-lock breaking, `logger`
-  in `session-flush`) are decided in the behavior audit.
+- Runtime dependencies after the port: a Python 3.11+ interpreter and `git`,
+  plus `pgrep` on Linux and macOS, where the base system ships it. Stale
+  index-lock breaking uses it to keep a lock that a running git process
+  holds; on Windows that check is age-only (audit A-003). `session-flush`
+  logs dropped transcripts through the standard `syslog` module on Unix and
+  not at all on Windows, so `logger` is no longer called (audit A-004).
 - Test tooling: uv, pytest, ruff, hypothesis.
 - Platforms: Linux and macOS are required at cutover. Windows follows after
   cutover. All platform-specific calls go through one module

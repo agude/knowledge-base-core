@@ -457,9 +457,8 @@ def test_flush_threshold(kb: KB, golden: Golden, count: int) -> None:
         "observations",
         kb.norm("".join(f"## {p.name}\n{p.read_text()}" for p in _pending(kb)) or "none\n"),
     )
-    golden.contract(
-        "syslog", kb.layout.syslog.read_text() if kb.layout.syslog.exists() else "none\n"
-    )
+    # How the drop is logged is not a contract (A-004).
+    golden.check("syslog", kb.layout.syslog.read_text() if kb.layout.syslog.exists() else "none\n")
 
 
 @pytest.mark.parametrize("value", ["0", "5", "x"])
@@ -573,9 +572,8 @@ def test_flush_without_jq(kb: KB, without_tools, golden: Golden) -> None:
     assert path.read_bytes() == original
     assert _pending(kb) == []
     assert list(kb.layout.tmp.iterdir()) == []
-    golden.contract(
-        "syslog", kb.layout.syslog.read_text() if kb.layout.syslog.exists() else "none\n"
-    )
+    # How the drop is logged is not a contract (A-004).
+    golden.check("syslog", kb.layout.syslog.read_text() if kb.layout.syslog.exists() else "none\n")
 
 
 def test_flush_after_jq_returns(kb: KB) -> None:

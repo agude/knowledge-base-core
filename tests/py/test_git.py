@@ -100,7 +100,6 @@ def _index_lock(kb: KB, age_minutes: int) -> Path:
     return lock
 
 
-@pytest.mark.audit("A-003")
 def test_stale_index_lock_is_removed(kb: KB, golden: Golden) -> None:
     lock = _index_lock(kb, 10)
     result = kb.run("observe", "--title", "After crash", "--body", "Body")
@@ -117,7 +116,6 @@ def test_recent_index_lock_is_kept(kb: KB) -> None:
     assert lock.exists()
 
 
-@pytest.mark.audit("A-003")
 def test_index_lock_kept_while_git_runs(kb: KB) -> None:
     lock = _index_lock(kb, 10)
     # A process whose command line looks like git working in this repository.
