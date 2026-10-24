@@ -1,0 +1,4 @@
+stdout present
+file knowledge/crlf.md
+line Windows
+heading 1 Section

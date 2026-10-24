@@ -4,6 +4,23 @@ Every option, subcommand, input, and exit code of each executable, with the
 tests that cover it. `test_harness.py::test_surface_inventory` checks that
 every executable has rows and that every row names existing tests.
 
+Edge input. Every reading command runs against every input class in
+`test_edge_input.py::test_edge` (parameter `<class>-<command>`). Contract: the
+exit code and the facts reported. `unreadable` is skipped when running as root.
+
+| Command | empty | missing-dirs | malformed-front-matter | crlf | non-ascii | no-trailing-newline | spaces | symlinks | unreadable |
+|---|---|---|---|---|---|---|---|---|---|
+| `search` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` |
+| `section` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` |
+| `toc` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` |
+| `stale` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` |
+| `pending` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` |
+| `status` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` |
+| `context` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` |
+| `questions` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` |
+| `lint` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` |
+| `session-context` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` | `test_edge` |
+
 ## archive
 
 | Entry | Tests |

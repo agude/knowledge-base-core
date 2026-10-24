@@ -372,3 +372,27 @@ Expected: unknown. Hook entry points need not parse options; `session-flush`
 and `context` probably should.
 Class: undecided
 Decision:
+
+## A-035: a missing knowledge directory is an error for some commands only
+
+Scripts: `toc`, `stale`, `lint` versus `search`, `pending`, `status`
+Test: `test_edge_input.py::test_edge` (case `empty`)
+Observed: with no `knowledge/` directory, `toc`, `stale`, and `lint` exit 1
+with `Not found: <content>/knowledge`; `search`, `pending`, `status`,
+`context`, and `session-context` treat it as empty and exit 0.
+Expected: one behavior. An empty knowledge base is a normal state after
+`init`.
+Class: undecided
+Decision:
+
+## A-036: one unreadable article breaks or garbles reading commands
+
+Scripts: `search`, `toc`, `context`, `lint`
+Test: `test_edge_input.py::test_edge` (case `unreadable`)
+Observed: with one article at mode 000, `search` fails as a whole (`Search
+failed while reading the selected corpus`, exit 1) and returns none of the
+readable matches; `toc`, `context`, and `lint` print raw Bash errors with
+script line numbers (`scripts/toc: line 168: ...: Permission denied`).
+Expected: unknown. Probably skip the file with one clear warning.
+Class: undecided
+Decision:

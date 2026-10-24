@@ -1,0 +1,6 @@
+stdout present
+topic files=2
+  Bare
+  Heading
+Source documents=0
+Pending observations=1

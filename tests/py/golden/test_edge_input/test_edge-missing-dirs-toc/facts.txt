@@ -1,0 +1,4 @@
+stdout present
+file knowledge/a.md
+line A
+heading 1 Section

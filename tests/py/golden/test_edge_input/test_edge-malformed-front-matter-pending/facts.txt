@@ -1,0 +1,2 @@
+stdout present
+<OBS-1>.md

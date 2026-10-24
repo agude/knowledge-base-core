@@ -1,0 +1,5 @@
+stdout present
+topic files=1
+  Tail
+Source documents=0
+Pending observations=0

@@ -1,0 +1,3 @@
+stdout present
+knowledge/crlf.md no verified
+totals 0 stale, 1 missing date

@@ -1,0 +1,2 @@
+stdout present
+topic files=2

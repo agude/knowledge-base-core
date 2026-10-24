@@ -1,0 +1,2 @@
+stdout present
+totals No stale articles

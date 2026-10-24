@@ -1,0 +1,5 @@
+stdout present
+instructions verbatim
+line knowledge/with space/                    1
+total 1
+state 1 articles | 0 pending | 0 stale | 0 open question(s)

@@ -1,0 +1,2 @@
+stdout present
+1 file(s): 0 error(s), 0 warning(s)

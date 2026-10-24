@@ -1,0 +1,2 @@
+stdout present
+knowledge/real.md | Section

@@ -1,0 +1,7 @@
+stdout present
+file knowledge/no-front.md
+line Bare
+heading 1 Section
+file knowledge/open-front.md
+line Heading
+heading 1 Section
