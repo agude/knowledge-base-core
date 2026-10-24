@@ -394,9 +394,14 @@ Observed: `Input bytes` and `Item sizes` read each member's current file,
 pending or archived. Archiving adds metadata, so the reported size grows
 after completion (a 73-byte observation reports 178 bytes once archived),
 and the total no longer matches `Selected bytes` from `batch start`.
-Expected: unknown. Probably sizes at selection.
-Class: undecided
-Decision:
+Expected: either; nothing reads the figure.
+Class: accidental (unused)
+Decision: the manifest records no sizes, so current files are the only
+source, and `batch status` already prints `Selected bytes at creation` from
+the batch metadata. Adding a size column would change the manifest that
+both implementations read during the trial. Python measures current files
+as bash does. The lines are compared only through reference goldens; audit
+mark removed.
 
 ## A-026: items over the remaining budget are reported as oversized
 
@@ -406,10 +411,15 @@ Observed: an item excluded because earlier items used the budget is
 reported as `Skipped oversized`, even when it alone fits (`z-excluded.md:78`
 under `--max-bytes 78`). `batch status` labels the same set
 `Oversized/deferred at creation`.
-Expected: unknown. Distinguish "larger than the budget" from "did not fit
-the remainder".
-Class: undecided
-Decision:
+Expected: the text distinguishes "larger than the budget" from "did not
+fit the remainder".
+Class: accidental (unused)
+Decision: the label is report wording that nothing parses. Python prints
+`Skipped oversized` only for an item larger than the whole budget and
+`Skipped, over remaining budget` for the rest. The batch metadata keys
+`oversized_count` and `oversized_item` keep holding both kinds, so a batch
+started by either implementation reads the same. The labels are compared
+only through reference goldens, so no test changes.
 
 ## A-027: lint reports a missing file as outside the content root
 

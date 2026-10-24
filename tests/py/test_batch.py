@@ -82,7 +82,6 @@ def _state(kb: KB) -> str:
 
 
 @pytest.mark.bats("batch.bats", "batch selects only observations present at start")
-@pytest.mark.audit("A-025")
 def test_batch_snapshot_complete_defer(kb: KB, golden: Golden) -> None:
     kb.create_observation("a.md", "A", "Body A")
     kb.create_observation("b.md", "B", "Body B")
