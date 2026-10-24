@@ -380,3 +380,49 @@ def test_bootstrap_parses_under_old_pythons() -> None:
         source = (implmod.REPO / "kb" / name).read_text(encoding="utf-8")
         ast.parse(source, name, feature_version=(3, 9))
     assert sys.version_info >= (3, 11)
+
+
+def _git_env(repo: Repo) -> dict[str, str]:
+    return {
+        **repo.env(),
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_AUTHOR_NAME": "T",
+        "GIT_AUTHOR_EMAIL": "t@t",
+        "GIT_COMMITTER_NAME": "T",
+        "GIT_COMMITTER_EMAIL": "t@t",
+    }
+
+
+@pytest.mark.parametrize("command", ["sync", "install"])
+def test_update_compiles_kb(repo: Repo, command: str) -> None:
+    """After sync or install, the first hook run finds kb compiled (plan 4.16)."""
+    repo.link_python(repo.bin, f"python3.{envmod.python_minor()}")
+    executable = repo.executable(command, f"kb.commands.{command}")
+    hook_module = repo.root / "kb" / "commands" / "hooks"
+    for cache in repo.root.rglob("__pycache__"):
+        shutil.rmtree(cache)
+    env = _git_env(repo)
+    origin = repo.home / "origin.git"
+    content = repo.home / "content"
+    subprocess.run(["git", "init", "-q", "--bare", str(origin)], env=env, check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main", str(content)], env=env, check=True)
+    (content / "a.md").write_text("a\n", encoding="utf-8")
+    for args in (
+        ["add", "a.md"],
+        ["commit", "-q", "-m", "a"],
+        ["remote", "add", "origin", str(origin)],
+        ["push", "-q", "origin", "main"],
+    ):
+        subprocess.run(["git", *args], cwd=content, env=env, check=True)
+    result = subprocess.run(
+        [str(executable)],
+        env={**env, "KB_CONTENT_DIR": str(content), "HOME": str(repo.home)},
+        cwd=repo.home,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    compiled = list((hook_module / "__pycache__").glob("pre_commit.*.pyc"))
+    assert compiled, "the pre-commit hook module is compiled"

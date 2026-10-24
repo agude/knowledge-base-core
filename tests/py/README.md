@@ -24,7 +24,9 @@ KB_IMPL=python just test-py     # run against the Python tree
 
 `bash` runs `scripts/` from the working tree until the tag `bash-frozen`
 exists; after that it runs a `git worktree` of the tag, one per pytest
-worker, and the report header names the tag. The tag was created at the end
+worker, and the report header names the tag. `python` runs a per-worker copy
+of `kb/`, `python/`, and the files they read, so `install` writing
+`.python-interpreter` or bytecode never touches the working tree. The tag was created at the end
 of the behavior audit (plan 2.4). `test_harness.py::test_bash_matches_frozen_tag`
 fails if `scripts/` drifts from it; a deliberate bash change moves the tag
 (`git tag -f -a bash-frozen`). CI checks out tags so it uses the worktree too. `python` runs

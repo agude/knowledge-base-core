@@ -43,6 +43,7 @@ COMMANDS: dict[str, str] = {
     "archive": "kb.commands.archive",
     "commit": "kb.commands.commit",
     "hooks/pre-commit": "kb.commands.hooks.pre_commit",
+    "install": "kb.commands.install",
     "context": "kb.commands.context",
     "lint": "kb.commands.lint",
     "observe": "kb.commands.observe",
@@ -54,6 +55,7 @@ COMMANDS: dict[str, str] = {
     "session-init": "kb.commands.session_init",
     "stale": "kb.commands.stale",
     "status": "kb.commands.status",
+    "sync": "kb.commands.sync",
     "toc": "kb.commands.toc",
     "adapters/claude/session-end": "kb.commands.adapters.claude.session_end",
 }

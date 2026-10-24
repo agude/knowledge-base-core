@@ -8,6 +8,7 @@ executables live, but never the identity.
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -127,8 +128,34 @@ def describe_scripts() -> str:
     if name == "bash":
         return str(BASH_SCRIPTS)
     if name == "python":
-        return str(PYTHON_SCRIPTS)
+        return f"a copy of {PYTHON_SCRIPTS} per worker at <basetemp>/**/impls*/python-tree"
     return "generated null tree"
+
+
+# What a Python tree needs at run time: the package, its executables, the
+# root markers, the instructions session-context prints, and the skills
+# install links.
+PYTHON_TREE = ("kb", "python", "skills", "pyproject.toml", "AGENTS.md", "CLAUDE.md")
+
+
+def copy_python_tree(dest: Path) -> Path:
+    """Copy the Python implementation into dest and return its executables directory.
+
+    Tests run from a copy, as bash runs from a worktree of its tag, so that
+    install writing .python-interpreter or compiled bytecode never touches
+    the working tree, and one run's interpreter cannot leak into the next.
+    """
+    if not dest.exists():
+        for name in PYTHON_TREE:
+            source = REPO / name
+            if source.is_dir():
+                shutil.copytree(
+                    source, dest / name, symlinks=True, ignore=shutil.ignore_patterns("__pycache__")
+                )
+            elif source.is_file():
+                dest.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, dest / name)
+    return dest / "python"
 
 
 def resolve(name: str, scratch: Path) -> Impl:
@@ -142,7 +169,7 @@ def resolve(name: str, scratch: Path) -> Impl:
         else:
             scripts_dir = BASH_SCRIPTS
     elif name == "python":
-        scripts_dir = PYTHON_SCRIPTS
+        scripts_dir = copy_python_tree(scratch / "python-tree")
     elif name in {"null0", "null1"}:
         scripts_dir = build_null_tree(scratch / name, int(name[-1]))
     else:
