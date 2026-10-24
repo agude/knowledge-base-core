@@ -191,12 +191,20 @@ def benchmark(args: argparse.Namespace, scratch: Path) -> dict[str, object]:
     ]
     results = []
     for script, script_args in commands:
-        record = _measure(args.runs, lambda s=script, a=script_args: bench.run(s, *a))
         # The label names no corpus path, so reports from the live tree stay generic.
         label = " ".join([script, *script_args]).replace(first_article, "<first-article>")
+        if not tree.has(script):
+            results.append({"command": label, "missing": True})
+            continue
+        record = _measure(args.runs, lambda s=script, a=script_args: bench.run(s, *a))
         results.append({"command": label, **record})
 
-    results.append({"command": "hook:session-start", **_measure(args.runs, bench.session_start)})
+    if tree.has("session-init") and tree.has("session-context"):
+        results.append(
+            {"command": "hook:session-start", **_measure(args.runs, bench.session_start)}
+        )
+    else:
+        results.append({"command": "hook:session-start", "missing": True})
 
     head = bench.git("rev-parse", "HEAD").strip()
     buffers: list[Path] = []
@@ -209,11 +217,14 @@ def benchmark(args: argparse.Namespace, scratch: Path) -> dict[str, object]:
     def after_end() -> None:
         commits.add(int(bench.git("rev-list", "--count", f"{head}..HEAD")))
 
-    end = _measure(
-        args.runs, lambda: bench.run("session-flush", str(buffers[-1])), before_end, after_end
-    )
-    # One commit per run shows the workload did what it claims.
-    results.append({"command": "hook:session-end", **end, "commits": sorted(commits)})
+    if tree.has("session-flush"):
+        end = _measure(
+            args.runs, lambda: bench.run("session-flush", str(buffers[-1])), before_end, after_end
+        )
+        # One commit per run shows the workload did what it claims.
+        results.append({"command": "hook:session-end", **end, "commits": sorted(commits)})
+    else:
+        results.append({"command": "hook:session-end", "missing": True})
     bench.reset(head)
 
     return {
