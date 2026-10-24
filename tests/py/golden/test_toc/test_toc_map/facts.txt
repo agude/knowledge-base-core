@@ -1,0 +1,5 @@
+area knowledge/home/ 3
+area remodel/ 2
+area knowledge/shell/ 1
+area knowledge/ (loose files) 1
+total 5

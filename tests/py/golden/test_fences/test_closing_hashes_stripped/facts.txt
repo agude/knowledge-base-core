@@ -1,0 +1,4 @@
+file knowledge/h.md
+line H
+heading 1 Closed With Hashes
+heading 1.1 Also Closed

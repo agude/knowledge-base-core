@@ -1,0 +1,10 @@
+line <CONTENT>/knowledge
+line empty
+line home
+line a.md
+line remodel
+line b.md
+line c.md
+line loose.md
+line shell
+line c.md

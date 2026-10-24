@@ -8,6 +8,7 @@ from collections.abc import Callable
 import pytest
 
 from kbtest import env as envmod
+from kbtest import facts
 from kbtest.golden import Golden
 from kbtest.runner import KB, Result
 
@@ -56,6 +57,12 @@ MULTI = """# Multi
 
 def _check(kb: KB, golden: Golden, result: Result) -> None:
     golden.contract("result", f"exit {result.returncode}\n")
+    if result.script == "section":
+        golden.contract("content", kb.norm(facts.section_body(result.out)))
+    else:
+        golden.contract("facts", kb.norm(facts.toc(result.out)))
+    if result.returncode != 0:
+        assert result.err.strip(), "a failing run must say why"
     golden.check("stdout", kb.norm(result.out))
     golden.check("stderr", kb.norm_err(result.err))
 

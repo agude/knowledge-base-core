@@ -1,0 +1,5 @@
+file knowledge/code.md
+line Code
+heading 1 One
+line heading after indented code
+heading 2 Two

@@ -1,0 +1,12 @@
+## Dangling symlinks
+
+```bash
+# All dangling symlinks in $HOME
+find "$HOME" -xtype l
+
+# Same, restricted to one repo
+find "$HOME" -xtype l -lname "*repo*"
+```
+
+Trailing prose in the same section.
+

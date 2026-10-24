@@ -1,0 +1,6 @@
+file knowledge/a.md
+line A
+heading 1 Open
+file knowledge/b.md
+line B
+heading 1 Visible
