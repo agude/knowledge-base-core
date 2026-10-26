@@ -3,6 +3,8 @@
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
+from kb.commands import map as map_command
+from kb.commands import read as read_command
 from kb.errors import KbError
 
 
@@ -15,7 +17,10 @@ class Command:
     run: Callable[[Sequence[str]], int]
 
 
-COMMANDS: tuple[Command, ...] = ()
+COMMANDS: tuple[Command, ...] = (
+    Command(name="read", summary="Print the text that LOCATORs name.", run=read_command.run),
+    Command(name="map", summary="List articles and their sections.", run=map_command.run),
+)
 
 
 def find(name: str) -> Command:

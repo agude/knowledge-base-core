@@ -61,6 +61,14 @@ def test_registered_command_receives_the_remaining_words(
     assert seen == [["alpha", "--beta"]]
 
 
+def test_help_without_registered_commands_has_no_command_list(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(registry, "COMMANDS", ())
+    assert cli.main([]) == 0
+    assert "Commands:" not in capsys.readouterr().out
+
+
 def test_registered_commands_are_listed_in_the_help(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

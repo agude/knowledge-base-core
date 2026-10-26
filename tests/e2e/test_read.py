@@ -4,8 +4,6 @@ import pytest
 
 from .harness import Kb
 
-pytestmark = pytest.mark.xfail(strict=True, reason="kb read is not implemented yet")
-
 POWER_LOSS = (
     "knowledge/infra/nas.md#2 | Power loss | fresh, verified 2026-08-16 | 1 source\n"
     "## Power loss\n"

@@ -4,8 +4,6 @@ import pytest
 
 from .harness import Kb
 
-pytestmark = pytest.mark.xfail(strict=True, reason="kb map is not implemented yet")
-
 
 def file_lines(stdout: str) -> list[str]:
     """The lines that name a file: those not indented under another line."""

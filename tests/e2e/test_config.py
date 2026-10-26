@@ -3,11 +3,7 @@
 import shutil
 from pathlib import Path
 
-import pytest
-
 from .harness import Kb
-
-pytestmark = pytest.mark.xfail(strict=True, reason="kb map is not implemented yet")
 
 INFRA_COUNT = "knowledge/infra | 4 articles\n"
 
