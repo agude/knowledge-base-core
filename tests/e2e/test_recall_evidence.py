@@ -1,10 +1,6 @@
 """End-to-end tests for the evidence parts of `kb recall`."""
 
-import pytest
-
 from .harness import Kb
-
-pytestmark = pytest.mark.xfail(strict=True, reason="recall evidence is not implemented yet")
 
 
 def test_no_curated_match_lists_archived_evidence(kb: Kb) -> None:
@@ -64,8 +60,24 @@ def test_uncurated_pending_transcript_shows_its_matching_line(kb: Kb) -> None:
         "\n"
         "The family share is /srv/sync/family, one folder per family member.\n"
         "\n"
+        "knowledge/infra/syncthing.md#top | Syncthing | fresh, verified 2026-10-20 | 0 sources\n"
+        "# Syncthing\n"
+        "\n"
+        "Syncthing keeps the family folders in step across the laptops.\n"
+        "\n"
         "Uncurated (pending, not yet verified):\n"
         "  observations/pending/20261025T180000-1f2e3d4c.md | 2026-10-25 "
         "| Which folder does the family share use on the NAS?\n"
+        "Read with: kb read <locator>\n"
+    )
+
+
+def test_pending_observation_is_uncurated_beside_curated_results(kb: Kb) -> None:
+    result = kb("recall", "nas", "restart", "order")
+    assert result.returncode == 0
+    assert result.stdout.endswith(
+        "Uncurated (pending, not yet verified):\n"
+        "  observations/pending/20261024T094659-8d6fecbe.md | 2026-10-24 "
+        "| NAS restart after the update\n"
         "Read with: kb read <locator>\n"
     )

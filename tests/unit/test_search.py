@@ -147,3 +147,49 @@ def test_rank_with_no_terms_or_no_units_is_empty() -> None:
 
 def test_rank_with_only_empty_units_is_empty_and_does_not_divide_by_zero() -> None:
     assert search.rank([search.make_unit("", [], [], [])], ("alpha",)) == []
+
+
+def test_clip_shortens_long_text_to_the_width_with_an_ellipsis() -> None:
+    assert search.clip("short", 10) == "short"
+    assert search.clip("exactly ten", 11) == "exactly ten"
+    assert search.clip("a much longer title", 10) == "a much ..."
+
+
+def test_excerpt_picks_the_line_with_the_most_distinct_terms() -> None:
+    lines = ["alpha only", "alpha beta", "beta alpha", "nothing"]
+    assert search.excerpt(lines, ["alpha", "beta"]) == "alpha beta"
+
+
+def test_excerpt_of_a_short_line_is_the_whole_line() -> None:
+    assert search.excerpt(["  Alpha beta.  "], ["beta"]) == "Alpha beta."
+
+
+def test_excerpt_shortens_a_long_line_around_its_first_match() -> None:
+    line = "x" * 100 + " needle here " + "y" * 100
+    text = search.excerpt([line], ["needle"])
+    assert text.startswith("...")
+    assert text.endswith("...")
+    assert "needle" in text
+    assert len(text) <= search.EXCERPT_WIDTH + 6
+
+
+def test_excerpt_with_a_match_at_the_start_has_no_leading_ellipsis() -> None:
+    line = "needle " + "y" * 200
+    text = search.excerpt([line], ["needle"])
+    assert not text.startswith("...")
+    assert text.endswith("...")
+
+
+def test_excerpt_without_any_match_is_the_first_line_clipped() -> None:
+    assert search.excerpt(["first line", "second"], ["zebra"]) == "first line"
+    assert search.excerpt([], ["zebra"]) == ""
+
+
+def test_evidence_unit_has_the_title_and_the_text_without_headings() -> None:
+    document = parse(
+        "observations/pending/a.md", "---\ntitle: Alpha note\n---\n### user\n\nBeta words.\n"
+    )
+    unit = search.evidence_unit(document)
+    assert unit.title == ("alpha", "note")
+    assert unit.headings == ()
+    assert unit.body == ("beta", "words")

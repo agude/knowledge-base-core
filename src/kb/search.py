@@ -161,6 +161,7 @@ HEADING_WEIGHT = 2.0
 BODY_WEIGHT = 1.0
 K1 = 1.2
 B = 0.75
+EXCERPT_WIDTH = 80
 
 
 @dataclass(frozen=True)
@@ -255,6 +256,12 @@ def article_candidates(document: Document) -> list[Candidate]:
     return candidates
 
 
+def evidence_unit(document: Document) -> Unit:
+    """The unit of an evidence file: its title and all of its text."""
+    body = document.prose(document.body_start, len(document.lines))
+    return make_unit(document.title or "", (), (), body)
+
+
 def rank(units: Sequence[Unit], terms: Sequence[str]) -> list[Hit]:
     """The units that qualify, best first. Ties keep their input order.
 
@@ -285,6 +292,35 @@ def rank(units: Sequence[Unit], terms: Sequence[str]) -> list[Hit]:
         hits.append(Hit(index, score))
     hits.sort(key=lambda hit: hit.score, reverse=True)
     return hits
+
+
+def excerpt(lines: Sequence[str], terms: Sequence[str]) -> str:
+    """The line that holds the most distinct terms, shortened around its first match."""
+    wanted = frozenset(terms)
+    best = ""
+    best_count = 0
+    for line in lines:
+        count = len(wanted.intersection(tokenize(line)))
+        if count > best_count:
+            best, best_count = line.strip(), count
+    if not best:
+        return clip(lines[0].strip(), EXCERPT_WIDTH) if lines else ""
+    if len(best) <= EXCERPT_WIDTH:
+        return best
+    position = next(
+        (match.start() for match in TOKEN.finditer(best.lower()) if match.group(0) in wanted),
+        0,
+    )
+    start = max(0, position - EXCERPT_WIDTH // 4)
+    window = best[start : start + EXCERPT_WIDTH].strip()
+    prefix = "..." if start else ""
+    suffix = "..." if start + EXCERPT_WIDTH < len(best) else ""
+    return prefix + window + suffix
+
+
+def clip(text: str, width: int) -> str:
+    """The text, or its first width - 3 characters and "..." when it is longer than width."""
+    return text if len(text) <= width else text[: width - 3] + "..."
 
 
 def _profile(unit: Unit, terms: Sequence[str]) -> _Profile:
