@@ -161,7 +161,8 @@
       "expected": [
         "knowledge/storage.md#2"
       ],
-      "requires_all": false
+      "requires_all": false,
+      "known_limit": "Needs 'retained' to match 'retention'. Stemming gives 'retain' and 'retent', and at a one-term threshold the section ranks 8th under all eight weight settings tested."
     },
     {
       "id": "cross-article-01",
@@ -337,7 +338,8 @@
       "query": "blue comet retention",
       "unanswerable": true,
       "expected": [],
-      "requires_all": false
+      "requires_all": false,
+      "known_limit": "The section states its topic is 'not recorded'. Every threshold from 1/3 to 1 and every weight setting tested returns it, scoring 11.02, while answerable hits score 2.37 to 16.76."
     },
     {
       "id": "absent-03",
