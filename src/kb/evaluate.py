@@ -7,11 +7,6 @@ an expected locator in the top 3, the share of unanswerable cases that
 returned no curated result, and the share of requires_all cases whose every
 expected locator is in the top 3.
 
-A case may carry known_limit, a reason it cannot pass under the plan's lexical
-design. Such a case still reports as failing, labelled "known", and the verdict
-has two lines: the plan's step 7 criterion as written, and as amended with the
-known limits excluded.
-
 `just eval` scores every tests/fixtures/*/questions.json against the content
 beside it. `just eval QUESTIONS [CONTENT]` scores one set.
 """
@@ -39,7 +34,6 @@ class Case:
     query: str
     expected: tuple[str, ...]
     requires_all: bool
-    known_limit: str | None = None
 
     @property
     def unanswerable(self) -> bool:
@@ -97,15 +91,11 @@ def _case(path: Path, raw: object) -> Case:
     if unanswerable == bool(expected):
         state = "unanswerable" if unanswerable else "answerable"
         raise KbError(f"{path}: case {raw.get('id')} is {state} but lists {len(expected)} locators")
-    known = raw.get("known_limit")
-    if known is not None and (not isinstance(known, str) or not known):
-        raise KbError(f"{path}: known_limit must be a non-empty string in case {raw.get('id')}")
     return Case(
         id=str(raw.get("id")),
         query=str(raw.get("query", "")),
         expected=tuple(expected),
         requires_all=bool(raw.get("requires_all", False)),
-        known_limit=known,
     )
 
 
@@ -119,17 +109,13 @@ def report(name: str, outcomes: Sequence[Outcome]) -> str:
     lines = [name]
     for outcome in outcomes:
         case = outcome.case
-        if outcome.meets:
-            verdict = "pass"
-        elif case.known_limit is not None:
-            verdict = "known"
-        else:
-            verdict = "FAIL"
         if case.unanswerable:
+            verdict = "pass" if not outcome.ranked else "FAIL"
             detail = f"returned {len(outcome.ranked)}"
         else:
+            verdict = "pass" if outcome.hit else "FAIL"
             detail = f"rank {outcome.rank if outcome.rank is not None else '-'}"
-        lines.append(f"  {case.id:<40} {verdict:<5}  {detail}")
+        lines.append(f"  {case.id:<40} {verdict:<4}  {detail}")
     answerable = [outcome for outcome in outcomes if not outcome.case.unanswerable]
     unanswerable = [outcome for outcome in outcomes if outcome.case.unanswerable]
     required = [outcome for outcome in answerable if outcome.case.requires_all]
@@ -152,33 +138,23 @@ def report(name: str, outcomes: Sequence[Outcome]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def failures(outcomes: Sequence[Outcome]) -> tuple[list[str], list[str]]:
-    """The cases that fail the step 7 criterion as written, and those that fail it as amended."""
-    written = [outcome.case.id for outcome in outcomes if not outcome.meets]
-    amended = [
-        outcome.case.id
-        for outcome in outcomes
-        if not outcome.meets and outcome.case.known_limit is None
-    ]
-    return written, amended
+def unmet(outcomes: Sequence[Outcome]) -> list[str]:
+    """The ids of the cases that fail the plan.md step 7 criterion as written."""
+    return [outcome.case.id for outcome in outcomes if not outcome.meets]
 
 
-def verdict_lines(outcomes: Sequence[Outcome]) -> list[str]:
-    """The step 7 verdict under the criterion as written, and as amended in plan.md."""
-    written, amended = failures(outcomes)
-    known = [case_id for case_id in written if case_id not in amended]
-    lines = [f"plan.md step 7 as written: {_status(written)}"]
-    amended_line = f"plan.md step 7 as amended: {_status(amended)}"
-    if known:
-        amended_line += f" (known limits: {', '.join(known)})"
-    lines.append(amended_line)
-    return lines
+def verdict(outcomes: Sequence[Outcome]) -> str:
+    """The plan.md step 7 acceptance verdict for one question set."""
+    failed = unmet(outcomes)
+    if not failed:
+        return "plan.md step 7 acceptance: met"
+    return f"plan.md step 7 acceptance: not met ({', '.join(failed)})"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Score the question sets named on the command line, or every set under tests/fixtures.
 
-    Returns 1 when a case fails the amended criterion and has no known limit.
+    Returns 1 when a set fails the plan.md step 7 criterion, and 0 otherwise.
     """
     words = list(sys.argv[1:] if argv is None else argv)
     status = 0
@@ -186,8 +162,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         for questions, content in _sets(words):
             outcomes = run_cases(content.resolve(), load_cases(questions))
             sys.stdout.write(report(str(questions), outcomes))
-            sys.stdout.write("\n".join(verdict_lines(outcomes)) + "\n\n")
-            if failures(outcomes)[1]:
+            sys.stdout.write(verdict(outcomes) + "\n\n")
+            if unmet(outcomes):
                 status = 1
     except KbError as error:
         sys.stderr.write(f"{error}\n")
@@ -207,10 +183,6 @@ def _sets(words: Sequence[str]) -> list[tuple[Path, Path]]:
     if not found:
         raise KbError("no question sets under tests/fixtures")
     return [(path, path.parent / "content") for path in found]
-
-
-def _status(names: Sequence[str]) -> str:
-    return "met" if not names else f"not met ({', '.join(names)})"
 
 
 def _percent(part: int, whole: int) -> str:

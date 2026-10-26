@@ -172,10 +172,12 @@ def test_main_without_arguments_scores_every_fixture_set(
 ) -> None:
     repository = FIXTURES.parent.parent
     monkeypatch.chdir(repository)
-    assert evaluate.main([]) == 0
+    status = evaluate.main([])
     out = capsys.readouterr().out
     assert "tests/fixtures/retrieval-v1/questions.json" in out
     assert "tests/fixtures/retrieval-question-v1/questions.json" in out
+    assert out.count("plan.md step 7 acceptance:") == 2
+    assert status == (1 if "not met" in out else 0)
 
 
 def test_main_without_question_sets_is_an_error(
@@ -208,54 +210,21 @@ def test_module_entry_point_runs_main(monkeypatch: pytest.MonkeyPatch) -> None:
     assert exit_info.value.code == 1
 
 
-def test_load_cases_reads_a_known_limit(tmp_path: Path) -> None:
-    path = write_set(tmp_path / "q.json", [case(known_limit="a lexical limit")])
-    assert evaluate.load_cases(path)[0].known_limit == "a lexical limit"
+def test_verdict_is_met_when_every_case_meets_the_criterion() -> None:
+    answer = evaluate.Case("hit", "q", ("a.md#1",), False)
+    gap = evaluate.Case("gap", "q", (), True)
+    outcomes = [evaluate.Outcome(answer, ("a.md#1",)), evaluate.Outcome(gap, ())]
+    assert evaluate.verdict(outcomes) == "plan.md step 7 acceptance: met"
 
 
-def test_load_cases_rejects_an_empty_known_limit(tmp_path: Path) -> None:
-    path = write_set(tmp_path / "q.json", [case(known_limit="")])
-    with pytest.raises(KbError, match="known_limit must be a non-empty string"):
-        evaluate.load_cases(path)
+def test_verdict_names_every_case_that_fails_the_criterion() -> None:
+    missed = evaluate.Case("missed", "q", ("z.md#1",), False)
+    noisy = evaluate.Case("noisy", "q", (), True)
+    outcomes = [evaluate.Outcome(missed, ("a.md#1",)), evaluate.Outcome(noisy, ("a.md#1",))]
+    assert evaluate.verdict(outcomes) == ("plan.md step 7 acceptance: not met (missed, noisy)")
 
 
-def test_a_known_limit_reports_as_known_not_as_failed() -> None:
-    limited = evaluate.Case("limited", "q", ("z.md#1",), False, known_limit="reason")
-    text = evaluate.report("s", [evaluate.Outcome(limited, ("a.md#1",))])
-    assert "limited" in text and " known " in text and "FAIL" not in text
-
-
-def test_verdict_separates_the_criterion_as_written_from_the_amended_one() -> None:
-    limited = evaluate.Case("limited", "q", ("z.md#1",), False, known_limit="reason")
-    broken = evaluate.Case("broken", "q", ("y.md#1",), False)
-    outcomes = [evaluate.Outcome(limited, ("a.md#1",)), evaluate.Outcome(broken, ("a.md#1",))]
-    assert evaluate.verdict_lines(outcomes) == [
-        "plan.md step 7 as written: not met (limited, broken)",
-        "plan.md step 7 as amended: not met (broken) (known limits: limited)",
-    ]
-
-
-def test_verdict_is_met_when_every_failure_is_a_known_limit() -> None:
-    limited = evaluate.Case("limited", "q", (), True, known_limit="reason")
-    outcomes = [evaluate.Outcome(limited, ("a.md#1",))]
-    assert evaluate.verdict_lines(outcomes) == [
-        "plan.md step 7 as written: not met (limited)",
-        "plan.md step 7 as amended: met (known limits: limited)",
-    ]
-
-
-def test_main_exits_zero_when_only_known_limits_fail(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    questions = write_set(
-        tmp_path / "q.json",
-        [case(id="gap", query="quantum zebra", expected=["a.md#1"], known_limit="reason")],
-    )
-    assert evaluate.main([str(questions), str(FIXTURES / "content")]) == 0
-    assert "as amended: met (known limits: gap)" in capsys.readouterr().out
-
-
-def test_main_exits_one_for_an_unexplained_miss(
+def test_main_exits_one_when_a_case_fails_the_criterion(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     questions = write_set(
@@ -263,4 +232,15 @@ def test_main_exits_one_for_an_unexplained_miss(
         [case(id="gap", query="quantum zebra", expected=["a.md#1"])],
     )
     assert evaluate.main([str(questions), str(FIXTURES / "content")]) == 1
-    assert "as amended: not met (gap)" in capsys.readouterr().out
+    assert "plan.md step 7 acceptance: not met (gap)" in capsys.readouterr().out
+
+
+def test_main_exits_zero_when_every_case_meets_the_criterion(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    questions = write_set(
+        tmp_path / "q.json",
+        [case(id="found", query="nas restart order", expected=["knowledge/infra/nas.md#1"])],
+    )
+    assert evaluate.main([str(questions), str(FIXTURES / "content")]) == 0
+    assert "plan.md step 7 acceptance: met" in capsys.readouterr().out
