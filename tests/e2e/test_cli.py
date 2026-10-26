@@ -3,8 +3,6 @@
 import tomllib
 from pathlib import Path
 
-import pytest
-
 from .harness import Kb
 
 PYPROJECT = Path(__file__).resolve().parents[2] / "pyproject.toml"
@@ -23,7 +21,6 @@ def test_no_arguments_prints_usage(kb: Kb) -> None:
     assert result.stdout.startswith("Usage: kb")
 
 
-@pytest.mark.xfail(strict=True, reason="recall, read, and map are not registered yet")
 def test_help_lists_the_agent_commands(kb: Kb) -> None:
     lines = kb("--help").stdout.splitlines()
     for command in ("recall", "read", "map"):

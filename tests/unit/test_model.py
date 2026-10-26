@@ -382,3 +382,29 @@ def test_a_missing_field_is_none_or_empty() -> None:
 
 def test_section_lookup_returns_none_for_unknown_keys() -> None:
     assert parse("## A\n").section("9") is None
+
+
+def test_prose_leaves_out_headings_and_valid_metadata_comments() -> None:
+    document = load("knowledge/rules/section-metadata.md")
+    section = document.section("1")
+    assert section is not None
+    prose = [line for line in document.prose(section.start, section.end) if line]
+    assert prose == [
+        "Text after the valid comment.",
+        "This H3 takes verified from its H2 and ttl from its own comment.",
+    ]
+
+
+def test_invalid_metadata_comments_stay_as_prose() -> None:
+    document = load("knowledge/rules/section-metadata.md")
+    section = document.section("5")
+    assert section is not None
+    assert document.prose(section.start, section.end) == (
+        "<!-- kb-section: verified=2026-06-01 --> trailing prose",
+    )
+
+
+def test_heading_and_comment_line_sets_are_recorded() -> None:
+    document = parse("## A\n<!-- kb-section: ttl=people;\n   verified=2026-01-01 -->\nText\n")
+    assert document.heading_lines == frozenset({0})
+    assert document.comment_lines == frozenset({1, 2})

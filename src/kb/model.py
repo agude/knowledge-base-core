@@ -78,6 +78,8 @@ class Document:
     top_headings: tuple[str, ...]
     h1: str | None
     sections: tuple[Section, ...]
+    heading_lines: frozenset[int]
+    comment_lines: frozenset[int]
 
     @property
     def title(self) -> str | None:
@@ -99,6 +101,15 @@ class Document:
     def top_lines(self) -> tuple[str, ...]:
         """The body before the first H2, without leading or trailing blank lines."""
         return _trim(self.lines[self.body_start : self.top_end])
+
+    def prose(self, start: int, end: int) -> tuple[str, ...]:
+        """The lines from start to end that are text: no headings and no metadata comments."""
+        kept = [
+            line
+            for index, line in enumerate(self.lines[start:end], start)
+            if index not in self.heading_lines and index not in self.comment_lines
+        ]
+        return _trim(kept)
 
     def scalar(self, name: str, section: Section | None = None) -> str | None:
         """A scalar field as the section sees it: its own, its H2's, or the article's."""
@@ -139,6 +150,7 @@ def parse(path: str, text: str) -> Document:
     inside, headings = _scan(lines, body_start)
     h2_lines = [index for index, level, _ in headings if level == 2]
     top_end = h2_lines[0] if h2_lines else len(lines)
+    sections, comment_lines = _sections(lines, inside, headings)
     return Document(
         path=path,
         lines=tuple(lines),
@@ -147,7 +159,9 @@ def parse(path: str, text: str) -> Document:
         top_end=top_end,
         top_headings=tuple(heading for index, _, heading in headings if index < top_end),
         h1=next((heading for _, level, heading in headings if level == 1), None),
-        sections=tuple(_sections(lines, inside, headings)),
+        sections=tuple(sections),
+        heading_lines=frozenset(index for index, _, _ in headings),
+        comment_lines=frozenset(comment_lines),
     )
 
 
@@ -276,10 +290,11 @@ def _sections(
     lines: Sequence[str],
     inside: Sequence[bool],
     headings: Sequence[tuple[int, int, str]],
-) -> list[Section]:
-    """The H2 and H3 sections, numbered, with their ends and their own metadata."""
+) -> tuple[list[Section], set[int]]:
+    """The H2 and H3 sections, numbered, with their ends and metadata, and the metadata lines."""
     marks = [(index, level) for index, level, _ in headings if level in (2, 3)]
     sections: list[Section] = []
+    comment_lines: set[int] = set()
     h2_key: str | None = None
     h2_count = 0
     h3_count = 0
@@ -298,6 +313,9 @@ def _sections(
             (later for later, later_level in marks if later > index and later_level <= level),
             len(lines),
         )
+        fields, span = _metadata(lines, inside, index)
+        if span is not None:
+            comment_lines.update(range(span[0], span[1] + 1))
         sections.append(
             Section(
                 key=key,
@@ -306,28 +324,36 @@ def _sections(
                 start=index,
                 end=end,
                 parent=parent,
-                meta=_metadata(lines, inside, index),
+                meta=fields,
             )
         )
-    return sections
+    return sections, comment_lines
 
 
-def _metadata(lines: Sequence[str], inside: Sequence[bool], heading: int) -> dict[str, str]:
-    """The section metadata that follows the heading at index heading, if valid there."""
+def _metadata(
+    lines: Sequence[str], inside: Sequence[bool], heading: int
+) -> tuple[dict[str, str], tuple[int, int] | None]:
+    """The metadata that follows the heading at index heading, and the lines it spans."""
     index = heading + 1
     while index < len(lines) and not inside[index] and not lines[index].strip(" \t"):
         index += 1
     if index >= len(lines) or inside[index]:
-        return {}
+        return {}, None
     first = lines[index].lstrip(" \t")
     if not first.startswith(METADATA_OPEN):
-        return {}
-    body = _comment_body(lines, index, first[len(METADATA_OPEN) :])
-    return {} if body is None else _fields(body)
+        return {}, None
+    found = _comment_body(lines, index, first[len(METADATA_OPEN) :])
+    if found is None:
+        return {}, None
+    body, last = found
+    return _fields(body), (index, last)
 
 
-def _comment_body(lines: Sequence[str], start: int, first: str) -> str | None:
-    """The text between the metadata opener and "-->", or None when it is unclosed or dirty."""
+def _comment_body(lines: Sequence[str], start: int, first: str) -> tuple[str, int] | None:
+    """The text between the opener and "-->", and the line that closes it.
+
+    None when the comment is unclosed, or when text other than spaces follows "-->".
+    """
     parts: list[str] = []
     current = first
     index = start
@@ -337,7 +363,7 @@ def _comment_body(lines: Sequence[str], start: int, first: str) -> str | None:
             if after.strip(" \t"):
                 return None
             parts.append(body)
-            return " ".join(parts)
+            return " ".join(parts), index
         parts.append(current)
         index += 1
         if index >= len(lines):

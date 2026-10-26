@@ -4,8 +4,6 @@ import pytest
 
 from .harness import Kb
 
-pytestmark = pytest.mark.xfail(strict=True, reason="kb recall is not implemented yet")
-
 NAS_RESTART = (
     "knowledge/infra/nas.md#1 | Restart order | fresh, verified 2026-08-16 | 1 source\n"
     "## Restart order\n"
@@ -17,8 +15,6 @@ NAS_RESTART = (
     "\n"
     "Restart Syncthing after Traefik, and before Plex.\n"
     "\n"
-    "Uncurated (pending, not yet verified):\n"
-    "  observations/pending/20261024T094659-8d6fecbe.md | 2026-10-24 | NAS restart after the update\n"
     "Read with: kb read <locator>\n"
 )
 NAS_RESTART_LIMIT_ONE = (
@@ -29,8 +25,6 @@ NAS_RESTART_LIMIT_ONE = (
     "\n"
     "Also relevant:\n"
     "  knowledge/infra/syncthing.md#2 | Restart order\n"
-    "Uncurated (pending, not yet verified):\n"
-    "  observations/pending/20261024T094659-8d6fecbe.md | 2026-10-24 | NAS restart after the update\n"
     "Read with: kb read <locator>\n"
 )
 SYNCTHING_ONLY = (
