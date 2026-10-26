@@ -202,3 +202,13 @@ def test_a_flag_is_indexed_under_its_word_as_well_as_itself() -> None:
 
 def test_a_query_keeps_a_flag_whole() -> None:
     assert search.query_terms(["--rename", "tracks"]) == ("--rename", "track")
+
+
+def test_a_derived_noun_matches_its_base_verb() -> None:
+    assert search.query_terms(["retention"]) == ("retain",)
+    assert search.query_terms(["retained"]) == search.query_terms(["retention"])
+    assert search.query_terms(["decision"]) == search.query_terms(["decide"])
+
+
+def test_a_derived_form_indexes_under_the_base_verb() -> None:
+    assert search.index_tokens("Current retention policy") == ("current", "retain", "polici")

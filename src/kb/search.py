@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
+from kb.derivations import BASE_FORMS
 from kb.model import Document
 from kb.stem import stem
 
@@ -200,8 +201,13 @@ class _Profile:
 
 
 def _stem(token: str) -> str:
-    """The stem of a plain English word. Flags, paths, and dates are returned unchanged."""
-    return stem(token) if token.isascii() and token.isalpha() else token
+    """The stem of a plain English word, after the derivation lexicon.
+
+    Flags, paths, and dates are returned unchanged.
+    """
+    if not (token.isascii() and token.isalpha()):
+        return token
+    return stem(BASE_FORMS.get(token, token))
 
 
 def tokenize(text: str) -> list[str]:
