@@ -1,0 +1,114 @@
+{
+  "format": "kb-retrieval-questions",
+  "version": 1,
+  "description": "Synthetic question-mode retrieval cases covering normalization, routing, temporal claims, conflicts, and abstention.",
+  "cases": [
+    {
+      "id": "question-normalization-01",
+      "category": "question_normalization",
+      "query": "How do I restart --no-verify on 2026-10-03 from /srv/backups/kb?",
+      "query_mode": "question",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/question-operations.md#1"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "question-unanswerable-01",
+      "category": "question_abstention",
+      "query": "What is a quantum orchard?",
+      "query_mode": "question",
+      "unanswerable": true,
+      "expected": [],
+      "requires_all": false
+    },
+    {
+      "id": "question-backup-location-01",
+      "category": "question_paraphrase",
+      "query": "Where are the backups?",
+      "query_mode": "question",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/question-operations.md#3"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "question-api-hostname-01",
+      "category": "question_punctuation",
+      "query": "What is the API hostname?",
+      "query_mode": "question",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/question-operations.md#4"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "question-deploy-workflow-01",
+      "category": "question_paraphrase",
+      "query": "How do I deploy the API service?",
+      "query_mode": "question",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/question-operations.md#2"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "question-alias-routing-01",
+      "category": "question_alias",
+      "query": "Where is the production tunnel?",
+      "query_mode": "question",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/network.md#1",
+        "knowledge/network.md#top"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "temporal-current-01",
+      "category": "temporal_current",
+      "query": "What is the current deploy target as of 2026-09-01?",
+      "query_mode": "question",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/temporal.md#1"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "temporal-historical-01",
+      "category": "temporal_historical",
+      "query": "What was the previous deploy target before 2026-09-01?",
+      "query_mode": "question",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/temporal.md#2"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "conflict-unresolved-01",
+      "category": "question_conflict",
+      "query": "What is the unresolved backup destination conflict?",
+      "query_mode": "question",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/conflicts.md#1"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "question-unanswerable-02",
+      "category": "question_abstention",
+      "query": "Where is the blue comet retention policy?",
+      "query_mode": "question",
+      "unanswerable": true,
+      "expected": [],
+      "requires_all": false
+    }
+  ]
+}
