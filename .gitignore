@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Environments and build output
+.venv/
+build/
+dist/
+
+# Tool caches and reports
+.coverage
+.coverage.*
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+coverage.xml
+htmlcov/
+
+# Used for temporary work
+plan.md
+notes/
