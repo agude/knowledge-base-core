@@ -333,10 +333,10 @@
     },
     {
       "id": "absent-02",
-      "category": "absent_answer",
+      "category": "recorded_absence",
       "query": "blue comet retention",
-      "unanswerable": true,
-      "expected": [],
+      "unanswerable": false,
+      "expected": ["knowledge/legacy.md#2"],
       "requires_all": false
     },
     {
