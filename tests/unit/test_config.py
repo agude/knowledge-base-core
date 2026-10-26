@@ -1,0 +1,110 @@
+"""Tests for finding the content repository."""
+
+from pathlib import Path
+
+import pytest
+
+from kb import config
+from kb.errors import KbError
+
+
+def write(path: Path, text: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_kb_content_wins_over_the_config_file(tmp_path: Path) -> None:
+    root = tmp_path / "kb"
+    root.mkdir()
+    config_path = write(tmp_path / "config.toml", f'content = "{tmp_path / "other"}"\n')
+    assert config.content_root({"KB_CONTENT": str(root)}, config_path) == root.resolve()
+
+
+def test_an_empty_kb_content_is_unset(tmp_path: Path) -> None:
+    root = tmp_path / "kb"
+    root.mkdir()
+    config_path = write(tmp_path / "config.toml", f'content = "{root}"\n')
+    assert config.content_root({"KB_CONTENT": ""}, config_path) == root.resolve()
+
+
+def test_the_config_file_supplies_the_root(tmp_path: Path) -> None:
+    root = tmp_path / "kb"
+    root.mkdir()
+    config_path = write(tmp_path / "config.toml", f'content = "{root}"\n')
+    assert config.content_root({}, config_path) == root.resolve()
+
+
+def test_no_setting_anywhere_names_the_config_file(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    with pytest.raises(KbError) as error:
+        config.content_root({}, config_path)
+    assert str(error.value) == (
+        'knowledge base: no content repository; set KB_CONTENT or add content = "PATH" '
+        f"to {config_path}"
+    )
+
+
+def test_a_kb_content_that_is_not_a_directory_is_reported(tmp_path: Path) -> None:
+    missing = tmp_path / "missing"
+    with pytest.raises(KbError, match=r"^knowledge base: content root is not a directory: "):
+        config.content_root({"KB_CONTENT": str(missing)}, tmp_path / "config.toml")
+
+
+def test_tilde_expands_in_kb_content(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / "notes").mkdir()
+    assert config.content_root({"KB_CONTENT": "~/notes"}, tmp_path / "x.toml") == (
+        (tmp_path / "notes").resolve()
+    )
+
+
+def test_tilde_expands_in_the_config_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / "notes").mkdir()
+    config_path = write(tmp_path / "config.toml", 'content = "~/notes"\n')
+    assert config.content_root({}, config_path) == (tmp_path / "notes").resolve()
+
+
+def test_an_unreadable_config_file_is_reported(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_path = write(tmp_path / "config.toml", 'content = "x"\n')
+
+    def deny(self: Path, *args: object, **kwargs: object) -> str:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(Path, "read_text", deny)
+    with pytest.raises(KbError) as error:
+        config.read_content_setting(config_path)
+    assert str(error.value) == (
+        f"knowledge base: cannot read config file {config_path}: Permission denied"
+    )
+
+
+def test_a_missing_config_file_has_no_setting(tmp_path: Path) -> None:
+    assert config.read_content_setting(tmp_path / "config.toml") is None
+
+
+def test_invalid_toml_is_reported(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    with pytest.raises(KbError, match=r"^knowledge base: invalid config file "):
+        config.parse_content_setting("content = \n", config_path)
+
+
+def test_a_config_without_a_content_key_has_no_setting(tmp_path: Path) -> None:
+    assert config.parse_content_setting("other = 1\n", tmp_path / "config.toml") is None
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        ("content = 3\n", "content must be a string"),
+        ('content = ""\n', "content must not be empty"),
+    ],
+)
+def test_a_bad_content_value_is_reported(tmp_path: Path, text: str, message: str) -> None:
+    config_path = tmp_path / "config.toml"
+    with pytest.raises(KbError) as error:
+        config.parse_content_setting(text, config_path)
+    assert str(error.value) == f"knowledge base: invalid config file {config_path}: {message}"
