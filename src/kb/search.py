@@ -204,13 +204,27 @@ def tokenize(text: str) -> list[str]:
 
 
 def index_tokens(text: str) -> tuple[str, ...]:
-    """The tokens of text that are not stopwords."""
-    return tuple(token for token in tokenize(text) if token not in STOPWORDS)
+    """The tokens a document is indexed under: its non-stopwords, and the words in each flag.
+
+    A flag such as --rename also indexes as the word rename, so a query for the word finds it.
+    """
+    tokens: list[str] = []
+    for token in tokenize(text):
+        if token in STOPWORDS:
+            continue
+        tokens.append(token)
+        if token.startswith("--"):
+            tokens.extend(word for word in tokenize(token[2:]) if word not in STOPWORDS)
+    return tuple(tokens)
 
 
 def query_terms(words: Sequence[str]) -> tuple[str, ...]:
-    """The distinct, non-stopword terms of a query, in the order they first appear."""
-    return tuple(dict.fromkeys(index_tokens(" ".join(words))))
+    """The distinct, non-stopword terms of a query, in the order they first appear.
+
+    Flags stay whole in a query, so --rename is one term.
+    """
+    tokens = [token for token in tokenize(" ".join(words)) if token not in STOPWORDS]
+    return tuple(dict.fromkeys(tokens))
 
 
 def make_unit(

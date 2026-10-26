@@ -1,9 +1,9 @@
-"""kb recall: the curated sections that answer a query, and the evidence when none do.
+"""kb recall: the curated sections that answer a query, and the evidence behind them.
 
-Curated knowledge (knowledge/ and sources/) is searched first. Pending
-observations are searched on every call and listed as uncurated. When no
-curated section qualifies, the archived observations and the questions are
-searched too, and the best of them are listed as evidence.
+Curated knowledge is knowledge/ and sources/. Pending observations are
+searched on every call and listed as uncurated beside any curated results.
+When no curated section matches, the archived observations and the questions
+are searched too, and the best of them are listed as evidence.
 """
 
 import os
@@ -30,9 +30,11 @@ QUESTIONS = ("questions/open", "questions/resolved")
 SPEC = Spec(
     usage="recall QUERY... [--limit N] [--in PATH]",
     summary=(
-        "Find the curated sections that answer QUERY, each with its header line. When none\n"
-        "match, list the observations and questions that do. --limit N sets how many sections\n"
-        "print in full (default 3). --in PATH limits the search to a file or directory."
+        "Find the curated sections that answer QUERY, each with its header line. The first N\n"
+        "sections print in full (default 3); the next few are listed. Pending observations\n"
+        "that match are listed as uncurated. When no section matches, the observations and\n"
+        "questions that do match are listed as evidence. --in PATH limits the search to a\n"
+        "file or directory."
     ),
     valued=frozenset({"--limit", "--in"}),
 )
@@ -64,33 +66,17 @@ def run(words: Sequence[str]) -> int:
 
 
 def answer(context: Context, words: Sequence[str], limit: int, scope: str | None) -> str:
-    """The full text of an answer to a query, with its trailing lines."""
+    """The text of the answer to a query."""
     terms = search.query_terms(words)
-    documents = _curated(context, scope)
-    pairs = [
-        (document, candidate)
-        for document in documents
-        for candidate in search.article_candidates(document)
-    ]
-    hits = search.rank([candidate.unit for _, candidate in pairs], terms)
-    if hits:
-        return _with_results(context, [pairs[hit.index] for hit in hits], limit, terms, scope)
-    query = " ".join(words)
-    items = _ranked(_evidence(context, scope, (PENDING, ARCHIVED, *QUESTIONS)), terms)
-    head = f'No curated knowledge matches "{query}".'
-    if not items:
-        return head + "\n"
-    listing = ["Evidence:", *_evidence_lines(items[:FOLLOW_UP])]
-    return "\n".join([head, *listing, READ_WITH]) + "\n"
-
-
-def _with_results(
-    context: Context,
-    results: Sequence[tuple[Document, search.Candidate]],
-    limit: int,
-    terms: Sequence[str],
-    scope: str | None,
-) -> str:
+    results = _ranked(context.root, words, scope)
+    if not results:
+        items = _rank_evidence(
+            _evidence(context.root, scope, (PENDING, ARCHIVED, *QUESTIONS)), terms, FOLLOW_UP
+        )
+        head = f'No curated knowledge matches "{" ".join(words)}".'
+        if not items:
+            return head + "\n"
+        return "\n".join([head, "Evidence:", *_evidence_lines(items), READ_WITH]) + "\n"
     blocks = [
         _result_block(context, document, candidate) for document, candidate in results[:limit]
     ]
@@ -102,12 +88,33 @@ def _with_results(
             f"  {document.path}#{candidate.fragment} | {candidate.heading}"
             for document, candidate in follow
         )
-    uncurated = _ranked(_evidence(context, scope, (PENDING,)), terms)[:FOLLOW_UP]
+    uncurated = _rank_evidence(_evidence(context.root, scope, (PENDING,)), terms, FOLLOW_UP)
     if uncurated:
         tail.append("Uncurated (pending, not yet verified):")
         tail.extend(f"  {item.path} | {item.date} | {item.text}" for item in uncurated)
     tail.append(READ_WITH)
     return "\n".join(blocks) + "\n" + "\n".join(tail) + "\n"
+
+
+def ranked_locators(root: Path, words: Sequence[str], scope: str | None = None) -> list[str]:
+    """The curated locators that qualify for a query, best first. The evaluation uses this."""
+    return [
+        f"{document.path}#{candidate.fragment}"
+        for document, candidate in _ranked(root, words, scope)
+    ]
+
+
+def _ranked(
+    root: Path, words: Sequence[str], scope: str | None
+) -> list[tuple[Document, search.Candidate]]:
+    """The curated units that qualify for a query, best first."""
+    pairs = [
+        (document, candidate)
+        for document in _curated(root, scope)
+        for candidate in search.article_candidates(document)
+    ]
+    hits = search.rank([candidate.unit for _, candidate in pairs], search.query_terms(words))
+    return [pairs[hit.index] for hit in hits]
 
 
 def _result_block(context: Context, document: Document, candidate: search.Candidate) -> str:
@@ -135,45 +142,41 @@ def _in_scope(relpath: str, scope: str | None) -> bool:
     return scope is None or relpath == scope or relpath.startswith(scope + "/")
 
 
-def _curated(context: Context, scope: str | None) -> list[Document]:
+def _curated(root: Path, scope: str | None) -> list[Document]:
     paths = [
         path
         for directory in ("knowledge", "sources")
-        for path in corpus.markdown_files(context.root, directory)
+        for path in corpus.markdown_files(root, directory)
     ]
-    return [
-        corpus.read_document(context.root, path) for path in sorted(paths) if _in_scope(path, scope)
-    ]
+    return [corpus.read_document(root, path) for path in sorted(paths) if _in_scope(path, scope)]
 
 
 def _evidence(
-    context: Context, scope: str | None, directories: Sequence[str]
+    root: Path, scope: str | None, directories: Sequence[str]
 ) -> list[tuple[str, Document]]:
-    paths = [
-        path for directory in directories for path in corpus.markdown_files(context.root, directory)
-    ]
-    return [
-        (path, corpus.read_document(context.root, path)) for path in paths if _in_scope(path, scope)
-    ]
+    paths = [path for directory in directories for path in corpus.markdown_files(root, directory)]
+    return [(path, corpus.read_document(root, path)) for path in paths if _in_scope(path, scope)]
 
 
-def _ranked(evidence: Sequence[tuple[str, Document]], terms: Sequence[str]) -> list[Item]:
-    """Evidence items that qualify: best score first, then newest, then by path."""
+def _rank_evidence(
+    evidence: Sequence[tuple[str, Document]], terms: Sequence[str], limit: int
+) -> list[Item]:
+    """Up to limit evidence items that qualify: best score, then newest, then by path."""
     units = [search.evidence_unit(document) for _, document in evidence]
     hits = search.rank(units, terms)
     hits = sorted(hits, key=lambda hit: evidence[hit.index][0])
     hits = sorted(hits, key=lambda hit: _date(evidence[hit.index][1]), reverse=True)
     hits = sorted(hits, key=lambda hit: hit.score, reverse=True)
     items = []
-    for hit in hits[: 2 * FOLLOW_UP]:
+    for hit in hits[:limit]:
         path, document = evidence[hit.index]
         kind = _kind(path, document)
         items.append(Item(path, _date(document), kind, _text(kind, document, terms)))
-    return items[:FOLLOW_UP] if items else []
+    return items
 
 
 def _evidence_lines(items: Sequence[Item]) -> list[str]:
-    """Evidence lines with their columns aligned to the widest entry in the block."""
+    """Evidence lines with each column padded to its widest entry."""
     path_width = max(len(item.path) for item in items)
     kind_width = max(len(item.kind) for item in items)
     return [
@@ -198,6 +201,7 @@ def _date(document: Document) -> str:
 
 
 def _text(kind: str, document: Document, terms: Sequence[str]) -> str:
+    """Transcripts show their best matching line, since their titles are generic."""
     if kind == "transcript":
         return search.excerpt(document.prose(document.body_start, len(document.lines)), terms)
     return search.clip(locators.display_title(document), TITLE_WIDTH)

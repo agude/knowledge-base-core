@@ -122,6 +122,11 @@ package-check: build
     "$scratch/venv/bin/kb" --help >/dev/null
     echo "package-check: ${wheels[0]#dist/} installs and reports version $installed"
 
+# Score retrieval against question sets. Arguments: QUESTIONS [CONTENT]. Without them, every
+# tests/fixtures/*/questions.json is scored against the content beside it.
+eval *args:
+    uv run --locked python -m kb.evaluate {{ args }}
+
 # Bump the version, then commit and tag it. Does not push.
 release bump:
     #!/usr/bin/env bash

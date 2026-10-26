@@ -158,9 +158,10 @@ def test_ranked_evidence_is_newest_first_among_equal_scores() -> None:
         "observations/pending/b.md",
         "---\ntitle: alpha beta\ncreated: 2026-02-01T00:00:00Z\n---\nText.\n",
     )
-    items = recall._ranked(
+    items = recall._rank_evidence(
         [("observations/pending/a.md", older), ("observations/pending/b.md", newer)],
         ["alpha", "beta"],
+        5,
     )
     assert [item.path for item in items] == [
         "observations/pending/b.md",
