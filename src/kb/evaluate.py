@@ -9,6 +9,12 @@ expected locator is in the top 3.
 
 `just eval` scores every tests/fixtures/*/questions.json against the content
 beside it. `just eval QUESTIONS [CONTENT]` scores one set.
+
+A set meets the acceptance criterion when every answerable case has an expected
+locator in the top 3 and no unanswerable case returns a curated result. The
+verdict line for a set reads `acceptance: met`, or `acceptance: not met (<ids>)`
+with the ids of the cases that fail. The exit status is 1 when any set is not
+met, and 0 otherwise.
 """
 
 import json
@@ -66,7 +72,7 @@ class Outcome:
 
     @property
     def meets(self) -> bool:
-        """The step 7 test for this case: a hit when answerable, no curated result when not."""
+        """The criterion for one case: a hit when answerable, no curated result when not."""
         return not self.ranked if self.case.unanswerable else self.hit
 
 
@@ -139,22 +145,22 @@ def report(name: str, outcomes: Sequence[Outcome]) -> str:
 
 
 def unmet(outcomes: Sequence[Outcome]) -> list[str]:
-    """The ids of the cases that fail the plan.md step 7 criterion as written."""
+    """The ids of the cases that do not meet the criterion in Outcome.meets."""
     return [outcome.case.id for outcome in outcomes if not outcome.meets]
 
 
 def verdict(outcomes: Sequence[Outcome]) -> str:
-    """The plan.md step 7 acceptance verdict for one question set."""
+    """The acceptance verdict for one question set, under the criterion in Outcome.meets."""
     failed = unmet(outcomes)
     if not failed:
-        return "plan.md step 7 acceptance: met"
-    return f"plan.md step 7 acceptance: not met ({', '.join(failed)})"
+        return "acceptance: met"
+    return f"acceptance: not met ({', '.join(failed)})"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Score the question sets named on the command line, or every set under tests/fixtures.
 
-    Returns 1 when a set fails the plan.md step 7 criterion, and 0 otherwise.
+    Returns 1 when a set does not meet the criterion, and 0 otherwise.
     """
     words = list(sys.argv[1:] if argv is None else argv)
     status = 0

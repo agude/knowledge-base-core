@@ -176,7 +176,7 @@ def test_main_without_arguments_scores_every_fixture_set(
     out = capsys.readouterr().out
     assert "tests/fixtures/retrieval-v1/questions.json" in out
     assert "tests/fixtures/retrieval-question-v1/questions.json" in out
-    assert out.count("plan.md step 7 acceptance:") == 2
+    assert out.count("acceptance:") == 2
     assert status == (1 if "not met" in out else 0)
 
 
@@ -214,14 +214,14 @@ def test_verdict_is_met_when_every_case_meets_the_criterion() -> None:
     answer = evaluate.Case("hit", "q", ("a.md#1",), False)
     gap = evaluate.Case("gap", "q", (), True)
     outcomes = [evaluate.Outcome(answer, ("a.md#1",)), evaluate.Outcome(gap, ())]
-    assert evaluate.verdict(outcomes) == "plan.md step 7 acceptance: met"
+    assert evaluate.verdict(outcomes) == "acceptance: met"
 
 
 def test_verdict_names_every_case_that_fails_the_criterion() -> None:
     missed = evaluate.Case("missed", "q", ("z.md#1",), False)
     noisy = evaluate.Case("noisy", "q", (), True)
     outcomes = [evaluate.Outcome(missed, ("a.md#1",)), evaluate.Outcome(noisy, ("a.md#1",))]
-    assert evaluate.verdict(outcomes) == ("plan.md step 7 acceptance: not met (missed, noisy)")
+    assert evaluate.verdict(outcomes) == "acceptance: not met (missed, noisy)"
 
 
 def test_main_exits_one_when_a_case_fails_the_criterion(
@@ -232,7 +232,7 @@ def test_main_exits_one_when_a_case_fails_the_criterion(
         [case(id="gap", query="quantum zebra", expected=["a.md#1"])],
     )
     assert evaluate.main([str(questions), str(FIXTURES / "content")]) == 1
-    assert "plan.md step 7 acceptance: not met (gap)" in capsys.readouterr().out
+    assert "acceptance: not met (gap)" in capsys.readouterr().out
 
 
 def test_main_exits_zero_when_every_case_meets_the_criterion(
@@ -243,4 +243,4 @@ def test_main_exits_zero_when_every_case_meets_the_criterion(
         [case(id="found", query="nas restart order", expected=["knowledge/infra/nas.md#1"])],
     )
     assert evaluate.main([str(questions), str(FIXTURES / "content")]) == 0
-    assert "plan.md step 7 acceptance: met" in capsys.readouterr().out
+    assert "acceptance: met" in capsys.readouterr().out
