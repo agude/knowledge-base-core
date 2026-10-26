@@ -10,7 +10,6 @@ from .harness import Kb
 PYPROJECT = Path(__file__).resolve().parents[2] / "pyproject.toml"
 
 
-@pytest.mark.xfail(strict=True, reason="command dispatch is not implemented yet")
 def test_help_flag_prints_usage(kb: Kb) -> None:
     result = kb("--help")
     assert result.returncode == 0
@@ -18,7 +17,6 @@ def test_help_flag_prints_usage(kb: Kb) -> None:
     assert result.stderr == ""
 
 
-@pytest.mark.xfail(strict=True, reason="command dispatch is not implemented yet")
 def test_no_arguments_prints_usage(kb: Kb) -> None:
     result = kb()
     assert result.returncode == 0
@@ -39,7 +37,6 @@ def test_version_flag_prints_the_package_version(kb: Kb) -> None:
     assert result.stdout == f"kb {project['version']}\n"
 
 
-@pytest.mark.xfail(strict=True, reason="command dispatch is not implemented yet")
 def test_unknown_command_is_a_usage_error(kb: Kb) -> None:
     result = kb("nosuch")
     assert result.returncode == 1
@@ -47,7 +44,6 @@ def test_unknown_command_is_a_usage_error(kb: Kb) -> None:
     assert result.stderr == "Unknown command: nosuch\n"
 
 
-@pytest.mark.xfail(strict=True, reason="command dispatch is not implemented yet")
 def test_unknown_option_before_the_command_is_a_usage_error(kb: Kb) -> None:
     result = kb("--bogus")
     assert result.returncode == 1
