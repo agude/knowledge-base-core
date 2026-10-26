@@ -157,6 +157,9 @@ TOKEN = re.compile(
     r"|[a-z0-9_.-]*(?:/[a-z0-9_.-]+)+"
     r"|[^\W_]+(?:'[^\W_]+)*"
 )
+ABSENCE_CUES = frozenset({"recorded", "documented", "tracked"})
+COPULAS = frozenset({"is", "are", "was", "were"})
+SENTENCE_END = re.compile(r"[.!?]+")
 TITLE_WEIGHT = 3.0
 ALIAS_WEIGHT = 3.0
 HEADING_WEIGHT = 2.0
@@ -175,6 +178,7 @@ class Unit:
     headings: tuple[str, ...]
     body: tuple[str, ...]
     phrases: frozenset[str]
+    absent: frozenset[str]
 
 
 @dataclass(frozen=True)
@@ -248,9 +252,19 @@ def query_terms(words: Sequence[str]) -> tuple[str, ...]:
 
 
 def make_unit(
-    title: str, aliases: Sequence[str], headings: Sequence[str], body: Sequence[str]
+    title: str,
+    aliases: Sequence[str],
+    headings: Sequence[str],
+    body: Sequence[str],
+    *,
+    with_absence: bool = True,
 ) -> Unit:
-    """A unit from its title, aliases, headings, and body lines."""
+    """A unit from its title, aliases, headings, and body lines.
+
+    with_absence applies the absence rule. It is on for curated sections, where a
+    section that says its subject is not recorded is not an answer about it. It is off
+    for evidence, where such a record is the gap itself.
+    """
     title_tokens = index_tokens(title)
     alias_tokens = [index_tokens(alias) for alias in aliases]
     heading_tokens = [index_tokens(heading) for heading in headings]
@@ -263,7 +277,30 @@ def make_unit(
         headings=tuple(token for tokens in heading_tokens for token in tokens),
         body=tuple(token for line in body for token in index_tokens(line)),
         phrases=frozenset(phrases),
+        absent=absent_terms(body) if with_absence else frozenset(),
     )
+
+
+def absent_terms(lines: Sequence[str]) -> frozenset[str]:
+    """The stems of the terms that a passage says are not recorded.
+
+    In "X is not recorded" or "X is unknown", the words before the cue are the subject.
+    A unit that says its subject is not recorded does not hold that subject as present, so
+    the subject's terms do not count toward its match. Only the words before the cue count.
+    """
+    found: set[str] = set()
+    for line in lines:
+        for sentence in SENTENCE_END.split(line):
+            words = tokenize(sentence)
+            for index, word in enumerate(words):
+                if word == "not" and index + 1 < len(words) and words[index + 1] in ABSENCE_CUES:
+                    subject = words[:index]
+                elif word == "unknown" and index >= 1 and words[index - 1] in COPULAS:
+                    subject = words[: index - 1]
+                else:
+                    continue
+                found.update(_stem(token) for token in subject if token not in STOPWORDS)
+    return frozenset(found)
 
 
 def article_candidates(document: Document) -> list[Candidate]:
@@ -293,7 +330,7 @@ def article_candidates(document: Document) -> list[Candidate]:
 def evidence_unit(document: Document) -> Unit:
     """The unit of an evidence file: its title and all of its text."""
     body = document.prose(document.body_start, len(document.lines))
-    return make_unit(document.title or "", (), (), body)
+    return make_unit(document.title or "", (), (), body, with_absence=False)
 
 
 def rank(units: Sequence[Unit], terms: Sequence[str]) -> list[Hit]:
@@ -371,6 +408,8 @@ def _profile(unit: Unit, terms: Sequence[str]) -> _Profile:
     length = sum(weight * len(tokens) for tokens, weight in fields)
     frequency: dict[str, float] = {}
     for term in terms:
+        if term in unit.absent:
+            continue
         count = sum(weight * tokens.count(term) for tokens, weight in fields)
         if count:
             frequency[term] = count
