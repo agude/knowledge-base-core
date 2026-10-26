@@ -23,6 +23,33 @@ from `content = "PATH"` in `config.toml`. That file is
 `$XDG_CONFIG_HOME/kb/config.toml`, or `~/.config/kb/config.toml` without
 `XDG_CONFIG_HOME`, and `%LOCALAPPDATA%\kb\config.toml` on Windows.
 
+### `kb recall` matching
+
+`kb recall` ranks sections by BM25. Query words and section words are matched
+the same way:
+
+- Words are lowercased, and English stopwords are dropped.
+- Dates, paths, flags, and negation words such as `not` are kept.
+- Other words are Porter-stemmed, so `backups` matches `backup`.
+- A derived noun maps to its base verb before stemming, so `retention` matches
+  `retained`. The table is in `src/kb/derivations.py`.
+- A flag such as `--rename` is indexed under the whole flag and under its bare
+  word, so a query for `rename` finds it.
+
+### `kb map` output
+
+`kb map` prints each article as `PATH | Title`, followed by its sections as full
+locators that `kb read` accepts. This example is the first two articles of the
+output of `KB_CONTENT=tests/fixtures/content uv run kb map --depth 3`:
+
+```text
+knowledge/infra/backups.md | Backups
+  knowledge/infra/backups.md#1 | Schedule
+knowledge/infra/nas.md | NAS
+  knowledge/infra/nas.md#1 | Restart order
+  knowledge/infra/nas.md#2 | Power loss
+```
+
 ## Development
 
 Requires [uv](https://docs.astral.sh/uv/) 0.13 or newer and [just](https://just.systems/).

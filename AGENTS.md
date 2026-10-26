@@ -51,3 +51,13 @@ CI pass.
   `python_version` consistent.
 - The pre-commit hook runs `just lint` and changes nothing. If it fails, run
   `just format`, then commit again.
+
+## Evaluation
+
+- `just eval` exits 0 before any ranking change is committed.
+- Never add code to make one evaluation case pass. A ranking change is general,
+  and its commit reports its effect on every set, including the live set.
+- When a case fails because its label is wrong, fix the label and say why in
+  the commit. Do not change code to match a wrong label.
+- Do not exempt a failing case from the criterion. Report it to the user.
+- A lexicon entry must change a stem; the test enforces it.
