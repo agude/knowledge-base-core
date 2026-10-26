@@ -212,3 +212,69 @@ def test_a_derived_noun_matches_its_base_verb() -> None:
 
 def test_a_derived_form_indexes_under_the_base_verb() -> None:
     assert search.index_tokens("Current retention policy") == ("current", "retain", "polici")
+
+
+def test_a_numeric_identifier_is_one_token() -> None:
+    assert search.tokenize("dirs 50-59 and 50.10.") == ["dirs", "50-59", "and", "50.10"]
+
+
+def test_words_joined_without_a_digit_tokenize_as_before() -> None:
+    assert search.tokenize("well-known wikidata-pilot nas.md") == [
+        "well",
+        "known",
+        "wikidata",
+        "pilot",
+        "nas",
+        "md",
+    ]
+
+
+def test_a_date_stays_one_token() -> None:
+    assert search.tokenize("on 2026-10-26") == ["on", "2026-10-26"]
+
+
+def test_a_date_followed_by_a_dot_or_a_word_still_splits_as_before() -> None:
+    assert search.tokenize("on 2026-10-26.md") == ["on", "2026-10-26", "md"]
+    assert search.tokenize("2026-10-26-notes") == ["2026-10-26", "notes"]
+
+
+def test_a_numeric_identifier_is_indexed_whole_and_by_part() -> None:
+    assert search.index_tokens("Area 50-59") == ("area", "50-59", "50", "59")
+
+
+def test_a_dotted_numeric_identifier_is_indexed_by_each_part() -> None:
+    assert search.index_tokens("Python 3.14 and 192.168.1.10") == (
+        "python",
+        "3.14",
+        "3",
+        "14",
+        "192.168.1.10",
+        "192",
+        "168",
+        "1",
+        "10",
+    )
+
+
+def test_a_numeric_identifier_drops_stopword_parts() -> None:
+    assert search.index_tokens("2p42-a") == ("2p42-a", "2p42")
+
+
+def test_a_flag_with_a_numeric_word_keeps_its_old_split() -> None:
+    assert search.index_tokens("try --ipv4-only") == ("try", "--ipv4-only", "ipv4")
+
+
+def test_a_query_keeps_a_numeric_identifier_whole() -> None:
+    assert search.query_terms(["honeysuckle", "50-59"]) == ("honeysuckl", "50-59")
+
+
+def test_a_query_of_separate_numbers_matches_their_parts() -> None:
+    assert search.query_terms(["50", "59"]) == ("50", "59")
+
+
+def test_a_numeric_identifier_qualifies_only_the_units_that_hold_it() -> None:
+    units = [
+        search.make_unit("", [], [], ["files under 50-59"]),
+        search.make_unit("", [], [], ["50 apples and 59 pears"]),
+    ]
+    assert [hit.index for hit in search.rank(units, search.query_terms(["50-59"]))] == [0]

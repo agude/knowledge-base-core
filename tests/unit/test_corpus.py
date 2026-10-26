@@ -25,6 +25,8 @@ def test_markdown_files_under_a_directory_are_sorted_and_relative(root: Path) ->
         "knowledge/infra/backups.md",
         "knowledge/infra/nas.md",
         "knowledge/infra/plex.md",
+        "knowledge/infra/shelf-counts.md",
+        "knowledge/infra/shelves.md",
         "knowledge/infra/syncthing.md",
     ]
 

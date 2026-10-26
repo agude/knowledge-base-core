@@ -149,14 +149,24 @@ STOPWORDS = frozenset(
         "y",
     ]
 )
-# Dates, paths, flags, and words. Flags come first, so "--no-verify" stays whole, and
-# a path needs a slash, so "nas.md" is a word and "knowledge/nas.md" is one token.
-TOKEN = re.compile(
-    r"--[a-z0-9][a-z0-9_-]*"
-    r"|[0-9]{4}-[0-9]{2}-[0-9]{2}"
-    r"|[a-z0-9_.-]*(?:/[a-z0-9_.-]+)+"
-    r"|[^\W_]+(?:'[^\W_]+)*"
-)
+# Flags, dates, paths, numeric identifiers, and words, tried in that order. Flags come
+# first, so "--no-verify" stays whole. A path needs a slash, so "nas.md" is a word and
+# "knowledge/nas.md" is one token. A date comes before a numeric identifier, so
+# "2026-10-26-notes" is a date and a word. A numeric identifier is two or more runs of
+# [a-z0-9] joined by single "-" or "." with a digit among them, so "50-59" and
+# "192.168.1.10" are one token, and "well-known" is two words. The lookahead requires
+# that digit to be in the same chain of runs.
+_FLAG = r"--[a-z0-9][a-z0-9_-]*"
+_DATE = r"[0-9]{4}-[0-9]{2}-[0-9]{2}"
+_PATH = r"[a-z0-9_.-]*(?:/[a-z0-9_.-]+)+"
+_NUMERIC = r"(?=(?:[a-z0-9]+[-.])*[a-z0-9]*[0-9])[a-z0-9]+(?:[-.][a-z0-9]+)+"
+_WORD = r"[^\W_]+(?:'[^\W_]+)*"
+TOKEN = re.compile("|".join([_FLAG, _DATE, _PATH, _NUMERIC, _WORD]))
+# A flag's body keeps its old split: the same patterns without numeric identifiers.
+_FLAG_BODY = re.compile("|".join([_FLAG, _DATE, _PATH, _WORD]))
+_NUMERIC_ID = re.compile(_NUMERIC)
+_DATE_ONLY = re.compile(_DATE)
+_SEPARATOR = re.compile(r"[-.]")
 TITLE_WEIGHT = 3.0
 ALIAS_WEIGHT = 3.0
 HEADING_WEIGHT = 2.0
@@ -203,23 +213,34 @@ class _Profile:
 def _stem(token: str) -> str:
     """The stem of a plain English word, after the derivation lexicon.
 
-    Flags, paths, and dates are returned unchanged.
+    Flags, paths, numeric identifiers, and dates are returned unchanged.
     """
     if not (token.isascii() and token.isalpha()):
         return token
     return stem(BASE_FORMS.get(token, token))
 
 
+def _scan(pattern: re.Pattern[str], text: str) -> list[str]:
+    """The lowercase matches of pattern in text, with trailing dots removed."""
+    return [match.group(0).rstrip(".") for match in pattern.finditer(text.lower())]
+
+
+def _is_numeric(token: str) -> bool:
+    """Whether a token is a numeric identifier. A date is not one."""
+    return _NUMERIC_ID.fullmatch(token) is not None and _DATE_ONLY.fullmatch(token) is None
+
+
 def tokenize(text: str) -> list[str]:
-    """The lowercase tokens of text, stopwords included."""
-    return [match.group(0).rstrip(".") for match in TOKEN.finditer(text.lower())]
+    """The lowercase tokens of text, stopwords included. A numeric identifier is one token."""
+    return _scan(TOKEN, text)
 
 
 def index_tokens(text: str) -> tuple[str, ...]:
-    """The tokens a document is indexed under: its stems, and the words in each flag.
+    """The tokens a document is indexed under: its stems, and the parts of its identifiers.
 
     Stopwords are dropped. A flag such as --rename is indexed whole and also as the
-    stem of its word, so a query for the word finds it.
+    stem of each word in it, so a query for the word finds it. A numeric identifier such
+    as 50-59 is indexed whole and also as each of its parts, so 50 and 59 find it too.
     """
     tokens: list[str] = []
     for token in tokenize(text):
@@ -227,7 +248,12 @@ def index_tokens(text: str) -> tuple[str, ...]:
             continue
         if token.startswith("--"):
             tokens.append(token)
-            tokens.extend(_stem(word) for word in tokenize(token[2:]) if word not in STOPWORDS)
+            words = _scan(_FLAG_BODY, token[2:])
+            tokens.extend(_stem(word) for word in words if word not in STOPWORDS)
+        elif _is_numeric(token):
+            tokens.append(token)
+            parts = _SEPARATOR.split(token)
+            tokens.extend(_stem(part) for part in parts if part not in STOPWORDS)
         else:
             tokens.append(_stem(token))
     return tuple(tokens)
@@ -237,13 +263,14 @@ def query_terms(words: Sequence[str]) -> tuple[str, ...]:
     """The distinct terms of a query, in the order they first appear.
 
     Stopwords are dropped and the other words are stemmed the way documents are. A flag
-    stays whole, so --rename is one term.
+    and a numeric identifier stay whole, so --rename and 50-59 are each one term.
     """
     tokens: list[str] = []
     for token in tokenize(" ".join(words)):
         if token in STOPWORDS:
             continue
-        tokens.append(token if token.startswith("--") else _stem(token))
+        whole = token.startswith("--") or _is_numeric(token)
+        tokens.append(token if whole else _stem(token))
     return tuple(dict.fromkeys(tokens))
 
 

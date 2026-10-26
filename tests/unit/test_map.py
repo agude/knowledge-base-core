@@ -58,7 +58,7 @@ def test_default_maps_knowledge(content: Path, capsys: pytest.CaptureFixture[str
 
 def test_depth_one_and_a_directory_path(content: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert map_command.run(["--depth", "1", "infra"]) == 0
-    assert capsys.readouterr().out == "knowledge/infra | 4 articles\n"
+    assert capsys.readouterr().out == "knowledge/infra | 6 articles\n"
 
 
 def test_a_file_path_lists_one_article(content: Path, capsys: pytest.CaptureFixture[str]) -> None:

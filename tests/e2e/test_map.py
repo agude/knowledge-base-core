@@ -26,7 +26,7 @@ def test_depth_one_counts_articles_per_directory(kb: Kb) -> None:
     result = kb("map", "--depth", "1")
     rules = len(list((kb.content / "knowledge" / "rules").glob("*.md")))
     assert result.returncode == 0
-    assert result.stdout == f"knowledge/infra | 4 articles\nknowledge/rules | {rules} articles\n"
+    assert result.stdout == f"knowledge/infra | 6 articles\nknowledge/rules | {rules} articles\n"
 
 
 def test_depth_three_adds_h3_sections_indented_under_their_h2(kb: Kb) -> None:
@@ -53,6 +53,8 @@ def test_directory_path_restricts_the_listing(kb: Kb, argument: str) -> None:
         "knowledge/infra/backups.md | Backups",
         "knowledge/infra/nas.md | NAS",
         "knowledge/infra/plex.md | Plex",
+        "knowledge/infra/shelf-counts.md | Shelf counts",
+        "knowledge/infra/shelves.md | Shelves",
         "knowledge/infra/syncthing.md | Syncthing",
     ]
 

@@ -52,6 +52,14 @@ def test_one_quoted_argument_is_the_same_query(kb: Kb) -> None:
     assert kb("recall", "nas restart order").stdout == NAS_RESTART
 
 
+def test_a_numeric_identifier_ranks_the_section_that_holds_it_first(kb: Kb) -> None:
+    result = kb("recall", "50-59")
+    assert result.returncode == 0
+    assert result.stdout.splitlines()[0] == (
+        "knowledge/infra/shelves.md#1 | Row labels | fresh, verified 2026-10-20 | 0 sources"
+    )
+
+
 def test_limit_returns_the_rest_as_also_relevant(kb: Kb) -> None:
     result = kb("recall", "--limit", "1", "nas", "restart", "order")
     assert result.returncode == 0

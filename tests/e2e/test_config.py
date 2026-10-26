@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .harness import Kb
 
-INFRA_COUNT = "knowledge/infra | 4 articles\n"
+INFRA_COUNT = "knowledge/infra | 6 articles\n"
 
 
 def write_config(kb: Kb, text: str) -> Path:

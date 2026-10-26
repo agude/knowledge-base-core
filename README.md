@@ -35,6 +35,9 @@ the same way:
   `retained`. The table is in `src/kb/derivations.py`.
 - A flag such as `--rename` is indexed under the whole flag and under its bare
   word, so a query for `rename` finds it.
+- A numeric identifier such as `50-59` or `192.168.1.10` is matched whole, and
+  its parts also match. A query for `50-59` finds only sections that contain
+  that identifier, and a query for `50 59` finds sections that contain the parts.
 
 ### `kb map` output
 
