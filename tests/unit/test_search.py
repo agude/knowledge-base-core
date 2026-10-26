@@ -25,7 +25,7 @@ def test_tokenize_keeps_words_dates_flags_and_paths(text: str, tokens: list[str]
 
 
 def test_index_tokens_drop_stopwords_but_keep_negations() -> None:
-    assert search.index_tokens("Where is the NAS, not the backup?") == ("nas", "not", "backup")
+    assert search.index_tokens("Where is the NAS, not the backup?") == ("na", "not", "backup")
     assert search.index_tokens("no, never, without, can't") == (
         "no",
         "never",
@@ -36,25 +36,25 @@ def test_index_tokens_drop_stopwords_but_keep_negations() -> None:
 
 def test_query_terms_are_distinct_and_in_order() -> None:
     assert search.query_terms(["the", "nas", "restart", "nas", "order"]) == (
-        "nas",
+        "na",
         "restart",
         "order",
     )
-    assert search.query_terms(["where", "are", "the", "backups"]) == ("backups",)
+    assert search.query_terms(["where", "are", "the", "backups"]) == ("backup",)
     assert search.query_terms(["the", "and"]) == ()
 
 
 def test_query_terms_join_words_before_tokenizing() -> None:
-    assert search.query_terms(["nas restart", "order"]) == ("nas", "restart", "order")
+    assert search.query_terms(["nas restart", "order"]) == ("na", "restart", "order")
 
 
 def test_make_unit_collects_phrases_from_title_aliases_and_headings() -> None:
     unit = search.make_unit("The NAS", ["storage server"], ["Restart order"], ["Traefik first."])
-    assert unit.title == ("nas",)
-    assert unit.aliases == ("storage", "server")
+    assert unit.title == ("na",)
+    assert unit.aliases == ("storag", "server")
     assert unit.headings == ("restart", "order")
     assert unit.body == ("traefik", "first")
-    assert unit.phrases == frozenset({"nas", "storage server", "restart order"})
+    assert unit.phrases == frozenset({"na", "storag server", "restart order"})
 
 
 def test_make_unit_with_nothing_has_no_phrases() -> None:
@@ -76,8 +76,8 @@ def test_article_candidates_give_each_h2_and_a_top_with_prose() -> None:
         ("2", "Two"),
     ]
     one = candidates[1].unit
-    assert one.headings == ("one", "sub")
-    assert "body" in one.body
+    assert one.headings == ("on", "sub")
+    assert "bodi" in one.body
     assert "first" in one.aliases
     assert "alpha" in one.title
 
@@ -166,7 +166,7 @@ def test_excerpt_of_a_short_line_is_the_whole_line() -> None:
 
 def test_excerpt_shortens_a_long_line_around_its_first_match() -> None:
     line = "x" * 100 + " needle here " + "y" * 100
-    text = search.excerpt([line], ["needle"])
+    text = search.excerpt([line], search.query_terms(["needle"]))
     assert text.startswith("...")
     assert text.endswith("...")
     assert "needle" in text
@@ -175,7 +175,7 @@ def test_excerpt_shortens_a_long_line_around_its_first_match() -> None:
 
 def test_excerpt_with_a_match_at_the_start_has_no_leading_ellipsis() -> None:
     line = "needle " + "y" * 200
-    text = search.excerpt([line], ["needle"])
+    text = search.excerpt([line], search.query_terms(["needle"]))
     assert not text.startswith("...")
     assert text.endswith("...")
 
@@ -192,13 +192,13 @@ def test_evidence_unit_has_the_title_and_the_text_without_headings() -> None:
     unit = search.evidence_unit(document)
     assert unit.title == ("alpha", "note")
     assert unit.headings == ()
-    assert unit.body == ("beta", "words")
+    assert unit.body == ("beta", "word")
 
 
 def test_a_flag_is_indexed_under_its_word_as_well_as_itself() -> None:
-    assert search.index_tokens("run --rename now") == ("run", "--rename", "rename", "now")
-    assert search.index_tokens("try --no-verify") == ("try", "--no-verify", "no", "verify")
+    assert search.index_tokens("run --rename now") == ("run", "--rename", "renam", "now")
+    assert search.index_tokens("try --no-verify") == ("try", "--no-verify", "no", "verifi")
 
 
 def test_a_query_keeps_a_flag_whole() -> None:
-    assert search.query_terms(["--rename", "tracks"]) == ("--rename", "tracks")
+    assert search.query_terms(["--rename", "tracks"]) == ("--rename", "track")

@@ -136,9 +136,9 @@ def test_uncurated_pending_items_follow_curated_results(context: Context) -> Non
 
 
 def test_each_kind_of_evidence_is_labelled(context: Context) -> None:
-    text = recall.answer(context, ["backup", "disk", "owner"], 3, None)
+    text = recall.answer(context, ["disk", "owner", "listed"], 3, None)
     assert "questions/open/20261001T090000-bbbb2222.md | 2026-10-01 | open question" in text
-    resolved = recall.answer(context, ["transcoding", "caches", "answer"], 3, None)
+    resolved = recall.answer(context, ["keep", "answer", "described"], 3, None)
     assert "resolved question" in resolved
 
 

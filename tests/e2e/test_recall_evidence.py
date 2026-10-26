@@ -28,10 +28,10 @@ def test_transcript_evidence_shows_the_best_matching_line(kb: Kb) -> None:
 
 
 def test_open_question_is_evidence_with_its_kind(kb: Kb) -> None:
-    result = kb("recall", "backup", "disk", "owner")
+    result = kb("recall", "disk", "owner", "listed")
     assert result.returncode == 0
     assert result.stdout == (
-        'No curated knowledge matches "backup disk owner".\n'
+        'No curated knowledge matches "disk owner listed".\n'
         "Evidence:\n"
         "  questions/open/20261001T090000-bbbb2222.md | 2026-10-01 | open question "
         "| Who owns the backup disk?\n"
@@ -40,10 +40,10 @@ def test_open_question_is_evidence_with_its_kind(kb: Kb) -> None:
 
 
 def test_pending_observation_is_evidence_when_nothing_curated_matches(kb: Kb) -> None:
-    result = kb("recall", "firmware", "restarted", "plex")
+    result = kb("recall", "firmware", "upgrade", "plex")
     assert result.returncode == 0
     assert result.stdout == (
-        'No curated knowledge matches "firmware restarted plex".\n'
+        'No curated knowledge matches "firmware upgrade plex".\n'
         "Evidence:\n"
         "  observations/pending/20261024T094659-8d6fecbe.md | 2026-10-24 | observation "
         "| NAS restart after the update\n"

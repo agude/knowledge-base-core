@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 from kb.model import Document
+from kb.stem import stem
 
 STOPWORDS = frozenset(
     [
@@ -198,32 +199,45 @@ class _Profile:
     length: float
 
 
+def _stem(token: str) -> str:
+    """The stem of a plain English word. Flags, paths, and dates are returned unchanged."""
+    return stem(token) if token.isascii() and token.isalpha() else token
+
+
 def tokenize(text: str) -> list[str]:
     """The lowercase tokens of text, stopwords included."""
     return [match.group(0).rstrip(".") for match in TOKEN.finditer(text.lower())]
 
 
 def index_tokens(text: str) -> tuple[str, ...]:
-    """The tokens a document is indexed under: its non-stopwords, and the words in each flag.
+    """The tokens a document is indexed under: its stems, and the words in each flag.
 
-    A flag such as --rename also indexes as the word rename, so a query for the word finds it.
+    Stopwords are dropped. A flag such as --rename is indexed whole and also as the
+    stem of its word, so a query for the word finds it.
     """
     tokens: list[str] = []
     for token in tokenize(text):
         if token in STOPWORDS:
             continue
-        tokens.append(token)
         if token.startswith("--"):
-            tokens.extend(word for word in tokenize(token[2:]) if word not in STOPWORDS)
+            tokens.append(token)
+            tokens.extend(_stem(word) for word in tokenize(token[2:]) if word not in STOPWORDS)
+        else:
+            tokens.append(_stem(token))
     return tuple(tokens)
 
 
 def query_terms(words: Sequence[str]) -> tuple[str, ...]:
-    """The distinct, non-stopword terms of a query, in the order they first appear.
+    """The distinct terms of a query, in the order they first appear.
 
-    Flags stay whole in a query, so --rename is one term.
+    Stopwords are dropped and the other words are stemmed the way documents are. A flag
+    stays whole, so --rename is one term.
     """
-    tokens = [token for token in tokenize(" ".join(words)) if token not in STOPWORDS]
+    tokens: list[str] = []
+    for token in tokenize(" ".join(words)):
+        if token in STOPWORDS:
+            continue
+        tokens.append(token if token.startswith("--") else _stem(token))
     return tuple(dict.fromkeys(tokens))
 
 
@@ -314,7 +328,7 @@ def excerpt(lines: Sequence[str], terms: Sequence[str]) -> str:
     best = ""
     best_count = 0
     for line in lines:
-        count = len(wanted.intersection(tokenize(line)))
+        count = len(wanted.intersection(index_tokens(line)))
         if count > best_count:
             best, best_count = line.strip(), count
     if not best:
@@ -322,7 +336,11 @@ def excerpt(lines: Sequence[str], terms: Sequence[str]) -> str:
     if len(best) <= EXCERPT_WIDTH:
         return best
     position = next(
-        (match.start() for match in TOKEN.finditer(best.lower()) if match.group(0) in wanted),
+        (
+            match.start()
+            for match in TOKEN.finditer(best.lower())
+            if _stem(match.group(0)) in wanted
+        ),
         0,
     )
     start = max(0, position - EXCERPT_WIDTH // 4)
