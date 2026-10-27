@@ -19,8 +19,6 @@ import pytest
 
 from .harness import FIXTURE_TRANSCRIPTS, Kb, run_git
 
-pytestmark = pytest.mark.xfail(strict=True, reason="kb sync is implemented in Step 5")
-
 HOST = socket.gethostname().split(".", 1)[0]
 SINCE = "2026-10-24T00:00:00Z"
 SECRET = "fixture-only-secret-92841"
@@ -75,9 +73,15 @@ def set_mtime(path: Path, timestamp: str) -> None:
 
 
 def pending(kb: Kb) -> list[Path]:
-    """Return the content repository's pending observations in name order."""
+    """Return pending transcript observations in name order."""
     directory = kb.content / "observations" / "pending"
-    return sorted(directory.glob("*.md")) if directory.exists() else []
+    if not directory.exists():
+        return []
+    return [
+        path
+        for path in sorted(directory.glob("*.md"))
+        if field(path.read_text(encoding="utf-8"), "session") is not None
+    ]
 
 
 def observation_text(path: Path) -> str:
@@ -85,11 +89,14 @@ def observation_text(path: Path) -> str:
 
 
 def field(text: str, name: str) -> str | None:
-    """Read one scalar from the simple quoted fields in a transcript observation."""
-    prefix = f'{name}: "'
+    """Read one scalar from the transcript observation front matter."""
+    prefix = f"{name}: "
     for line in text.splitlines():
-        if line.startswith(prefix) and line.endswith('"'):
-            return line[len(prefix) : -1]
+        if line.startswith(prefix):
+            value = line[len(prefix) :]
+            if len(value) >= 2 and value[0] == value[-1] == '"':
+                return value[1:-1]
+            return value
     return None
 
 
@@ -135,7 +142,12 @@ def transcript_record(
 
 
 def count_text(paths: list[Path], text: str) -> int:
-    return sum(observation_text(path).count(text) for path in paths)
+    total = 0
+    for path in paths:
+        contents = observation_text(path)
+        body = contents.split("\n---\n", 1)[1] if "\n---\n" in contents else contents
+        total += body.count(text)
+    return total
 
 
 def claude_message(
@@ -480,7 +492,7 @@ def test_dry_run_leaves_repository_state_and_temporary_directory_unchanged(
     result = remote_git_kb("sync", "--dry-run")
 
     assert result.returncode == 0, result.stderr
-    assert "claude main part 1:" in result.stdout
+    assert "claude-code main part 1:" in result.stdout
     assert remote_git_kb.git("status", "--porcelain", "--untracked-files=all") == before_status
     assert remote_git_kb.git("rev-parse", "HEAD") == before_head
     assert git_refs(remote_git_kb) == before_refs

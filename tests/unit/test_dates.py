@@ -1,6 +1,6 @@
 """Tests for today's date and the KB_TODAY override."""
 
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pytest
 
@@ -45,3 +45,22 @@ def test_parse_date_accepts_iso_dates(text: str) -> None:
 )
 def test_parse_date_rejects_other_forms(text: str) -> None:
     assert dates.parse_date(text) is None
+
+
+def test_kb_now_fixes_time_and_normalizes_to_utc() -> None:
+    assert dates.now({"KB_NOW": "2026-10-26T05:00:00-07:00"}) == datetime(
+        2026, 10, 26, 12, tzinfo=UTC
+    )
+
+
+def test_without_kb_now_uses_the_current_utc_time() -> None:
+    current = dates.now({})
+    assert current.tzinfo is UTC
+
+
+@pytest.mark.parametrize("value", ["nope", "2026-10-26T12:00:00"])
+def test_malformed_kb_now_is_reported(value: str) -> None:
+    with pytest.raises(
+        KbError, match=r"^knowledge base: KB_NOW must be a time-zone-aware ISO timestamp"
+    ):
+        dates.now({"KB_NOW": value})

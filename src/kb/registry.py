@@ -7,6 +7,7 @@ from kb.commands import map as map_command
 from kb.commands import observe as observe_command
 from kb.commands import read as read_command
 from kb.commands import recall as recall_command
+from kb.commands import sync as sync_command
 from kb.errors import KbError
 
 
@@ -31,6 +32,11 @@ COMMANDS: tuple[Command, ...] = (
         name="observe",
         summary="Record one observation and commit it.",
         run=observe_command.run,
+    ),
+    Command(
+        name="sync",
+        summary="Harvest transcripts and sync the content repository.",
+        run=sync_command.run,
     ),
 )
 

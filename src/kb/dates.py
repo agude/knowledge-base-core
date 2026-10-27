@@ -2,7 +2,7 @@
 
 import re
 from collections.abc import Mapping
-from datetime import date
+from datetime import UTC, date, datetime
 
 from kb.errors import KbError
 
@@ -31,3 +31,19 @@ def today(environ: Mapping[str, str]) -> date:
     if parsed is None:
         raise KbError(f"knowledge base: KB_TODAY must be YYYY-MM-DD, not {fixed}")
     return parsed
+
+
+def now(environ: Mapping[str, str]) -> datetime:
+    """KB_NOW as a timezone-aware ISO timestamp, else the current UTC time."""
+    fixed = environ.get("KB_NOW", "")
+    if not fixed:
+        return datetime.now(UTC)
+    try:
+        parsed = datetime.fromisoformat(fixed.replace("Z", "+00:00"))
+    except ValueError:
+        parsed = None
+    if parsed is None or parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise KbError(
+            f"knowledge base: KB_NOW must be a time-zone-aware ISO timestamp, not {fixed}"
+        )
+    return parsed.astimezone(UTC)

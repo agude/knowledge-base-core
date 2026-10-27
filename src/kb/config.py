@@ -6,6 +6,7 @@ to the setup command, which is not part of this release.
 
 import tomllib
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 
 from kb.errors import KbError
@@ -48,6 +49,19 @@ def read_content_setting(config: Path) -> Path | None:
     return parse_content_setting(text, config)
 
 
+def read_harvest_since(config: Path) -> datetime | None:
+    """The optional harvest cutoff from the config file, normalized to UTC."""
+    if not config.is_file():
+        return None
+    try:
+        text = config.read_text(encoding="utf-8")
+    except OSError as error:
+        raise KbError(
+            f"knowledge base: cannot read config file {config}: {error.strerror}"
+        ) from error
+    return parse_harvest_since(text, config)
+
+
 def parse_content_setting(text: str, config: Path) -> Path | None:
     """The content key in config text, with ~ expanded, or None when it is absent."""
     try:
@@ -62,6 +76,23 @@ def parse_content_setting(text: str, config: Path) -> Path | None:
     if not value:
         raise KbError(f"knowledge base: invalid config file {config}: content must not be empty")
     return _expand(value)
+
+
+def parse_harvest_since(text: str, config: Path) -> datetime | None:
+    """Parse an optional timezone-aware TOML datetime used as the transcript cutoff."""
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as error:
+        raise KbError(f"knowledge base: invalid config file {config}: {error}") from error
+    value = data.get("harvest_since")
+    if value is None:
+        return None
+    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+        raise KbError(
+            f"knowledge base: invalid config file {config}: "
+            "harvest_since must be a time-zone-aware TOML datetime"
+        )
+    return value.astimezone(UTC)
 
 
 def _expand(text: str) -> Path:

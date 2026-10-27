@@ -1,5 +1,6 @@
 """Tests for finding the content repository."""
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -84,6 +85,47 @@ def test_an_unreadable_config_file_is_reported(
 
 def test_a_missing_config_file_has_no_setting(tmp_path: Path) -> None:
     assert config.read_content_setting(tmp_path / "config.toml") is None
+
+
+def test_harvest_since_is_optional_and_normalized_to_utc(tmp_path: Path) -> None:
+    path = write(tmp_path / "config.toml", "harvest_since = 2026-10-26T05:00:00-07:00\n")
+    assert config.read_harvest_since(path) == datetime(2026, 10, 26, 12, tzinfo=UTC)
+    assert config.read_harvest_since(tmp_path / "missing.toml") is None
+    assert config.parse_harvest_since("content = '/repo'\n", path) is None
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        ("harvest_since = 2026-10-26\n", "harvest_since must be a time-zone-aware TOML datetime"),
+        ("harvest_since = 12\n", "harvest_since must be a time-zone-aware TOML datetime"),
+        (
+            'harvest_since = "2026-10-26T12:00:00Z"\n',
+            "harvest_since must be a time-zone-aware TOML datetime",
+        ),
+        (
+            "harvest_since = 2026-10-26T12:00:00\n",
+            "harvest_since must be a time-zone-aware TOML datetime",
+        ),
+        ("harvest_since = \n", "invalid config file"),
+    ],
+)
+def test_invalid_harvest_since_is_reported(tmp_path: Path, text: str, message: str) -> None:
+    with pytest.raises(KbError, match=message):
+        config.parse_harvest_since(text, tmp_path / "config.toml")
+
+
+def test_unreadable_harvest_config_is_reported(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    path = write(tmp_path / "config.toml", "harvest_since = 2026-10-26T12:00:00Z\n")
+
+    def deny(self: Path, *args: object, **kwargs: object) -> str:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(Path, "read_text", deny)
+    with pytest.raises(KbError, match=r"^knowledge base: cannot read config file "):
+        config.read_harvest_since(path)
 
 
 def test_invalid_toml_is_reported(tmp_path: Path) -> None:
