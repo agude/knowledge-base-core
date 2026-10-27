@@ -77,6 +77,8 @@ def test_only_the_model_parses_front_matter_or_headings_in_the_package() -> None
 def test_the_package_imports_only_the_standard_library_and_itself() -> None:
     allowed = set(sys.stdlib_module_names) | {"kb"}
     for module in PACKAGE.rglob("*.py"):
+        # detect-secrets is the one exception, and only the secrets check may import it.
+        extra = {"detect_secrets"} if module == PACKAGE / "secrets.py" else set()
         tree = ast.parse(module.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             names: list[str] = []
@@ -85,7 +87,7 @@ def test_the_package_imports_only_the_standard_library_and_itself() -> None:
             elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
                 names = [node.module]
             for name in names:
-                assert name.split(".")[0] in allowed, f"{module.name} imports {name}"
+                assert name.split(".")[0] in allowed | extra, f"{module.name} imports {name}"
 
 
 def test_each_file_is_parsed_once_per_answer(

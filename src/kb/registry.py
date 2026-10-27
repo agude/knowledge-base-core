@@ -4,6 +4,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from kb.commands import map as map_command
+from kb.commands import observe as observe_command
 from kb.commands import read as read_command
 from kb.commands import recall as recall_command
 from kb.errors import KbError
@@ -26,6 +27,11 @@ COMMANDS: tuple[Command, ...] = (
     ),
     Command(name="read", summary="Print the text that LOCATORs name.", run=read_command.run),
     Command(name="map", summary="List articles and their sections.", run=map_command.run),
+    Command(
+        name="observe",
+        summary="Record one observation and commit it.",
+        run=observe_command.run,
+    ),
 )
 
 

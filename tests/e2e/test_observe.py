@@ -115,7 +115,6 @@ def assert_observation(
     return name
 
 
-@pytest.mark.xfail(strict=True, reason="kb observe is not implemented yet")
 def test_success_writes_one_file_and_commits_only_that_file(git_kb: Kb) -> None:
     before = pending_files(git_kb)
     commits = int(git_kb.git("rev-list", "--count", "HEAD"))
@@ -133,7 +132,6 @@ def test_success_writes_one_file_and_commits_only_that_file(git_kb: Kb) -> None:
     assert int(git_kb.git("rev-list", "--count", "HEAD")) == commits + 1
 
 
-@pytest.mark.xfail(strict=True, reason="kb observe is not implemented yet")
 @pytest.mark.parametrize(
     "stdin",
     [
@@ -146,14 +144,12 @@ def test_body_from_stdin_is_kept_as_read(git_kb: Kb, stdin: str) -> None:
     assert_observation(git_kb, result, "Stdin body", stdin, str(git_kb.home.resolve()))
 
 
-@pytest.mark.xfail(strict=True, reason="kb observe is not implemented yet")
 def test_quote_and_backslash_in_the_title_are_escaped(git_kb: Kb) -> None:
     title = 'Say "hi" \\ there'
     result = git_kb("observe", "--title", title, "--body", "Plain text.")
     assert_observation(git_kb, result, title, "Plain text.", str(git_kb.home.resolve()))
 
 
-@pytest.mark.xfail(strict=True, reason="kb observe is not implemented yet")
 def test_project_is_the_top_of_the_git_repository_the_command_runs_in(git_kb: Kb) -> None:
     work = git_kb.home.parent / "work"
     subdirectory = work / "src" / "tool"
@@ -167,13 +163,11 @@ def test_project_is_the_top_of_the_git_repository_the_command_runs_in(git_kb: Kb
     )
 
 
-@pytest.mark.xfail(strict=True, reason="kb observe is not implemented yet")
 def test_project_is_the_working_directory_outside_any_git_repository(git_kb: Kb) -> None:
     result = git_kb("observe", "--title", "Attribution", "--body", "Run from home.")
     assert_observation(git_kb, result, "Attribution", "Run from home.", str(git_kb.home.resolve()))
 
 
-@pytest.mark.xfail(strict=True, reason="kb observe is not implemented yet")
 @pytest.mark.parametrize(("words", "stderr"), USAGE_CASES)
 def test_usage_errors_exit_one_and_change_nothing(
     git_kb: Kb, words: list[str], stderr: str
@@ -191,7 +185,6 @@ def test_usage_errors_exit_one_and_change_nothing(
     assert not (git_kb.content / ".observe.lock").exists()
 
 
-@pytest.mark.xfail(strict=True, reason="kb observe is not implemented yet")
 def test_secret_in_the_body_is_refused_and_nothing_is_written(git_kb: Kb) -> None:
     head = git_kb.git("rev-parse", "HEAD")
     before = pending_files(git_kb)
@@ -211,7 +204,6 @@ def test_secret_in_the_body_is_refused_and_nothing_is_written(git_kb: Kb) -> Non
     assert not (git_kb.content / ".observe.lock").exists()
 
 
-@pytest.mark.xfail(strict=True, reason="kb observe is not implemented yet")
 def test_staged_work_is_not_swept_into_the_commit(git_kb: Kb) -> None:
     (git_kb.content / "knowledge" / "unrelated.md").write_text(
         "# Unrelated\n\nStaged, not committed.\n", encoding="utf-8"
@@ -227,7 +219,6 @@ def test_staged_work_is_not_swept_into_the_commit(git_kb: Kb) -> None:
     assert git_kb.git("diff", "--cached", "--name-only").split() == ["knowledge/unrelated.md"]
 
 
-@pytest.mark.xfail(strict=True, reason="kb observe is not implemented yet")
 def test_commit_failure_leaves_the_repository_as_it_was(git_kb: Kb) -> None:
     hook = git_kb.content / ".git" / "hooks" / "pre-commit"
     hook.write_text("#!/bin/sh\necho 'hook rejected the commit' >&2\nexit 1\n", encoding="utf-8")
@@ -247,7 +238,6 @@ def test_commit_failure_leaves_the_repository_as_it_was(git_kb: Kb) -> None:
     assert not (git_kb.content / ".observe.lock").exists()
 
 
-@pytest.mark.xfail(strict=True, reason="kb observe is not implemented yet")
 def test_kernel_lock_held_by_another_process_blocks_the_write(git_kb: Kb) -> None:
     head = git_kb.git("rev-parse", "HEAD")
     before = pending_files(git_kb)
@@ -278,7 +268,6 @@ def test_kernel_lock_held_by_another_process_blocks_the_write(git_kb: Kb) -> Non
     assert not (git_kb.content / ".observe.lock").exists()
 
 
-@pytest.mark.xfail(strict=True, reason="kb observe is not implemented yet")
 def test_legacy_lock_held_by_a_live_process_blocks_the_write_and_is_left_alone(
     git_kb: Kb,
 ) -> None:
@@ -298,7 +287,6 @@ def test_legacy_lock_held_by_a_live_process_blocks_the_write_and_is_left_alone(
     assert (lock / "pid").read_text(encoding="utf-8") == f"{os.getpid()}\n"
 
 
-@pytest.mark.xfail(strict=True, reason="kb observe is not implemented yet")
 def test_legacy_lock_left_by_a_dead_process_is_removed_and_the_write_succeeds(
     git_kb: Kb,
 ) -> None:
@@ -313,7 +301,6 @@ def test_legacy_lock_left_by_a_dead_process_is_removed_and_the_write_succeeds(
     )
 
 
-@pytest.mark.xfail(strict=True, reason="kb observe is not implemented yet")
 def test_help_lists_observe_and_observe_help_exits_zero(kb: Kb) -> None:
     lines = kb("--help").stdout.splitlines()
     assert any(line.split()[:1] == ["observe"] for line in lines)

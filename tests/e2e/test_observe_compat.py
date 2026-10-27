@@ -96,7 +96,6 @@ def old_field(kb: Kb, field: str, name: str) -> str:
     return result.stdout.removesuffix("\n")
 
 
-@pytest.mark.xfail(strict=True, reason="kb observe is not implemented yet")
 def test_kb_observe_writes_what_the_old_script_writes_plus_attribution(git_kb: Kb) -> None:
     title = 'Say "hi" \\ there'
     body = "Written by both scripts."
@@ -112,7 +111,6 @@ def test_kb_observe_writes_what_the_old_script_writes_plus_attribution(git_kb: K
     assert git_kb.git("log", "--format=%s", "-2") == f"Observe: {title}\n" * 2
 
 
-@pytest.mark.xfail(strict=True, reason="kb observe is not implemented yet")
 def test_old_frontmatter_field_reads_kb_files_as_it_reads_old_files(git_kb: Kb) -> None:
     old = written_name(run_old(git_kb, "observe", "--title", "Field check", "--body", "Read."))
     new = written_name(git_kb("observe", "--title", "Field check", "--body", "Read."))
@@ -124,7 +122,6 @@ def test_old_frontmatter_field_reads_kb_files_as_it_reads_old_files(git_kb: Kb) 
         assert TIMESTAMP.fullmatch(old_field(git_kb, "created", name))
 
 
-@pytest.mark.xfail(strict=True, reason="kb observe is not implemented yet")
 def test_old_pending_lists_a_kb_observation_with_its_title(git_kb: Kb) -> None:
     name = written_name(git_kb("observe", "--title", "Listed title", "--body", "Listed body."))
     listing = run_old(git_kb, "pending")
@@ -133,7 +130,6 @@ def test_old_pending_lists_a_kb_observation_with_its_title(git_kb: Kb) -> None:
     assert f"[{name}]" in listing.stdout
 
 
-@pytest.mark.xfail(strict=True, reason="kb observe is not implemented yet")
 def test_old_archive_moves_a_kb_observation_and_commits_it(git_kb: Kb) -> None:
     name = written_name(git_kb("observe", "--title", "Archived title", "--body", "Archived body."))
     archived = run_old(git_kb, "archive", name)
@@ -145,7 +141,6 @@ def test_old_archive_moves_a_kb_observation_and_commits_it(git_kb: Kb) -> None:
     assert git_kb.git("status", "--porcelain") == ""
 
 
-@pytest.mark.xfail(strict=True, reason="kb observe is not implemented yet")
 def test_kb_observe_waits_for_a_legacy_lock_until_the_old_script_releases_it(
     git_kb: Kb,
 ) -> None:
