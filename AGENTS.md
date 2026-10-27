@@ -11,7 +11,7 @@ domain rules, data tables, and process details are often already here.
 kb recall <query words>                # start here: matching sections, in full
 kb map knowledge/<area> [--depth N]    # articles and sections in one area
 kb read <locator>                      # a section, e.g. knowledge/x.md#2
-$KNOWLEDGE_BASE/scripts/observe --title "..." --body "..." # record an observation
+kb observe --title "..." --body "..."  # record an observation
 ```
 
 Load the minimum: recall first, then read only the locators you need. Do not
@@ -27,8 +27,11 @@ Observation triggers live here because a session has to notice them
 spontaneously; it cannot load a skill first.
 
 ```bash
-$KNOWLEDGE_BASE/scripts/observe --title "<one-line summary>" --body "<details>"
+kb observe --title "<one-line summary>" --body "<details>"
 ```
+
+Use `--body -` to read a long body from stdin. `kb observe` refuses text that
+looks like a secret (password, key, token); remove or redact it and run it again.
 
 - **Capture immediately.** Do not wait until the task is done.
 - **One observation per concept.** Three things learned means three calls.

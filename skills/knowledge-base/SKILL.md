@@ -85,8 +85,13 @@ states a preference, shares domain knowledge, or you discover something
 unexpected — capture it immediately:
 
 ```bash
-$KNOWLEDGE_BASE/scripts/observe --title "<one-line summary>" --body "<details>"
+kb observe --title "<one-line summary>" --body "<details>"
 ```
+
+`--body -` reads the body from stdin. The title must be one line. On success
+it prints `Wrote: observations/pending/<file>` and commits only that file. It
+refuses text that looks like a secret, naming the detector and line but not the
+value; remove or redact it and run the command again.
 
 ### Rules
 
@@ -194,7 +199,7 @@ not have yet.
 | `toc [--depth N] [--path DIR] [--flat] [--dirs]` | List topics and sections |
 | `section --file FILE (--number N \| --heading TEXT \| --top \| --title) [--json\|--text-only]` | Extract a section or search fallback with metadata |
 | `section --file FILE --references [--json]` | Return the complete provenance reference list |
-| `observe --title "..." --body "..."` | Record an observation |
+| `observe --title "..." --body "..."` | Record an observation (session capture only; agents use `kb observe`) |
 | `pending [--full] [--count] [--preview]` | List observations or preview the curation queue |
 | `batch start [--files FILENAME ...]|status|defer` | Persist and resume a curator-selected batch |
 | `ask --title "..." [--context FILE] [--body "..."]` | Record a question |
