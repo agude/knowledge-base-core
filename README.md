@@ -2,9 +2,9 @@
 
 `kb` lets LLM agent sessions read and search a knowledge base: curated
 articles and source documents, and the observations and questions behind them.
-The read commands never write. `kb observe` is the one command that writes: it
-records an observation and commits it to the content repository. Curation is
-handled by other tools.
+The read commands never write. `kb observe` records a user observation, and
+`kb sync` can record finished Claude Code and Codex transcripts, committing
+observations to the content repository. Curation is handled by other tools.
 
 ## Usage
 
@@ -13,6 +13,7 @@ kb recall QUERY...    # find the curated sections that answer a query
 kb read LOCATOR...    # print the text that each locator names
 kb map [PATH]         # list the articles under PATH, with their sections
 kb observe --title TITLE --body TEXT  # record an observation and commit it
+kb sync [--status | --no-push | --dry-run]  # harvest transcripts and sync content
 kb --help             # every command
 ```
 
@@ -96,6 +97,97 @@ POSIX only, and it is removed at cutover, along with the old scripts. Until then
 
 Temporary files for a write live in `<git dir>/kb-tmp` and are removed on every
 path.
+
+### `kb sync`
+
+`kb sync` harvests finished Claude Code and Codex transcripts, commits the
+resulting observations, then fetches and rebases from `origin` and pushes local
+commits. Transcript harvesting is **off** until `harvest_since` is set in
+`config.toml`; `kb` does not install or enable the timer.
+
+```toml
+content = "~/Knowledge/content"
+harvest_since = 2026-10-20T00:00:00Z
+```
+
+`harvest_since` is a time-zone-aware TOML datetime; use UTC. Messages before
+it are ignored.
+Claude transcripts are read from `$CLAUDE_CONFIG_DIR/projects` (default
+`~/.claude/projects`), including subagents. Codex rollouts are read from
+`$CODEX_HOME/sessions` (default `~/.codex/sessions`), including subagent
+threads.
+
+Harvest keeps user text, assistant text, and shell commands. It drops tool
+output, reasoning, injected context, and user `<system-reminder>` spans. A
+session is ready after it has been idle for 60 minutes and its transcript ends
+on a complete line. Idle time uses the newest record timestamp or file
+modification time, whichever is later. Ready sessions are processed oldest
+first, up to 50 per run. Each transcript part becomes an observation; resumed
+sessions create later parts. When transcripts share a message prefix, the
+first session to harvest those message IDs owns them. If the later session has
+messages to record, its observation names the owner of the shared prefix.
+
+The title excerpt and message text are checked for possible secrets. A matching
+message line is replaced with `[redacted: <detector>]`; when the title excerpt
+matches, the title omits it. A session is skipped and reported on stderr if
+redaction or observation validation cannot finish safely. The exit status is
+then 1.
+
+Harvest progress is reconstructed from committed observations in `HEAD`. If a
+run stops before its observation commit, the next run removes that run's
+uncommitted transcript observations and temporary scanner files, then retries
+from the source transcripts. Re-running after a successful harvest does not
+duplicate committed messages.
+
+Options:
+
+- `--status` fetches `origin` and reports `Ready`, `Waiting`, `Ahead`, and
+  `Behind` counts. It does not harvest or change the branch, index, or working
+  tree; the fetch may update remote-tracking refs.
+- `--no-push` harvests and commits, then fetches and rebases, but does not push.
+- `--dry-run` lists each planned part as
+  `<app> <session> part <n>: <m> messages, <bytes> bytes, <k> redacted lines`,
+  followed by totals. It does not lock, fetch, or change Git state. Its
+  temporary scanner files are removed before exit.
+
+`--status` and `--dry-run` cannot be combined with another option. With
+harvesting enabled, a regular run prints `Harvested: <n> session transcript(s)`
+and, when there are messages, `Harvest totals: <n> messages, <n> bytes, <n>
+redacted lines`. Regular runs and dry runs may also print `Redacted by
+detector: ...` and, when transcript records were discarded, `Skipped transcript
+records: <n> malformed line(s), <n> duplicate message ID(s)`. With harvesting
+disabled, a regular run does not print a harvest line. Successful Git actions
+print `Pulled: <n> commit(s)`, `Pushed: <n> commit(s)`, or
+`Already in sync with origin/<branch>.` Status prints `Ready: <n> session(s)`,
+`Waiting: <n> session(s)`, `Ahead: <n> commit(s)`, and
+`Behind: <n> commit(s)`. A dry run prints one line per planned part and
+`Totals: <n> sessions, <n> messages, <n> bytes, <n> redacted lines`.
+
+Successful runs exit 0. `--help` prints the usage text and exits 0. Extra
+arguments, invalid option combinations, and an invalid `KB_LOCK_WAIT` print
+`Usage: kb sync [--status] [--no-push] [--dry-run]` and exit 1. An unknown
+option prints `Unknown option: <option>` and exits 1. Other runtime failures
+and skipped sessions go to stderr with the `sync:` prefix and exit status 1.
+A dirty working tree prints `sync: uncommitted changes in <root>; not
+pulling or pushing` and up to 10 paths; that notice alone exits 0 and leaves
+pull and push for a later run.
+
+#### Install the user timer
+
+The timer files are examples in `contrib/systemd/`; `kb` does not install or
+enable them. After installing `kb` and setting its configuration, copy and
+enable the files for your user:
+
+```sh
+mkdir -p ~/.config/systemd/user
+cp contrib/systemd/kb-sync.service contrib/systemd/kb-sync.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now kb-sync.timer
+```
+
+The service defaults to `%h/.local/bin/kb`. Edit `ExecStart` in the copied
+service file if `kb` is installed elsewhere. The timer runs every 15 minutes
+and catches up after the machine was off.
 
 ## Development
 

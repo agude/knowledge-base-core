@@ -55,6 +55,8 @@ CI pass.
 - A writing command takes its locks through `kb/lock.py`, and it checks the
   agent's text with the secrets check in `kb/secrets.py` before anything is
   written. Only `kb/secrets.py` may import `detect_secrets`.
+- Transcript JSON is read only by the host parser modules in `kb/hosts/`; each
+  parser produces the neutral session model.
 - The legacy lock in `kb/lock.py` (`take_legacy_lock`, `release_legacy_lock`, and
   the stale-pid check) exists only for the old scripts. Delete it at cutover, with
   the old scripts' `.observe.lock` protocol, and remove its tests with it.
