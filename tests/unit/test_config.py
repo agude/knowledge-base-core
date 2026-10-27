@@ -150,6 +150,16 @@ def test_native_windows_path_is_normalized_before_toml_interpolation(tmp_path: P
     )
 
 
+def test_config_path_parser_unescapes_quotes_and_backslashes(tmp_path: Path) -> None:
+    windows_path = PureWindowsPath('C:/Users/tester/odd "name"/dir')
+    escaped_path = str(windows_path).replace("\\", "\\\\").replace('"', '\\"')
+
+    parsed = config.parse_content_setting(f'content = "{escaped_path}"\n', tmp_path / "config.toml")
+
+    assert parsed is not None
+    assert str(parsed) == str(windows_path)
+
+
 def test_a_config_without_a_content_key_has_no_setting(tmp_path: Path) -> None:
     assert config.parse_content_setting("other = 1\n", tmp_path / "config.toml") is None
 

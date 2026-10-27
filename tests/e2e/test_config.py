@@ -87,7 +87,10 @@ def test_content_root_that_is_not_a_directory_is_reported(kb: Kb) -> None:
 
 
 def test_config_path_with_quote_and_backslash_round_trips(kb: Kb) -> None:
-    odd = kb.home / 'odd "name" \\dir'
+    if sys.platform == "win32":
+        odd = kb.home / "odd" / "dir"
+    else:
+        odd = kb.home / 'odd "name" \\dir'
     shutil.copytree(kb.content, odd)
     escaped = str(odd).replace("\\", "\\\\").replace('"', '\\"')
     write_config(kb, f'content = "{escaped}"\n')
