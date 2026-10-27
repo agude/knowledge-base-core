@@ -64,8 +64,10 @@ def test_only_the_model_parses_front_matter_or_headings_in_the_package() -> None
     for module in PACKAGE.glob("*.py"):
         if module.name == "model.py":
             continue
-        # observation.py writes front matter, so it alone may contain "---". It never parses.
-        allowed = {"---"} if module.name == "observation.py" else set()
+        # Observation renderers write front matter; model.py alone parses it.
+        allowed = (
+            {"---"} if module.name in {"observation.py", "transcript_observation.py"} else set()
+        )
         tree = ast.parse(module.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):

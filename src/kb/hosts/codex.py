@@ -42,6 +42,7 @@ def parse(text: str, filename: str) -> Session:
     parent_session: str | None = None
     forked_from: str | None = None
     messages: list[Message] = []
+    latest_timestamp = None
     malformed = 0
 
     for index, line in enumerate(lines):
@@ -56,6 +57,11 @@ def parse(text: str, filename: str) -> Session:
         if not isinstance(record, dict):
             malformed += 1
             continue
+        record_timestamp = parse_timestamp(record.get("timestamp"))
+        if record_timestamp is not None and (
+            latest_timestamp is None or record_timestamp > latest_timestamp
+        ):
+            latest_timestamp = record_timestamp
         if record.get("type") == "session_meta":
             session_id, project, parent_session, forked_from = _metadata(
                 record.get("payload"),
@@ -79,6 +85,7 @@ def parse(text: str, filename: str) -> Session:
         parent_session=parent_session,
         forked_from=forked_from,
         messages=unique,
+        latest_timestamp=latest_timestamp,
         snapshot_complete=complete,
         malformed_lines=malformed,
         duplicate_ids=duplicates,

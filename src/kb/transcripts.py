@@ -31,6 +31,7 @@ class Session:
     parent_session: str | None
     forked_from: str | None
     messages: tuple[Message, ...]
+    latest_timestamp: datetime | None
     snapshot_complete: bool
     malformed_lines: int = 0
     duplicate_ids: int = 0

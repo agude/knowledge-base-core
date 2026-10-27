@@ -54,6 +54,7 @@ def test_main_fixture_uses_filename_matching_metadata_and_filters_user_context()
     assert session.id == "codex-main"
     assert session.project == "/fixture/project"
     assert session.parent_session is None
+    assert session.latest_timestamp == datetime(2026, 10, 25, 14, 0, 4, tzinfo=UTC)
     assert [message.id for message in session.messages] == [
         "codex-user-1",
         "codex-assistant-1",

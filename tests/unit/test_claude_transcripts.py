@@ -39,6 +39,7 @@ def test_main_fixture_extracts_text_bash_commands_and_project() -> None:
     assert session.id == "main"
     assert session.project == "/fixture/claude-project"
     assert session.parent_session is None
+    assert session.latest_timestamp == datetime(2026, 10, 25, 8, 4, tzinfo=UTC)
     assert [message.id for message in session.messages] == [
         "main-user-1",
         "main-assistant-1",
@@ -171,6 +172,28 @@ def test_meta_and_unknown_records_are_ignored_without_needing_message_fields() -
     assert session.messages == ()
     assert session.project == "/fixture/claude-project"
     assert session.malformed_lines == 0
+
+
+def test_latest_timestamp_includes_unkept_records_and_keeps_the_maximum() -> None:
+    text = (
+        "\n".join(
+            (
+                record("user", "Keep.", message_id="kept", timestamp="2026-10-25T08:00:00Z"),
+                json.dumps(
+                    {
+                        "type": "user",
+                        "timestamp": "2026-10-25T11:30:00Z",
+                        "message": {"content": []},
+                    }
+                ),
+                json.dumps({"type": "tool_result", "timestamp": "2026-10-25T10:00:00Z"}),
+            )
+        )
+        + "\n"
+    )
+    session = claude.parse(text, "activity")
+    assert len(session.messages) == 1
+    assert session.latest_timestamp == datetime(2026, 10, 25, 11, 30, tzinfo=UTC)
 
 
 def test_invalid_message_records_are_counted_as_malformed() -> None:

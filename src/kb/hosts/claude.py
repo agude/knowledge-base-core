@@ -24,6 +24,7 @@ def parse(text: str, session_id: str, parent_session: str | None = None) -> Sess
     lines, complete = complete_lines(text)
     messages: list[Message] = []
     project = ""
+    latest_timestamp = None
     malformed = 0
 
     for index, line in enumerate(lines):
@@ -38,6 +39,11 @@ def parse(text: str, session_id: str, parent_session: str | None = None) -> Sess
         if not isinstance(record, dict):
             malformed += 1
             continue
+        record_timestamp = parse_timestamp(record.get("timestamp"))
+        if record_timestamp is not None and (
+            latest_timestamp is None or record_timestamp > latest_timestamp
+        ):
+            latest_timestamp = record_timestamp
         project = _first_text(project, record.get("cwd"))
         message, invalid = _message(record)
         if invalid:
@@ -53,6 +59,7 @@ def parse(text: str, session_id: str, parent_session: str | None = None) -> Sess
         parent_session=parent_session,
         forked_from=None,
         messages=unique,
+        latest_timestamp=latest_timestamp,
         snapshot_complete=complete,
         malformed_lines=malformed,
         duplicate_ids=duplicates,
