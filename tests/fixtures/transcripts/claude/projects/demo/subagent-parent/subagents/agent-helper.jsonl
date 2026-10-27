@@ -1,0 +1,2 @@
+{"type":"user","uuid":"agent-helper-user","sessionId":"agent-helper","parentUuid":"subagent-parent-answer","isSidechain":true,"timestamp":"2026-10-24T13:00:20Z","message":{"role":"user","content":"Inspect the fixture task."}}
+{"type":"assistant","uuid":"agent-helper-answer","sessionId":"agent-helper","isSidechain":true,"timestamp":"2026-10-24T13:00:40Z","message":{"role":"assistant","content":[{"type":"text","text":"The fixture task is complete."}]}}

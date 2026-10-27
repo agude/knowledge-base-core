@@ -1,0 +1,2 @@
+{"type":"user","uuid":"subagent-parent-user","sessionId":"subagent-parent","timestamp":"2026-10-24T13:00:00Z","message":{"role":"user","content":"Delegate one fixture task."}}
+{"type":"assistant","uuid":"subagent-parent-answer","sessionId":"subagent-parent","timestamp":"2026-10-24T13:01:00Z","message":{"role":"assistant","content":[{"type":"text","text":"The child session completed."}]}}

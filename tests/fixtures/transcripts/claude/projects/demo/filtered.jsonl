@@ -1,0 +1,2 @@
+{"type":"user","uuid":"filtered-user","sessionId":"filtered","timestamp":"2026-10-25T11:00:00Z","message":{"role":"user","content":"Keep this request. <system-reminder>Drop this injected span.</system-reminder> Keep this ending."}}
+{"type":"assistant","uuid":"filtered-assistant","sessionId":"filtered","timestamp":"2026-10-25T11:01:00Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Do not retain this reasoning."},{"type":"text","text":"Keep this answer."}]}}

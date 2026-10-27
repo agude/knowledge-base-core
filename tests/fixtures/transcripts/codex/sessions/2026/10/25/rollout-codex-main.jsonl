@@ -1,0 +1,5 @@
+{"type":"session_meta","payload":{"id":"codex-main","cwd":"/fixture/project","timestamp":"2026-10-25T14:00:00Z","source":"cli"}}
+{"type":"event_msg","timestamp":"2026-10-25T14:00:01Z","payload":{"type":"user_message","message":"Summarize this Codex fixture."}}
+{"type":"response_item","timestamp":"2026-10-25T14:00:02Z","payload":{"id":"codex-user-1","type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>fixture context</environment_context>\nSummarize this Codex fixture."}]}}
+{"type":"response_item","timestamp":"2026-10-25T14:00:03Z","payload":{"id":"codex-assistant-1","type":"message","role":"assistant","content":[{"type":"output_text","text":"The Codex fixture has a main thread."}]}}
+{"type":"response_item","timestamp":"2026-10-25T14:00:04Z","payload":{"id":"codex-exec-1","type":"custom_tool_call","name":"exec","input":"printf 'fixture command'"}}

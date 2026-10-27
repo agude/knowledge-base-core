@@ -1,0 +1,2 @@
+{"type":"user","uuid":"fork-shared-user","sessionId":"fork-origin","timestamp":"2026-10-24T12:00:00Z","message":{"role":"user","content":"Shared opening message."}}
+{"type":"assistant","uuid":"fork-origin-answer","sessionId":"fork-origin","timestamp":"2026-10-24T12:01:00Z","message":{"role":"assistant","content":[{"type":"text","text":"Original branch answer."}]}}

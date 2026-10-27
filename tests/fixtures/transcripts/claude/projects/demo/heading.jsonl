@@ -1,0 +1,2 @@
+{"type":"user","uuid":"heading-user","sessionId":"heading","timestamp":"2026-10-25T09:00:00Z","message":{"role":"user","content":"Read the formatting example."}}
+{"type":"assistant","uuid":"heading-assistant","sessionId":"heading","timestamp":"2026-10-25T09:01:00Z","message":{"role":"assistant","content":[{"type":"text","text":"## Heading inside a message\n\n~~~~sh\nprintf 'tilde fence'\n~~~~\n\nThe fence and heading are plain message text."}]}}

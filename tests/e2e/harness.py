@@ -13,7 +13,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 FIXTURE_CONTENT = Path(__file__).resolve().parents[1] / "fixtures" / "content"
+FIXTURE_TRANSCRIPTS = Path(__file__).resolve().parents[1] / "fixtures" / "transcripts"
 TODAY = "2026-10-26"
+NOW = "2026-10-26T12:00:00Z"
 # Git reads no user or system configuration, and every commit gets this identity.
 GIT_ISOLATION = {
     "GIT_CONFIG_GLOBAL": "/dev/null",
@@ -49,6 +51,22 @@ class Kb:
 
     home: Path
     content: Path
+    origin: Path | None = None
+
+    @property
+    def claude_config_dir(self) -> Path:
+        """The isolated Claude transcript root passed to kb subprocesses."""
+        return self.home / ".claude"
+
+    @property
+    def codex_home(self) -> Path:
+        """The isolated Codex transcript root passed to kb subprocesses."""
+        return self.home / ".codex"
+
+    @property
+    def config_file(self) -> Path:
+        """The isolated config file read through XDG_CONFIG_HOME."""
+        return self.home / "xdg" / "kb" / "config.toml"
 
     def environment(self, overrides: Mapping[str, str | None]) -> dict[str, str]:
         """The process environment; a None override removes the variable."""
@@ -58,7 +76,10 @@ class Kb:
             "XDG_CONFIG_HOME": str(self.home / "xdg"),
             "KB_CONTENT": str(self.content),
             "KB_TODAY": TODAY,
+            "KB_NOW": NOW,
             "KB_LOCK_WAIT": "1",
+            "CLAUDE_CONFIG_DIR": str(self.claude_config_dir),
+            "CODEX_HOME": str(self.codex_home),
             "LANG": "C.UTF-8",
             "LC_ALL": "C.UTF-8",
             "PYTHONIOENCODING": "utf-8",
@@ -100,6 +121,8 @@ def make_kb(root: Path) -> Kb:
     """A kb whose home and content repository live under root."""
     home = root / "home"
     (home / "xdg").mkdir(parents=True)
+    (home / ".claude").mkdir()
+    (home / ".codex").mkdir()
     content = root / "content"
     shutil.copytree(FIXTURE_CONTENT, content)
     return Kb(home=home, content=content)
@@ -112,3 +135,13 @@ def make_git_kb(root: Path) -> Kb:
     run_git(kb.content, "add", "--all")
     run_git(kb.content, "commit", "-q", "-m", "Import the content fixture")
     return kb
+
+
+def make_remote_git_kb(root: Path) -> Kb:
+    """A git content repository with a temporary bare origin and main tracking branch."""
+    kb = make_git_kb(root)
+    origin = root / "origin.git"
+    run_git(root, "init", "--bare", "-q", "-b", "main", str(origin))
+    run_git(kb.content, "remote", "add", "origin", str(origin))
+    run_git(kb.content, "push", "-q", "--set-upstream", "origin", "main")
+    return Kb(home=kb.home, content=kb.content, origin=origin)

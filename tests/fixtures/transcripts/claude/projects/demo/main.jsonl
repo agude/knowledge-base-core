@@ -1,0 +1,6 @@
+{"type":"user","uuid":"main-user-1","sessionId":"main","timestamp":"2026-10-25T08:00:00Z","message":{"role":"user","content":"Summarize the fixture."}}
+{"type":"assistant","uuid":"main-assistant-1","sessionId":"main","timestamp":"2026-10-25T08:01:00Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Private reasoning must not be retained."},{"type":"text","text":"The fixture has two records."}]}}
+{"type":"assistant","uuid":"main-assistant-2","sessionId":"main","timestamp":"2026-10-25T08:02:00Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tool-1","name":"Bash","input":{"command":"printf 'fixture command'"}}]}}
+{"type":"user","uuid":"main-tool-result","sessionId":"main","timestamp":"2026-10-25T08:02:01Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool-1","content":"Fixture tool output must not be retained."}]}}
+{"type":"user","uuid":"main-meta","sessionId":"main","timestamp":"2026-10-25T08:03:00Z","isMeta":true,"message":{"role":"user","content":"Injected metadata must not be retained."}}
+{"type":"assistant","uuid":"main-assistant-3","sessionId":"main","timestamp":"2026-10-25T08:04:00Z","message":{"role":"assistant","content":[{"type":"text","text":"Done."}]}}
