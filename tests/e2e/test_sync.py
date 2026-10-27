@@ -149,6 +149,7 @@ def claude_message(
     content = f'"{text}"' if role == "user" else f'[{{"type":"text","text":"{text}"}}]'
     return (
         f'{{"type":"{role}","uuid":"{message_id}","sessionId":"{session}",'
+        '"cwd":"/fixture/claude-project",'
         f'"timestamp":"{timestamp}","message":{{"role":"{role}","content":{content}}}}}\n'
     )
 
@@ -267,7 +268,7 @@ def test_observation_front_matter_covers_main_subagent_and_fork(remote_git_kb: K
     main = observation_text(observation_for(remote_git_kb, "main"))
     child = observation_text(observation_for(remote_git_kb, "agent-helper"))
     assert field(main, "app") == "claude-code"
-    assert field(main, "project") == str(remote_git_kb.home.resolve())
+    assert field(main, "project") == "/fixture/claude-project"
     assert field(main, "host") == HOST
     assert field(main, "first_message") == "main-user-1"
     assert field(main, "last_message") == "main-assistant-3"
