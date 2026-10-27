@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -293,6 +294,27 @@ def test_selection_limits_to_fifty_oldest_ready_sessions() -> None:
     assert len(selected.plans) == 50
     assert selected.plans[0].session.id == "session-000"
     assert selected.plans[-1].session.id == "session-049"
+
+
+def test_fully_owned_forks_do_not_use_the_session_limit() -> None:
+    fixture_path = Path(__file__).parents[1] / "fixtures/transcripts/fully-owned-forks.txt"
+    fixture_rows = [line.split() for line in fixture_path.read_text(encoding="utf-8").splitlines()]
+    candidates: list[Candidate] = []
+    owners: dict[tuple[App, str], tuple[App, str]] = {}
+
+    for index, (kind, session_id, message_id, owner_id) in enumerate(fixture_rows):
+        transcript = session(
+            session_id,
+            message(message_id, OLD + timedelta(minutes=index)),
+        )
+        candidates.append(Candidate(transcript, OLD))
+        if kind == "fork":
+            owners[("claude-code", message_id)] = ("claude-code", owner_id)
+
+    selected = select_candidates(candidates, HarvestState({}, owners), NOW, None)
+
+    assert selected.ready_count == 51
+    assert [plan.session.id for plan in selected.plans] == ["ordinary-ready"]
 
 
 def test_selection_skips_only_a_leading_prefix_owned_by_another_session() -> None:

@@ -162,7 +162,7 @@ def select_candidates(
     ready.sort(key=lambda item: (item[1][0].timestamp, item[0].session.id or ""))
     owners = dict(state.owners)
     plans: list[HarvestPlan] = []
-    for candidate, messages, part in ready[:limit]:
+    for candidate, messages, part in ready:
         session = candidate.session
         assert session.id is not None
         key = (session.app, session.id)
@@ -186,6 +186,8 @@ def select_candidates(
             )
             for message in remaining:
                 owners.setdefault((session.app, message.id), key)
+            if len(plans) == limit:
+                break
     return Selection(tuple(plans), len(ready), waiting, tuple(warnings))
 
 
