@@ -8,13 +8,13 @@ knowledge base is located at `$KNOWLEDGE_BASE`.
 domain rules, data tables, and process details are often already here.
 
 ```bash
-$KNOWLEDGE_BASE/scripts/search <term> [term ...]   # start here
-$KNOWLEDGE_BASE/scripts/toc --path knowledge/<area>  # titles in one area
-$KNOWLEDGE_BASE/scripts/section --file <path> --number N   # extract a section
+kb recall <query words>                # start here: matching sections, in full
+kb map knowledge/<area> [--depth N]    # articles and sections in one area
+kb read <locator>                      # a section, e.g. knowledge/x.md#2
 $KNOWLEDGE_BASE/scripts/observe --title "..." --body "..." # record an observation
 ```
 
-Load the minimum: scan the index, then pull only the section you need. Do not
+Load the minimum: recall first, then read only the locators you need. Do not
 read whole articles.
 
 Invoke the `knowledge-base` skill for the full script reference, lookup
@@ -56,7 +56,8 @@ here.
 
 ## Rules
 
-- **Use the scripts, not direct file I/O**, for reading and recording.
+- **Use `kb` and the scripts, not direct file I/O**, for reading and
+  recording.
 - **Do NOT edit `content/knowledge/` directly.** Those articles are the
   curator's; the `curate` skill is the only writer.
 - `content/AGENTS.md`, when present, adds project-specific policy and takes

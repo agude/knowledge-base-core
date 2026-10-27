@@ -36,94 +36,47 @@ curated, dated, and searchable across projects.
 
 ## Looking things up
 
-Start by searching, not browsing.
+Use `kb`, the lookup tool. It reads its content repository from
+`~/.config/kb/config.toml`, so no path is needed. Each command answers in one
+call.
 
-1. **Search first.** `$KNOWLEDGE_BASE/scripts/search <term> [term ...]`
-   returns matches across knowledge articles, source documents, and pending
-   observations. Output format: `<file> | <section> | <matched line>` followed
-   by freshness and provenance metadata.
-   - Several terms are ANDed at file level. A section containing all terms
-     outranks sections that only provide file-level fallback evidence.
-   - Results are ranked sections; title and heading evidence outrank body
-     evidence. Repeated identical lines count once, and excerpts select up to
-     two useful matching lines.
-   - Output is capped at 20 sections. Use `--limit N`, `--per-file N`, or
-     `--files` to see just which files matched.
-   - `--archive` widens the search to archived observations and open
-     questions. The default corpora are knowledge articles, source documents,
-     and pending observations.
-     Open and resolved questions are returned as the `question` corpus with
-     their state; they are knowledge gaps or question records, not evidence.
-   - Use `--path PATH` for a content-relative file or directory,
-     `--topic NAME` for a knowledge topic directory, and
-     `--corpus TYPE` for one or more of `knowledge`, `sources`,
-     `pending`, `archive`, or `questions`. The default
-     corpora are `knowledge`, `sources`, and `pending`;
-     `--archive` adds the archive and question corpora.
-   - Use `--text-only` for metadata-free section text or `--json` for
-     structured output. The two modes cannot be combined.
-   - Use `--query "question"` for question mode. It retains operational
-     tokens such as dates, paths, flags, and negation while removing grammar
-     stopwords. Strict mode requires all retained terms; add `--relax` to
-     permit an any-term fallback only after strict mode returns no result.
-     Use `--explain` to write normalization, aliases, scope, and result-limit
-     diagnostics to stderr.
-     H2/H3 search results include the numeric locator needed by
-     `section --number`; `top` and frontmatter-title results include
-     direct `--top` and `--title` commands.
+1. **Recall.** `kb recall QUERY...` finds the curated sections (knowledge
+   articles and source documents) that answer a query. The first three print in
+   full, and the next few are listed.
+   - Each printed section starts with a header line:
+     `locator | heading | freshness | sources`. Freshness is
+     `fresh, verified DATE`, `stale, verified DATE (ttl T)`, `unknown`,
+     `invalid`, or `source, synced DATE`. `, conflict` marks an unresolved
+     conflict. Check stale content against a live source before acting on it.
+   - Locators are `PATH#N` for an H2 section (with its H3s), `PATH#N.M` for an
+     H3 section, `PATH#top` for the prose before the first H2, and `PATH#title`
+     for the title. Pass any printed locator to `kb read` unchanged.
+   - Dates, paths, flags, and negation words stay in the query. Write a flag
+     with its dashes; its bare word also matches.
+   - `--limit N` sets how many sections print in full. `--in PATH` limits the
+     search to a file or directory.
+   - Pending observations that match are listed under "Uncurated (pending, not
+     yet verified)". When no section matches, the matching observations and
+     questions are listed as "Evidence". A transcript line shows its matching
+     text, not its title.
+   - A query that matches nothing prints one line. Rephrase once with the key
+     nouns. If that also finds nothing, the knowledge is absent.
 
-2. **Narrow with toc.** If search gives too many results or you need to
-   explore a topic area, use `$KNOWLEDGE_BASE/scripts/toc` to scan section names.
-   - `toc --depth 1` — just topic names (one line per file)
-   - `toc --depth 2` — H2 section names (the primary content units)
-   - `toc --depth 3` — H3 subsections with dot numbers (1.1, 1.2)
-   - `toc --path knowledge/some-dir/` — scope to a subdirectory
-   - `toc --dirs` — show the file/directory tree
+2. **Explore.** `kb map [PATH] [--depth 1|2|3]` lists the articles under PATH
+   (default `knowledge`). Depth 1 counts articles per directory. Depth 2 lists
+   each article with its H2 sections. Depth 3 adds the H3 sections.
 
-3. **Load a section.** `$KNOWLEDGE_BASE/scripts/section --file <path> --number N` loads one
-   H2. Use `--number N.M` for an H3 subsection. Use `--heading "text"` for
-   a case-insensitive substring match on any heading level. Use `--top` for
-   prose before the first H2 and `--title` for a frontmatter title. Normal
-   output includes the content-relative path, locator, corpus, freshness, and
-   provenance. Use `--text-only` for only the section body or `--json` for one
-   structured object. Use `--references` to retrieve the complete provenance
-   list from frontmatter; combine it with `--json` for structured output.
+3. **Read.** `kb read LOCATOR... [--sources]` prints what each locator names,
+   under a header line. `kb read PATH` prints the file's outline and its prose
+   before the first H2. `--sources` prints each locator's sources, one per line.
+   A missing section prints the locators that exist.
 
-Retrieval displays at most five provenance references. Structured results also
-include `reference_count` and `references_truncated`; use `section --references`
-when the complete list is required.
+**Always load the minimum content needed.** Recall the sections, then read only
+the locators you need.
 
-Section metadata is an optional `<!-- kb-section: ... -->` comment on its own
-line as the first nonblank content after an H2 or H3. Inline and fenced examples
-do not set metadata; misplaced standalone comments are invalid. It inherits
-article frontmatter and can override
-`verified`/`synced`, `ttl`, `effective`, `status`, `supersedes`, and
-comma-separated `sources`. Put `supersedes` on the newer section as a backward
-link to the older H2/H3 numeric locator; mark the older section
-`status=superseded` without a link. The
-`section` and `search` JSON responses include `section_metadata`; use
-`stale --sections` for an explicit section-level freshness review. `lint`
-checks section dates, effective-date ordering, status values, supersession
-references, and section source paths. A comment with prose after its closing
-delimiter is an inline example, including when the comment spans multiple
-lines. It does not set live metadata; the surrounding prose remains searchable.
-
-Use `search --max-bytes N` when a caller needs a bounded stdout response. JSON
-keeps complete ranked records and reports `omitted_results`; text output keeps
-complete lines and marks truncation. Use `section --max-bytes N` for a bounded
-follow-up: its envelope remains intact and JSON reports
-`content_truncated` and `omitted_content_bytes`. A byte cap is a transport
-volume limit, not a token or billing estimate. Retrieval caps include all
-stdout serialization and metadata, but not stderr. Exact fits succeed;
-one-byte-short caps preserve complete records or lines and mark omissions, or
-fail when even the minimum envelope and marker cannot fit. Zero is a valid
-input budget for preview but selects no files; a zero retrieval budget fails
-when the command must emit an envelope. Omit the cap when the complete
-response is required.
-
-**Always load the minimum content needed.** Do NOT read entire knowledge
-files. The toc → section hierarchy is the compression scheme — scan the
-index, then load only what's relevant.
+Section metadata is an optional `<!-- kb-section: ... -->` comment on the first
+nonblank line after an H2 or H3. It sets that section's `verified`, `ttl`, and
+`sources`. Recording and curation still use the scripts in the sections below.
 
 ## Recording observations
 
@@ -229,6 +182,10 @@ comparison.
 ## Script reference
 
 All scripts are at `$KNOWLEDGE_BASE/scripts/<name>`.
+
+For lookups, use `kb recall`, `kb map`, and `kb read` as described above.
+`search`, `toc`, and `section` remain for curation and for options `kb` does
+not have yet.
 
 | Script | Purpose |
 |---|---|
