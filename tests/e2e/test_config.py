@@ -1,6 +1,7 @@
 """End-to-end tests for finding the content repository."""
 
 import shutil
+import sys
 from pathlib import Path
 
 from .harness import Kb
@@ -30,10 +31,25 @@ def test_config_file_names_the_content_root(kb: Kb) -> None:
 
 
 def test_default_config_location_without_xdg_config_home(kb: Kb) -> None:
-    path = kb.home / ".config" / "kb" / "config.toml"
+    if sys.platform == "win32":
+        config_root = kb.home / "AppData" / "Local"
+        environment = {
+            "KB_CONTENT": None,
+            "XDG_CONFIG_HOME": None,
+            "LOCALAPPDATA": str(config_root),
+        }
+    else:
+        config_root = kb.home / ".config"
+        environment = {
+            "KB_CONTENT": None,
+            "XDG_CONFIG_HOME": None,
+            "LOCALAPPDATA": None,
+        }
+
+    path = config_root / "kb" / "config.toml"
     path.parent.mkdir(parents=True)
     path.write_text(f'content = "{kb.content.as_posix()}"\n', encoding="utf-8")
-    result = kb("map", "--depth", "1", env={"KB_CONTENT": None, "XDG_CONFIG_HOME": None})
+    result = kb("map", "--depth", "1", env=environment)
     assert result.returncode == 0
     assert result.stdout.startswith(INFRA_COUNT)
 
