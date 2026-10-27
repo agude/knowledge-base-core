@@ -21,7 +21,7 @@ def is_curated(relpath: str) -> bool:
 def markdown_files(root: Path, under: str) -> list[str]:
     """The Markdown files under a directory, or the file itself, sorted.
 
-    Hidden directories are skipped. A file that resolves outside the
+    Hidden directories and hidden files are skipped. A file that resolves outside the
     repository is left out.
     """
     base = root / under
@@ -33,7 +33,11 @@ def markdown_files(root: Path, under: str) -> list[str]:
         found = []
         for directory, subdirs, names in os.walk(base):
             subdirs[:] = sorted(name for name in subdirs if not name.startswith("."))
-            found.extend(Path(directory, name).resolve() for name in names if name.endswith(".md"))
+            found.extend(
+                Path(directory, name).resolve()
+                for name in names
+                if name.endswith(".md") and not name.startswith(".")
+            )
     return sorted(
         path.relative_to(root).as_posix()
         for path in found

@@ -138,3 +138,8 @@ def test_read_document_reports_a_missing_file(root: Path) -> None:
 )
 def test_is_curated_covers_knowledge_and_sources_only(relpath: str, curated: bool) -> None:
     assert corpus.is_curated(relpath) is curated
+
+
+def test_markdown_files_skip_hidden_files(root: Path) -> None:
+    (root / "knowledge" / ".draft.md").write_text("# Draft\n", encoding="utf-8")
+    assert "knowledge/.draft.md" not in corpus.markdown_files(root, "knowledge")
