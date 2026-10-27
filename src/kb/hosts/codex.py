@@ -18,6 +18,7 @@ from kb.transcripts import (
 
 APP: App = "codex"
 SHELL_FUNCTIONS = frozenset({"exec", "exec_command", "run_shell_command", "shell"})
+TIMESTAMPED_ROLLOUT = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-(.+)$")
 INJECTED_BLOCKS = (
     re.compile(
         r"<environment_context\b[^>]*>.*?</environment_context\s*>", re.IGNORECASE | re.DOTALL
@@ -93,12 +94,16 @@ def parse(text: str, filename: str) -> Session:
 
 
 def _filename_id(filename: str) -> str | None:
-    """Return the ID encoded in a rollout-<id>.jsonl filename."""
+    """Return the session ID encoded in a rollout filename."""
     name = Path(filename).name
     stem = Path(name).stem
     if not stem.startswith("rollout-") or len(stem) == len("rollout-"):
         return None
-    return stem.removeprefix("rollout-")
+    filename_id = stem.removeprefix("rollout-")
+    timestamped_match = TIMESTAMPED_ROLLOUT.fullmatch(filename_id)
+    if timestamped_match is not None:
+        return timestamped_match.group(1)
+    return filename_id
 
 
 def _metadata(

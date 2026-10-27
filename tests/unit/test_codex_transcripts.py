@@ -66,6 +66,19 @@ def test_main_fixture_uses_filename_matching_metadata_and_filters_user_context()
     assert all("environment_context" not in message.text for message in session.messages)
 
 
+def test_timestamped_rollout_matches_the_session_id_suffix() -> None:
+    fixture_path = (
+        FIXTURES
+        / "sessions/2026/08/17/rollout-2026-08-17T11-46-46-01a0110c-31c3-7180-98fd-9924acb7a487.jsonl"
+    )
+
+    session = codex.parse(fixture_path.read_text(encoding="utf-8"), fixture_path.name)
+
+    assert session.id == "01a0110c-31c3-7180-98fd-9924acb7a487"
+    assert session.project == "/fixture/project"
+    assert [message.id for message in session.messages] == ["timestamped-user"]
+
+
 def test_subagent_fixture_uses_parent_thread_id() -> None:
     text = (FIXTURES / "sessions/2026/10/25/rollout-codex-agent.jsonl").read_text(encoding="utf-8")
     session = codex.parse(text, "rollout-codex-agent.jsonl")
