@@ -18,13 +18,27 @@ TODAY = "2026-10-26"
 NOW = "2026-10-26T12:00:00Z"
 # Git reads no user or system configuration, and every commit gets this identity.
 GIT_ISOLATION = {
-    "GIT_CONFIG_GLOBAL": "/dev/null",
-    "GIT_CONFIG_SYSTEM": "/dev/null",
+    "GIT_CONFIG_GLOBAL": os.devnull,
+    "GIT_CONFIG_SYSTEM": os.devnull,
     "GIT_AUTHOR_NAME": "Test Author",
     "GIT_AUTHOR_EMAIL": "author@example.invalid",
     "GIT_COMMITTER_NAME": "Test Committer",
     "GIT_COMMITTER_EMAIL": "committer@example.invalid",
 }
+HOLD_KERNEL_LOCK = (
+    "import os, sys\n"
+    "fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o600)\n"
+    "if sys.platform == 'win32':\n"
+    " import msvcrt\n"
+    " if os.fstat(fd).st_size == 0: os.write(fd, b'0')\n"
+    " os.lseek(fd, 0, os.SEEK_SET)\n"
+    " msvcrt.locking(fd, msvcrt.LK_LOCK, 1)\n"
+    "else:\n"
+    " import fcntl\n"
+    " fcntl.flock(fd, fcntl.LOCK_EX)\n"
+    "print('locked', flush=True)\n"
+    "sys.stdin.read()\n"
+)
 
 
 def run_git(repo: Path, *args: str) -> str:
@@ -72,6 +86,7 @@ class Kb:
         """The process environment; a None override removes the variable."""
         env = {
             "HOME": str(self.home),
+            "USERPROFILE": str(self.home),
             "PATH": os.environ.get("PATH", ""),
             "XDG_CONFIG_HOME": str(self.home / "xdg"),
             "KB_CONTENT": str(self.content),

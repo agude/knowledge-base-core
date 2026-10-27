@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import socket
 import subprocess
+import sys
 from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
 from datetime import UTC, datetime, timedelta
@@ -21,13 +22,23 @@ from kb.transcripts import Message, Session
 NOW = datetime(2026, 10, 26, 12, tzinfo=UTC)
 START = NOW - timedelta(hours=3)
 GIT_ENV = {
-    "GIT_CONFIG_GLOBAL": "/dev/null",
-    "GIT_CONFIG_SYSTEM": "/dev/null",
+    "GIT_CONFIG_GLOBAL": os.devnull,
+    "GIT_CONFIG_SYSTEM": os.devnull,
     "GIT_AUTHOR_NAME": "Sync Test",
     "GIT_AUTHOR_EMAIL": "sync@example.invalid",
     "GIT_COMMITTER_NAME": "Sync Test",
     "GIT_COMMITTER_EMAIL": "sync@example.invalid",
 }
+
+
+class FakeMsvcrt:
+    """The Windows lock operations used by the in-process command simulation."""
+
+    LK_NBLCK = 2
+    LK_UNLCK = 0
+
+    def locking(self, fd: int, mode: int, nbytes: int, /) -> None:
+        pass
 
 
 def git(root: Path, *args: str) -> str:
@@ -125,6 +136,32 @@ def _patch_run_setup(monkeypatch: pytest.MonkeyPatch, root: Path) -> None:
     monkeypatch.setattr(dates, "now", lambda _: NOW)
     monkeypatch.setattr(socket, "gethostname", lambda: "test-host.local")
     monkeypatch.setattr(lock, "git_dir", lambda _: root / ".git")
+
+
+def test_windows_sync_ignores_a_held_legacy_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = make_repo(tmp_path / "content")
+    _patch_run_setup(monkeypatch, root)
+    legacy = root / ".observe.lock"
+    legacy.mkdir()
+    (legacy / "pid").write_text("12345\n", encoding="utf-8")
+    selected_platforms: list[str] = []
+
+    def windows_backend(platform: str) -> lock.Backend:
+        selected_platforms.append(platform)
+        return lock.MsvcrtBackend(FakeMsvcrt())
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(lock, "default_backend", windows_backend)
+    monkeypatch.setattr(
+        lock, "take_legacy_lock", lambda *args: pytest.fail("Windows tried the legacy lock")
+    )
+    monkeypatch.setattr(sync, "_sync", lambda *args: 0)
+
+    assert sync.run([]) == 0
+    assert selected_platforms == ["win32"]
+    assert (legacy / "pid").read_text(encoding="utf-8") == "12345\n"
 
 
 def test_run_dry_run_dispatches_without_lock(
@@ -475,6 +512,7 @@ def test_scan_transcripts_parses_claude_and_codex_and_reports_bad_files(
     }
     assert any(failure.reason == "transcript is not UTF-8" for failure in result.failures)
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     empty = sync._scan_transcripts({})
     assert empty == sync.ScanResult((), ())
 

@@ -4,7 +4,6 @@ The end-to-end tests run the installed command. These tests run cli.main in this
 so the coverage of the command and the lock comes from here.
 """
 
-import fcntl
 import io
 import os
 import re
@@ -17,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from kb import cli
+from kb import cli, lock
 from kb.commands import observe
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "content"
@@ -28,14 +27,41 @@ REFUSAL = (
     "observe: remove or redact it, then run kb observe again\n"
 )
 GIT_ENV = {
-    "GIT_CONFIG_GLOBAL": "/dev/null",
-    "GIT_CONFIG_SYSTEM": "/dev/null",
+    "GIT_CONFIG_GLOBAL": os.devnull,
+    "GIT_CONFIG_SYSTEM": os.devnull,
     "GIT_AUTHOR_NAME": "Test Author",
     "GIT_AUTHOR_EMAIL": "author@example.invalid",
     "GIT_COMMITTER_NAME": "Test Committer",
     "GIT_COMMITTER_EMAIL": "committer@example.invalid",
 }
 SECRET_BODY = 'Login notes.\npassword = "hunter2hunter2"\nDone.'
+LEGACY_LOCK_SKIP_REASON = (
+    "legacy lock liveness uses os.kill(pid, 0), which terminates the test process on Windows"
+)
+HOLD_KERNEL_LOCK = (
+    "import os, sys\n"
+    "fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o600)\n"
+    "if sys.platform == 'win32':\n"
+    " import msvcrt\n"
+    " if os.fstat(fd).st_size == 0: os.write(fd, b'0')\n"
+    " os.lseek(fd, 0, os.SEEK_SET)\n"
+    " msvcrt.locking(fd, msvcrt.LK_LOCK, 1)\n"
+    "else:\n"
+    " import fcntl\n"
+    " fcntl.flock(fd, fcntl.LOCK_EX)\n"
+    "print('locked', flush=True)\n"
+    "sys.stdin.read()\n"
+)
+
+
+class FakeMsvcrt:
+    """The Windows lock operations used by the in-process command simulation."""
+
+    LK_NBLCK = 2
+    LK_UNLCK = 0
+
+    def locking(self, fd: int, mode: int, nbytes: int, /) -> None:
+        pass
 
 
 class FixedClock:
@@ -88,6 +114,7 @@ def isolated_user(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     monkeypatch.delenv("KB_CONTENT", raising=False)
     monkeypatch.chdir(home)
@@ -107,6 +134,7 @@ def content(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("KB_TODAY", "2026-10-26")
     monkeypatch.setenv("KB_LOCK_WAIT", "0")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     (tmp_path / "home").mkdir(exist_ok=True)
     monkeypatch.chdir(tmp_path / "home")
@@ -303,12 +331,21 @@ def test_a_kernel_lock_held_by_another_descriptor_is_reported_as_busy(
     content: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     before = pending(content)
-    holder = os.open(content / ".git" / "kb.lock", os.O_RDWR | os.O_CREAT, 0o666)
+    holder = subprocess.Popen(
+        [sys.executable, "-c", HOLD_KERNEL_LOCK, str(content / ".git" / "kb.lock")],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+    )
+    assert holder.stdin is not None
+    assert holder.stdout is not None
     try:
-        fcntl.flock(holder, fcntl.LOCK_EX)
+        assert holder.stdout.readline() == "locked\n"
         status, out, err = run_kb(capsys, "--title", "Blocked", "--body", "Waits.")
     finally:
-        os.close(holder)
+        holder.stdin.close()
+        holder.wait(timeout=30)
     assert (status, out, err) == (
         1,
         "",
@@ -318,6 +355,7 @@ def test_a_kernel_lock_held_by_another_descriptor_is_reported_as_busy(
     assert kb_tmp(content) == []
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason=LEGACY_LOCK_SKIP_REASON)
 def test_a_live_legacy_lock_is_reported_as_busy_and_left_alone(
     content: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -332,6 +370,33 @@ def test_a_live_legacy_lock_is_reported_as_busy_and_left_alone(
     )
     assert (lock / "pid").read_text(encoding="utf-8") == f"{os.getpid()}\n"
     assert kb_tmp(content) == []
+
+
+def test_windows_observe_ignores_a_held_legacy_lock(
+    content: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    legacy = content / ".observe.lock"
+    legacy.mkdir()
+    (legacy / "pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
+    selected_platforms: list[str] = []
+
+    def windows_backend(platform: str) -> lock.Backend:
+        selected_platforms.append(platform)
+        return lock.MsvcrtBackend(FakeMsvcrt())
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(lock, "default_backend", windows_backend)
+    monkeypatch.setattr(
+        lock, "take_legacy_lock", lambda *args: pytest.fail("Windows tried the legacy lock")
+    )
+
+    status, out, err = run_kb(capsys, "--title", "Windows", "--body", "Ignore old lock.")
+
+    assert status == 0
+    assert WROTE.fullmatch(out) is not None
+    assert err == ""
+    assert selected_platforms == ["win32"]
+    assert sorted(entry.name for entry in legacy.iterdir()) == ["pid"]
 
 
 def test_a_taken_name_draws_a_new_suffix(

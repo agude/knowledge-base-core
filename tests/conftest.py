@@ -17,6 +17,7 @@ def isolated_user(
     """
     home: Path = tmp_path_factory.mktemp("home")
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(home / "xdg"))
     monkeypatch.setenv("LOCALAPPDATA", str(home / "localappdata"))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(home / ".claude"))

@@ -17,17 +17,13 @@ from pathlib import Path
 
 import pytest
 
-from .harness import FIXTURE_TRANSCRIPTS, Kb, run_git
+from .harness import FIXTURE_TRANSCRIPTS, HOLD_KERNEL_LOCK, Kb, run_git
 
 HOST = socket.gethostname().split(".", 1)[0]
 SINCE = "2026-10-24T00:00:00Z"
 SECRET = "fixture-only-secret-92841"
-HOLD_FLOCK = (
-    "import fcntl, os, sys\n"
-    "fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o600)\n"
-    "fcntl.flock(fd, fcntl.LOCK_EX)\n"
-    "print('locked', flush=True)\n"
-    "sys.stdin.read()\n"
+LEGACY_LOCK_SKIP_REASON = (
+    "legacy lock liveness uses os.kill(pid, 0), which terminates the test process on Windows"
 )
 
 
@@ -174,7 +170,7 @@ def start_lock_process(kb: Kb, lock: str) -> subprocess.Popen[str]:
     """Hold the named cross-process lock until the caller closes stdin."""
     if lock == "kernel":
         path = kb.content / ".git" / "kb.lock"
-        script = HOLD_FLOCK
+        script = HOLD_KERNEL_LOCK
     else:
         path = kb.content / ".observe.lock"
         script = (
@@ -687,7 +683,20 @@ def test_fork_keeps_shared_prefix_when_original_file_is_missing(remote_git_kb: K
     assert field(fork, "forked_from") is None
 
 
-@pytest.mark.parametrize("lock", ["kernel", "legacy"])
+@pytest.mark.parametrize(
+    "lock",
+    [
+        pytest.param("kernel", id="kernel"),
+        pytest.param(
+            "legacy",
+            id="legacy",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason=LEGACY_LOCK_SKIP_REASON,
+            ),
+        ),
+    ],
+)
 @pytest.mark.parametrize("mode", ["sync", "status"])
 def test_held_write_lock_times_out(lock: str, mode: str, remote_git_kb: Kb) -> None:
     config(remote_git_kb, harvest_since=None)

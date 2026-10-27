@@ -54,6 +54,7 @@ def test_a_kb_content_that_is_not_a_directory_is_reported(tmp_path: Path) -> Non
 
 def test_tilde_expands_in_kb_content(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     (tmp_path / "notes").mkdir()
     assert config.content_root({"KB_CONTENT": "~/notes"}, tmp_path / "x.toml") == (
         (tmp_path / "notes").resolve()
@@ -62,6 +63,7 @@ def test_tilde_expands_in_kb_content(monkeypatch: pytest.MonkeyPatch, tmp_path: 
 
 def test_tilde_expands_in_the_config_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     (tmp_path / "notes").mkdir()
     config_path = write(tmp_path / "config.toml", 'content = "~/notes"\n')
     assert config.content_root({}, config_path) == (tmp_path / "notes").resolve()

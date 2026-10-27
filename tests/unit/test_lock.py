@@ -15,6 +15,10 @@ from kb import lock
 from kb.errors import KbError
 from kb.lock import FlockBackend, InvalidWait, LockBusy, MsvcrtBackend
 
+LEGACY_LOCK_SKIP_REASON = (
+    "legacy lock liveness uses os.kill(pid, 0), which terminates the test process on Windows"
+)
+
 
 class FakeClock:
     """A clock that moves only when pause is called, so waits take no real time."""
@@ -197,6 +201,7 @@ def test_default_backend_imports_only_the_module_for_its_platform() -> None:
     assert imported == ["fcntl"]
     windows = lock.default_backend("win32", record)
     assert isinstance(windows, MsvcrtBackend)
+    assert not windows.legacy_lock
     assert imported == ["fcntl", "msvcrt"]
 
 
@@ -242,6 +247,7 @@ def test_kernel_lock_closes_its_descriptor_on_any_error(
     assert len(closed) == 1
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason=LEGACY_LOCK_SKIP_REASON)
 def test_take_legacy_lock_writes_our_pid_and_release_removes_it(tmp_path: Path) -> None:
     lock.take_legacy_lock(tmp_path, 0)
     assert (legacy_dir(tmp_path) / "pid").read_text(encoding="utf-8") == f"{os.getpid()}\n"
@@ -249,6 +255,7 @@ def test_take_legacy_lock_writes_our_pid_and_release_removes_it(tmp_path: Path) 
     assert not legacy_dir(tmp_path).exists()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason=LEGACY_LOCK_SKIP_REASON)
 def test_legacy_lock_held_by_a_live_process_is_waited_for_then_refused(tmp_path: Path) -> None:
     clock = FakeClock()
     legacy_dir(tmp_path).mkdir()
@@ -260,6 +267,7 @@ def test_legacy_lock_held_by_a_live_process_is_waited_for_then_refused(tmp_path:
     assert (legacy_dir(tmp_path) / "pid").read_text(encoding="utf-8") == f"{os.getpid()}\n"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason=LEGACY_LOCK_SKIP_REASON)
 def test_legacy_lock_without_a_pid_file_is_not_stale(tmp_path: Path) -> None:
     legacy_dir(tmp_path).mkdir()
     with pytest.raises(LockBusy):
@@ -267,6 +275,7 @@ def test_legacy_lock_without_a_pid_file_is_not_stale(tmp_path: Path) -> None:
     assert legacy_dir(tmp_path).is_dir()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason=LEGACY_LOCK_SKIP_REASON)
 def test_legacy_lock_with_an_empty_pid_file_is_not_stale(tmp_path: Path) -> None:
     legacy_dir(tmp_path).mkdir()
     (legacy_dir(tmp_path) / "pid").write_text("\n", encoding="utf-8")
@@ -275,6 +284,7 @@ def test_legacy_lock_with_an_empty_pid_file_is_not_stale(tmp_path: Path) -> None
     assert legacy_dir(tmp_path).is_dir()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason=LEGACY_LOCK_SKIP_REASON)
 def test_legacy_lock_left_by_a_dead_process_is_removed_and_taken(tmp_path: Path) -> None:
     legacy_dir(tmp_path).mkdir()
     (legacy_dir(tmp_path) / "pid").write_text(f"{dead_pid()}\n", encoding="utf-8")
@@ -283,6 +293,7 @@ def test_legacy_lock_left_by_a_dead_process_is_removed_and_taken(tmp_path: Path)
 
 
 @pytest.mark.parametrize("owner", ["not a pid\n", "-5\n", "0\n", "9" * 30 + "\n"])
+@pytest.mark.skipif(sys.platform == "win32", reason=LEGACY_LOCK_SKIP_REASON)
 def test_legacy_lock_naming_no_process_is_stale(tmp_path: Path, owner: str) -> None:
     legacy_dir(tmp_path).mkdir()
     (legacy_dir(tmp_path) / "pid").write_text(owner, encoding="utf-8")
@@ -290,6 +301,7 @@ def test_legacy_lock_naming_no_process_is_stale(tmp_path: Path, owner: str) -> N
     assert (legacy_dir(tmp_path) / "pid").read_text(encoding="utf-8") == f"{os.getpid()}\n"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason=LEGACY_LOCK_SKIP_REASON)
 def test_a_stale_lock_that_cannot_be_removed_is_waited_for_then_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -301,6 +313,7 @@ def test_a_stale_lock_that_cannot_be_removed_is_waited_for_then_refused(
     assert legacy_dir(tmp_path).is_dir()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason=LEGACY_LOCK_SKIP_REASON)
 def test_a_process_owned_by_another_user_counts_as_alive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -315,11 +328,13 @@ def test_a_process_owned_by_another_user_counts_as_alive(
     assert legacy_dir(tmp_path).is_dir()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason=LEGACY_LOCK_SKIP_REASON)
 def test_release_tolerates_a_missing_legacy_lock(tmp_path: Path) -> None:
     lock.release_legacy_lock(tmp_path)
     assert not legacy_dir(tmp_path).exists()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason=LEGACY_LOCK_SKIP_REASON)
 def test_write_lock_holds_both_locks_then_releases_them(tmp_path: Path) -> None:
     git = make_repo(tmp_path / "repo") / ".git"
     content = tmp_path / "repo"
@@ -331,6 +346,7 @@ def test_write_lock_holds_both_locks_then_releases_them(tmp_path: Path) -> None:
         pass
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason=LEGACY_LOCK_SKIP_REASON)
 def test_write_lock_releases_both_locks_when_the_block_raises(tmp_path: Path) -> None:
     git = make_repo(tmp_path / "repo") / ".git"
     content = tmp_path / "repo"
@@ -353,20 +369,38 @@ def test_write_lock_takes_only_the_kernel_lock_without_a_legacy_lock(tmp_path: P
     assert len(backend.unlocked) == 1
 
 
+def test_windows_write_lock_ignores_a_held_legacy_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    git = tmp_path / "git"
+    git.mkdir()
+    content = tmp_path / "content"
+    content.mkdir()
+    legacy_dir(content).mkdir()
+    (legacy_dir(content) / "pid").write_text("12345\n", encoding="utf-8")
+    backend = lock.default_backend("win32", lambda _: cast(ModuleType, FakeMsvcrt()))
+    monkeypatch.setattr(
+        lock, "take_legacy_lock", lambda *args: pytest.fail("Windows tried the legacy lock")
+    )
+
+    with lock.write_lock(git, content, 0, backend):
+        assert (legacy_dir(content) / "pid").read_text(encoding="utf-8") == "12345\n"
+
+    assert (legacy_dir(content) / "pid").read_text(encoding="utf-8") == "12345\n"
+
+
 def test_write_lock_takes_no_legacy_lock_while_the_kernel_lock_is_busy(tmp_path: Path) -> None:
-    git = make_repo(tmp_path / "repo") / ".git"
-    content = tmp_path / "repo"
-    backend = lock.default_backend("linux")
-    held = lock.acquire_kernel(git / "kb.lock", backend, 0)
-    try:
-        with pytest.raises(LockBusy), lock.write_lock(git, content, 0, backend):
-            pass
-        assert not legacy_dir(content).exists()
-    finally:
-        backend.unlock(held)
-        os.close(held)
+    git = tmp_path / "git"
+    git.mkdir()
+    content = tmp_path / "content"
+    content.mkdir()
+    backend = FakeBackend(busy=1, legacy=False)
+    with pytest.raises(LockBusy), lock.write_lock(git, content, 0, backend):
+        pass
+    assert not legacy_dir(content).exists()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason=LEGACY_LOCK_SKIP_REASON)
 def test_write_lock_frees_the_kernel_lock_when_the_legacy_lock_is_busy(tmp_path: Path) -> None:
     git = make_repo(tmp_path / "repo") / ".git"
     content = tmp_path / "repo"

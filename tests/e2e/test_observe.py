@@ -15,19 +15,14 @@ import time
 
 import pytest
 
-from .harness import Kb, run_git
+from .harness import HOLD_KERNEL_LOCK, Kb, run_git
 
 USAGE = "Usage: kb observe --title TITLE --body TEXT\n"
 BUSY = "observe: content repository is busy (waited 1s for the lock)\n"
 WROTE = re.compile(r"Wrote: observations/pending/([0-9]{8}T[0-9]{6}-[0-9a-f]{8}\.md)\n")
 CREATED = re.compile(r"^created: (\S+)$", re.MULTILINE)
-# Holds an exclusive flock on the file named by argv[1] until its stdin closes.
-HOLD_FLOCK = (
-    "import fcntl, os, sys\n"
-    "fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o600)\n"
-    "fcntl.flock(fd, fcntl.LOCK_EX)\n"
-    "print('locked', flush=True)\n"
-    "sys.stdin.read()\n"
+LEGACY_LOCK_SKIP_REASON = (
+    "legacy lock liveness uses os.kill(pid, 0), which terminates the test process on Windows"
 )
 USAGE_CASES = [
     pytest.param(["observe", "--body", "Text."], USAGE, id="missing-title"),
@@ -242,7 +237,7 @@ def test_kernel_lock_held_by_another_process_blocks_the_write(git_kb: Kb) -> Non
     head = git_kb.git("rev-parse", "HEAD")
     before = pending_files(git_kb)
     holder = subprocess.Popen(
-        [sys.executable, "-c", HOLD_FLOCK, str(git_kb.content / ".git" / "kb.lock")],
+        [sys.executable, "-c", HOLD_KERNEL_LOCK, str(git_kb.content / ".git" / "kb.lock")],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         text=True,
@@ -268,6 +263,7 @@ def test_kernel_lock_held_by_another_process_blocks_the_write(git_kb: Kb) -> Non
     assert not (git_kb.content / ".observe.lock").exists()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason=LEGACY_LOCK_SKIP_REASON)
 def test_legacy_lock_held_by_a_live_process_blocks_the_write_and_is_left_alone(
     git_kb: Kb,
 ) -> None:
@@ -287,6 +283,7 @@ def test_legacy_lock_held_by_a_live_process_blocks_the_write_and_is_left_alone(
     assert (lock / "pid").read_text(encoding="utf-8") == f"{os.getpid()}\n"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason=LEGACY_LOCK_SKIP_REASON)
 def test_legacy_lock_left_by_a_dead_process_is_removed_and_the_write_succeeds(
     git_kb: Kb,
 ) -> None:
