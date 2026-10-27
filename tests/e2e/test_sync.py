@@ -31,7 +31,7 @@ def config(kb: Kb, harvest_since: str | None = SINCE) -> Path:
     """Write an isolated kb config with or without transcript harvesting enabled."""
     path = kb.config_file
     path.parent.mkdir(parents=True, exist_ok=True)
-    lines = [f'content = "{kb.content}"']
+    lines = [f'content = "{kb.content.as_posix()}"']
     if harvest_since is not None:
         lines.append(f"harvest_since = {harvest_since}")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

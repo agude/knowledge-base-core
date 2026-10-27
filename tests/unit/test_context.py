@@ -22,7 +22,7 @@ def test_load_reads_the_root_from_the_config_file(tmp_path: Path) -> None:
     root.mkdir()
     config = tmp_path / "xdg" / "kb" / "config.toml"
     config.parent.mkdir(parents=True)
-    config.write_text(f'content = "{root}"\n', encoding="utf-8")
+    config.write_text(f'content = "{root.as_posix()}"\n', encoding="utf-8")
     loaded = context.load({"XDG_CONFIG_HOME": str(tmp_path / "xdg")}, "linux", tmp_path)
     assert loaded.root == root.resolve()
 

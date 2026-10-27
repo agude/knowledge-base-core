@@ -1,7 +1,7 @@
 """Tests for finding the content repository."""
 
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 
@@ -18,21 +18,22 @@ def write(path: Path, text: str) -> Path:
 def test_kb_content_wins_over_the_config_file(tmp_path: Path) -> None:
     root = tmp_path / "kb"
     root.mkdir()
-    config_path = write(tmp_path / "config.toml", f'content = "{tmp_path / "other"}"\n')
+    other = (tmp_path / "other").as_posix()
+    config_path = write(tmp_path / "config.toml", f'content = "{other}"\n')
     assert config.content_root({"KB_CONTENT": str(root)}, config_path) == root.resolve()
 
 
 def test_an_empty_kb_content_is_unset(tmp_path: Path) -> None:
     root = tmp_path / "kb"
     root.mkdir()
-    config_path = write(tmp_path / "config.toml", f'content = "{root}"\n')
+    config_path = write(tmp_path / "config.toml", f'content = "{root.as_posix()}"\n')
     assert config.content_root({"KB_CONTENT": ""}, config_path) == root.resolve()
 
 
 def test_the_config_file_supplies_the_root(tmp_path: Path) -> None:
     root = tmp_path / "kb"
     root.mkdir()
-    config_path = write(tmp_path / "config.toml", f'content = "{root}"\n')
+    config_path = write(tmp_path / "config.toml", f'content = "{root.as_posix()}"\n')
     assert config.content_root({}, config_path) == root.resolve()
 
 
@@ -134,6 +135,19 @@ def test_invalid_toml_is_reported(tmp_path: Path) -> None:
     config_path = tmp_path / "config.toml"
     with pytest.raises(KbError, match=r"^knowledge base: invalid config file "):
         config.parse_content_setting("content = \n", config_path)
+
+
+def test_native_windows_path_is_normalized_before_toml_interpolation(tmp_path: Path) -> None:
+    windows_path = PureWindowsPath(r"C:\Users\tester\Knowledge")
+    config_path = tmp_path / "config.toml"
+
+    with pytest.raises(KbError, match="invalid config file"):
+        config.parse_content_setting(f'content = "{windows_path}"\n', config_path)
+
+    normalized_path = windows_path.as_posix()
+    assert config.parse_content_setting(f'content = "{normalized_path}"\n', config_path) == Path(
+        normalized_path
+    )
 
 
 def test_a_config_without_a_content_key_has_no_setting(tmp_path: Path) -> None:

@@ -23,7 +23,7 @@ def test_environment_names_the_content_root(kb: Kb) -> None:
 
 
 def test_config_file_names_the_content_root(kb: Kb) -> None:
-    write_config(kb, f'content = "{kb.content}"\n')
+    write_config(kb, f'content = "{kb.content.as_posix()}"\n')
     result = kb("map", "--depth", "1", env={"KB_CONTENT": None})
     assert result.returncode == 0
     assert result.stdout.startswith(INFRA_COUNT)
@@ -32,21 +32,22 @@ def test_config_file_names_the_content_root(kb: Kb) -> None:
 def test_default_config_location_without_xdg_config_home(kb: Kb) -> None:
     path = kb.home / ".config" / "kb" / "config.toml"
     path.parent.mkdir(parents=True)
-    path.write_text(f'content = "{kb.content}"\n', encoding="utf-8")
+    path.write_text(f'content = "{kb.content.as_posix()}"\n', encoding="utf-8")
     result = kb("map", "--depth", "1", env={"KB_CONTENT": None, "XDG_CONFIG_HOME": None})
     assert result.returncode == 0
     assert result.stdout.startswith(INFRA_COUNT)
 
 
 def test_environment_overrides_the_config_file(kb: Kb) -> None:
-    write_config(kb, f'content = "{kb.home / "missing"}"\n')
+    missing = (kb.home / "missing").as_posix()
+    write_config(kb, f'content = "{missing}"\n')
     result = kb("map", "--depth", "1")
     assert result.returncode == 0
     assert result.stdout.startswith(INFRA_COUNT)
 
 
 def test_empty_environment_value_counts_as_unset(kb: Kb) -> None:
-    write_config(kb, f'content = "{kb.content}"\n')
+    write_config(kb, f'content = "{kb.content.as_posix()}"\n')
     result = kb("map", "--depth", "1", env={"KB_CONTENT": ""})
     assert result.returncode == 0
     assert result.stdout.startswith(INFRA_COUNT)
