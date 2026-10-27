@@ -2,8 +2,9 @@
 
 `kb` lets LLM agent sessions read and search a knowledge base: curated
 articles and source documents, and the observations and questions behind them.
-It only reads the content repository. Recording and curation are handled by
-other tools.
+The read commands never write. `kb observe` is the one command that writes: it
+records an observation and commits it to the content repository. Curation is
+handled by other tools.
 
 ## Usage
 
@@ -11,6 +12,7 @@ other tools.
 kb recall QUERY...    # find the curated sections that answer a query
 kb read LOCATOR...    # print the text that each locator names
 kb map [PATH]         # list the articles under PATH, with their sections
+kb observe --title TITLE --body TEXT  # record an observation and commit it
 kb --help             # every command
 ```
 
@@ -53,6 +55,48 @@ knowledge/infra/nas.md | NAS
   knowledge/infra/nas.md#2 | Power loss
 ```
 
+### `kb observe`
+
+`kb observe` records one observation. It writes
+`observations/pending/<YYYYmmddTHHMMSS>-<8 hex digits>.md` in the content
+repository and commits only that file, with the subject `Observe: TITLE`.
+Anything else that is staged stays staged.
+
+```sh
+kb observe --title "DNS caching" --body "The resolver caches answers for an hour."
+kb observe --title "Meeting notes" --body - < notes.txt
+```
+
+- `--title` is one line and must contain text. `--body` must contain text. `-`
+  reads the body from standard input to its end.
+- On success, stdout is `Wrote: observations/pending/<file>` and the exit status
+  is 0. A usage error prints the usage line and exits 1. Any other failure prints
+  nothing to stdout, prints a message that begins `observe:` to stderr, and exits 1.
+- The file records `project`, the absolute path of the git top level where the
+  command ran (or that directory, outside a repository), and `host`, the host name
+  up to its first dot.
+- Before anything is written, the title and body are checked for possible secrets
+  with detect-secrets' default plugins and filters. Each finding prints a line such
+  as `observe: refused: possible secret (Secret Keyword) at body line 4`, then
+  `observe: remove or redact it, then run kb observe again`. The secret itself is
+  never printed, and there is no override. The generated fields are not checked.
+- A write waits for the content repository's lock for `KB_LOCK_WAIT` seconds, a
+  non-negative integer that defaults to 30. If the lock is still held, the command
+  prints `observe: content repository is busy (waited <N>s for the lock)`, writes
+  nothing, and exits 1.
+
+The write takes two locks, in this order. The kernel lock is an exclusive lock on
+`<git dir>/kb.lock`, which the kernel releases when the process exits. The second
+is the lock that the old scripts in `~/Knowledge/scripts` take: the directory
+`<content>/.observe.lock` with a `pid` file. Taking it lets `kb observe` and those
+scripts exclude each other while both are in use. A `pid` file that names a process
+which is no longer running is stale, and the lock is removed. This second lock is
+POSIX only, and it is removed at cutover, along with the old scripts. Until then,
+`kb observe` waits for a lock that the old scripts hold, up to `KB_LOCK_WAIT`.
+
+Temporary files for a write live in `<git dir>/kb-tmp` and are removed on every
+path.
+
 ## Development
 
 Requires [uv](https://docs.astral.sh/uv/) 0.13 or newer and [just](https://just.systems/).
@@ -66,6 +110,7 @@ just sync           # Install the locked development environment.
 just hooks-install  # Install the pre-commit hook, which runs `just lint`.
 just check          # Run lint, type-check, and test.
 just eval           # Score retrieval against the question sets under tests/fixtures.
+just test-compat    # Run the observe compatibility tests against ~/Knowledge.
 ```
 
 Run `just` to list every recipe.

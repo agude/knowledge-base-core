@@ -22,6 +22,7 @@ CI pass.
 | `just check` | Runs lint, type-check, and test. Run it before every commit. |
 | `just build package-check` | Builds the package, installs the wheel in a clean environment, and smoke-tests it. |
 | `just lock` | Updates `uv.lock` after a dependency change. |
+| `just test-compat` | Runs the observe compatibility tests against the old tooling in `~/Knowledge`. |
 | `just release <bump>` | Bumps the version, commits, and tags. Does not push. |
 
 ## Rules
@@ -51,6 +52,12 @@ CI pass.
   `python_version` consistent.
 - The pre-commit hook runs `just lint` and changes nothing. If it fails, run
   `just format`, then commit again.
+- A writing command takes its locks through `kb/lock.py`, and it checks the
+  agent's text with the secrets check in `kb/secrets.py` before anything is
+  written. Only `kb/secrets.py` may import `detect_secrets`.
+- The legacy lock in `kb/lock.py` (`take_legacy_lock`, `release_legacy_lock`, and
+  the stale-pid check) exists only for the old scripts. Delete it at cutover, with
+  the old scripts' `.observe.lock` protocol, and remove its tests with it.
 
 ## Evaluation
 
