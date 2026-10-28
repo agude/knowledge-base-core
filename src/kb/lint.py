@@ -23,12 +23,17 @@ _VALID_SECTION_STATUSES = {"current", "superseded", "unresolved"}
 
 @dataclass(frozen=True)
 class Finding:
-    """One lint error or warning at a one-based source line."""
+    """One lint error or warning at a one-based source line.
+
+    target is the content-relative file that a reference finding names, when it resolves
+    inside the repository. Publication uses it to tell whether a change removed that file.
+    """
 
     path: str
     line: int
     severity: str
     message: str
+    target: str | None = None
 
 
 @dataclass(frozen=True)
@@ -127,7 +132,9 @@ def reference_findings(
                 if reference.kind == "link"
                 else f"missing local source reference: {reference.destination}"
             )
-            findings.append(Finding(reference.source_path, reference.line, "error", message))
+            findings.append(
+                Finding(reference.source_path, reference.line, "error", message, relpath)
+            )
             continue
         if not has_fragment or not fragment or target.suffix != ".md":
             continue
@@ -142,7 +149,9 @@ def reference_findings(
                 if reference.kind == "link"
                 else f"missing source reference anchor '#{fragment}': {reference.destination}"
             )
-            findings.append(Finding(reference.source_path, reference.line, "error", message))
+            findings.append(
+                Finding(reference.source_path, reference.line, "error", message, relpath)
+            )
     return findings
 
 

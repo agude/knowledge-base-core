@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from kb.commands import curate as curate_command
 from kb.commands import evidence as evidence_command
 from kb.commands import gap as gap_command
+from kb.commands import hook as hook_command
 from kb.commands import lint as lint_command
 from kb.commands import map as map_command
 from kb.commands import observe as observe_command
@@ -74,6 +75,11 @@ COMMANDS: tuple[Command, ...] = (
         name="sync",
         summary="Harvest transcripts and sync the content repository.",
         run=sync_command.run,
+    ),
+    Command(
+        name="hook",
+        summary="Run a Git hook for the content repository.",
+        run=hook_command.run,
     ),
     Command(
         name="evidence",
