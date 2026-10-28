@@ -11,6 +11,7 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
+from subprocess import CompletedProcess
 from subprocess import run as run_process
 from typing import cast
 
@@ -28,6 +29,7 @@ from kb import (
     lock,
     model,
     observation,
+    publish,
     remote,
     secrets,
 )
@@ -83,8 +85,16 @@ DROP_SPEC = Spec(
     summary="Settle a pending member whose input is missing or changed without altering that file.",
     valued=frozenset({"--reason"}),
 )
+FINISH_SPEC = Spec(
+    usage="curate finish RUN [--no-push]",
+    summary=(
+        "Commit a settled batch's publication set once, after validating it, then push. "
+        "--no-push stops after the local commit."
+    ),
+    switches=frozenset({"--no-push"}),
+)
 SPEC = Spec(
-    usage="curate {start,status,next,complete,defer,drop} ...",
+    usage="curate {start,status,next,complete,defer,drop,finish} ...",
     summary=(
         "Manage local curation batches. Start selects bounded input; status reports persisted "
         "progress without changing files or contacting Git. Complete records outcomes and "
@@ -116,6 +126,8 @@ def run(words: Sequence[str]) -> int:
         sys.stdout.write(SPEC.help_text())
         return 0
     command, *arguments = words
+    if command == "finish":
+        return _finish_command(arguments)
     if command == "start":
         return _start_command(arguments)
     if command == "status":
@@ -443,6 +455,345 @@ def _head_commit(root: Path) -> str:
     return commit
 
 
+def _finish_command(words: Sequence[str]) -> int:
+    parsed = args.parse(FINISH_SPEC, words)
+    if parsed.help:
+        sys.stdout.write(FINISH_SPEC.help_text())
+        return 0
+    if len(parsed.words) != 1:
+        raise FINISH_SPEC.usage_error()
+    no_push = "--no-push" in parsed.switches
+    try:
+        wait = lock.parse_wait(os.environ.get("KB_LOCK_WAIT"))
+    except lock.InvalidWait:
+        raise FINISH_SPEC.usage_error() from None
+
+    try:
+        context = load(os.environ, sys.platform, Path.home())
+        git_directory = lock.git_dir_path(context.root, WHO)
+        backend = lock.default_backend(sys.platform)
+        with lock.write_lock(git_directory, context.root, wait, backend):
+            return _finish(context.root, git_directory, parsed.words[0], no_push=no_push)
+    except lock.LockBusy as busy:
+        raise KbError(
+            f"{WHO}: content repository is busy (waited {busy.waited}s for the lock)"
+        ) from None
+    except curation.StateError as error:
+        raise KbError(f"{WHO}: {error}") from error
+    except KbError as error:
+        if str(error).startswith((f"{WHO}:", "Usage:")):
+            raise
+        raise KbError(f"{WHO}: {error}") from error
+    except (OSError, RuntimeError, UnicodeError) as error:
+        raise KbError(f"{WHO}: {error}") from error
+
+
+def _finish(root: Path, git_directory: Path, run_id: str, *, no_push: bool) -> int:
+    """Refuse unsafe states, then commit the publication set once and publish it."""
+    batch = _read_batch(root, run_id)
+    for member in batch.members:
+        if member.status == "archiving":
+            resume = shlex.join(_completion_words(batch.id, member))
+            raise KbError(f"{WHO}: archive is interrupted for {member.filename}; resume: {resume}")
+    if not curation.is_settled(batch):
+        raise KbError(f"{WHO}: batch has pending work; run: kb curate status {batch.id}")
+    branch = _branch(root)
+    if branch is None:
+        raise KbError(f"{WHO}: HEAD is detached; check out a branch before finishing")
+    if not no_push and not _has_origin(root):
+        raise KbError(f"{WHO}: no origin remote; use --no-push to commit locally")
+    committed = _committed_batch(root, batch)
+    if committed is not None:
+        return _resume_publication(root, committed, branch, no_push=no_push)
+    _require_index_clean(root)
+    changes = _publication_changes(root, batch)
+    verdict = publish.validate(root, changes)
+    if verdict.blocking:
+        lines = [f"{WHO}: validation refused publication; nothing was written"]
+        lines.extend(f"  {_finding_text(finding)}" for finding in verdict.blocking)
+        raise KbError("\n".join(lines))
+    if verdict.preexisting:
+        sys.stdout.write(f"Preexisting (not blocking): {len(verdict.preexisting)}\n")
+        for finding in verdict.preexisting:
+            sys.stdout.write(f"  {_finding_text(finding)}\n")
+    message = publish.render_message(batch.id, batch, changes)
+    _scan_message(git_directory, message)
+    commit = _commit_publication(root, git_directory, [change.path for change in changes], message)
+    sys.stdout.write(f"Commit: {commit}\n")
+    if no_push:
+        sys.stdout.write("Committed locally; not published\n")
+        return 0
+    return _publish(root, commit, branch)
+
+
+def _resume_publication(root: Path, commit: str, branch: str, *, no_push: bool) -> int:
+    """Publish a batch commit that already exists, without making another commit."""
+    if not no_push:
+        return _publish(root, commit, branch)
+    if _is_published(root, commit, branch):
+        sys.stdout.write(f"Already published: {commit}\n")
+    else:
+        sys.stdout.write(f"Commit: {commit}\nCommitted locally; not published\n")
+    return 0
+
+
+def _publish(root: Path, commit: str, branch: str) -> int:
+    """Fetch, rebase, and push, then report whether origin has the commit."""
+    result = remote.synchronize(root, push=True)
+    if result.skipped_dirty or result.errors:
+        for message in result.errors:
+            sys.stderr.write(f"{message}\n")
+        if result.skipped_dirty:
+            listing = _listing(list(result.skipped_dirty))
+            sys.stderr.write(f"{WHO}: uncommitted changes: {listing}\n")
+        conflict = any("rebase onto" in message for message in result.errors)
+        hint = "Resolve the conflict" if conflict else "Resolve the cause"
+        sys.stderr.write(f"{WHO}: Committed locally; not published. {hint}, then run: kb sync\n")
+        return 1
+    if result.pushed:
+        sys.stdout.write(f"Published: origin/{branch}\n")
+    else:
+        sys.stdout.write(f"Already published: {commit}\n")
+    return 0
+
+
+def _publication_changes(root: Path, batch: curation.Batch) -> list[publish.Change]:
+    """The worktree changes that finish publishes. Anything else in the worktree refuses it."""
+    manifest = f"{BATCHES}/{batch.id}.json"
+    archives = {
+        f"{ARCHIVED}/{member.filename}" for member in batch.members if member.status == "complete"
+    }
+    removable = {
+        f"{PENDING}/{member.filename}"
+        for member in batch.members
+        if member.status in {"complete", "dropped"}
+    }
+    changes: list[publish.Change] = []
+    refused: list[str] = []
+    for code, path in _worktree_entries(root):
+        status = _change_status(code)
+        if publish.is_published(path) or path == manifest or path in archives:
+            changes.append(publish.Change(status, path))
+        elif path in removable and status == "D":
+            changes.append(publish.Change("D", path))
+        else:
+            refused.append(path)
+    if refused:
+        raise KbError(f"{WHO}: uncommitted changes outside the batch: {_listing(refused)}")
+    return sorted(changes, key=lambda change: change.path)
+
+
+def _worktree_entries(root: Path) -> list[tuple[str, str]]:
+    """Each changed or untracked path with its two-letter Git status, excluding the old lock."""
+    output = _git_output(
+        root,
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all",
+        message="cannot inspect Git status",
+    )
+    entries: list[tuple[str, str]] = []
+    for record in output.split("\0"):
+        if not record:
+            continue
+        path = record[3:]
+        if path == ".observe.lock" or path.startswith(".observe.lock/"):
+            continue
+        entries.append((record[:2], path))
+    return entries
+
+
+def _change_status(code: str) -> str:
+    """Git's status letter for a two-letter porcelain code from the worktree."""
+    if code == "??":
+        return "A"
+    if "D" in code:
+        return "D"
+    if "T" in code:
+        return "T"
+    if "A" in code:
+        return "A"
+    return "M"
+
+
+def _commit_publication(
+    root: Path,
+    git_directory: Path,
+    paths: Sequence[str],
+    message: str,
+) -> str:
+    """Stage exactly the publication set, commit once with the message, and unstage on failure."""
+    pathspec = _write_scratch_file(git_directory, _nul_terminated(paths))
+    text = _write_scratch_file(git_directory, message.encode("utf-8"))
+    try:
+        staged = _git_quiet(
+            root,
+            "--literal-pathspecs",
+            "add",
+            "--all",
+            f"--pathspec-from-file={pathspec}",
+            "--pathspec-file-nul",
+        )
+        if staged.returncode != 0:
+            _unstage(root, git_directory, paths)
+            detail = staged.stderr.rstrip("\n")
+            raise KbError(f"{WHO}: cannot stage the publication set: {detail}")
+        names = _git_output(
+            root,
+            "diff",
+            "--cached",
+            "--name-only",
+            "--no-renames",
+            "-z",
+            message="cannot read the staged set",
+        ).split("\0")
+        staged_names = {name for name in names if name}
+        if staged_names != set(paths):
+            _unstage(root, git_directory, paths)
+            extra = sorted(staged_names - set(paths))
+            missing = sorted(set(paths) - staged_names)
+            raise KbError(
+                f"{WHO}: staged set differs from the publication set (extra: {extra}; "
+                f"missing: {missing}); nothing committed"
+            )
+        committed = _git_quiet(root, "commit", "-q", "-F", str(text))
+        if committed.returncode != 0:
+            _unstage(root, git_directory, paths)
+            detail = (committed.stderr or committed.stdout).rstrip("\n")
+            raise KbError(f"{WHO}: commit failed: {detail}")
+        return _git_output(
+            root, "rev-parse", "--verify", "HEAD", message="cannot read HEAD"
+        ).strip()
+    finally:
+        pathspec.unlink(missing_ok=True)
+        text.unlink(missing_ok=True)
+
+
+def _unstage(root: Path, git_directory: Path, paths: Sequence[str]) -> None:
+    """Remove only the paths that finish staged. The worktree bytes are left as they are."""
+    pathspec = _write_scratch_file(git_directory, _nul_terminated(paths))
+    try:
+        result = _git_quiet(
+            root,
+            "--literal-pathspecs",
+            "reset",
+            "-q",
+            f"--pathspec-from-file={pathspec}",
+            "--pathspec-file-nul",
+        )
+    finally:
+        pathspec.unlink(missing_ok=True)
+    if result.returncode != 0:
+        detail = result.stderr.rstrip("\n")
+        raise KbError(f"{WHO}: cannot unstage the publication set; inspect Git status: {detail}")
+
+
+def _scan_message(git_directory: Path, message: str) -> None:
+    """Scan the rendered commit message. Reasons were scanned on entry, so a match is internal."""
+    scratch = git_directory / "kb-tmp"
+    scratch.mkdir(parents=True, exist_ok=True)
+    found = secrets.findings(scratch, message)
+    if found:
+        kinds = ", ".join(sorted({kind for kind, _ in found}))
+        raise KbError(f"{WHO}: the commit message matched a secret check ({kinds}); internal error")
+
+
+def _require_index_clean(root: Path) -> None:
+    staged = [
+        name
+        for name in _git_output(
+            root, "diff", "--cached", "--name-only", "-z", message="cannot read the index"
+        ).split("\0")
+        if name
+    ]
+    if staged:
+        raise KbError(
+            f"{WHO}: the index has staged changes: {_listing(staged)}; commit or unstage them first"
+        )
+
+
+def _committed_batch(root: Path, batch: curation.Batch) -> str | None:
+    """The commit that added this batch's manifest, searched since its base when it is an ancestor.
+
+    Returns None when no such commit exists, or when Git cannot answer, as in a repository
+    without history. Status uses this read-only query too.
+    """
+    relative = f"{BATCHES}/{batch.id}.json"
+    revision = "HEAD"
+    if batch.base_commit is not None and _is_ancestor(root, batch.base_commit, "HEAD"):
+        revision = f"{batch.base_commit}..HEAD"
+    result = _git_quiet(root, "log", "--diff-filter=A", "--format=%H", revision, "--", relative)
+    if result.returncode != 0:
+        return None
+    found = result.stdout.split()
+    return found[0] if found else None
+
+
+def _publication_line(root: Path, batch: curation.Batch) -> str:
+    """Whether a settled batch is unpublished, committed locally, or on origin."""
+    commit = _committed_batch(root, batch)
+    if commit is None:
+        return "Batch is locally settled and unpublished."
+    branch = _branch(root)
+    if branch is not None and _is_published(root, commit, branch):
+        return f"Batch is published as {commit}."
+    return f"Committed locally; not published: {commit}. Run: kb curate finish {batch.id}"
+
+
+def _branch(root: Path) -> str | None:
+    result = _git_quiet(root, "symbolic-ref", "--quiet", "--short", "HEAD")
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def _has_origin(root: Path) -> bool:
+    return _git_quiet(root, "remote", "get-url", "origin").returncode == 0
+
+
+def _is_published(root: Path, commit: str, branch: str) -> bool:
+    """Whether origin's branch, as last fetched, contains the commit. Reads no remote."""
+    return _is_ancestor(root, commit, f"refs/remotes/origin/{branch}")
+
+
+def _is_ancestor(root: Path, ancestor: str, descendant: str) -> bool:
+    return _git_quiet(root, "merge-base", "--is-ancestor", ancestor, descendant).returncode == 0
+
+
+def _git_quiet(root: Path, *words: str) -> CompletedProcess[str]:
+    """Run Git without taking its optional locks, capturing text output."""
+    return run_process(
+        ["git", *words],
+        cwd=root,
+        env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+
+
+def _git_output(root: Path, *words: str, message: str) -> str:
+    result = _git_quiet(root, *words)
+    if result.returncode != 0:
+        detail = result.stderr.rstrip("\n")
+        raise KbError(f"{WHO}: {message}" + (f": {detail}" if detail else ""))
+    return result.stdout
+
+
+def _listing(paths: Sequence[str]) -> str:
+    shown = ", ".join(sorted(paths)[:MAX_REPORT_ITEMS])
+    omitted = len(paths) - MAX_REPORT_ITEMS
+    return f"{shown}, and {omitted} more" if omitted > 0 else shown
+
+
+def _nul_terminated(paths: Sequence[str]) -> bytes:
+    return "".join(f"{path}\0" for path in paths).encode("utf-8")
+
+
+def _finding_text(finding: lint.Finding) -> str:
+    return f"{finding.path}:{finding.line}: {finding.severity}: {finding.message}"
+
+
 def _status(root: Path, batch: curation.Batch) -> tuple[str, int]:
     """Format progress, checking pending inputs and archives without mutations."""
     counts = Counter(member.status for member in batch.members)
@@ -506,7 +857,7 @@ def _status(root: Path, batch: curation.Batch) -> tuple[str, int]:
             problems.append(member.filename)
 
     if curation.is_settled(batch):
-        lines.append("Batch is locally settled and unpublished.")
+        lines.append(_publication_line(root, batch))
     return "\n".join(lines) + "\n", int(bool(problems))
 
 

@@ -5,11 +5,12 @@ are pure. Validation reads the content repository's files through corpus and lin
 writes nothing.
 """
 
+from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from kb import corpus, lint, model
+from kb import corpus, curation, lint, model
 
 ARTICLES = "knowledge"
 SOURCES = "sources"
@@ -125,3 +126,58 @@ def validate(root: Path, changes: Sequence[Change]) -> Verdict:
     for relpath in list(documents):
         findings.extend(lint.reference_findings(root, documents[relpath], documents))
     return classify(findings, changed, vanished)
+
+
+def render_message(run_id: str, batch: curation.Batch, changes: Iterable[Change]) -> str:
+    """The finishing commit's message, rendered from the manifest and the publication set.
+
+    Lists are complete. Verified dates are neither stamped nor summarized here.
+    """
+    listed = sorted(changes, key=lambda change: change.path)
+    complete = [member for member in batch.members if member.status == "complete"]
+    dispositions = Counter(member.disposition for member in complete)
+    statuses = Counter(member.status for member in batch.members)
+    lines = [
+        f"Curate {run_id}: {dispositions['incorporated']} incorporated, "
+        f"{dispositions['duplicate']} duplicate, {dispositions['ephemeral']} ephemeral, "
+        f"{statuses['deferred']} deferred, {statuses['dropped']} dropped",
+        "",
+    ]
+    articles = [change for change in listed if is_article(change.path)]
+    if articles:
+        lines.append("Articles changed:")
+        lines.extend(f"- {change.path} ({_change_word(change)})" for change in articles)
+        lines.append("")
+    lines.append("Outcomes:")
+    lines.extend(f"- {_outcome(member)}" for member in batch.members)
+    questions = [
+        change.path
+        for change in listed
+        if change.status == "A" and change.path.startswith("questions/resolved/")
+    ]
+    if questions:
+        lines.extend(["", "Questions resolved:"])
+        lines.extend(f"- {path}" for path in questions)
+    return "\n".join(lines) + "\n"
+
+
+def _change_word(change: Change) -> str:
+    if change.status in {"A", "C"}:
+        return "added"
+    if change.status == "D":
+        return "deleted"
+    return "modified"
+
+
+def _outcome(member: curation.Member) -> str:
+    if member.status != "complete":
+        return f"{member.filename}: {member.status} ({member.reason or ''})"
+    if member.disposition == "ephemeral":
+        return f"{member.filename}: ephemeral ({member.reason or ''})"
+    destinations = ", ".join(
+        f"{destination.locator} ({destination.heading})"
+        if destination.heading
+        else destination.locator
+        for destination in member.destinations
+    )
+    return f"{member.filename}: {member.disposition} -> {destinations}"

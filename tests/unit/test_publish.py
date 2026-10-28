@@ -1,10 +1,11 @@
 """Pure publication rules and the validation they classify."""
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
-from kb import lint, publish
+from kb import curation, lint, publish
 
 ARTICLE = (
     "---\ntitle: Backups\nupdated: 2026-10-20\nverified: 2026-10-20\nttl: domain\n---\n"
@@ -157,3 +158,68 @@ def test_validate_refuses_a_changed_article_that_is_not_utf8(tmp_path: Path) -> 
     verdict = publish.validate(tmp_path, [publish.Change("A", "knowledge/bad.md")])
 
     assert "article is not valid UTF-8" in [finding.message for finding in verdict.blocking]
+
+
+def test_the_commit_message_lists_every_outcome_and_change_once() -> None:
+    complete = curation.begin_archive(
+        curation.Member("one.md", "a" * 64, 3),
+        "incorporated",
+        [
+            curation.Destination("knowledge/a.md#2", "Second"),
+            curation.Destination("knowledge/b.md", None),
+        ],
+        None,
+        "b" * 64,
+    )
+    duplicate = curation.begin_archive(
+        curation.Member("two.md", "c" * 64, 3),
+        "duplicate",
+        [curation.Destination("knowledge/a.md#1", "First")],
+        None,
+        "d" * 64,
+    )
+    ephemeral = curation.begin_archive(
+        curation.Member("three.md", "e" * 64, 3), "ephemeral", [], "Session-only", "f" * 64
+    )
+    batch = curation.make_batch(
+        "20261026T120000-a1b2c3d4",
+        datetime(2026, 10, 26, 12, tzinfo=UTC),
+        100,
+        [
+            curation.finish_archive(complete),
+            curation.finish_archive(duplicate),
+            curation.finish_archive(ephemeral),
+            curation.defer_member(curation.Member("four.md", "1" * 64, 3), "Need owner"),
+            curation.drop_member(curation.Member("five.md", "2" * 64, 3), "Input removed"),
+        ],
+    )
+    changes = [
+        publish.Change("M", "knowledge/a.md"),
+        publish.Change("A", "knowledge/new.md"),
+        publish.Change("D", "knowledge/old.md"),
+        publish.Change("A", "sources/tool.md"),
+        publish.Change("A", "questions/resolved/q.md"),
+        publish.Change("D", "questions/open/q.md"),
+    ]
+
+    message = publish.render_message(batch.id, batch, changes)
+
+    assert message == (
+        "Curate 20261026T120000-a1b2c3d4: 1 incorporated, 1 duplicate, 1 ephemeral, "
+        "1 deferred, 1 dropped\n"
+        "\n"
+        "Articles changed:\n"
+        "- knowledge/a.md (modified)\n"
+        "- knowledge/new.md (added)\n"
+        "- knowledge/old.md (deleted)\n"
+        "\n"
+        "Outcomes:\n"
+        "- one.md: incorporated -> knowledge/a.md#2 (Second), knowledge/b.md\n"
+        "- two.md: duplicate -> knowledge/a.md#1 (First)\n"
+        "- three.md: ephemeral (Session-only)\n"
+        "- four.md: deferred (Need owner)\n"
+        "- five.md: dropped (Input removed)\n"
+        "\n"
+        "Questions resolved:\n"
+        "- questions/resolved/q.md\n"
+    )

@@ -125,7 +125,7 @@ def test_start_help_usage_and_budget_validation(git_kb: Kb) -> None:
         "Usage: kb curate start [--no-sync] --max-bytes N [FILENAME...]\n\n"
     )
     assert git_kb("curate").stdout.startswith(
-        "Usage: kb curate {start,status,next,complete,defer,drop} ..."
+        "Usage: kb curate {start,status,next,complete,defer,drop,finish} ..."
     )
 
     missing = git_kb("curate", "start")
@@ -1798,5 +1798,5 @@ def test_full_local_curation_workflow_and_historical_defer(git_kb: Kb) -> None:
     assert old_deferred["reason"] == "Need owner input"
     old_status = git_kb("curate", "status", run_id)
     assert old_status.returncode == 0, old_status.stderr
-    assert "locally settled and unpublished" in old_status.stdout
+    assert "Committed locally; not published:" in old_status.stdout
     assert _pending(git_kb, "new-arrival.md").read_bytes() == new_arrival

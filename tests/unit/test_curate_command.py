@@ -188,7 +188,10 @@ def test_dispatch_and_nested_command_usage(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert curate.run([]) == 0
-    assert "Usage: kb curate {start,status,next,complete,defer,drop} ..." in capsys.readouterr().out
+    assert (
+        "Usage: kb curate {start,status,next,complete,defer,drop,finish} ..."
+        in capsys.readouterr().out
+    )
     assert curate.run(["--help"]) == 0
     assert curate.run(["start", "--help"]) == 0
     assert curate.run(["status", "--help"]) == 0
