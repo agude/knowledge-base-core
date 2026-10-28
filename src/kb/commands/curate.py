@@ -517,9 +517,7 @@ def _finish(root: Path, git_directory: Path, run_id: str, *, no_push: bool) -> i
         sys.stdout.write(f"Preexisting (not blocking): {len(verdict.preexisting)}\n")
         for finding in verdict.preexisting:
             sys.stdout.write(f"  {_finding_text(finding)}\n")
-    message = publish.render_message(batch.id, batch, changes)
-    _scan_message(git_directory, message)
-    commit = _commit_publication(root, git_directory, [change.path for change in changes], message)
+    commit = _commit_publication(root, git_directory, batch, [change.path for change in changes])
     sys.stdout.write(f"Commit: {commit}\n")
     if no_push:
         sys.stdout.write("Committed locally; not published\n")
@@ -621,12 +619,16 @@ def _change_status(code: str) -> str:
 def _commit_publication(
     root: Path,
     git_directory: Path,
+    batch: curation.Batch,
     paths: Sequence[str],
-    message: str,
 ) -> str:
-    """Stage exactly the publication set, commit once with the message, and unstage on failure."""
+    """Stage exactly the publication set, commit it once, and unstage on failure.
+
+    The message is rendered from the staged set, where Git detects renames that the
+    worktree status reports as a deletion and an addition.
+    """
     pathspec = _write_scratch_file(git_directory, _nul_terminated(paths))
-    text = _write_scratch_file(git_directory, message.encode("utf-8"))
+    text: Path | None = None
     try:
         staged = _git_quiet(
             root,
@@ -658,6 +660,25 @@ def _commit_publication(
                 f"{WHO}: staged set differs from the publication set (extra: {extra}; "
                 f"missing: {missing}); nothing committed"
             )
+        staged_changes = publish.parse_name_status(
+            _git_output(
+                root,
+                "diff",
+                "--cached",
+                "--name-status",
+                "-M",
+                "-z",
+                "--no-ext-diff",
+                message="cannot read the staged set",
+            )
+        )
+        message = publish.render_message(batch.id, batch, staged_changes)
+        try:
+            _scan_message(git_directory, message)
+        except KbError:
+            _unstage(root, git_directory, paths)
+            raise
+        text = _write_scratch_file(git_directory, message.encode("utf-8"))
         committed = _git_quiet(root, "commit", "-q", "-F", str(text))
         if committed.returncode != 0:
             _unstage(root, git_directory, paths)
@@ -668,7 +689,8 @@ def _commit_publication(
         ).strip()
     finally:
         pathspec.unlink(missing_ok=True)
-        text.unlink(missing_ok=True)
+        if text is not None:
+            text.unlink(missing_ok=True)
 
 
 def _unstage(root: Path, git_directory: Path, paths: Sequence[str]) -> None:

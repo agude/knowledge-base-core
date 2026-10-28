@@ -161,6 +161,25 @@ def test_the_commit_message_renders_every_outcome_and_the_resolved_question(
     assert f"Questions resolved:\n- {RESOLVED}\n" in message
 
 
+def test_a_renamed_article_is_named_as_a_rename_in_the_commit_message(
+    remote_git_kb: Kb,
+) -> None:
+    kb = remote_git_kb
+    run = _settled_batch(kb)
+    extra = ARTICLE.replace("Workflow evidence", "Extra evidence")
+    (kb.content / "knowledge/extra.md").write_text(extra, encoding="utf-8")
+    run_git(kb.content, "add", "--", "knowledge/extra.md")
+    run_git(kb.content, "commit", "-q", "-m", "Add extra article", "--", "knowledge/extra.md")
+    (kb.content / "knowledge/extra.md").rename(kb.content / "knowledge/moved.md")
+
+    result = kb("curate", "finish", run)
+
+    assert result.returncode == 0, result.stderr
+    message = run_git(kb.content, "log", "-1", "--format=%B")
+    assert "- knowledge/moved.md (renamed from knowledge/extra.md)\n" in message
+    assert "knowledge/extra.md (deleted)" not in message
+
+
 def test_repeating_finish_after_publication_reports_it_and_makes_no_commit(
     remote_git_kb: Kb,
 ) -> None:

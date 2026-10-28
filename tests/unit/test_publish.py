@@ -223,3 +223,41 @@ def test_the_commit_message_lists_every_outcome_and_change_once() -> None:
         "Questions resolved:\n"
         "- questions/resolved/q.md\n"
     )
+
+
+def test_name_status_output_parses_renames_copies_and_plain_changes() -> None:
+    output = "M\0knowledge/a.md\0R087\0knowledge/was.md\0knowledge/now.md\0C100\0a\0b\0D\0x\0"
+
+    assert publish.parse_name_status(output) == [
+        publish.Change("M", "knowledge/a.md"),
+        publish.Change("R", "knowledge/now.md", "knowledge/was.md"),
+        publish.Change("C", "b", "a"),
+        publish.Change("D", "x"),
+    ]
+    assert publish.parse_name_status("") == []
+    assert publish.parse_name_status("M\0a") == [publish.Change("M", "a")]
+
+
+def test_the_message_names_renamed_articles_and_questions_resolved_by_a_move() -> None:
+    member = curation.begin_archive(
+        curation.Member("one.md", "a" * 64, 3),
+        "incorporated",
+        [curation.Destination("knowledge/now.md#1", "First")],
+        None,
+        "b" * 64,
+    )
+    batch = curation.make_batch(
+        "20261026T120000-a1b2c3d4",
+        datetime(2026, 10, 26, 12, tzinfo=UTC),
+        100,
+        [curation.finish_archive(member)],
+    )
+    changes = [
+        publish.Change("R", "knowledge/now.md", "knowledge/was.md"),
+        publish.Change("R", "questions/resolved/q.md", "questions/open/q.md"),
+    ]
+
+    message = publish.render_message(batch.id, batch, changes)
+
+    assert "- knowledge/now.md (renamed from knowledge/was.md)\n" in message
+    assert "Questions resolved:\n- questions/resolved/q.md\n" in message

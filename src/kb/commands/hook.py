@@ -84,20 +84,7 @@ def _staged_changes(root: Path) -> list[publish.Change]:
     """The index against HEAD, with renames detected and paths read as NUL-delimited fields."""
     result = _git(root, "diff", "--cached", "--name-status", "-z", "-M", "--no-ext-diff")
     _require_success(result, "cannot read the staged changes")
-    fields = result.stdout.split("\0")
-    if fields and fields[-1] == "":
-        fields.pop()
-    changes: list[publish.Change] = []
-    index = 0
-    while index < len(fields):
-        status = fields[index][:1]
-        if status in {"R", "C"}:
-            changes.append(publish.Change(status, fields[index + 2], fields[index + 1]))
-            index += 3
-        else:
-            changes.append(publish.Change(status, fields[index + 1]))
-            index += 2
-    return changes
+    return publish.parse_name_status(result.stdout)
 
 
 def _unstaged_articles(root: Path, articles: Sequence[str]) -> list[str]:

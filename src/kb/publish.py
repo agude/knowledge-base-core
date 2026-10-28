@@ -48,6 +48,24 @@ def is_published(path: str) -> bool:
     return path.startswith(PUBLISHED_ROOTS)
 
 
+def parse_name_status(output: str) -> list[Change]:
+    """Changes from `git diff --name-status -z` output, whose renames and copies name two paths."""
+    fields = output.split("\0")
+    if fields and fields[-1] == "":
+        fields.pop()
+    changes: list[Change] = []
+    index = 0
+    while index < len(fields):
+        status = fields[index][:1]
+        if status in {"R", "C"}:
+            changes.append(Change(status, fields[index + 2], fields[index + 1]))
+            index += 3
+        else:
+            changes.append(Change(status, fields[index + 1]))
+            index += 2
+    return changes
+
+
 def changed_articles(changes: Iterable[Change]) -> tuple[str, ...]:
     """Articles added, modified, copied, renamed, or type-changed, by their new path."""
     return tuple(
@@ -153,7 +171,7 @@ def render_message(run_id: str, batch: curation.Batch, changes: Iterable[Change]
     questions = [
         change.path
         for change in listed
-        if change.status == "A" and change.path.startswith("questions/resolved/")
+        if change.status in {"A", "C", "R"} and change.path.startswith("questions/resolved/")
     ]
     if questions:
         lines.extend(["", "Questions resolved:"])
@@ -166,6 +184,8 @@ def _change_word(change: Change) -> str:
         return "added"
     if change.status == "D":
         return "deleted"
+    if change.status == "R" and change.old_path is not None:
+        return f"renamed from {change.old_path}"
     return "modified"
 
 
