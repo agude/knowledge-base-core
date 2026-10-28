@@ -1011,3 +1011,27 @@ Open items:
 - The content repository does not have `.gitattributes`. The renormalization
   count is 0, so adding the file needs no renormalizing commit. Adding it is a
   rollout decision.
+
+## dirac adoption baseline (2026-10-28)
+
+### Rechecked live state
+
+- Machine: `dirac`. Installed `kb` is `~/.local/bin/kb`, from the uv tool `knowledge-base` 0.1.0. Claude Code is 2.1.312; Codex CLI is 0.165.0.
+- `~/Knowledge` core is clean on `main` at `1672b54508145938c436767460cc100a2f1057b3`. `~/.dotfiles` is clean on `main` and level with `origin/main` at `70751e74b90569a1002c70860fcd0130633c1da6`.
+- `~/Knowledge/content` is on `main` at `01ccc2bc22e778d37eac35f9517e565e9a3dd13b`, clean and 57 commits ahead of its origin, with 2,952 tracked files. It has no `.gitattributes`; its pre-commit hook links to `~/Knowledge/scripts/hooks/pre-commit`.
+- Installed and checkout `kb doctor` report the same result and exit 1: 3 PASS (`version`, `config`, `curation`), 8 WARN (`content`, `gitattributes`, `hook`, `scheduler`, `capture`, `instructions`, `allow-rules`, `legacy`), and 1 FAIL (`sync: No record`). The content warning counts 57 unpublished commits. The capture warning finds `harvest_since` unset; no writer for that setting exists yet. The legacy warning counts 14 registrations.
+- `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` both link to `~/.dotfiles/llm/AGENTS.md`, whose Knowledge Base instructions still describe the old scripts.
+
+### Codex paths and registration owners
+
+- Current Codex documentation puts user skills in `$HOME/.agents/skills`; that is the same directory as `~/.agents/skills` here. Codex also scans repository, admin, and bundled system skills. The docs list `~/.codex/rules/default.rules` as the user rules location and define an `allow` prefix as permission to run outside the sandbox without a prompt. Sources: [Codex skill locations](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills) and [Codex rules](https://learn.chatgpt.com/docs/agent-configuration/rules#create-a-rules-file).
+- Dotfiles owns the four Claude lifecycle hook links under coat-tree and the four Codex hook entries: `links.conf` links `~/.codex/hooks.json` to `llm/codex/hooks.json`; `install.sh` links the hook scripts and Claude shims from dotfiles. These are 8 of the 14 old registrations.
+- `~/Knowledge/scripts/install` currently creates coat-tree `PreToolUse/010.knowledge`, the content pre-commit hook, and the old skills in `~/.agents/skills`. Those account for 4 more registrations. The other two registrations are the existing `~/.claude/skills/{curate,knowledge-base}` symlinks into `~/Knowledge/skills`; the current old installer does not install into `~/.claude/skills`, and dotfiles has no matching skills to recreate them. The current producer of those two links was not found. The cutover must still remove them by target.
+
+### Isolated Codex runtime probe
+
+- Used Codex CLI 0.165.0 in an interactive, non-daemon TUI session with `--ask-for-approval on-request --sandbox workspace-write`, an isolated `HOME`, `CODEX_HOME`, XDG config, and transcript store, plus a `kb` shim invoking this checkout with `uv run --locked python -m kb`. The scratch Codex rules file contained exactly the seven generated prefixes: `recall`, `read`, `map`, `questions`, `evidence`, `observe`, and `gap`.
+- The content fixture and local bare origin were separate from the Codex project. The final approval checks used a fixture outside `/tmp`; the initial `/tmp` fixture was writable under this environment's temporary-directory exception and let `kb sync` push two commits to the local bare origin. That run was discarded as an approval measurement.
+- In the interactive TUI, Codex submitted simple commands as literal `cmd` strings to its `exec` tool. All seven allowed prefixes ran without approval; the five read commands used `--help`, and `kb observe` and `kb gap` wrote only to the disposable fixture. Codex's documentation says simple commands are split for prefix matching; advanced shell syntax is treated as a `bash -lc` invocation. The non-interactive `codex exec --json` transcript showed `/usr/bin/zsh -lc` wrappers and `approval_policy: never`, so it was not used to judge prompt behavior.
+- `kb sync` produced an approval prompt before it could write to the outside-`/tmp` fixture. `kb curate start --no-sync --max-bytes 1` also produced an approval prompt. Neither command was approved. Sync did not exchange or publish fixture commits; curate did not start a batch.
+- Interactive probe session IDs: allowed commands `01a184d1-57dc-7491-86c1-8aa1b89d027c`; sync approval `01a184d0-337b-7062-b2a8-8dbc24580d25`; curator approval `01a184d2-102a-7723-bd74-a2530aa3b618`. No host credentials or settings were written into this repository.
