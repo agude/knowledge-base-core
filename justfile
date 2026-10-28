@@ -131,6 +131,19 @@ package-check: build
         echo "package-check: the installed wheel prints no instruction block" >&2
         exit 1
     fi
+    if ! "$scratch/venv/bin/python" -I - <<'PY'
+    from importlib.resources import files
+
+    for name in ("knowledge-base", "curate"):
+        text = files("kb").joinpath("data", "skills", name, "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        assert text.startswith(f"---\nname: {name}\n")
+    PY
+    then
+        echo "package-check: the installed wheel is missing a skill" >&2
+        exit 1
+    fi
     echo "package-check: ${wheels[0]#dist/} installs and reports version $installed"
 
 # Score retrieval against question sets. Arguments: QUESTIONS [CONTENT]. Without them, every
