@@ -106,10 +106,29 @@ def answer(context: Context, words: Sequence[str], limit: int, scope: str | None
 
 def ranked_locators(root: Path, words: Sequence[str], scope: str | None = None) -> list[str]:
     """The curated locators that qualify for a query, best first. The evaluation uses this."""
-    return [
-        f"{document.path}#{candidate.fragment}"
-        for document, candidate in _ranked(root, words, scope)
-    ]
+    return ranked_locators_for_queries(root, [words], scope)[0]
+
+
+def ranked_locators_for_queries(
+    root: Path,
+    queries: Sequence[Sequence[str]],
+    scope: str | None = None,
+    limit: int | None = None,
+) -> list[list[str]]:
+    """Rank several queries against one parsed curated snapshot, in recall order."""
+    if not queries:
+        return []
+    pairs = _candidate_pairs(root, scope)
+    units = [candidate.unit for _, candidate in pairs]
+    results: list[list[str]] = []
+    for words in queries:
+        hits = search.rank(units, search.query_terms(words))
+        if limit is not None:
+            hits = hits[:limit]
+        results.append(
+            [f"{pairs[hit.index][0].path}#{pairs[hit.index][1].fragment}" for hit in hits]
+        )
+    return results
 
 
 def matching_sections(
@@ -173,13 +192,18 @@ def _ranked(
     root: Path, words: Sequence[str], scope: str | None
 ) -> list[tuple[Document, search.Candidate]]:
     """The curated units that qualify for a query, best first."""
-    pairs = [
+    pairs = _candidate_pairs(root, scope)
+    hits = search.rank([candidate.unit for _, candidate in pairs], search.query_terms(words))
+    return [pairs[hit.index] for hit in hits]
+
+
+def _candidate_pairs(root: Path, scope: str | None) -> list[tuple[Document, search.Candidate]]:
+    """Build the ordered article candidate snapshot shared by ranking helpers."""
+    return [
         (document, candidate)
         for document in _curated(root, scope)
         for candidate in search.article_candidates(document)
     ]
-    hits = search.rank([candidate.unit for _, candidate in pairs], search.query_terms(words))
-    return [pairs[hit.index] for hit in hits]
 
 
 def section_block(context: Context, document: Document, candidate: search.Candidate) -> str:

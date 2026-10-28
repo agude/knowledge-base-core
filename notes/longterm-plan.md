@@ -238,7 +238,7 @@ Checked on 2026-10-27 at `3d3cfb7`:
 | H2 Capture the conversation | Harvest in `kb sync` | Built and validated on real data; not enabled (2026-10-27, `ed5a02d`) |
 | H3 Session end | Covered by H2 | Superseded |
 | H4 Tool approval | Allow rules in the dotfiles | Not done |
-| C1-C6 Curation | Phase 3 | Partly built: `kb lint`, `kb verify`, and `kb resolve`; guided run remains outstanding |
+| C1-C6 Curation | Phase 3 | Local batch processing is built; synchronized start and publication remain outstanding |
 | U1 Set up a machine | `kb setup`, phase 4 | Config reading only |
 | U2 Bring machines together | `kb sync` | Built |
 | U3 Diagnose a failure | `kb doctor`, phase 4 | Not built |
@@ -254,13 +254,15 @@ real-content read-only validation are recorded in `notes/evidence.md`.
 Message locators remain fixture-validated because the real store has no
 addressable transcripts. The first native run of the Windows CI job remains.
 Harvesting has not been enabled on any machine, and installed host allow
-rules have not been updated. Phase 3 now has `kb lint`, `kb verify`, and
-`kb resolve`; the guided run, dispositions, finishing commit, content
-pre-commit hook, and one-time `ttl` assignment pass remain outstanding. The
-core `curate` skill continues to curate until the guided run is in use.
+rules have not been updated. Phase 3 now includes local batch selection,
+next-item context, outcomes, and archive recovery, as well as `kb lint`,
+`kb verify`, and `kb resolve`. It is not synchronized or published: the
+synchronized start, finishing commit and push, content pre-commit hook, and
+one-time `ttl` assignment pass remain outstanding. Core's `curate` skill
+remains operational until the synchronized workflow is built and adopted.
 No-match recall latency has a separate follow-up to reach <= 5 seconds on the
-same snapshot. The current [root plan](../plan.md) records phase 2 closeout
-and these remaining items.
+same snapshot. The current [root plan](../plan.md) records the local batch
+handoff, its validation, and the remaining phase 3 publication work.
 
 Update this table when a plan finishes. Retirement requires every row to be
 covered and in use on every machine.
@@ -306,10 +308,11 @@ matching open questions in recall. The README describes the command
 contracts, real-content limits, and read/write distinction. The Linux checks
 and closeout measurements are recorded in `notes/evidence.md`. Native
 Windows CI remains unrun, and installed host allow rules remain rollout
-work. Phase 3 has built `kb lint`, `kb verify`, and `kb resolve`; its guided
-run, dispositions, finishing commit, content pre-commit hook, and one-time
-`ttl` assignment pass remain outstanding. The separate <= 5 second no-match
-recall follow-up also remains open.
+work. Phase 3 has built local batch selection, next-item context, outcomes,
+and archive recovery, alongside `kb lint`, `kb verify`, and `kb resolve`.
+Synchronized start, the finishing commit and push, the content pre-commit
+hook, and the one-time `ttl` assignment pass remain outstanding. The
+separate <= 5 second no-match recall follow-up also remains open.
 
 ### 3. Build guided curation
 
@@ -344,13 +347,13 @@ commands, but the guided run must still use them as evidence supports.
 This phase depends on retrieval, evidence access, safe writes, and sync.
 Until it is in use, core's `curate` skill continues to process the queue.
 
-The validation primitives are built: `kb lint` checks article structure,
-metadata, and references; `kb verify` records an explicit article check; and
-`kb resolve` records an answer or obsolescence for an open question. The
-resumable guided run, dispositions and archiving, finishing commit and sync,
-and the content repository's pre-commit hook remain to be built. The one-time
-`ttl` pass is curation work that remains to be done. `kb lint` is for curators;
-do not add it to working-agent allow rules.
+The validation and local-processing pieces are built: `kb lint` checks
+article structure, metadata, and references; `kb verify` records an explicit
+article check; `kb resolve` records an answer or obsolescence; and local
+batches persist outcomes and recover interrupted archives. The synchronized
+start, finishing commit and push, and the content repository's pre-commit hook
+remain to be built. The one-time `ttl` pass is curation work that remains to
+be done. `kb lint` is for curators; do not add it to working-agent allow rules.
 
 ### 4. Complete setup and diagnosis
 

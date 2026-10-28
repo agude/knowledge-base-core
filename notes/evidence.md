@@ -651,3 +651,51 @@ letters. Three timed runs took
 0.44, 0.41, and 0.45 seconds (median 0.44 seconds), with a peak RSS of
 27,548 KiB. The copy was deleted, and the live content worktree remained
 clean at the same revision.
+
+## Local curation batches closeout (2026-10-28)
+
+Implementation commits: `4178ab6` added pure batch state and transitions;
+`7827f93` added local start and status; `e7285f7` added next-item context;
+`2b01785` added outcomes and archive recovery; and `a71d3a3` added defer and
+drop outcomes. Step 6 extends compatibility coverage, documents the command
+contracts, and reuses one parsed curated snapshot to rank all selected titles
+for the related-stale report. A unit test confirms that batched locator
+results match independent recall queries, including their order.
+
+`just test-compat` passed all 10 tests. The old reader omitted a new archive
+from pending, found it through archive search, and accepted an article citing
+it. The new readers accepted both a legacy archive with no metadata and one
+with `disposition: processed`; recall found the latter. The compatibility
+test ran against isolated fixtures and did not write to `~/Knowledge`.
+
+The synthetic scale repository contained 1,200 pending observations and
+2,100 articles. Observation payloads totaled 352,369 bytes; article payloads
+totaled 351,300 bytes; the largest observation was 234,775 bytes. `start`
+selected all 1,200 observations and reported 1,200 related stale articles.
+The whole start took 6.21 seconds, including 5.86 seconds for related-stale
+ranking. Peak RSS was 37,700 KiB (36.8 MiB). `status` took 0.28 seconds and
+used 28,336 KiB (27.2 MiB). The scratch repository was removed. A first
+implementation reparsed the curated corpus for each selected title and did
+not finish in several minutes; the batch helper now shares candidate parsing
+while preserving per-query ranking results.
+
+`just eval` exited 0. Both fixture sets met acceptance: retrieval-question-v1
+scored 8/8 answerable and 2/2 unanswerable; retrieval-v1 scored 32/32
+answerable, 4/4 no-curated-result, and 10/10 `requires_all`. No evaluation
+case changed.
+
+`just build package-check` did not complete in this sandbox. The build stage
+produced both the 0.1.0 wheel and source distribution, but the clean-environment
+dependency install did not complete. The default uv cache is read-only here
+and network access is unavailable; attempts with a scratch cache encountered
+cache/installer path errors before the installed-wheel smoke test. The
+preexisting `dist/` directory was restored. Run this recipe in an environment
+with a writable uv cache and registry access before treating the package check
+as passed.
+
+`just check` passed on Linux with Python 3.15.0: ruff, formatting, actionlint,
+offline zizmor, and strict mypy passed; 1,256 tests passed, 10 were skipped,
+and total branch coverage was 90.10%. Native Windows validation remains
+unrun. Phase 3 still needs synchronized start, the finishing commit and push,
+the content pre-commit hook, and the one-time real-content TTL pass. No batch
+was published or rolled out.

@@ -1102,11 +1102,12 @@ def _related_stale(
     """Find deduplicated stale articles among the top three recall results per title."""
     found: dict[str, str] = {}
     documents: dict[str, model.Document] = {}
-    for entry in selected:
-        if not entry.title:
-            continue
-        locators = recall_command.ranked_locators(root, [entry.title])[:3]
-        for locator in locators:
+    titles = [entry.title for entry in selected if entry.title]
+    ranked_results = recall_command.ranked_locators_for_queries(
+        root, [[title] for title in titles], limit=3
+    )
+    for ranked_locators in ranked_results:
+        for locator in ranked_locators:
             path, _separator, fragment = locator.partition("#")
             document = documents.get(path)
             if document is None:

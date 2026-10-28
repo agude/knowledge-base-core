@@ -6,6 +6,7 @@ repository, points the old scripts at it with KB_CONTENT_DIR, and leaves the
 real content untouched.
 """
 
+import json
 import os
 import re
 import subprocess
@@ -21,6 +22,7 @@ from .harness import Kb
 
 OLD_TOOLING = os.environ.get("KB_OLD_TOOLING", "")
 TIMESTAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
+BATCH_ID = re.compile(r"Created batch: ([0-9]{8}T[0-9]{6}-[0-9a-f]{8})\n")
 WROTE_PREFIX = "Wrote: observations/pending/"
 pytestmark = pytest.mark.skipif(not OLD_TOOLING, reason="KB_OLD_TOOLING is not set")
 
@@ -327,3 +329,85 @@ def test_kb_observe_waits_for_a_legacy_lock_until_the_old_script_releases_it(
     assert stdout.startswith(WROTE_PREFIX)
     assert git_kb.git("log", "-1", "--format=%s") == "Observe: After the lock\n"
     assert not (git_kb.content / ".observe.lock").exists()
+
+
+def test_old_and_new_readers_accept_new_and_legacy_archives(git_kb: Kb) -> None:
+    archived_directory = git_kb.content / "observations" / "archived"
+    archived_directory.mkdir(parents=True, exist_ok=True)
+    (archived_directory / "legacy-no-metadata.md").write_text(
+        "---\ntitle: Legacy archive without metadata\ncreated: 2020-01-01\n---\n"
+        "\n## 1. Legacy evidence\n\nAtoll copper lattice measurements.\n",
+        encoding="utf-8",
+    )
+    (archived_directory / "legacy-processed.md").write_text(
+        "---\ntitle: Legacy processed outcome\ndisposition: processed\n---\n"
+        "\n## 1. Legacy outcome\n\nAmber whirlpool oscillator records.\n",
+        encoding="utf-8",
+    )
+    git_kb.git("add", "--all")
+    git_kb.git("commit", "-q", "-m", "Add legacy archive fixtures")
+
+    observed = git_kb(
+        "observe",
+        "--title",
+        "Quartz pendulum calibration",
+        "--body",
+        "## 1. Calibration\n\nQuartz pendulum calibration measurements.",
+    )
+    name = written_name(observed)
+    started = git_kb("curate", "start", "--max-bytes", "65536", name)
+    assert started.returncode == 0, started.stderr
+    match = BATCH_ID.search(started.stdout)
+    assert match is not None, started.stdout
+    run_id = match.group(1)
+    manifest = json.loads(
+        (git_kb.content / "observations" / "batches" / f"{run_id}.json").read_text(encoding="utf-8")
+    )
+    assert [member["filename"] for member in manifest["members"]] == [name]
+
+    article = git_kb.content / "knowledge" / "archive-compatibility.md"
+    article.write_text(
+        "---\ntitle: Archive compatibility\nupdated: 2026-10-20\nverified: 2026-10-20\n"
+        "ttl: domain\nsources:\n"
+        f"  - observations/archived/{name}#1-calibration\n"
+        "---\n# Archive compatibility\n\n## 1. Imported finding\n\n"
+        "The calibrated values remain available.\n",
+        encoding="utf-8",
+    )
+    archived = git_kb(
+        "curate",
+        "complete",
+        run_id,
+        name,
+        "--disposition",
+        "incorporated",
+        "knowledge/archive-compatibility.md#1",
+    )
+    assert archived.returncode == 0, archived.stderr
+
+    old_pending = run_old(git_kb, "pending")
+    assert old_pending.returncode == 0, old_pending.stderr
+    assert "Quartz pendulum calibration" not in old_pending.stdout
+    old_search = run_old(
+        git_kb,
+        "search",
+        "--query",
+        "Quartz pendulum calibration",
+        "--corpus",
+        "archive",
+    )
+    assert old_search.returncode == 0, old_search.stderr
+    assert f"observations/archived/{name}" in old_search.stdout
+    old_lint = run_old(git_kb, "lint", "--path", "knowledge/archive-compatibility.md")
+    assert old_lint.returncode == 0, old_lint.stderr
+
+    for legacy, phrase in (
+        ("legacy-no-metadata.md", "Atoll copper lattice measurements."),
+        ("legacy-processed.md", "Amber whirlpool oscillator records."),
+    ):
+        read = git_kb("read", f"observations/archived/{legacy}#1")
+        assert read.returncode == 0, read.stderr
+        assert phrase in read.stdout
+    recalled = git_kb("recall", "amber whirlpool oscillator")
+    assert recalled.returncode == 0, recalled.stderr
+    assert "observations/archived/legacy-processed.md" in recalled.stdout

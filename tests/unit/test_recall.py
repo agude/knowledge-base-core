@@ -118,6 +118,15 @@ def test_scope_limits_results_to_a_file_or_directory(context: Context) -> None:
     assert "knowledge/infra/syncthing.md#2" in directory
 
 
+def test_batched_locator_ranking_matches_independent_recall_queries(context: Context) -> None:
+    queries = (["nas", "restart", "order"], ["firmware", "update"], ["backup", "disk"])
+
+    batched = recall.ranked_locators_for_queries(context.root, queries, limit=3)
+    independent = [recall.ranked_locators(context.root, query)[:3] for query in queries]
+
+    assert batched == independent
+
+
 def test_sources_documents_are_curated_results(context: Context) -> None:
     text = recall.answer(context, ["firmware", "update"], 3, None)
     assert text.splitlines()[0] == (

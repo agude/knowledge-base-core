@@ -5,8 +5,9 @@ articles and source documents, and the observations and questions behind them.
 `recall`, `read`, `map`, `questions`, and `evidence` are read-only. `kb observe`
 records an observation, `kb gap` records an open question, and `kb sync` can
 record finished Claude Code and Codex transcripts. `kb lint`, `kb verify`, and
-`kb resolve` provide curator checks and explicit updates; the guided curation
-workflow is not implemented yet.
+`kb resolve` provide curator checks and explicit updates; the curation commands
+also support local, resumable batches. Synchronization, publication commits,
+and the content pre-commit hook remain separate phase 3 work.
 
 ## Usage
 
@@ -19,6 +20,7 @@ kb evidence QUERY... [--kind KIND] [--since DATE] [--until DATE] [--limit N]
 kb lint [PATH...] [--require-ttl]  # check articles before publication
 kb verify ARTICLE [--ttl TTL]      # record an explicit verification
 kb resolve QUESTION --answer TEXT [--destination LOCATOR | --obsolete]
+kb curate {start,status,next,complete,defer,drop} ...
 kb observe --title TITLE --body TEXT  # record an observation and commit it
 kb gap --title TITLE --body TEXT --context PATH  # record a question and commit it
 kb sync [--status | --no-push | --dry-run]  # harvest transcripts and sync content
@@ -269,6 +271,97 @@ kb resolve questions/open/REPLACE_WITH_FILE.md --answer "The disk is stored on t
 kb questions --context infra
 kb questions --context infra --all
 ```
+
+#### `kb curate`
+
+The local batch commands select a fixed set of pending observations, show one
+at a time with relevant context, and record each outcome in a JSON manifest.
+They operate on the current content working tree. They do not fetch, rebase,
+stage, commit, or push.
+
+```sh
+kb curate start --max-bytes 65536 [FILENAME...]
+kb curate status RUN
+kb curate next RUN [--query TEXT]
+kb curate complete RUN FILENAME --disposition incorporated LOCATOR...
+kb curate complete RUN FILENAME --disposition duplicate LOCATOR...
+kb curate complete RUN FILENAME --disposition ephemeral --reason TEXT
+kb curate defer RUN FILENAME --reason TEXT
+kb curate drop RUN FILENAME --reason TEXT
+```
+
+`start` requires a byte budget. It counts each observation's original UTF-8
+bytes, including front matter, and selects ordinary Markdown files directly
+under `observations/pending/`. It snapshots the chosen filenames, sizes, and
+hashes in `observations/batches/RUN.json`. A clean Git worktree is required
+when the batch starts. Automatic selection proceeds by creation date; explicit
+filenames preserve their supplied order. If an observation is larger than the
+budget, `start` prints a command that selects that file alone with its own
+size as the budget.
+
+The RUN below came from an isolated fixture repository. A real run prints its
+own RUN; use that value for every later command.
+
+```text
+$ kb curate start --max-bytes 65536
+Created batch: 20261026T120000-8664e45f
+Selected: 2 observation(s)
+Selected bytes: 456
+Eligible pending observations: 2
+Input budget: 65536 bytes
+Open questions: 1
+Related stale articles: 0
+Related stale knowledge: none
+
+$ kb curate status 20261026T120000-8664e45f
+$ kb curate next 20261026T120000-8664e45f
+```
+
+`status` and `next` are read-only and take no locks. `next` prints the full
+observation, up to three matching curated sections, and up to five related open
+questions. The byte budget limits only the original observations; these
+sections and question rows add to the context shown for each item. `--query`
+replaces the observation title when another query better describes the work.
+
+Edit knowledge articles directly. Before completing an incorporated item,
+add its future archived locator to the article's `sources`. For example, use
+`observations/archived/FILENAME.md#1` when citing its first numbered section.
+The reference is temporarily missing until completion publishes the archive.
+`kb verify` will refuse it while missing. After completion, run `kb lint` and
+use `kb verify` only when the archived evidence supports the claim. Resolve
+questions with `kb resolve` when evidence supports an answer.
+
+`incorporated` accepts a whole knowledge article or a readable section.
+`duplicate` requires a numbered section. Both can name multiple destinations;
+the manifest stores each canonical locator and its current heading. `ephemeral`
+accepts no destination and requires a single-line reason. Completion adds
+legacy-compatible scalar outcome metadata to the archived observation and
+retains the full destination list and archive hash in the manifest. It does
+not change article dates or stage or commit files.
+The command scans supplied destinations and ephemeral reasons for possible
+secrets before reporting validation errors. Successful completion prints the
+pending-to-archived path; failures use the `curate:` prefix and exit 1.
+
+If completion stops after saving its archive intent, repeat the exact
+`complete` command printed by `status`. Recovery checks the recorded hashes:
+
+| Files present | Recovery |
+|---|---|
+| Original pending file only | Rebuild and publish the recorded archive. |
+| Original and expected archive | Remove only the unchanged pending copy. |
+| Expected archive only | Mark the member complete. |
+| Neither copy, changed input, or conflicting archive | Stop and inspect the files manually. |
+
+`defer` keeps an unchanged pending file for a later batch. `drop` records a
+reason when another writer removed or changed that file; it leaves the file as
+found. Both scan the reason for possible secrets. Identical retries succeed.
+Dropping an unchanged input or deferring a changed or missing input is refused.
+
+A settled batch is still unpublished. Its manifest lives in one working tree,
+so only that machine can resume it. The manifest keeps the tree dirty until a
+content commit includes the batch. While it is dirty, both `kb sync` and the
+old `sync` skip pull and push. Harvest can still commit locally, but those new
+observations do not reach the remote until the batch work is committed.
 
 ### `kb map` output
 
