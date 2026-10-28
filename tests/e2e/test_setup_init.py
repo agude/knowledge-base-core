@@ -167,3 +167,30 @@ def test_origin_without_init_and_init_with_content_are_usage_errors(kb: Kb) -> N
     assert both.returncode == 1
     assert both.stderr.startswith("Usage: kb setup")
     assert not (kb.home / "a").exists()
+
+
+def test_gap_and_curate_start_work_on_the_new_repository(kb: Kb) -> None:
+    target = kb.home / "new-content"
+    origin = kb.home / "origin.git"
+    run_git(kb.home, "init", "--bare", "-q", "-b", "main", str(origin))
+    created = kb("setup", "--init", str(target), "--origin", str(origin), "--kb", str(shim(kb)))
+    assert created.returncode == 0, created.stderr
+    new = without_content_override(kb)
+
+    gapped = kb(
+        "gap",
+        "--title",
+        "Backup window",
+        "--body",
+        "Which window applies?",
+        "--context",
+        "knowledge",
+        env=new,
+    )
+    assert gapped.returncode == 0, gapped.stderr
+    observed = kb(
+        "observe", "--title", "Build tool", "--body", "The project builds with uv.", env=new
+    )
+    assert observed.returncode == 0, observed.stderr
+    started = kb("curate", "start", "--no-sync", "--max-bytes", "100000", env=new)
+    assert started.returncode == 0, started.stderr
