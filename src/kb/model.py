@@ -249,6 +249,8 @@ def edit_front_matter(
     name: str,
     value: str,
     after: str | None = None,
+    *,
+    quoted: bool = False,
 ) -> str:
     """Replace one scalar field or insert it after a field or before the closing delimiter.
 
@@ -276,7 +278,7 @@ def edit_front_matter(
         if field.block:
             raise FrontMatterEditError(f"front matter field is a block list: {name}")
         line_ending = _line_ending(raw_lines[field.span.start])
-        raw_lines[field.span.start] = f"{name}: {_scalar_source(value)}{line_ending}"
+        raw_lines[field.span.start] = f"{name}: {_scalar_source(value, quoted=quoted)}{line_ending}"
         result = "".join(raw_lines)
         if parse("", result).scalar(name) != value:
             raise FrontMatterEditError(f"edited value did not round-trip: {name}")
@@ -305,7 +307,7 @@ def edit_front_matter(
         line_ending = _line_ending(raw_lines[insert_at])
     if not line_ending:
         line_ending = "\n"
-    raw_lines.insert(insert_at, f"{name}: {_scalar_source(value)}{line_ending}")
+    raw_lines.insert(insert_at, f"{name}: {_scalar_source(value, quoted=quoted)}{line_ending}")
     result = "".join(raw_lines)
     if parse("", result).scalar(name) != value:
         raise FrontMatterEditError(f"edited value did not round-trip: {name}")
@@ -336,16 +338,22 @@ def _line_ending(line: str) -> str:
     return ""
 
 
-def _scalar_source(value: str) -> str:
+def _scalar_source(value: str, *, quoted: bool = False) -> str:
     """Write a single-line scalar without changing its parsed value."""
     if (
-        not value
+        quoted
+        or not value
         or value != value.strip(" \t")
         or (len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'")
     ):
-        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-        return f'"{escaped}"'
+        return _quoted_scalar(value)
     return value
+
+
+def _quoted_scalar(value: str) -> str:
+    """Write a double-quoted scalar with the parser's escape rules."""
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
 
 
 def _front_matter(

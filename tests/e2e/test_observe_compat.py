@@ -233,6 +233,50 @@ def test_old_questions_and_resolve_accept_a_gap_with_quoted_unicode_fields(git_k
     assert git_kb.git("status", "--porcelain") == ""
 
 
+def test_old_questions_reads_a_question_resolved_by_kb_resolve(git_kb: Kb) -> None:
+    gap = git_kb(
+        "gap",
+        "--title",
+        "Old questions reads resolved answers",
+        "--body",
+        "The old reader must find this answer.",
+        "--context",
+        "infra",
+    )
+    assert gap.returncode == 0, gap.stderr
+    name = gap.stdout.removeprefix("Wrote: questions/open/").removesuffix("\n")
+    new = git_kb("resolve", f"questions/open/{name}", "--answer", "Retired.", "--obsolete")
+    assert new.returncode == 0, new.stderr
+
+    old = run_old(git_kb, "questions", "--file", name)
+
+    assert old.returncode == 0, old.stderr
+    assert "The old reader must find this answer." in old.stdout
+    assert "## Resolution (2026-10-26)" in old.stdout
+
+
+def test_kb_questions_all_reads_a_question_resolved_by_the_old_script(git_kb: Kb) -> None:
+    gap = git_kb(
+        "gap",
+        "--title",
+        "New questions reads old resolutions",
+        "--body",
+        "The new reader must list this answer.",
+        "--context",
+        "infra",
+    )
+    assert gap.returncode == 0, gap.stderr
+    name = gap.stdout.removeprefix("Wrote: questions/open/").removesuffix("\n")
+    old = run_old(git_kb, "resolve", "--file", name, "--answer", "Retired.")
+    assert old.returncode == 0, old.stderr
+
+    new = git_kb("questions", "--all")
+
+    assert new.returncode == 0, new.stderr
+    assert f"questions/resolved/{name} |" in new.stdout
+    assert "| resolved | knowledge/infra | New questions reads old resolutions" in new.stdout
+
+
 def test_kb_observe_waits_for_a_legacy_lock_until_the_old_script_releases_it(
     git_kb: Kb,
 ) -> None:
