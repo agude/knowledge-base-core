@@ -154,8 +154,43 @@ def test_a_push_failure_keeps_the_local_repository_and_names_the_recovery(kb: Kb
     assert result.stdout.startswith(f"Init: created {target}\n")
     assert f"Config: created {kb.config_file}\n" in result.stdout
     assert "setup: git push failed:" in result.stderr
-    assert "setup: the local repository is kept. After fixing origin, run: kb sync" in result.stderr
+    recovery = "git push --set-upstream origin main"
+    assert f"After fixing origin, in {target}, run: {recovery}" in result.stderr
     assert run_git(target, "log", "--format=%s") == "Initialize knowledge base content\n"
+
+    run_git(kb.home, "init", "-q", "--bare", str(missing_origin))
+    run_git(target, *recovery.split()[1:])
+    synced = kb("sync", env=without_content_override(kb))
+    assert synced.returncode == 0, synced.stderr
+    assert run_git(missing_origin, "rev-parse", "refs/heads/main") == run_git(
+        target, "rev-parse", "HEAD"
+    )
+
+
+def test_a_refused_hook_removes_the_new_repository_and_leaves_the_config(kb: Kb) -> None:
+    target = kb.home / "new-content"
+    hooks = kb.home / "global-hooks"
+    hooks.mkdir()
+    (hooks / "pre-commit").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    global_hooks = {
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "core.hooksPath",
+        "GIT_CONFIG_VALUE_0": str(hooks),
+    }
+
+    result = kb("setup", "--init", str(target), "--kb", str(shim(kb)), env=global_hooks)
+
+    assert result.returncode == 1
+    assert result.stdout.startswith(f"Init: refused {target}\n")
+    assert f"Config: refused {kb.config_file}\n" in result.stdout
+    assert f"setup: removed the partial repository at {target}" in result.stderr
+    assert not target.exists()
+    assert not kb.config_file.exists()
+    assert (hooks / "pre-commit").read_text(encoding="utf-8") == "#!/bin/sh\nexit 0\n"
+
+    (hooks / "pre-commit").unlink()
+    again = kb("setup", "--init", str(target), "--kb", str(shim(kb)), env=global_hooks)
+    assert again.returncode == 0, again.stderr
 
 
 def test_origin_without_init_and_init_with_content_are_usage_errors(kb: Kb) -> None:

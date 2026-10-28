@@ -117,6 +117,22 @@ def test_a_configured_machine_passes_every_check(remote_git_kb: Kb) -> None:
     assert [line.split(":", 1)[0] for line in lines] == [f"PASS {name}" for name in CHECKS]
 
 
+def test_a_block_printed_through_a_linked_content_path_matches_doctor(
+    remote_git_kb: Kb,
+) -> None:
+    env = configured(remote_git_kb)
+    link = remote_git_kb.home / "content-link"
+    link.symlink_to(remote_git_kb.content, target_is_directory=True)
+    linked = {**env, "KB_CONTENT": str(link)}
+    instructions = remote_git_kb("setup", "--print", "instructions", env=linked).stdout
+    (remote_git_kb.claude_config_dir / "CLAUDE.md").write_text(instructions, encoding="utf-8")
+
+    code, lines = doctor(remote_git_kb, linked)
+
+    assert code == 0, lines
+    assert "PASS instructions: each host's global file has the canonical block" in lines
+
+
 def test_a_doctor_run_leaves_every_file_and_the_index_unchanged(remote_git_kb: Kb) -> None:
     env = configured(remote_git_kb)
     before = digests(remote_git_kb.home) | digests(remote_git_kb.content)

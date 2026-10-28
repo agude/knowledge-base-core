@@ -13,7 +13,17 @@ def test_print_instructions_writes_the_block_with_the_content_policy(kb: Kb) -> 
     assert result.returncode == 0, result.stderr
     assert result.stdout.startswith("<!-- kb:begin -->\n")
     assert result.stdout.endswith("<!-- kb:end -->\n")
-    assert f"Content policy: @{kb.content.as_posix()}/AGENTS.md\n" in result.stdout
+    assert f"Content policy: @{kb.content.resolve().as_posix()}/AGENTS.md\n" in result.stdout
+
+
+def test_print_instructions_resolves_a_symbolic_link_in_the_content_path(kb: Kb) -> None:
+    link = kb.home / "content-link"
+    link.symlink_to(kb.content, target_is_directory=True)
+
+    result = kb("setup", "--print", "instructions", env={"KB_CONTENT": str(link)})
+
+    assert result.returncode == 0, result.stderr
+    assert f"Content policy: @{kb.content.resolve().as_posix()}/AGENTS.md\n" in result.stdout
 
 
 def test_print_allow_claude_writes_the_seven_working_rules(kb: Kb) -> None:

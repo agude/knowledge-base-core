@@ -1,5 +1,6 @@
 """kb setup --init in process: the empty-path check, the layout, and each initialization branch."""
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -64,7 +65,7 @@ def test_init_is_refused_before_anything_is_created_when_kb_is_missing(
     assert failures == ["setup: kb is not on PATH; pass --kb PATH"]
 
 
-def test_a_refused_hook_skips_the_initial_commit(
+def test_a_refused_hook_skips_the_commit_and_removes_what_init_created(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     hook = tmp_path / "new" / ".git" / "hooks" / "pre-commit"
@@ -74,12 +75,16 @@ def test_a_refused_hook_skips_the_initial_commit(
     )
     monkeypatch.setattr(setup, "_initial_commit", lambda *args: pytest.fail("committed"))
 
-    state = setup._initialize(tmp_path / "new", None, None, {}, [])
+    failures: list[str] = []
 
-    assert state == ("created", "refused", hook, tmp_path / "new")
+    state = setup._initialize(tmp_path / "new", None, None, {}, failures)
+
+    assert state == ("refused", "refused", hook, None)
+    assert not (tmp_path / "new").exists()
+    assert failures == [f"setup: removed the partial repository at {tmp_path / 'new'}"]
 
 
-def test_a_failed_initial_commit_refuses_the_repository(
+def test_a_failed_initial_commit_refuses_and_removes_the_repository(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     hook = tmp_path / "new" / ".git" / "hooks" / "pre-commit"
@@ -97,7 +102,11 @@ def test_a_failed_initial_commit_refuses_the_repository(
     state = setup._initialize(tmp_path / "new", None, None, {}, failures)
 
     assert state == ("refused", "installed", hook, None)
-    assert failures == ["setup: git commit failed: nothing to commit"]
+    assert not (tmp_path / "new").exists()
+    assert failures == [
+        "setup: git commit failed: nothing to commit",
+        f"setup: removed the partial repository at {tmp_path / 'new'}",
+    ]
 
 
 def test_a_busy_lock_during_the_initial_commit_is_reported(
@@ -118,7 +127,10 @@ def test_a_busy_lock_during_the_initial_commit_is_reported(
     state = setup._initialize(tmp_path / "new", None, None, {}, failures)
 
     assert state[0] == "refused"
-    assert failures == ["setup: content repository is busy (waited 2s for the lock)"]
+    assert failures == [
+        "setup: content repository is busy (waited 2s for the lock)",
+        f"setup: removed the partial repository at {tmp_path / 'new'}",
+    ]
 
 
 def test_a_push_failure_keeps_the_created_repository_and_names_the_recovery(
@@ -136,4 +148,56 @@ def test_a_push_failure_keeps_the_created_repository_and_names_the_recovery(
 
     assert state == ("created", "installed", hook, tmp_path / "new")
     assert failures[0].startswith("setup: git push failed:")
-    assert failures[1] == ("setup: the local repository is kept. After fixing origin, run: kb sync")
+    assert failures[1] == (
+        "setup: the local repository is kept. After fixing origin, "
+        f"in {tmp_path / 'new'}, run: git push --set-upstream origin main"
+    )
+
+
+def test_a_refusal_in_an_existing_empty_directory_leaves_it_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "empty"
+    target.mkdir()
+    monkeypatch.setattr(setup, "_kb_path", lambda given: "/opt/kb")
+    monkeypatch.setattr(
+        setup, "_install", lambda root, kb, replace, environ, failures: ("refused", None)
+    )
+
+    state = setup._initialize(target, None, None, {}, [])
+
+    assert state == ("refused", "refused", None, None)
+    assert target.is_dir()
+    assert list(target.iterdir()) == []
+
+
+def test_a_failed_removal_is_reported(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail(path: Path) -> None:
+        raise OSError("busy")
+
+    monkeypatch.setattr(shutil, "rmtree", fail)
+    target = tmp_path / "new"
+    target.mkdir()
+    failures: list[str] = []
+
+    setup._roll_back(target, False, failures)
+
+    assert failures == [f"setup: cannot remove the partial repository at {target}: busy"]
+
+
+def test_a_failed_remote_add_names_both_recovery_commands(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refuse(root: Path, *words: str) -> None:
+        raise KbError(f"git {words[0]} failed: fatal: bad remote")
+
+    monkeypatch.setattr(setup, "_git_ok", refuse)
+    failures: list[str] = []
+
+    setup._publish(tmp_path, "url", failures)
+
+    assert failures == [
+        "setup: git remote failed: fatal: bad remote",
+        f"setup: the local repository is kept. In {tmp_path}, run: "
+        "git remote add origin URL, then git push --set-upstream origin main",
+    ]

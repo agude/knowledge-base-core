@@ -631,9 +631,12 @@ kb setup --print {instructions|allow-claude|allow-codex}
   `.gitkeep` in each empty directory, `.gitattributes` with
   `* text=auto eol=lf`, and an `AGENTS.md` policy stub. Then it runs
   `git init -b main`, installs the hook, and makes one commit,
-  `Initialize knowledge base content`. `--origin URL` adds `origin` and pushes
-  `main`. A failed push keeps the local repository, exits 1, and prints the
-  `kb sync` command that recovers.
+  `Initialize knowledge base content`. When the hook is refused or the commit
+  fails, setup removes what it created, leaves the config unchanged, and exits
+  1, so `--init` can run again. `--origin URL` adds `origin` and pushes `main`.
+  A failed push keeps the local repository, exits 1, and prints the
+  `git push --set-upstream origin main` command that recovers. `kb sync` cannot
+  make the first push, because it fetches `origin/main` first.
 - Setup never enables capture, never writes `harvest_since`, and never edits
   host settings or instruction files. Capture enablement and the removal of the
   old capture hooks happen together at cutover, which is phase 5.

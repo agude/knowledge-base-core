@@ -972,6 +972,14 @@ Deviations and contract amendments:
 - The hook refuses a kb path that contains a carriage return, in addition to the
   three characters section 5.2 lists. The refusal is stricter, and no valid path
   is refused.
+- Review fixes after closeout. Section 5.2 names `kb sync` as the recovery after
+  a failed `--init` push, but `kb sync` fetches `origin/main` first and fails on
+  an empty origin. Setup now prints `git push --set-upstream origin main`, run in
+  the new repository. A refused hook or a failed initial commit now removes what
+  `--init` created and leaves the config unchanged, so `--init` can run again.
+  `kb setup --print instructions` now resolves the content path, as
+  `config.content_root` does, so doctor's comparison matches through a symbolic
+  link.
 - `kb setup` with no options configures the machine: it installs the hook in the
   configured repository and leaves the config unchanged. The usage in section 5.2
   allows this form.

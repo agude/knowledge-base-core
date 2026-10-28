@@ -84,16 +84,20 @@ def _render(item: str, environ: Mapping[str, str]) -> str:
 
 
 def _print_root(environ: Mapping[str, str]) -> str:
-    """The content path as an absolute path for the policy line. The directory need not exist."""
+    """The content path for the policy line, resolved as config.content_root resolves it.
+
+    Doctor renders the canonical block from the resolved root, so the printed block must use
+    the same form of the path. The directory need not exist.
+    """
     override = environ.get("KB_CONTENT", "")
     if override:
-        return str(Path(override).expanduser().absolute())
+        return str(Path(override).expanduser().resolve())
     configured = config.read_content_setting(config_file(environ, sys.platform, Path.home()))
     if configured is None:
         raise KbError(
             'setup: no content path; set KB_CONTENT or add content = "PATH" to the config file'
         )
-    return str(configured.absolute())
+    return str(configured.resolve())
 
 
 def _configure(parsed: args.Parsed, environ: Mapping[str, str]) -> int:
@@ -141,8 +145,9 @@ def _initialize(
     """Create a content repository, install its hook, make its initial commit, and publish it.
 
     Returns the init state, the hook state, the hook path, and the repository root, which is
-    None when nothing was created. A refusal before anything is created leaves the path alone.
-    A push failure keeps the local repository and reports the recovery command.
+    None when init was refused. A refusal before the initial commit removes what init created,
+    so the path is as it was and init can run again. A push failure keeps the local repository
+    and reports the recovery commands.
     """
     try:
         _check_empty(target)
@@ -150,26 +155,53 @@ def _initialize(
     except KbError as error:
         failures.append(_labelled(str(error)))
         return "refused", "refused", None, None
+    existed = target.exists()
+    hook_state, hook = "refused", None
     try:
         _create_layout(target)
         _git_ok(target, "init", "-q", "-b", "main")
-    except (KbError, OSError, UnicodeError) as error:
-        failures.append(_labelled(str(error)))
-        return "refused", "refused", None, None
-    hook_state, hook = _install(target, kb_argument, False, environ, failures)
-    if hook_state == "refused":
-        return "created", hook_state, hook, target
-    try:
+        hook_state, hook = _install(target, kb_argument, False, environ, failures)
+        if hook_state == "refused":
+            raise _Abandoned
         _initial_commit(target, environ)
+    except _Abandoned:
+        _roll_back(target, existed, failures)
+        return "refused", hook_state, hook, None
     except lock.LockBusy as busy:
         failures.append(f"setup: content repository is busy (waited {busy.waited}s for the lock)")
+        _roll_back(target, existed, failures)
         return "refused", hook_state, hook, None
     except (KbError, OSError, UnicodeError) as error:
         failures.append(_labelled(str(error)))
+        _roll_back(target, existed, failures)
         return "refused", hook_state, hook, None
     if origin is not None:
         _publish(target, origin, failures)
     return "created", hook_state, hook, target
+
+
+class _Abandoned(Exception):
+    """Init stops after a refusal that is already recorded, and removes what it created."""
+
+
+def _roll_back(target: Path, existed: bool, failures: list[str]) -> None:
+    """Remove what init created under target, which was absent or an empty directory.
+
+    A hook installed outside target, through core.hooksPath, is left in place.
+    """
+    try:
+        if existed:
+            for child in target.iterdir():
+                if child.is_dir() and not child.is_symlink():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink()
+        else:
+            shutil.rmtree(target)
+    except OSError as error:
+        failures.append(f"setup: cannot remove the partial repository at {target}: {error}")
+        return
+    failures.append(f"setup: removed the partial repository at {target}")
 
 
 def _check_empty(target: Path) -> None:
@@ -197,13 +229,28 @@ def _initial_commit(target: Path, environ: Mapping[str, str]) -> None:
 
 
 def _publish(target: Path, origin: str, failures: list[str]) -> None:
-    """Add origin and push main. A failure keeps the local repository and names the recovery."""
+    """Add origin and push main. A failure keeps the local repository and names the recovery.
+
+    kb sync cannot finish the first push, because it fetches origin's branch first, so the
+    recovery is the Git commands that setup did not complete.
+    """
+    push = "git push --set-upstream origin main"
     try:
         _git_ok(target, "remote", "add", "origin", origin)
+    except KbError as error:
+        failures.append(_labelled(str(error)))
+        failures.append(
+            f"setup: the local repository is kept. In {target}, run: "
+            f"git remote add origin URL, then {push}"
+        )
+        return
+    try:
         _git_ok(target, "push", "-q", "--set-upstream", "origin", "main")
     except KbError as error:
         failures.append(_labelled(str(error)))
-        failures.append("setup: the local repository is kept. After fixing origin, run: kb sync")
+        failures.append(
+            f"setup: the local repository is kept. After fixing origin, in {target}, run: {push}"
+        )
 
 
 def _git_ok(root: Path, *words: str) -> None:
