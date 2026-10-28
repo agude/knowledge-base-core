@@ -3,6 +3,7 @@
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
+from kb.commands import evidence as evidence_command
 from kb.commands import map as map_command
 from kb.commands import observe as observe_command
 from kb.commands import read as read_command
@@ -37,6 +38,11 @@ COMMANDS: tuple[Command, ...] = (
         name="sync",
         summary="Harvest transcripts and sync the content repository.",
         run=sync_command.run,
+    ),
+    Command(
+        name="evidence",
+        summary="Search observations, transcripts, and questions by text, kind, and date.",
+        run=evidence_command.run,
     ),
 )
 
