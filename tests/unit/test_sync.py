@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from kb import config, dates, harvest, lock, model, observation, secrets
+from kb import config, dates, harvest, lock, model, observation, remote, secrets
 from kb.commands import sync
 from kb.errors import KbError
 from kb.transcript_observation import ContentLine
@@ -1025,7 +1025,7 @@ def test_commit_observations_cleans_up_staging_and_paths_on_failure(
 def test_dirty_paths_handles_changes_renames_lock_and_errors(
     monkeypatch: pytest.MonkeyPatch, status: str, stdout: int, stderr: str, expected: object
 ) -> None:
-    monkeypatch.setattr(sync, "_git", lambda *args: completed(stdout, status, stderr))
+    monkeypatch.setattr(remote, "_git", lambda *args: completed(stdout, status, stderr))
     if expected == "error":
         with pytest.raises(KbError, match="cannot inspect working tree: broken"):
             sync._dirty_paths(Path())
@@ -1056,7 +1056,7 @@ def test_fetch_status_reports_git_failures(
     expected: str,
 ) -> None:
     queued = iter(completed(*result) for result in results)
-    monkeypatch.setattr(sync, "_git", lambda *args: next(queued))
+    monkeypatch.setattr(remote, "_git", lambda *args: next(queued))
     status, error = sync._fetch_status(Path())
     assert status is None and expected in (error or "")
 
@@ -1071,12 +1071,12 @@ def test_fetch_status_parses_valid_counts(monkeypatch: pytest.MonkeyPatch) -> No
             completed(0, "2 4\n"),
         )
     )
-    monkeypatch.setattr(sync, "_git", lambda *args: next(queued))
+    monkeypatch.setattr(remote, "_git", lambda *args: next(queued))
     assert sync._fetch_status(Path()) == (sync.RemoteStatus("main", 2, 4), None)
 
 
 @pytest.mark.parametrize(
-    ("remote", "no_push", "results", "actions", "errors"),
+    ("status", "no_push", "results", "actions", "errors"),
     [
         (sync.RemoteStatus("main", 0, 0), False, [], ("Already in sync with origin/main.",), ()),
         (sync.RemoteStatus("main", 2, 0), True, [], (), ()),
@@ -1100,7 +1100,7 @@ def test_fetch_status_parses_valid_counts(monkeypatch: pytest.MonkeyPatch) -> No
 )
 def test_sync_remote_handles_ahead_behind_and_push_modes(
     monkeypatch: pytest.MonkeyPatch,
-    remote: sync.RemoteStatus,
+    status: sync.RemoteStatus,
     no_push: bool,
     results: list[tuple[int, str, str]],
     actions: tuple[str, ...],
@@ -1113,7 +1113,7 @@ def test_sync_remote_handles_ahead_behind_and_push_modes(
         calls.append(args)
         return next(queued)
 
-    monkeypatch.setattr(sync, "_git", run_git)
-    assert sync._sync_remote(Path(), remote, no_push) == (actions, errors)
+    monkeypatch.setattr(remote, "_git", run_git)
+    assert sync._sync_remote(Path(), status, no_push) == (actions, errors)
     if errors and "rebase" in errors[0]:
         assert calls[-1] == ("rebase", "--abort")

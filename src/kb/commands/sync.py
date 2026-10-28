@@ -12,12 +12,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from kb import args, config, dates, harvest, lock, model, observation, secrets
+from kb import args, config, dates, harvest, lock, model, observation, remote, secrets
 from kb.args import Spec
 from kb.config import content_root
 from kb.errors import KbError
 from kb.hosts import claude, codex
 from kb.platform import config_file
+from kb.remote import RemoteStatus as RemoteStatus
 from kb.transcript_observation import (
     ContentLine,
     redact_messages,
@@ -84,13 +85,9 @@ class Prepared:
         return 0 if self.text is None else len(self.text.encode("utf-8"))
 
 
-@dataclass(frozen=True)
-class RemoteStatus:
-    """The current branch's ahead and behind counts after fetching origin."""
-
-    branch: str
-    ahead: int
-    behind: int
+# The seams that the sync tests replace. The remote steps live in kb.remote.
+_dirty_paths = remote.dirty_paths
+_fetch_status = remote.fetch_status
 
 
 def run(words: Sequence[str]) -> int:
@@ -196,12 +193,12 @@ def _sync(
             sys.stderr.write(f"  {path}\n")
         return 1 if errors else 0
 
-    remote, remote_error = _fetch_status(root)
-    if remote_error is not None:
-        sys.stderr.write(f"{remote_error}\n")
+    status, fetch_error = _fetch_status(root)
+    if fetch_error is not None:
+        sys.stderr.write(f"{fetch_error}\n")
         return 1
-    assert remote is not None
-    actions, sync_errors = _sync_remote(root, remote, no_push)
+    assert status is not None
+    actions, sync_errors = _sync_remote(root, status, no_push)
     for action in actions:
         sys.stdout.write(f"{action}\n")
     for message in sync_errors:
@@ -226,15 +223,15 @@ def _status(
         state = harvest.reconstruct_state(records, _sessions(scanned.candidates), host)
         selection = harvest.select_candidates(scanned.candidates, state, now, harvest_since)
         ready, waiting = selection.ready_count, selection.waiting_count
-    remote, remote_error = _fetch_status(root)
-    if remote_error is not None:
-        errors.append(remote_error)
+    fetched, fetch_error = _fetch_status(root)
+    if fetch_error is not None:
+        errors.append(fetch_error)
     else:
-        assert remote is not None
+        assert fetched is not None
         sys.stdout.write(f"Ready: {ready} session(s)\n")
         sys.stdout.write(f"Waiting: {waiting} session(s)\n")
-        sys.stdout.write(f"Ahead: {remote.ahead} commit(s)\n")
-        sys.stdout.write(f"Behind: {remote.behind} commit(s)\n")
+        sys.stdout.write(f"Ahead: {fetched.ahead} commit(s)\n")
+        sys.stdout.write(f"Behind: {fetched.behind} commit(s)\n")
     for error in errors:
         sys.stderr.write(f"{error}\n")
     return 1 if errors else 0
@@ -730,74 +727,19 @@ def _failure_text(failure: Failure) -> str:
     return f"sync: skipped session {failure.session}: {failure.reason}"
 
 
-def _dirty_paths(root: Path) -> tuple[str, ...]:
-    """Paths changed in the worktree or index, except for the old observer lock."""
-    result = _git(root, "status", "--porcelain", "--untracked-files=all")
-    if result.returncode != 0:
-        detail = result.stderr.rstrip("\n")
-        raise KbError(f"cannot inspect working tree: {detail}")
-    paths: list[str] = []
-    for line in result.stdout.splitlines():
-        path = line[3:] if len(line) > 3 else line
-        if " -> " in path:
-            path = path.split(" -> ", 1)[1]
-        if path == ".observe.lock" or path.startswith(".observe.lock/"):
-            continue
-        paths.append(path)
-    return tuple(paths)
-
-
-def _fetch_status(root: Path) -> tuple[RemoteStatus | None, str | None]:
-    """Fetch origin's current branch and calculate ahead/behind without moving HEAD."""
-    branch_result = _git(root, "symbolic-ref", "--quiet", "--short", "HEAD")
-    if branch_result.returncode != 0:
-        return None, "sync: current branch is detached"
-    branch = branch_result.stdout.strip()
-    remote = _git(root, "remote", "get-url", "origin")
-    if remote.returncode != 0:
-        return None, "sync: no origin remote"
-    fetched = _git(root, "fetch", "--no-write-fetch-head", "origin", branch)
-    if fetched.returncode != 0:
-        detail = fetched.stderr.rstrip("\n")
-        return None, f"sync: fetch origin/{branch} failed: {detail}"
-    remote_ref = f"refs/remotes/origin/{branch}"
-    exists = _git(root, "show-ref", "--verify", "--quiet", remote_ref)
-    if exists.returncode != 0:
-        return None, f"sync: origin/{branch} does not exist"
-    counts = _git(root, "rev-list", "--left-right", "--count", f"HEAD...{remote_ref}")
-    if counts.returncode != 0:
-        detail = counts.stderr.rstrip("\n")
-        return None, f"sync: cannot compare with origin/{branch}: {detail}"
-    values = counts.stdout.split()
-    if len(values) != 2 or not all(value.isascii() and value.isdigit() for value in values):
-        return None, f"sync: git returned invalid ahead/behind counts for origin/{branch}"
-    return RemoteStatus(branch, int(values[0]), int(values[1])), None
-
-
 def _sync_remote(
-    root: Path, remote: RemoteStatus, no_push: bool
+    root: Path, status: RemoteStatus, no_push: bool
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Rebase behind commits, then push local commits unless no-push was requested."""
+    """Integrate with origin and return the lines kb sync prints and the errors it reports."""
+    result = remote.integrate(root, status, push=not no_push)
     actions: list[str] = []
-    errors: list[str] = []
-    target = f"origin/{remote.branch}"
-    if remote.behind:
-        rebased = _git(root, "rebase", target)
-        if rebased.returncode != 0:
-            _git(root, "rebase", "--abort")
-            errors.append(f"sync: rebase onto {target} failed; local commits kept")
-            return tuple(actions), tuple(errors)
-        actions.append(f"Pulled: {remote.behind} commit(s)")
-    if remote.ahead and not no_push:
-        pushed = _git(root, "push", "origin", remote.branch)
-        if pushed.returncode != 0:
-            detail = pushed.stderr.rstrip("\n")
-            errors.append(f"sync: push origin/{remote.branch} failed: {detail}")
-        else:
-            actions.append(f"Pushed: {remote.ahead} commit(s)")
-    elif remote.ahead == 0 and remote.behind == 0:
-        actions.append(f"Already in sync with origin/{remote.branch}.")
-    return tuple(actions), tuple(errors)
+    if result.pulled:
+        actions.append(f"Pulled: {result.pulled} commit(s)")
+    if result.pushed:
+        actions.append(f"Pushed: {result.pushed} commit(s)")
+    if result.already_in_sync:
+        actions.append(f"Already in sync with origin/{status.branch}.")
+    return tuple(actions), result.errors
 
 
 def _git(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
