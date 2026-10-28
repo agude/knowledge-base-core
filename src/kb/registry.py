@@ -80,7 +80,7 @@ COMMANDS: tuple[Command, ...] = (
     ),
     Command(
         name="setup",
-        summary="Print the instruction block or the allow rules that the dotfiles install.",
+        summary="Configure the content repository and hook, create a repository, or print host text.",
         run=setup_command.run,
     ),
     Command(
