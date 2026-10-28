@@ -138,6 +138,18 @@ def test_git_dir_refuses_a_directory_outside_any_repository(tmp_path: Path) -> N
         lock.git_dir(tmp_path)
 
 
+def test_git_dir_path_reads_worktree_metadata_without_running_git(tmp_path: Path) -> None:
+    content = tmp_path / "worktree"
+    git = tmp_path / ".git"
+    worktree_git = git / "worktrees" / "worktree"
+    content.mkdir()
+    worktree_git.mkdir(parents=True)
+    (content / ".git").write_text(f"gitdir: {worktree_git}\n", encoding="utf-8")
+    (worktree_git / "commondir").write_text("../..\n", encoding="utf-8")
+
+    assert lock.git_dir_path(content, "verify") == git.resolve()
+
+
 def test_flock_backend_takes_then_releases_an_exclusive_lock() -> None:
     module = FakeFcntl()
     backend = FlockBackend(module)

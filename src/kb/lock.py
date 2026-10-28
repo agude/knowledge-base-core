@@ -143,6 +143,30 @@ def git_dir(content: Path, command: str = "observe") -> Path:
     return (content / result.stdout.removesuffix("\n")).resolve()
 
 
+def git_dir_path(content: Path, command: str) -> Path:
+    """Find a worktree's common Git directory from its metadata without running Git."""
+    marker = content / ".git"
+    if marker.is_dir():
+        git = marker.resolve()
+    elif marker.is_file():
+        line = marker.read_text(encoding="utf-8").removesuffix("\n").removesuffix("\r")
+        if not line.startswith("gitdir: "):
+            raise KbError(f"{command}: cannot locate the Git directory for {content}")
+        git = Path(line.removeprefix("gitdir: "))
+        if not git.is_absolute():
+            git = marker.parent / git
+        git = git.resolve()
+        common = git / "commondir"
+        if common.is_file():
+            relative = Path(common.read_text(encoding="utf-8").strip())
+            git = (git / relative).resolve() if not relative.is_absolute() else relative.resolve()
+    else:
+        raise KbError(f"{command}: cannot locate the Git directory for {content}")
+    if not git.is_dir():
+        raise KbError(f"{command}: cannot locate the Git directory for {content}")
+    return git
+
+
 def default_backend(
     platform: str, import_module: Callable[[str], ModuleType] = importlib.import_module
 ) -> Backend:

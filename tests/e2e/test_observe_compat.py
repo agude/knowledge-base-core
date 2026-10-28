@@ -1,12 +1,9 @@
 """End-to-end tests for compatibility with the old scripts in ~/Knowledge/scripts.
 
 Skipped unless KB_OLD_TOOLING is set to a checkout of the old tooling. `just
-test-compat` sets it. Each test copies the fixture into a temporary git
-repository, points the old scripts at it with KB_CONTENT_DIR, and never touches
-the real content.
-
-Each test is marked xfail(strict=True) until the command is registered, and
-step 5 removes the markers.
+test-compat` sets it. Each test copies the fixture into a temporary Git
+repository, points the old scripts at it with KB_CONTENT_DIR, and leaves the
+real content untouched.
 """
 
 import os
@@ -14,6 +11,8 @@ import re
 import subprocess
 import sys
 import time
+from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -36,12 +35,18 @@ def old_script(name: str) -> Path:
     return path
 
 
-def run_old(kb: Kb, name: str, *args: str) -> subprocess.CompletedProcess[str]:
+def run_old(
+    kb: Kb,
+    name: str,
+    *args: str,
+    env: Mapping[str, str | None] | None = None,
+) -> subprocess.CompletedProcess[str]:
     """Run an old script with the test's content repository as its content directory."""
+    overrides = {"KB_CONTENT_DIR": str(kb.content), **(env or {})}
     return subprocess.run(
         [str(old_script(name)), *args],
         cwd=kb.home,
-        env=kb.environment({"KB_CONTENT_DIR": str(kb.content)}),
+        env=kb.environment(overrides),
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -144,6 +149,32 @@ def test_old_frontmatter_field_reads_kb_files_as_it_reads_old_files(git_kb: Kb) 
     assert old_field(git_kb, "source", new) == "session"
     for name in (old, new):
         assert TIMESTAMP.fullmatch(old_field(git_kb, "created", name))
+
+
+def test_old_stale_and_lint_accept_an_article_written_by_kb_verify(git_kb: Kb) -> None:
+    article = git_kb.content / "knowledge" / "infra" / "nas.md"
+    text = article.read_text(encoding="utf-8")
+    article.write_text(
+        text.replace('title: "NAS"\n', 'title: "NAS"\nupdated: 2026-10-20\n'), encoding="utf-8"
+    )
+
+    verified = git_kb("verify", "knowledge/infra/nas.md")
+    assert verified.returncode == 0, verified.stderr
+
+    linted = run_old(git_kb, "lint", "--path", "knowledge/infra/nas.md")
+    assert linted.returncode == 0, linted.stderr
+    assert "0 error(s)" in linted.stdout
+
+    today_epoch = int(datetime(2026, 10, 26, tzinfo=UTC).timestamp())
+    stale = run_old(
+        git_kb,
+        "stale",
+        "--path",
+        "knowledge/infra",
+        env={"FRESHNESS_TODAY_EPOCH": str(today_epoch)},
+    )
+    assert stale.returncode == 0, stale.stderr
+    assert "knowledge/infra/nas.md" not in stale.stdout
 
 
 def test_old_pending_lists_a_kb_observation_with_its_title(git_kb: Kb) -> None:

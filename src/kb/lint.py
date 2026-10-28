@@ -1,10 +1,11 @@
-"""Pure article structure and metadata checks over parsed documents."""
+"""Article structure, metadata, and local reference checks."""
 
 import re
 from dataclasses import dataclass
+from pathlib import Path, PureWindowsPath
 from typing import Literal
 
-from kb import locators
+from kb import corpus, locators
 from kb.dates import parse_date
 from kb.freshness import MAX_TTL_DAYS, NAMED_TTL_DAYS
 from kb.model import Document, Section
@@ -12,8 +13,8 @@ from kb.model import Document, Section
 MAX_H2_LINES = 50
 _SECTION_LOCATOR = re.compile(r"[0-9]+(?:\.[0-9]+)?")
 _MARKDOWN_LINK = re.compile(r"\[[^\]]+\]\(([^)]*)\)")
-_INLINE_CODE = re.compile(r"`+[^`]*`+")
 _EXTERNAL_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
+_INLINE_CODE = re.compile(r"`+[^`]*`+")
 _NON_SLUG = re.compile(r"[^A-Za-z0-9 _-]")
 _WHITESPACE = re.compile(r"[ \t\f\v]+")
 _HYPHENS = re.compile(r"-+")
@@ -88,6 +89,60 @@ def fragment_resolves(document: Document, fragment: str) -> bool:
     )
 
 
+def reference_findings(
+    root: Path,
+    source: Document,
+    documents: dict[str, Document],
+) -> list[Finding]:
+    """Check one document's local links and sources, caching each Markdown target."""
+    findings: list[Finding] = []
+    for reference in references(source):
+        path, has_fragment, fragment = reference.destination.partition("#")
+        if _external_or_absolute(reference.destination, path):
+            continue
+
+        source_file = root / source.path
+        if reference.kind == "link":
+            target = (source_file.parent / path).resolve() if path else source_file.resolve()
+        else:
+            target = (root / path).resolve()
+
+        try:
+            relpath = target.relative_to(root).as_posix()
+        except ValueError:
+            message = (
+                f"local Markdown link escapes content root: {reference.destination}"
+                if reference.kind == "link"
+                else f"local source reference escapes content root: {reference.destination}"
+            )
+            findings.append(Finding(reference.source_path, reference.line, "error", message))
+            continue
+
+        if not target.is_file():
+            message = (
+                f"missing local Markdown link target: {reference.destination}"
+                if reference.kind == "link"
+                else f"missing local source reference: {reference.destination}"
+            )
+            findings.append(Finding(reference.source_path, reference.line, "error", message))
+            continue
+        if not has_fragment or not fragment or target.suffix != ".md":
+            continue
+
+        target_document = documents.get(relpath)
+        if target_document is None:
+            target_document = corpus.read_document(root, relpath)
+            documents[relpath] = target_document
+        if not fragment_resolves(target_document, fragment):
+            message = (
+                f"missing local Markdown link anchor '#{fragment}': {reference.destination}"
+                if reference.kind == "link"
+                else f"missing source reference anchor '#{fragment}': {reference.destination}"
+            )
+            findings.append(Finding(reference.source_path, reference.line, "error", message))
+    return findings
+
+
 def check_document(document: Document, require_ttl: bool = False) -> list[Finding]:
     """Return structural and metadata findings for one parsed article."""
     findings: list[Finding] = []
@@ -110,7 +165,7 @@ def _check_front_matter(document: Document, require_ttl: bool, findings: list[Fi
     if "ttl" not in document.front:
         if require_ttl:
             _add(findings, document, 1, "error", "front matter missing ttl")
-    elif not _valid_ttl(ttl_value):
+    elif not valid_ttl(ttl_value):
         line = _front_field_line(document, "ttl") or 1
         _add(
             findings,
@@ -189,7 +244,7 @@ def _check_section_values(document: Document, section: Section, findings: list[F
             _add(findings, document, line, "error", f"invalid section {label} date")
 
     ttl_value = section.meta.get("ttl")
-    if ttl_value is not None and not _valid_ttl(ttl_value):
+    if ttl_value is not None and not valid_ttl(ttl_value):
         _add(
             findings, document, _section_field_line(section, "ttl"), "error", "invalid section ttl"
         )
@@ -353,6 +408,16 @@ def _link_destination(raw: str) -> str:
     return destination.split(maxsplit=1)[0] if destination else ""
 
 
+def _external_or_absolute(destination: str, path: str) -> bool:
+    """Whether a target is a URL or an absolute path, both outside local linting."""
+    return (
+        destination.startswith("//")
+        or _EXTERNAL_SCHEME.match(destination) is not None
+        or path.startswith("/")
+        or PureWindowsPath(path).is_absolute()
+    )
+
+
 def _heading_slug(heading: str) -> str:
     """The ASCII GitHub-style slug accepted by the old lint script."""
     slug = _NON_SLUG.sub("", heading.translate(_ASCII_LOWER))
@@ -371,7 +436,7 @@ def _section_field_line(section: Section, name: str) -> int:
     return section.start + 1
 
 
-def _valid_ttl(value: object) -> bool:
+def valid_ttl(value: object) -> bool:
     """Whether a TTL is named or a positive integer within the supported limit."""
     if not isinstance(value, str):
         return False

@@ -12,6 +12,7 @@ from kb.commands import questions as questions_command
 from kb.commands import read as read_command
 from kb.commands import recall as recall_command
 from kb.commands import sync as sync_command
+from kb.commands import verify as verify_command
 from kb.errors import KbError
 
 
@@ -46,6 +47,11 @@ COMMANDS: tuple[Command, ...] = (
         name="gap",
         summary="Record one attributed question and commit it.",
         run=gap_command.run,
+    ),
+    Command(
+        name="verify",
+        summary="Set an article's verified date and a required TTL.",
+        run=verify_command.run,
     ),
     Command(
         name="questions",
