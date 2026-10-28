@@ -415,9 +415,11 @@ def test_held_legacy_lock_is_reported_as_busy_and_left_alone(
     assert (legacy / "pid").read_text(encoding="utf-8") == f"{os.getpid()}\n"
 
 
-def test_interruption_during_commit_removes_only_the_new_question_and_releases_locks(
+@pytest.mark.parametrize("interrupted_command", ["add", "commit"])
+def test_interruption_removes_only_the_new_question_and_releases_locks(
     content: Path,
     monkeypatch: pytest.MonkeyPatch,
+    interrupted_command: str,
 ) -> None:
     existing = content / "questions" / "open" / "existing.md"
     existing.parent.mkdir(parents=True, exist_ok=True)
@@ -426,12 +428,14 @@ def test_interruption_during_commit_removes_only_the_new_question_and_releases_l
     before = open_questions(content)
     original_git = write._git
 
-    def interrupt_on_commit(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
-        if words[0] == "commit":
+    def interrupt_git(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        if words[0] == interrupted_command:
+            if interrupted_command == "add":
+                original_git(root, *words)
             raise KeyboardInterrupt
         return original_git(root, *words)
 
-    monkeypatch.setattr(write, "_git", interrupt_on_commit)
+    monkeypatch.setattr(write, "_git", interrupt_git)
     with pytest.raises(KeyboardInterrupt):
         gap._record(content, "Interrupted", "knowledge/future", "Keep the old question.", 0)
 
@@ -443,3 +447,43 @@ def test_interruption_during_commit_removes_only_the_new_question_and_releases_l
     fd = lock.acquire_kernel(content / ".git" / lock.KERNEL_LOCK, backend, 0)
     backend.unlock(fd)
     os.close(fd)
+
+
+@pytest.mark.parametrize("failed_command", ["ls-files", "rm"])
+def test_rollback_failure_is_reported_and_keeps_the_question_for_recovery(
+    content: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failed_command: str,
+) -> None:
+    before = set(open_questions(content))
+    original_git = write._git
+
+    def fail_git(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        if words[0] in ("commit", failed_command):
+            return subprocess.CompletedProcess(["git", *words], 1, "", "index unavailable\n")
+        return original_git(root, *words)
+
+    monkeypatch.setattr(write, "_git", fail_git)
+    status, out, err = run_gap(
+        capsys,
+        "--title",
+        "Retain on cleanup failure",
+        "--body",
+        "Recover me.",
+        "--context",
+        "infra",
+    )
+    assert (status, out) == (1, "")
+    assert err.startswith("gap: rollback failed for questions/open/")
+    assert "inspect Git status before retrying" in err
+    assert "index unavailable" in err
+    published = set(open_questions(content)) - before
+    assert len(published) == 1
+    question = published.pop()
+    assert question.read_text(encoding="utf-8").endswith("Recover me.\n")
+    assert git(content, "diff", "--cached", "--name-only").splitlines() == [
+        question.relative_to(content).as_posix()
+    ]
+    assert list((content / ".git" / "kb-tmp").iterdir()) == []
+    assert not (content / ".observe.lock").exists()

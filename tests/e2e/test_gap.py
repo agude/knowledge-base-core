@@ -127,7 +127,8 @@ def test_preserves_unrelated_staged_and_unstaged_files(git_kb: Kb) -> None:
     ]
 
 
-def test_failed_commit_removes_only_the_new_question(git_kb: Kb) -> None:
+@pytest.mark.parametrize("edit_question", [False, True])
+def test_failed_commit_removes_only_the_new_question(git_kb: Kb, edit_question: bool) -> None:
     existing_question = git_kb.content / "questions" / "open" / "existing.md"
     existing_question.write_text(
         "---\ntitle: Existing question\n---\n\nKeep this question.\n", encoding="utf-8"
@@ -143,6 +144,11 @@ def test_failed_commit_removes_only_the_new_question(git_kb: Kb) -> None:
     )
     git_kb.git("commit", "-q", "-m", "Add existing evidence")
     before_head = git_kb.git("rev-parse", "HEAD")
+    existing_question.write_text("Existing staged change.\n", encoding="utf-8")
+    git_kb.git("add", "questions/open/existing.md")
+    existing_question.write_text("Existing unstaged change.\n", encoding="utf-8")
+    before_status = git_kb.git("status", "--porcelain")
+    before_index = git_kb.git("show", ":questions/open/existing.md")
     before_questions = sorted(
         path.name for path in (git_kb.content / "questions/open").glob("*.md")
     )
@@ -150,7 +156,17 @@ def test_failed_commit_removes_only_the_new_question(git_kb: Kb) -> None:
         path.name for path in (git_kb.content / "observations/pending").glob("*.md")
     )
     hook = git_kb.content / ".git" / "hooks" / "pre-commit"
-    hook.write_text("#!/bin/sh\necho 'hook rejected the commit' >&2\nexit 1\n", encoding="utf-8")
+    edit = (
+        "git diff --cached --name-only --diff-filter=A -- questions/open | "
+        "while IFS= read -r path; do\n"
+        "    printf '\\nHook edit\\n' >> \"$path\"\n"
+        "done\n"
+        if edit_question
+        else ""
+    )
+    hook.write_text(
+        f"#!/bin/sh\n{edit}echo 'hook rejected the commit' >&2\nexit 1\n", encoding="utf-8"
+    )
     hook.chmod(0o755)
 
     result = git_kb(
@@ -173,8 +189,11 @@ def test_failed_commit_removes_only_the_new_question(git_kb: Kb) -> None:
     assert sorted(path.name for path in (git_kb.content / "observations/pending").glob("*.md")) == (
         before_pending
     )
-    assert git_kb.git("diff", "--cached", "--name-only") == ""
-    assert git_kb.git("status", "--porcelain") == ""
+    assert git_kb.git("diff", "--cached", "--name-only") == "questions/open/existing.md\n"
+    assert git_kb.git("show", ":questions/open/existing.md") == before_index
+    assert existing_question.read_text(encoding="utf-8") == "Existing unstaged change.\n"
+    assert existing_observation.read_text(encoding="utf-8").endswith("Keep this observation.\n")
+    assert git_kb.git("status", "--porcelain") == before_status
     assert list((git_kb.content / ".git" / "kb-tmp").iterdir()) == []
 
 

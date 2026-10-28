@@ -155,21 +155,24 @@ def _curated(root: Path, scope: str | None) -> list[Document]:
 def _evidence(
     root: Path, scope: str | None, directories: Sequence[str]
 ) -> list[tuple[str, Document]]:
+    match_context = scope is not None and areas.is_area_path(scope)
     paths = sorted(
-        {path for directory in directories for path in corpus.markdown_files(root, directory)}
+        {
+            path
+            for directory in directories
+            for path in corpus.markdown_files(root, directory)
+            if _in_scope(path, scope) or (match_context and path.startswith("questions/"))
+        }
     )
     documents = [(path, corpus.read_document(root, path)) for path in paths]
-    if scope is None:
+    if not match_context:
         return documents
-    if not areas.is_area_path(scope):
-        return [(path, document) for path, document in documents if _in_scope(path, scope)]
 
     scope_area = areas.canonical_area(root, scope)
     selected: list[tuple[str, Document]] = []
     for path, document in documents:
         if not path.startswith("questions/"):
-            if _in_scope(path, scope):
-                selected.append((path, document))
+            selected.append((path, document))
             continue
         context_area = areas.canonical_area(root, document.scalar("context"))
         if (

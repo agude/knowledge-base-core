@@ -10,7 +10,7 @@ from kb import corpus, evidence, search
 from kb.commands import recall
 from kb.context import Context
 from kb.errors import KbError
-from kb.model import parse
+from kb.model import Document, parse
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "content"
 TODAY = date(2026, 10, 26)
@@ -208,6 +208,64 @@ def test_evidence_is_limited_to_the_scope(context: Context) -> None:
     assert "observation | Old label printer note" in inside
     outside = recall.answer(context, ["label", "printer", "driver"], 3, "knowledge")
     assert outside == 'No curated knowledge matches "label printer driver".\n'
+
+
+@pytest.mark.parametrize(
+    ("scope", "words", "allowed_prefix", "expected_locator"),
+    [
+        (
+            "knowledge/infra",
+            ["backup", "disk"],
+            "questions/",
+            "questions/open/20261001T090000-bbbb2222.md",
+        ),
+        (
+            "knowledge/infra",
+            ["disk", "owner", "listed"],
+            "questions/",
+            "questions/open/20261001T090000-bbbb2222.md",
+        ),
+        (
+            "questions/open",
+            ["disk", "owner", "listed"],
+            "questions/open/",
+            "questions/open/20261001T090000-bbbb2222.md",
+        ),
+        (
+            "observations/archived",
+            ["label", "printer", "driver"],
+            "observations/archived/",
+            "observations/archived/20260615T083000-9a8b7c6d.md",
+        ),
+        (
+            "observations/pending/20261024T094659-8d6fecbe.md",
+            ["firmware", "upgrade", "plex"],
+            "observations/pending/20261024T094659-8d6fecbe.md",
+            "observations/pending/20261024T094659-8d6fecbe.md",
+        ),
+    ],
+)
+def test_scoped_recall_does_not_read_excluded_evidence(
+    context: Context,
+    monkeypatch: pytest.MonkeyPatch,
+    scope: str,
+    words: list[str],
+    allowed_prefix: str,
+    expected_locator: str,
+) -> None:
+    original_read = corpus.read_document
+    read_paths: list[str] = []
+
+    def read_selected(root: Path, path: str) -> Document:
+        if path.startswith(("observations/", "questions/")) and not path.startswith(allowed_prefix):
+            raise KbError(f"cannot read excluded evidence: {path}")
+        read_paths.append(path)
+        return original_read(root, path)
+
+    monkeypatch.setattr(corpus, "read_document", read_selected)
+    text = recall.answer(context, words, 3, scope)
+    assert expected_locator in text
+    assert len(read_paths) == len(set(read_paths))
 
 
 def test_ranked_evidence_is_newest_first_among_equal_scores() -> None:

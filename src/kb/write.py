@@ -76,22 +76,30 @@ def _publish(root: Path, directory: str, temporary: Path, when: datetime, comman
 
 def _commit(root: Path, path: str, subject: str, command: str) -> None:
     """Commit one new file, removing only its staging and publication on failure."""
-    staged = False
     try:
         result = _git(root, "add", "--", path)
         if result.returncode != 0:
             raise _commit_error(command, result.stderr)
-        staged = True
         result = _git(root, "commit", "-q", "-m", subject, "--", path)
         if result.returncode != 0:
             raise _commit_error(command, result.stderr)
     except BaseException:
-        try:
-            if staged:
-                _git(root, "rm", "-q", "--cached", "--", path)
-        finally:
-            (root / path).unlink(missing_ok=True)
+        _rollback(root, path, command)
         raise
+
+
+def _rollback(root: Path, path: str, command: str) -> None:
+    """Unstage the new file before deleting it; retain it if index cleanup fails."""
+    # An interrupted add may have staged the file before returning to Python.
+    result = _git(root, "ls-files", "-z", "--", path)
+    if result.returncode == 0 and result.stdout:
+        # A rejecting hook may have changed the file after it was staged.
+        result = _git(root, "rm", "-q", "-f", "--cached", "--", path)
+    if result.returncode != 0:
+        detail = result.stderr.rstrip("\n")
+        message = f"{command}: rollback failed for {path}; inspect Git status before retrying"
+        raise KbError(f"{message}: {detail}" if detail else message)
+    (root / path).unlink(missing_ok=True)
 
 
 def _commit_error(command: str, stderr: str) -> KbError:

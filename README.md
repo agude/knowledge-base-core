@@ -47,7 +47,8 @@ context instead: a question matches when its context is the same area, an
 ancestor, or a descendant. Other scopes filter questions by their storage
 paths. Observation scope continues to use storage paths, so `--in
 knowledge/infra` can include a question about that area but excludes stored
-observations.
+observations. Evidence files excluded by storage path are not read; questions
+selected by context must be read to inspect that field.
 
 Query words and curated section words are matched the same way:
 
@@ -137,7 +138,11 @@ timestamp, and random ID fields are not scanned. Locking uses the shared
 If the command is hard-terminated after publishing but before its commit,
 inspect the content repository's `git status` before retrying. Deliberately
 retain and commit, or remove, the uncommitted question first. The command does
-not deduplicate retries.
+not deduplicate retries. A handled staging or commit failure removes only the
+new question and its staging, including edits made by a rejecting hook. If Git
+prevents rollback, the command reports the failure and retains the question.
+Inspect both its staged and working-tree contents before deciding to commit or
+remove it, then retry.
 
 ```sh
 kb gap --title "Where is the backup disk?" \
