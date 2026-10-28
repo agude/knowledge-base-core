@@ -355,7 +355,7 @@ def test_old_and_new_readers_accept_new_and_legacy_archives(git_kb: Kb) -> None:
         "## 1. Calibration\n\nQuartz pendulum calibration measurements.",
     )
     name = written_name(observed)
-    started = git_kb("curate", "start", "--max-bytes", "65536", name)
+    started = git_kb("curate", "start", "--no-sync", "--max-bytes", "65536", name)
     assert started.returncode == 0, started.stderr
     match = BATCH_ID.search(started.stdout)
     assert match is not None, started.stdout
@@ -411,3 +411,51 @@ def test_old_and_new_readers_accept_new_and_legacy_archives(git_kb: Kb) -> None:
     recalled = git_kb("recall", "amber whirlpool oscillator")
     assert recalled.returncode == 0, recalled.stderr
     assert "observations/archived/legacy-processed.md" in recalled.stdout
+
+
+def test_kb_finish_commits_through_the_old_hook_and_old_tools_read_the_result(
+    remote_git_kb: Kb,
+) -> None:
+    kb = remote_git_kb
+    hook = kb.content / ".git" / "hooks" / "pre-commit"
+    hook.symlink_to(old_script("hooks/pre-commit"))
+    _write(
+        kb.content / "knowledge" / "compat-finish.md",
+        "---\ntitle: Compat finish\nupdated: 2026-10-20\nverified: 2026-10-20\nttl: domain\n---\n"
+        "# Compat finish\n\n## 1. Fact\n\nA fact finished through kb.\n",
+    )
+    _write(
+        kb.content / "observations" / "pending" / "compat-note.md",
+        "---\ntitle: Compat note\ncreated: 2026-10-24\n---\n\n## 1. Note\n\nA note.\n",
+    )
+    kb.git("add", "--all")
+    kb.git("commit", "-q", "-m", "Prepare compatibility batch")
+    started = kb("curate", "start", "--max-bytes", "100000", "compat-note.md")
+    assert started.returncode == 0, started.stderr
+    run = BATCH_ID.search(started.stdout)
+    assert run is not None, started.stdout
+    completed = kb(
+        "curate",
+        "complete",
+        run.group(1),
+        "compat-note.md",
+        "--disposition",
+        "incorporated",
+        "knowledge/compat-finish.md#1",
+    )
+    assert completed.returncode == 0, completed.stderr
+
+    finished = kb("curate", "finish", run.group(1))
+
+    assert finished.returncode == 0, finished.stdout + finished.stderr
+    assert "Published: origin/main\n" in finished.stdout
+    linted = run_old(kb, "lint", "--path", "knowledge/compat-finish.md")
+    assert linted.returncode == 0, linted.stdout + linted.stderr
+    section = run_old(kb, "section", "--file", "knowledge/compat-finish.md", "--number", "1")
+    assert section.returncode == 0, section.stderr
+    assert "A fact finished through kb." in section.stdout
+
+
+def _write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
