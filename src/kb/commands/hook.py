@@ -70,7 +70,7 @@ def pre_commit(root: Path, environ: Mapping[str, str]) -> int:
         for finding in verdict.preexisting:
             _say(f"  {_finding_line(finding)}")
     today = dates.now(environ).date().isoformat()
-    edits, kept = _stamp_edits(root, articles, today, partial=_is_partial(root))
+    edits, kept = _stamp_edits(root, articles, today, partial=_is_partial(root, environ))
     for relpath, current in kept:
         _say(f"{relpath} has updated: {current}, not {today} (partial commit; not stamping)")
     for edit in edits:
@@ -97,9 +97,9 @@ def _unstaged_articles(root: Path, articles: Sequence[str]) -> list[str]:
     return [relpath for relpath in articles if relpath in differing]
 
 
-def _is_partial(root: Path) -> bool:
+def _is_partial(root: Path, environ: Mapping[str, str]) -> bool:
     """Whether Git is committing through a temporary index, as `git commit -- PATH` does."""
-    override = os.environ.get("GIT_INDEX_FILE", "")
+    override = environ.get("GIT_INDEX_FILE", "")
     if not override:
         return False
     # --git-path index would return the override, so join the index name to the git directory.

@@ -131,7 +131,7 @@ def test_a_partial_commit_is_validated_but_keeps_its_older_updated_value(
     shutil.copyfile(root / ".git" / "index", temporary_index)
     monkeypatch.setenv("GIT_INDEX_FILE", str(temporary_index))
 
-    assert hook.pre_commit(root, NOW) == 0
+    assert hook.pre_commit(root, {**NOW, "GIT_INDEX_FILE": str(temporary_index)}) == 0
 
     assert (root / "knowledge/a.md").read_text(encoding="utf-8") == edited
     assert (
@@ -140,13 +140,20 @@ def test_a_partial_commit_is_validated_but_keeps_its_older_updated_value(
     )
 
 
-def test_a_temporary_index_at_the_normal_path_is_not_partial(
+def test_a_temporary_index_at_the_normal_path_is_not_partial(tmp_path: Path) -> None:
+    root = repo(tmp_path / "content", {"knowledge/a.md": ARTICLE.encode()})
+
+    assert hook._is_partial(root, {"GIT_INDEX_FILE": str(root / ".git" / "index")}) is False
+
+
+def test_partial_detection_reads_the_supplied_environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = repo(tmp_path / "content", {"knowledge/a.md": ARTICLE.encode()})
-    monkeypatch.setenv("GIT_INDEX_FILE", str(root / ".git" / "index"))
+    monkeypatch.setenv("GIT_INDEX_FILE", str(root / ".git" / "next-index-1.lock"))
 
-    assert hook._is_partial(root) is False
+    assert hook._is_partial(root, {}) is False
+    assert hook._is_partial(root, {"GIT_INDEX_FILE": str(root / ".git" / "next-index-1.lock")})
 
 
 def test_a_symbolic_link_article_keeps_its_link_and_the_target_mode(
