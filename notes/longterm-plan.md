@@ -354,7 +354,9 @@ obsolescence; local batches persist outcomes and recover interrupted archives;
 `kb curate start` synchronizes before it selects; `kb curate finish` validates,
 commits once, and pushes; and `kb hook pre-commit` validates and stamps every
 content commit. Installing that hook in the content repository is phase 4
-setup. The one-time `ttl` pass is curation work that remains to be done.
+setup. Curation commitments C1-C6 are built on fixtures; real use waits for
+phase 4 installation and phase 5 adoption. The one-time `ttl` pass is curation
+work that remains to be done.
 `kb lint` is for curators; do not add it to working-agent allow rules.
 
 ### 4. Complete setup and diagnosis
