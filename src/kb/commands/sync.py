@@ -12,7 +12,19 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from kb import args, config, dates, harvest, lock, model, observation, remote, secrets
+from kb import (
+    __version__,
+    args,
+    config,
+    dates,
+    harvest,
+    lock,
+    model,
+    observation,
+    remote,
+    secrets,
+    sync_state,
+)
 from kb.args import Spec
 from kb.config import content_root
 from kb.errors import KbError
@@ -36,7 +48,7 @@ from kb.transcripts import App, Session, parse_timestamp
 
 PENDING = "observations/pending"
 ARCHIVED = "observations/archived"
-TMP = "kb-tmp"
+TMP = sync_state.TMP
 MAX_NAME_TRIES = 5
 REDACTION_PASSES = 3
 SPEC = Spec(
@@ -195,7 +207,37 @@ def _sync(
     harvest_since: datetime | None,
     no_push: bool,
 ) -> int:
-    """Run recovery, optional harvest, then pull and push when the tree is clean."""
+    """Run recovery, optional harvest, then pull and push when the tree is clean.
+
+    Records the outcome in the sync state file. Returns 1 when any step failed, else 0.
+    """
+    try:
+        dirty, failures = _integrate(
+            root, git_directory, environ, host, now, harvest_since, no_push
+        )
+    except (KbError, OSError, UnicodeError) as error:
+        _record_outcome(git_directory, now, "error", _labelled(str(error)))
+        raise
+    if failures:
+        _record_outcome(git_directory, now, "error", failures[0])
+        return 1
+    _record_outcome(git_directory, now, "dirty" if dirty else "ok", None)
+    return 0
+
+
+def _integrate(
+    root: Path,
+    git_directory: Path,
+    environ: Mapping[str, str],
+    host: str,
+    now: datetime,
+    harvest_since: datetime | None,
+    no_push: bool,
+) -> tuple[bool, list[str]]:
+    """Harvest, then integrate with origin when the worktree is clean.
+
+    Prints what sync prints. Returns whether the worktree was dirty, and every failure line.
+    """
     warnings, errors = recover_and_harvest(root, git_directory, environ, host, now, harvest_since)
     for warning in warnings:
         sys.stderr.write(f"sync: warning: {warning}\n")
@@ -207,19 +249,80 @@ def _sync(
         sys.stderr.write(f"sync: uncommitted changes in {root}; not pulling or pushing\n")
         for path in dirty[:10]:
             sys.stderr.write(f"  {path}\n")
-        return 1 if errors else 0
+        return True, list(errors)
 
     status, fetch_error = _fetch_status(root)
     if fetch_error is not None:
         sys.stderr.write(f"{fetch_error}\n")
-        return 1
+        return False, [*errors, fetch_error]
     assert status is not None
     actions, sync_errors = _sync_remote(root, status, no_push)
     for action in actions:
         sys.stdout.write(f"{action}\n")
     for message in sync_errors:
         sys.stderr.write(f"{message}\n")
-    return 1 if errors or sync_errors else 0
+    return False, [*errors, *sync_errors]
+
+
+def _record_outcome(git_directory: Path, now: datetime, outcome: str, failure: str | None) -> None:
+    """Replace the sync outcome record. A failed write is reported and changes no exit status.
+
+    An ok run sets last_exchange to now. Other outcomes keep the previous exchange time. The
+    caller holds the writer lock.
+    """
+    try:
+        previous = sync_state.read(git_directory)
+    except KbError:
+        previous = None
+    previous_exchange = None if previous is None else previous.last_exchange
+    last_exchange = now if outcome == "ok" else previous_exchange
+    state = sync_state.SyncState(
+        kb_version=__version__,
+        last_run=now,
+        last_outcome=outcome,
+        last_exchange=last_exchange,
+        message=None if failure is None else _first_line(failure),
+    )
+    try:
+        sync_state.write(git_directory, state)
+    except (KbError, OSError, UnicodeError) as error:
+        sys.stderr.write(f"sync: cannot record sync outcome: {error}\n")
+
+
+def _labelled(text: str) -> str:
+    """The text with the sync label that run() puts on its errors."""
+    return text if text.startswith("sync:") else f"sync: {text}"
+
+
+def _first_line(text: str) -> str:
+    """The first line of a failure, which is the message that the outcome record keeps."""
+    lines = text.splitlines()
+    return lines[0] if lines else "sync failed"
+
+
+@dataclass(frozen=True)
+class Backlog:
+    """The transcript scan and the harvest selection made from it."""
+
+    scan: ScanResult
+    selection: harvest.Selection
+
+
+def backlog(
+    root: Path,
+    environ: Mapping[str, str],
+    host: str,
+    now: datetime,
+    harvest_since: datetime | None,
+) -> Backlog:
+    """Scan transcripts and select what a harvest would take, reading HEAD only.
+
+    Never fetches, locks, or writes. A caller that needs origin's state fetches it separately.
+    """
+    scanned = _scan_transcripts(environ)
+    state = harvest.reconstruct_state(_head_records(root), _sessions(scanned.candidates), host)
+    selection = harvest.select_candidates(scanned.candidates, state, now, harvest_since)
+    return Backlog(scanned, selection)
 
 
 def _status(
@@ -233,12 +336,9 @@ def _status(
     errors: list[str] = []
     ready = waiting = 0
     if harvest_since is not None:
-        scanned = _scan_transcripts(environ)
-        errors.extend(_failure_text(failure) for failure in scanned.failures)
-        records = _head_records(root)
-        state = harvest.reconstruct_state(records, _sessions(scanned.candidates), host)
-        selection = harvest.select_candidates(scanned.candidates, state, now, harvest_since)
-        ready, waiting = selection.ready_count, selection.waiting_count
+        found = backlog(root, environ, host, now, harvest_since)
+        errors.extend(_failure_text(failure) for failure in found.scan.failures)
+        ready, waiting = found.selection.ready_count, found.selection.waiting_count
     fetched, fetch_error = _fetch_status(root)
     if fetch_error is not None:
         errors.append(fetch_error)
