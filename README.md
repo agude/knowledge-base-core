@@ -2,9 +2,10 @@
 
 `kb` lets LLM agent sessions read and search a knowledge base: curated
 articles and source documents, and the observations and questions behind them.
-The read commands never write. `kb observe` records a user observation, and
-`kb sync` can record finished Claude Code and Codex transcripts, committing
-observations to the content repository. Curation is handled by other tools.
+`recall`, `read`, `map`, `questions`, and `evidence` are read-only. `kb observe`
+records an observation, `kb gap` records an open question, and `kb sync` can
+record finished Claude Code and Codex transcripts. Curation is handled by
+other tools.
 
 ## Usage
 
@@ -12,7 +13,10 @@ observations to the content repository. Curation is handled by other tools.
 kb recall QUERY...    # find the curated sections that answer a query
 kb read LOCATOR...    # print the text that each locator names
 kb map [PATH]         # list the articles under PATH, with their sections
+kb questions [--context PATH] [--all] [--limit N]
+kb evidence QUERY... [--kind KIND] [--since DATE] [--until DATE] [--limit N]
 kb observe --title TITLE --body TEXT  # record an observation and commit it
+kb gap --title TITLE --body TEXT --context PATH  # record a question and commit it
 kb sync [--status | --no-push | --dry-run]  # harvest transcripts and sync content
 kb --help             # every command
 ```
@@ -28,8 +32,24 @@ from `content = "PATH"` in `config.toml`. That file is
 
 ### `kb recall` matching
 
-`kb recall` ranks sections by BM25. Query words and section words are matched
-the same way:
+`kb recall` ranks curated sections by BM25. A curated result can include
+matching pending observations and open questions under `Uncurated (pending,
+not yet verified)`. It does not scan archived observations or resolved
+questions on that path. When there is no curated result, recall searches all
+observations and questions and shows the best matches as evidence. Each row
+shows its locator, date, kind, and title or excerpt. An addressable harvested
+message uses `PATH#N`; older transcripts without addressable messages keep a
+file locator.
+
+`--in PATH` scopes curated files and observations by their content paths. If
+the scope is under `knowledge/` or `sources/`, questions are selected by
+context instead: a question matches when its context is the same area, an
+ancestor, or a descendant. Other scopes filter questions by their storage
+paths. Observation scope continues to use storage paths, so `--in
+knowledge/infra` can include a question about that area but excludes stored
+observations.
+
+Query words and curated section words are matched the same way:
 
 - Words are lowercased, and English stopwords are dropped.
 - Dates, paths, flags, and negation words such as `not` are kept.
@@ -41,6 +61,96 @@ the same way:
 - A numeric identifier such as `50-59` or `192.168.1.10` is matched whole, and
   its parts also match. A query for `50-59` finds only sections that contain
   that identifier, and a query for `50 59` finds sections that contain the parts.
+
+### `kb questions`
+
+`kb questions` lists open questions by default. `--all` includes resolved
+questions, and `--limit N` selects how many rows to print (default 20). The
+header reports the total number of matches before the limit. Rows show the
+question locator, creation date, status, stored context, and title; use
+`kb read LOCATOR` to inspect the question body.
+
+`--context PATH` selects questions whose context is that area or one of its
+descendants. A shorthand such as `infra` is read as `knowledge/infra`. Contexts
+may name an area that does not exist yet, including a deleted article. Deleted
+paths remain visible and filterable as stored; the command does not infer a
+moved article's new location. Missing or unsafe stored contexts display as `-`
+and appear only in an unfiltered listing. Existing question files are not
+rewritten. Rows sort by creation date, newest first, then by content-relative
+path; invalid or missing dates sort last.
+
+```sh
+kb questions
+kb questions --context infra --limit 10
+kb questions --context knowledge/projects/shapez2/routing.md --all
+```
+
+### `kb evidence`
+
+`kb evidence` searches pending and archived observations, transcripts, and
+open and resolved questions, even when curated knowledge matches. Kinds are
+`observation`, `transcript`, `open-question`, and `resolved-question`;
+`--kind` restricts the search to one. Date bounds use strict `YYYY-MM-DD`
+values and include both endpoints. Files use the valid date portion of
+`created`. Addressable harvested messages use the message timestamp's UTC
+date. Records with unknown dates are excluded when a date bound is present.
+
+Kind and date filters are applied before ranking, so they change BM25 corpus
+statistics and can change result order. No order is promised to stay the same
+across different filters. Results are limited to five by default; `--limit N`
+accepts any positive count. Each result is a file locator or, for a qualifying
+addressable transcript message, `PATH#N`. `kb read` accepts the printed locator
+unchanged. Legacy transcripts that lack addressable message metadata keep file
+locators.
+
+```sh
+kb evidence "backup disk"
+kb evidence --kind transcript --since 2026-10-01 --until 2026-10-31 "session transcript"
+```
+
+### `kb gap`
+
+`kb gap` records an attributed question in
+`questions/open/<YYYYmmddTHHMMSS>-<8 hex digits>.md` and commits only that
+file with subject `Ask: TITLE`. The commit exists before the command reports
+success. Other staged files stay staged, and unstaged files remain untouched.
+The question stores `title`, `context`, `source: session`, `project`, `host`,
+and `created` fields in that order.
+
+All three options are required. Title and body follow the same rules as
+`kb observe`; `--body -` reads UTF-8 text from standard input. `--context` is
+the best-known area that lacks knowledge. No `kb map` call is required, and the
+area need not exist. Bare names resolve under `knowledge/`; content-relative
+paths and unique filenames are accepted under `knowledge/` or `sources/`. Paths
+use `/` separators, and the writer rejects blank, absolute or drive-letter,
+traversal, fragmented, or control-character contexts. A missing or deleted path
+is kept as a normalized literal; a shorthand is stored under `knowledge/`. The
+context is metadata: the writer does not open context targets, and it stores an
+external symlink as a literal path.
+
+Before writing, `kb gap` checks the title, body, and canonical context for
+possible secrets. A refusal identifies the detector and field (or body line)
+without printing the secret; there is no override. The generated project, host,
+timestamp, and random ID fields are not scanned. Locking uses the shared
+`KB_LOCK_WAIT` policy documented for `kb observe`.
+
+If the command is hard-terminated after publishing but before its commit,
+inspect the content repository's `git status` before retrying. Deliberately
+retain and commit, or remove, the uncommitted question first. The command does
+not deduplicate retries.
+
+```sh
+kb gap --title "Where is the backup disk?" \
+  --body "The backup disk location is not recorded." \
+  --context knowledge/infra
+kb questions --context infra
+kb evidence --kind open-question "backup disk location"
+kb read questions/open/20261027T120000-0123abcd.md  # use the file printed by kb gap
+```
+
+On success stdout is `Wrote: questions/open/<file>` and the exit status is 0.
+Usage errors print the usage line. Other failures print nothing to stdout, use
+the `gap:` prefix on stderr, and exit 1.
 
 ### `kb map` output
 
