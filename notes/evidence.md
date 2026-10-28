@@ -578,3 +578,27 @@ Fixture tests cover replacing and inserting both fields, named and numeric TTLs,
 `kb resolve` validates one `questions/open/` file, an existing `knowledge/` locator for answered outcomes, and exactly one outcome. It writes a byte-preserving resolved copy with resolution metadata and the answer section, then removes the open file while holding the shared writer locks. The command scans the destination and answer for possible secrets, does not stage or commit, and rolls back the publication if removing the open file fails. The renderer preserves original line endings and a leading UTF-8 BOM.
 
 The end-to-end and unit tests cover exact answered and obsolete output, old questions without attribution fields, `kb gap` output, Unicode and stdin, quoted titles, canonical numbered fragments, missing and ambiguous destinations, missing fragments, `sources/` refusal, outcome and source refusals, secret locations, resolved-copy conflicts, questions/evidence/recall behavior, and rollback after publication under both an I/O error and interruption. `just test-compat` passed all 9 tests; the old questions reader accepted a new resolution, and `kb questions --all` listed an old-script resolution. `just check` passed on Linux with Python 3.15.0: lint, formatting, actionlint, offline zizmor, strict mypy, and 1,068 tests passed; 9 were skipped; total coverage was 93.16%. Tool caches and coverage output used scratch paths under `/tmp`.
+
+## Phase 3 documentation and closeout (2026-10-27)
+
+Validated code revision: `3d3cfb7 Add question resolution command`. The real-data copy came from content revision `62a2bf69f8076bceabda5490a70f9a3e3b607624`; it excluded the live `.git` directory and received its own scratch Git metadata. The live content worktree remained clean at the same revision. The scratch copy was removed after validation.
+
+The old `scripts/lint` exited 0 on all 210 articles with 0 errors and 0 warnings, matching the per-check baseline from step 1. `kb lint` checked the same 210 articles and reported 2 errors and 0 warnings:
+
+| Check | Old errors | Old warnings | `kb lint` errors | `kb lint` warnings |
+|---|---:|---:|---:|---:|
+| Front matter | 0 | — | 0 | — |
+| Headings and fences | 0 | — | 0 | — |
+| Section metadata | 0 | — | 0 | — |
+| Source references | 0 | — | 2 | — |
+| Local Markdown links | 0 | — | 0 | — |
+| Long H2 sections | — | 0 | — | 0 |
+| Duplicate H2 headings | — | 0 | — | 0 |
+
+Both new errors are missing targets from `sources` entries whose targets do not end in `.md`. The old shell linter ignores those entries because it checks only `.md` and `.md#...` source values; the new contract checks every `sources` entry. The remaining checks match the step 1 counts. No content was changed.
+
+Three timed `kb lint` runs took 0.41, 0.35, and 0.37 seconds; the median was 0.37 seconds. Peak RSS was 27,592 KiB. Both results meet the plan limits of 5 seconds and 200 MiB. `kb verify` and `kb resolve` each succeeded on the disposable copy; the copy was then deleted.
+
+`just eval` exited 0 and met acceptance on both fixture sets. `just build package-check` passed; the clean environment installed the 0.1.0 wheel and confirmed its version. The existing `dist/` directory was restored after the check. Native Windows validation remains unrun. The guided curation run, dispositions and archiving, finishing commit and sync, content pre-commit hook, and one-time `ttl` assignment pass remain outstanding. Installed host allow rules and the separate no-match recall latency follow-up also remain open.
+
+`just check` passed on Linux with Python 3.15.0: lint, formatting, actionlint, offline zizmor, and strict mypy passed; 1,068 tests passed, 9 were skipped, and total coverage was 93.16%. Tool caches and coverage output used scratch paths under `/tmp`.

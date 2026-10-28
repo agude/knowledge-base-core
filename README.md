@@ -4,8 +4,9 @@
 articles and source documents, and the observations and questions behind them.
 `recall`, `read`, `map`, `questions`, and `evidence` are read-only. `kb observe`
 records an observation, `kb gap` records an open question, and `kb sync` can
-record finished Claude Code and Codex transcripts. Curation is handled by
-other tools.
+record finished Claude Code and Codex transcripts. `kb lint`, `kb verify`, and
+`kb resolve` provide curator checks and explicit updates; the guided curation
+workflow is not implemented yet.
 
 ## Usage
 
@@ -15,6 +16,9 @@ kb read LOCATOR...    # print the text that each locator names
 kb map [PATH]         # list the articles under PATH, with their sections
 kb questions [--context PATH] [--all] [--limit N]
 kb evidence QUERY... [--kind KIND] [--since DATE] [--until DATE] [--limit N]
+kb lint [PATH...] [--require-ttl]  # check articles before publication
+kb verify ARTICLE [--ttl TTL]      # record an explicit verification
+kb resolve QUESTION --answer TEXT [--destination LOCATOR | --obsolete]
 kb observe --title TITLE --body TEXT  # record an observation and commit it
 kb gap --title TITLE --body TEXT --context PATH  # record a question and commit it
 kb sync [--status | --no-push | --dry-run]  # harvest transcripts and sync content
@@ -156,6 +160,115 @@ kb read questions/open/20261027T120000-0123abcd.md  # use the file printed by kb
 On success stdout is `Wrote: questions/open/<file>` and the exit status is 0.
 Usage errors print the usage line. Other failures print nothing to stdout, use
 the `gap:` prefix on stderr, and exit 1.
+
+### Curation commands
+
+`kb lint`, `kb verify`, and `kb resolve` are curator commands. They do not
+commit. `kb lint` is read-only: it does not write files, take locks, run Git,
+or make network calls. `kb verify` and `kb resolve` edit the content repository
+under the shared writer lock. They wait according to `KB_LOCK_WAIT`, which is
+a non-negative number of seconds and defaults to 30.
+
+#### `kb lint`
+
+```sh
+kb lint [PATH...] [--require-ttl]
+```
+
+With no path, `kb lint` checks every Markdown article under `knowledge/`. A
+path can name one article or a directory under `knowledge/`; paths outside
+that directory are refused. The command reports errors for missing or invalid
+front matter, H1 and code-fence problems, invalid section metadata, bad
+`supersedes` references, missing local source or Markdown-link targets, and
+unresolved fragments. It warns when an H2 is longer than 50 lines or repeats
+another H2 in the same article. External URLs, `mailto:`, and absolute paths
+are not checked. A local link that escapes the content repository is an error.
+
+`updated` and `verified` must be valid `YYYY-MM-DD` dates. A present `ttl` must
+be `people`, `status`, `process`, `domain`, or a positive day count no greater
+than 1,000,000. Without `--require-ttl`, `ttl` may be absent; with the option,
+every checked article must have one. Freshness uses a 60-day default when an
+article has no `ttl`.
+
+Each finding is printed as `PATH:LINE: error|warning: MESSAGE`, followed by a
+summary such as `Lint: 2 errors, 1 warning in 4 file(s)`. A clean run prints
+`Lint: 0 errors, 0 warnings in N file(s)`. The command exits 1 when it finds
+an error or cannot read its input; warnings alone exit 0. Usage errors print
+the usage line.
+
+#### `kb verify`
+
+```sh
+kb verify ARTICLE [--ttl TTL]
+```
+
+`ARTICLE` must resolve to one file under `knowledge/` and must not include a
+fragment. The command sets `verified` to today's date. Supply `--ttl` when the
+article has no valid TTL; a supplied value replaces or adds `ttl`. Values are
+the named TTLs `people`, `status`, `process`, and `domain`, or a positive day
+count up to 1,000,000.
+
+Before writing, `kb verify` builds the proposed article in memory and checks it
+with `kb lint --require-ttl`, including local references. It refuses an
+unrelated lint error, `conflict: unresolved`, section-level `verified`
+metadata, unsafe front matter, or a possible secret in the TTL. A missing or
+invalid `verified` date is repaired. When the date and TTL already match, the
+command succeeds without rewriting the article. Otherwise it replaces the
+article atomically. It leaves the change uncommitted.
+
+Success prints `Verified: PATH (ttl TTL)`. Failures print nothing to stdout,
+use the `verify:` prefix on stderr, and exit 1. A usage error prints the usage
+line.
+
+#### `kb resolve`
+
+```sh
+kb resolve QUESTION --answer TEXT --destination LOCATOR
+kb resolve QUESTION --answer - --destination LOCATOR
+kb resolve QUESTION --answer TEXT --obsolete
+```
+
+`QUESTION` must resolve to one file under `questions/open/`. Supply exactly
+one of `--destination` and `--obsolete`. An answered question's destination
+must be a locator that `kb read` resolves under `knowledge/`, including a
+valid section fragment. The command stores its canonical content-relative
+locator. `--obsolete` marks a question that no longer needs an answer and does
+not store a destination. `--answer -` reads UTF-8 text from standard input;
+the answer must contain non-whitespace text.
+
+The resolved copy keeps the open question's filename under
+`questions/resolved/`. It preserves the original text and appends `resolved`
+and `resolution` front matter fields, plus a quoted `destination` field for
+answered questions. It then adds `## Resolution (YYYY-MM-DD)` and the answer.
+The command scans the destination and answer for possible secrets. A refusal
+names the detector and either `at destination` or `at answer line N`, without
+printing the secret.
+
+`kb resolve` refuses a question outside `questions/open/`, an invalid
+destination, or an existing resolved copy. It publishes the resolved file
+atomically, then removes the open file. A handled failure rolls back the
+resolved copy and keeps the open question unchanged. If the process is hard
+terminated between publication and removal, both files remain and another
+`kb resolve` refuses the existing resolved copy. Inspect the resolved copy,
+then remove the duplicate open file manually before continuing.
+
+Success prints
+`Resolved: questions/open/<file> -> questions/resolved/<file>`. Failures print
+nothing to stdout, use the `resolve:` prefix on stderr, and exit 1. A usage
+error prints the usage line.
+
+Example gap-to-resolution flow:
+
+```sh
+kb gap --title "Where is the backup disk?" \
+  --body "The backup disk location is not recorded." \
+  --context knowledge/infra
+# Replace this example path with the Wrote path returned above.
+kb resolve questions/open/REPLACE_WITH_FILE.md --answer "The disk is stored on the NAS." \
+  --destination knowledge/infra/nas.md#1
+kb questions --context infra
+kb questions --context infra --all
+```
 
 ### `kb map` output
 
