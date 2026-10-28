@@ -238,7 +238,7 @@ Checked on 2026-10-27 at `3d3cfb7`:
 | H2 Capture the conversation | Harvest in `kb sync` | Built and validated on real data; not enabled (2026-10-27, `ed5a02d`) |
 | H3 Session end | Covered by H2 | Superseded |
 | H4 Tool approval | Allow rules in the dotfiles | Not done |
-| C1-C6 Curation | Phase 3 | Local batch processing is built; synchronized start and publication remain outstanding |
+| C1-C6 Curation | Phase 3 | Built on fixtures (synchronized start, finish, content hook); not adopted |
 | U1 Set up a machine | `kb setup`, phase 4 | Config reading only |
 | U2 Bring machines together | `kb sync` | Built |
 | U3 Diagnose a failure | `kb doctor`, phase 4 | Not built |
@@ -261,8 +261,9 @@ synchronized start, finishing commit and push, content pre-commit hook, and
 one-time `ttl` assignment pass remain outstanding. Core's `curate` skill
 remains operational until the synchronized workflow is built and adopted.
 No-match recall latency has a separate follow-up to reach <= 5 seconds on the
-same snapshot. The current [root plan](../plan.md) records the local batch
-handoff, its validation, and the remaining phase 3 publication work.
+same snapshot. [plan-phase3-batches.md](plan-phase3-batches.md) and
+[plan-phase3-publication.md](plan-phase3-publication.md) preserve the phase 3
+plans. The current [root plan](../plan.md) covers phase 4 setup and diagnosis.
 
 Update this table when a plan finishes. Retirement requires every row to be
 covered and in use on every machine.
