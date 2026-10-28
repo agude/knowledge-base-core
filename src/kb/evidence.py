@@ -164,16 +164,20 @@ def format_results(query: str, items: Sequence[Item]) -> str:
     """Render selected rows or the exact no-match line."""
     if not items:
         return f'No evidence matches "{query}".\n'
+    return "\n".join(["Evidence:", *format_rows(items), READ_WITH]) + "\n"
+
+
+def format_rows(items: Sequence[Item]) -> list[str]:
+    """Evidence rows with the locator and kind columns padded to their widest entries."""
+    if not items:
+        return []
     path_width = max(len(item.path) for item in items)
     kind_width = max(len(item.kind.replace("-", " ")) for item in items)
-    lines = ["Evidence:"]
-    lines.extend(
+    return [
         f"  {item.path.ljust(path_width)} | {item.date.isoformat() if item.date else ''} | "
         f"{item.kind.replace('-', ' ').ljust(kind_width)} | {item.text}"
         for item in items
-    )
-    lines.append(READ_WITH)
-    return "\n".join(lines) + "\n"
+    ]
 
 
 def _item(

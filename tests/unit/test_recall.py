@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from kb import corpus, evidence, search
 from kb.commands import recall
 from kb.context import Context
 from kb.errors import KbError
@@ -22,6 +23,13 @@ def context(tmp_path: Path) -> Context:
     return Context(root=root.resolve(), today=TODAY)
 
 
+def write_document(root: Path, relative: str, text: str) -> None:
+    """Write one synthetic Markdown file into the isolated content fixture."""
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
 def test_no_match_is_one_line(context: Context) -> None:
     assert recall.answer(context, ["quantum", "zebra"], 3, None) == (
         'No curated knowledge matches "quantum zebra".\n'
@@ -35,10 +43,63 @@ def test_results_are_printed_in_full_up_to_the_limit(context: Context) -> None:
     assert text.endswith(
         "Also relevant:\n  knowledge/infra/syncthing.md#2 | Restart order\n"
         "Uncurated (pending, not yet verified):\n"
-        "  observations/pending/20261024T094659-8d6fecbe.md | 2026-10-24 "
-        "| NAS restart after the update\n"
+        "  observations/pending/20261024T094659-8d6fecbe.md | 2026-10-24 | observation | "
+        "NAS restart after the update\n"
         "Read with: kb read <locator>\n"
     )
+
+
+def test_curated_hits_search_only_pending_observations_and_open_questions(
+    context: Context, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = corpus.markdown_files
+    searched: list[str] = []
+
+    def track_directories(root: Path, directory: str) -> list[str]:
+        searched.append(directory)
+        return original(root, directory)
+
+    monkeypatch.setattr(corpus, "markdown_files", track_directories)
+    text = recall.answer(context, ["backup", "disk"], 3, None)
+    assert "knowledge/infra/backups.md#top" in text
+    assert "questions/open/20261001T090000-bbbb2222.md" in text
+    assert "observations/archived" not in searched
+    assert "questions/resolved" not in searched
+
+
+def test_curated_evidence_uses_one_combined_five_row_cap(context: Context) -> None:
+    write_document(
+        context.root,
+        "knowledge/orchid.md",
+        "---\ntitle: Orchid circuit\n---\n\nOrchid circuit reference.\n",
+    )
+    for index in range(3):
+        write_document(
+            context.root,
+            f"observations/pending/orchid-{index}.md",
+            f"---\ntitle: Orchid circuit note {index}\ncreated: 2026-10-2{index}\n---\n\nOrchid circuit observation.\n",
+        )
+        write_document(
+            context.root,
+            f"questions/open/orchid-{index}.md",
+            f"---\ntitle: Orchid circuit question {index}\ncontext: infra\ncreated: 2026-10-2{index}\n---\n\nOrchid circuit question.\n",
+        )
+    write_document(
+        context.root,
+        "observations/archived/orchid.md",
+        "---\ntitle: Orchid circuit archive\ncreated: 2026-10-20\n---\n\nOrchid circuit archive.\n",
+    )
+    write_document(
+        context.root,
+        "questions/resolved/orchid.md",
+        "---\ntitle: Orchid circuit resolved\ncontext: infra\ncreated: 2026-10-20\n---\n\nOrchid circuit resolved.\n",
+    )
+
+    text = recall.answer(context, ["orchid", "circuit"], 3, None)
+    rows = text.split("Uncurated (pending, not yet verified):\n", 1)[1].splitlines()
+    evidence_rows = [row for row in rows if row.startswith("  ")]
+    assert len(evidence_rows) == 5
+    assert all("observations/pending/" in row or "questions/open/" in row for row in evidence_rows)
 
 
 def test_a_top_result_prints_the_top_lines_with_its_article_status(context: Context) -> None:
@@ -116,12 +177,12 @@ def test_no_curated_match_lists_the_evidence_under_a_label(context: Context) -> 
 
 def test_evidence_lines_pad_each_column_to_its_widest_entry() -> None:
     items = [
-        recall.Item("a.md", "2026-01-01", "observation", "One"),
-        recall.Item("longer/name.md", "2026-01-02", "transcript", "Two"),
+        evidence.Item("a.md", date(2026, 1, 1), "observation", "One", 1.0, None),
+        evidence.Item("longer/name.md", date(2026, 1, 2), "transcript", "Two", 1.0, None),
     ]
-    assert recall._evidence_lines(items) == [
+    assert evidence.format_rows(items) == [
         "  " + "a.md".ljust(14) + " | 2026-01-01 | observation | One",
-        "  " + "longer/name.md" + " | 2026-01-02 | " + "transcript".ljust(11) + " | Two",
+        "  " + "longer/name.md" + " | 2026-01-02 | " + "transcript ".ljust(11) + " | Two",
     ]
 
 
@@ -129,8 +190,8 @@ def test_uncurated_pending_items_follow_curated_results(context: Context) -> Non
     text = recall.answer(context, ["nas", "restart", "order"], 3, None)
     assert text.endswith(
         "Uncurated (pending, not yet verified):\n"
-        "  observations/pending/20261024T094659-8d6fecbe.md | 2026-10-24 "
-        "| NAS restart after the update\n"
+        "  observations/pending/20261024T094659-8d6fecbe.md | 2026-10-24 | observation | "
+        "NAS restart after the update\n"
         "Read with: kb read <locator>\n"
     )
 
@@ -158,9 +219,12 @@ def test_ranked_evidence_is_newest_first_among_equal_scores() -> None:
         "observations/pending/b.md",
         "---\ntitle: alpha beta\ncreated: 2026-02-01T00:00:00Z\n---\nText.\n",
     )
-    items = recall._rank_evidence(
+    items = evidence.select(
         [("observations/pending/a.md", older), ("observations/pending/b.md", newer)],
         ["alpha", "beta"],
+        None,
+        None,
+        None,
         5,
     )
     assert [item.path for item in items] == [
@@ -174,19 +238,27 @@ def test_kind_and_date_follow_the_file_and_its_front_matter() -> None:
         "observations/archived/t.md",
         "---\nsource: session-transcript\ncreated: 2026-03-04T05:06:07Z\n---\n",
     )
-    assert recall._kind("observations/archived/t.md", transcript) == "transcript"
-    assert recall._date(transcript) == "2026-03-04"
+    assert evidence.evidence_kind("observations/archived/t.md", transcript) == "transcript"
+    assert evidence.created_date(transcript) == date(2026, 3, 4)
     untagged = parse("observations/archived/u.md", "---\ncreated: not a date\n---\n")
-    assert recall._kind("observations/archived/u.md", untagged) == "observation"
-    assert recall._date(untagged) == ""
+    assert evidence.evidence_kind("observations/archived/u.md", untagged) == "observation"
+    assert evidence.created_date(untagged) is None
     question = parse("questions/resolved/q.md", "")
-    assert recall._kind("questions/resolved/q.md", question) == "resolved question"
+    assert evidence.evidence_kind("questions/resolved/q.md", question) == "resolved-question"
 
 
 def test_transcript_text_is_an_excerpt_and_other_text_is_the_title() -> None:
     transcript = parse(
-        "observations/archived/t.md", "---\ntitle: Session\n---\nThe outage ended.\n"
+        "observations/archived/t.md",
+        "---\ntitle: Session\nsource: session-transcript\n---\nThe outage ended.\n",
     )
-    assert recall._text("transcript", transcript, ["outage"]) == "The outage ended."
-    note = parse("observations/archived/n.md", "---\ntitle: " + "T" * 100 + "\n---\n")
-    assert recall._text("observation", note, []) == "T" * 69 + "..."
+    transcript_item = evidence.select(
+        [(transcript.path, transcript)], search.query_terms(("outage",)), None, None, None, 5
+    )[0]
+    assert transcript_item.text == "The outage ended."
+    note = parse(
+        "observations/archived/n.md",
+        "---\ntitle: " + "T" * 100 + " alpha\n---\n",
+    )
+    note_item = evidence.select([(note.path, note)], ["alpha"], None, None, None, 5)[0]
+    assert note_item.text == "T" * 69 + "..."

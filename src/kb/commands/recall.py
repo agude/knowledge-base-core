@@ -1,53 +1,42 @@
-"""kb recall: the curated sections that answer a query, and the evidence behind them.
+"""kb recall: curated answers, matching open questions, and the evidence behind them.
 
-Curated knowledge is knowledge/ and sources/. Pending observations are
-searched on every call and listed as uncurated beside any curated results.
-When no curated section matches, the archived observations and the questions
-are searched too, and the best of them are listed as evidence.
+Curated knowledge is knowledge/ and sources/. Pending observations and open
+questions are searched beside curated results. When no curated section
+matches, archived observations and resolved questions are searched too.
+Addressable harvested messages use message locators; other matches use files.
 """
 
 import os
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass
 from pathlib import Path
 
-from kb import args, corpus, freshness, locators, search
+from kb import areas, args, corpus, evidence, freshness, locators, search
 from kb.args import Spec
 from kb.context import Context, load
-from kb.dates import parse_date
 from kb.errors import KbError
 from kb.model import Document
 
 WHO = "kb recall"
 DEFAULT_LIMIT = 3
 FOLLOW_UP = 5
-TITLE_WIDTH = 72
 READ_WITH = "Read with: kb read <locator>"
 PENDING = "observations/pending"
 ARCHIVED = "observations/archived"
-QUESTIONS = ("questions/open", "questions/resolved")
+OPEN_QUESTIONS = "questions/open"
+ALL_QUESTIONS = (OPEN_QUESTIONS, "questions/resolved")
 SPEC = Spec(
     usage="recall QUERY... [--limit N] [--in PATH]",
     summary=(
         "Find the curated sections that answer QUERY, each with its header line. The first N\n"
         "sections print in full (default 3); the next few are listed. Pending observations\n"
-        "that match are listed as uncurated. When no section matches, the observations and\n"
-        "questions that do match are listed as evidence. --in PATH limits the search to a\n"
-        "file or directory."
+        "and matching open questions are listed as uncurated. Without a curated match, pending\n"
+        "and archived observations plus open and resolved questions are listed as evidence.\n"
+        "Addressable harvested messages use message locators. --in PATH scopes curated files\n"
+        "and observation storage paths; questions under knowledge/ or sources/ match by context."
     ),
     valued=frozenset({"--limit", "--in"}),
 )
-
-
-@dataclass(frozen=True)
-class Item:
-    """One evidence line: its file, date, kind, and the title or excerpt to show."""
-
-    path: str
-    date: str
-    kind: str
-    text: str
 
 
 def run(words: Sequence[str]) -> int:
@@ -70,13 +59,18 @@ def answer(context: Context, words: Sequence[str], limit: int, scope: str | None
     terms = search.query_terms(words)
     results = _ranked(context.root, words, scope)
     if not results:
-        items = _rank_evidence(
-            _evidence(context.root, scope, (PENDING, ARCHIVED, *QUESTIONS)), terms, FOLLOW_UP
+        items = evidence.select(
+            _evidence(context.root, scope, (PENDING, ARCHIVED, *ALL_QUESTIONS)),
+            terms,
+            None,
+            None,
+            None,
+            FOLLOW_UP,
         )
         head = f'No curated knowledge matches "{" ".join(words)}".'
         if not items:
             return head + "\n"
-        return "\n".join([head, "Evidence:", *_evidence_lines(items), READ_WITH]) + "\n"
+        return head + "\n" + evidence.format_results(" ".join(words), items)
     blocks = [
         _result_block(context, document, candidate) for document, candidate in results[:limit]
     ]
@@ -88,10 +82,17 @@ def answer(context: Context, words: Sequence[str], limit: int, scope: str | None
             f"  {document.path}#{candidate.fragment} | {candidate.heading}"
             for document, candidate in follow
         )
-    uncurated = _rank_evidence(_evidence(context.root, scope, (PENDING,)), terms, FOLLOW_UP)
+    uncurated = evidence.select(
+        _evidence(context.root, scope, (PENDING, OPEN_QUESTIONS)),
+        terms,
+        None,
+        None,
+        None,
+        FOLLOW_UP,
+    )
     if uncurated:
         tail.append("Uncurated (pending, not yet verified):")
-        tail.extend(f"  {item.path} | {item.date} | {item.text}" for item in uncurated)
+        tail.extend(evidence.format_rows(uncurated))
     tail.append(READ_WITH)
     return "\n".join(blocks) + "\n" + "\n".join(tail) + "\n"
 
@@ -154,54 +155,27 @@ def _curated(root: Path, scope: str | None) -> list[Document]:
 def _evidence(
     root: Path, scope: str | None, directories: Sequence[str]
 ) -> list[tuple[str, Document]]:
-    paths = [path for directory in directories for path in corpus.markdown_files(root, directory)]
-    return [(path, corpus.read_document(root, path)) for path in paths if _in_scope(path, scope)]
+    paths = sorted(
+        {path for directory in directories for path in corpus.markdown_files(root, directory)}
+    )
+    documents = [(path, corpus.read_document(root, path)) for path in paths]
+    if scope is None:
+        return documents
+    if not areas.is_area_path(scope):
+        return [(path, document) for path, document in documents if _in_scope(path, scope)]
 
-
-def _rank_evidence(
-    evidence: Sequence[tuple[str, Document]], terms: Sequence[str], limit: int
-) -> list[Item]:
-    """Up to limit evidence items that qualify: best score, then newest, then by path."""
-    units = [search.evidence_unit(document) for _, document in evidence]
-    hits = search.rank(units, terms)
-    hits = sorted(hits, key=lambda hit: evidence[hit.index][0])
-    hits = sorted(hits, key=lambda hit: _date(evidence[hit.index][1]), reverse=True)
-    hits = sorted(hits, key=lambda hit: hit.score, reverse=True)
-    items = []
-    for hit in hits[:limit]:
-        path, document = evidence[hit.index]
-        kind = _kind(path, document)
-        items.append(Item(path, _date(document), kind, _text(kind, document, terms)))
-    return items
-
-
-def _evidence_lines(items: Sequence[Item]) -> list[str]:
-    """Evidence lines with each column padded to its widest entry."""
-    path_width = max(len(item.path) for item in items)
-    kind_width = max(len(item.kind) for item in items)
-    return [
-        f"  {item.path.ljust(path_width)} | {item.date} | {item.kind.ljust(kind_width)} | {item.text}"
-        for item in items
-    ]
-
-
-def _kind(path: str, document: Document) -> str:
-    if path.startswith("questions/open/"):
-        return "open question"
-    if path.startswith("questions/resolved/"):
-        return "resolved question"
-    if document.scalar("source") == "session-transcript":
-        return "transcript"
-    return "observation"
-
-
-def _date(document: Document) -> str:
-    created = (document.scalar("created") or "")[:10]
-    return created if parse_date(created) else ""
-
-
-def _text(kind: str, document: Document, terms: Sequence[str]) -> str:
-    """Transcripts show their best matching line, since their titles are generic."""
-    if kind == "transcript":
-        return search.excerpt(document.prose(document.body_start, len(document.lines)), terms)
-    return search.clip(locators.display_title(document), TITLE_WIDTH)
+    scope_area = areas.canonical_area(root, scope)
+    selected: list[tuple[str, Document]] = []
+    for path, document in documents:
+        if not path.startswith("questions/"):
+            if _in_scope(path, scope):
+                selected.append((path, document))
+            continue
+        context_area = areas.canonical_area(root, document.scalar("context"))
+        if (
+            scope_area is not None
+            and context_area is not None
+            and areas.overlaps(context_area, scope_area)
+        ):
+            selected.append((path, document))
+    return selected

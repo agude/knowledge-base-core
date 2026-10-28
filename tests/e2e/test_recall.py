@@ -16,7 +16,7 @@ NAS_RESTART = (
     "Restart Syncthing after Traefik, and before Plex.\n"
     "\n"
     "Uncurated (pending, not yet verified):\n"
-    "  observations/pending/20261024T094659-8d6fecbe.md | 2026-10-24 | NAS restart after the update\n"
+    "  observations/pending/20261024T094659-8d6fecbe.md | 2026-10-24 | observation | NAS restart after the update\n"
     "Read with: kb read <locator>\n"
 )
 NAS_RESTART_LIMIT_ONE = (
@@ -28,7 +28,7 @@ NAS_RESTART_LIMIT_ONE = (
     "Also relevant:\n"
     "  knowledge/infra/syncthing.md#2 | Restart order\n"
     "Uncurated (pending, not yet verified):\n"
-    "  observations/pending/20261024T094659-8d6fecbe.md | 2026-10-24 | NAS restart after the update\n"
+    "  observations/pending/20261024T094659-8d6fecbe.md | 2026-10-24 | observation | NAS restart after the update\n"
     "Read with: kb read <locator>\n"
 )
 SYNCTHING_ONLY = (
