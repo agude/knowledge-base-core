@@ -22,6 +22,7 @@ def fake_kb(directory: Path, name: str = "kb", body: str = SHIM) -> Path:
     return path
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the test runs a POSIX shell script as kb")
 def test_a_given_kb_must_print_its_version(tmp_path: Path) -> None:
     path = fake_kb(tmp_path, body="#!/bin/sh\necho hello\n")
 
@@ -51,6 +52,7 @@ def test_the_kb_path_is_absolute_without_resolving_a_symbolic_link(tmp_path: Pat
     assert setup._kb_path(str(link)) == str(link.absolute())
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the test runs a POSIX shell script as kb")
 def test_without_a_given_kb_the_path_comes_from_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

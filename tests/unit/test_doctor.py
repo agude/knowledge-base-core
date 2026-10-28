@@ -112,6 +112,7 @@ def test_a_managed_hook_without_a_kb_path_is_a_problem(text: str, expected: str)
     assert doctor._kb_problem(text.encode("utf-8")) == expected
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the test runs a POSIX shell script as kb")
 def test_the_kb_path_of_a_managed_hook_must_exist_and_print_a_version(tmp_path: Path) -> None:
     missing = tmp_path / "gone"
     assert doctor._kb_problem(setup_rules.hook_script(str(missing)).encode()) == (
