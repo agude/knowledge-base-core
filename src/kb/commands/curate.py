@@ -518,11 +518,10 @@ def _finish(root: Path, git_directory: Path, run_id: str, *, no_push: bool) -> i
         for finding in verdict.preexisting:
             sys.stdout.write(f"  {_finding_text(finding)}\n")
     commit = _commit_publication(root, git_directory, batch, [change.path for change in changes])
-    sys.stdout.write(f"Commit: {commit}\n")
     if no_push:
-        sys.stdout.write("Committed locally; not published\n")
+        sys.stdout.write(f"Commit: {commit}\nCommitted locally; not published\n")
         return 0
-    return _publish(root, commit, branch)
+    return _publish(root, commit, branch, new_commit=True)
 
 
 def _resume_publication(root: Path, commit: str, branch: str, *, no_push: bool) -> int:
@@ -536,9 +535,19 @@ def _resume_publication(root: Path, commit: str, branch: str, *, no_push: bool) 
     return 0
 
 
-def _publish(root: Path, commit: str, branch: str) -> int:
-    """Fetch, rebase, and push, then report whether origin has the commit."""
+def _publish(root: Path, commit: str, branch: str, *, new_commit: bool = False) -> int:
+    """Fetch, rebase, and push, then report whether origin has the commit.
+
+    A rebase rewrites the batch commit, so the reported commit is read again after one.
+    new_commit prints the commit that finish just made, whatever the push outcome.
+    """
     result = remote.synchronize(root, push=True)
+    if result.pulled:
+        commit = _git_output(
+            root, "rev-parse", "--verify", "HEAD", message="cannot read HEAD"
+        ).strip()
+    if new_commit:
+        sys.stdout.write(f"Commit: {commit}\n")
     if result.skipped_dirty or result.errors:
         for message in result.errors:
             sys.stderr.write(f"{message}\n")

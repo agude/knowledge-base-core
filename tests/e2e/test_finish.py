@@ -400,6 +400,9 @@ def test_a_behind_origin_is_rebased_then_published(remote_git_kb: Kb) -> None:
     assert result.returncode == 0, result.stderr
     assert "Published: origin/main\n" in result.stdout
     assert _origin_head(kb) == _head(kb)
+    match = COMMIT_RE.search(result.stdout)
+    assert match is not None
+    assert match.group(1) == _head(kb)
     assert kb("curate", "finish", run).stdout == f"Already published: {_head(kb)}\n"
 
 
