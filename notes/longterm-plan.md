@@ -244,6 +244,8 @@ Checked on 2026-10-27 at `3d3cfb7`:
 | U3 Diagnose a failure | `kb doctor`, phase 4 | Built on fixtures; on this machine it names the setup work that remains |
 | U4 Set policy | Content `AGENTS.md` import in the instruction block | Built on fixtures; the policy line is rendered from the configured content path |
 
+The current phase 5, part 1 plan is [`plan.md`](../plan.md) at the repository root.
+
 [plan-retrieval.md](plan-retrieval.md) and
 [plan-observe.md](plan-observe.md) preserve the earlier component plans.
 [plan-phase1-review.md](plan-phase1-review.md) preserves the phase 1 review
