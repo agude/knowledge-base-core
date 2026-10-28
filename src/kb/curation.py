@@ -165,6 +165,8 @@ def select(
             raise SelectionError(
                 f"explicit selection is {total} bytes, over --max-bytes {max_bytes}"
             )
+        if max_bytes == 0:
+            return Selection((), selected, (), 0)
         return Selection(selected, (), (), total)
 
     ordered = sorted(
@@ -176,7 +178,9 @@ def select(
         ),
     )
     if max_bytes == 0:
-        return Selection((), tuple(ordered), (), 0)
+        zero_budget_skipped = tuple(ordered)
+        zero_budget_larger = tuple(item for item in ordered if item.size > 0)
+        return Selection((), zero_budget_skipped, zero_budget_larger, 0)
 
     chosen: list[PendingInput] = []
     skipped: list[PendingInput] = []

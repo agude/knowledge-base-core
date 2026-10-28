@@ -3,6 +3,7 @@
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
+from kb.commands import curate as curate_command
 from kb.commands import evidence as evidence_command
 from kb.commands import gap as gap_command
 from kb.commands import lint as lint_command
@@ -58,6 +59,11 @@ COMMANDS: tuple[Command, ...] = (
         name="resolve",
         summary="Resolve an open question to a curated answer or mark it obsolete.",
         run=resolve_command.run,
+    ),
+    Command(
+        name="curate",
+        summary="Select and track local curation batches.",
+        run=curate_command.run,
     ),
     Command(
         name="questions",

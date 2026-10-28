@@ -108,8 +108,12 @@ def test_zero_budget_selects_nothing_and_exact_fits_are_included() -> None:
     assert zero.selected == ()
     assert zero.selected_bytes == 0
     assert [entry.filename for entry in zero.skipped] == ["empty.md", "one.md"]
+    assert [entry.filename for entry in zero.larger_than_budget] == ["one.md"]
     assert [entry.filename for entry in exact.selected] == ["empty.md", "one.md"]
     assert exact.selected_bytes == 1
+    explicit_zero = curation.select([item("empty.md", 0, None)], 0, ["empty.md"])
+    assert explicit_zero.selected == ()
+    assert explicit_zero.skipped[0].filename == "empty.md"
 
 
 def test_explicit_selection_preserves_order_and_enforces_budget() -> None:

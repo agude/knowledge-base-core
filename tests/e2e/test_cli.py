@@ -23,7 +23,7 @@ def test_no_arguments_prints_usage(kb: Kb) -> None:
 
 def test_help_lists_the_agent_commands(kb: Kb) -> None:
     lines = kb("--help").stdout.splitlines()
-    for command in ("recall", "read", "map", "lint", "sync"):
+    for command in ("recall", "read", "map", "lint", "sync", "curate"):
         assert any(line.split()[:1] == [command] for line in lines)
 
 
