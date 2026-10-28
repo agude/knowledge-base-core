@@ -66,7 +66,9 @@ def test_only_the_model_parses_front_matter_or_headings_in_the_package() -> None
             continue
         # Observation renderers write front matter; model.py alone parses it.
         allowed = (
-            {"---"} if module.name in {"observation.py", "transcript_observation.py"} else set()
+            {"---"}
+            if module.name in {"observation.py", "question.py", "transcript_observation.py"}
+            else set()
         )
         tree = ast.parse(module.read_text(encoding="utf-8"))
         for node in ast.walk(tree):

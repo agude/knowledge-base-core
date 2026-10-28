@@ -4,6 +4,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from kb.commands import evidence as evidence_command
+from kb.commands import gap as gap_command
 from kb.commands import map as map_command
 from kb.commands import observe as observe_command
 from kb.commands import read as read_command
@@ -33,6 +34,11 @@ COMMANDS: tuple[Command, ...] = (
         name="observe",
         summary="Record one observation and commit it.",
         run=observe_command.run,
+    ),
+    Command(
+        name="gap",
+        summary="Record one attributed question and commit it.",
+        run=gap_command.run,
     ),
     Command(
         name="sync",

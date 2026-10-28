@@ -96,6 +96,30 @@ def old_field(kb: Kb, field: str, name: str) -> str:
     return result.stdout.removesuffix("\n")
 
 
+def old_question_field(kb: Kb, field: str, name: str) -> str:
+    """Read a question field with the old tooling's YAML front-matter helper."""
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1" && frontmatter_field "$2" "$3"',
+            "bash",
+            str(old_script("_lib.sh")),
+            field,
+            str(kb.content / "questions" / "open" / name),
+        ],
+        cwd=kb.home,
+        env=kb.environment({"KB_CONTENT_DIR": str(kb.content)}),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout.removesuffix("\n")
+
+
 def test_kb_observe_writes_what_the_old_script_writes_plus_attribution(git_kb: Kb) -> None:
     title = 'Say "hi" \\ there'
     body = "Written by both scripts."
@@ -138,6 +162,43 @@ def test_old_archive_moves_a_kb_observation_and_commits_it(git_kb: Kb) -> None:
     assert not (git_kb.content / "observations" / "pending" / name).exists()
     assert (git_kb.content / "observations" / "archived" / name).is_file()
     assert git_kb.git("log", "-1", "--format=%s") == "Archive: 1 observation(s)\n"
+    assert git_kb.git("status", "--porcelain") == ""
+
+
+def test_old_questions_and_resolve_accept_a_gap_with_quoted_unicode_fields(git_kb: Kb) -> None:
+    title = 'Where is "München" \\ backup?'
+    context = "knowledge/infra/nas.md"
+    body = "The answer is not recorded."
+    result = git_kb("gap", "--title", title, "--body", body, "--context", context)
+    assert result.returncode == 0, result.stderr
+    prefix = "Wrote: questions/open/"
+    assert result.stdout.startswith(prefix), result.stdout
+    name = result.stdout[len(prefix) :].removesuffix("\n")
+
+    listing = run_old(git_kb, "questions")
+    assert listing.returncode == 0, listing.stderr
+    assert f"- {title} ({context})" in listing.stdout
+    inspection = run_old(git_kb, "questions", "--file", name)
+    assert inspection.returncode == 0, inspection.stderr
+    assert body in inspection.stdout
+    assert old_question_field(git_kb, "title", name) == title
+    assert old_question_field(git_kb, "context", name) == context
+    assert old_question_field(git_kb, "source", name) == "session"
+
+    answer = "See the archived note: café backup remains unknown."
+    resolved = run_old(git_kb, "resolve", "--file", name, "--answer", answer)
+    assert resolved.returncode == 0, resolved.stderr
+    assert resolved.stdout == f"Resolved: questions/open/{name} -> questions/resolved/{name}\n"
+    resolved_path = git_kb.content / "questions" / "resolved" / name
+    resolved_text = resolved_path.read_text(encoding="utf-8")
+    assert resolved_text.startswith(inspection.stdout.split("\n\n## Resolution", 1)[0])
+    assert answer in resolved_text
+    assert 'title: "Where is \\"München\\" \\\\ backup?"\n' in resolved_text
+    assert f'context: "{context}"\n' in resolved_text
+    assert 'project: "' in resolved_text
+    assert 'host: "' in resolved_text
+    assert git_kb.git("log", "-1", "--format=%s") == f"Resolve: {title}\n"
+    assert not (git_kb.content / "questions" / "open" / name).exists()
     assert git_kb.git("status", "--porcelain") == ""
 
 

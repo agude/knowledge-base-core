@@ -6,19 +6,17 @@ temporary file, take the lock, publish, commit, unlock, and report.
 
 import os
 import socket
-import subprocess
 import sys
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
-from kb import args, lock, observation, secrets
+from kb import args, lock, observation, write
 from kb.args import Spec
 from kb.context import load
 from kb.errors import KbError
 
 PENDING = "observations/pending"
-MAX_NAME_TRIES = 5
 SPEC = Spec(
     usage="observe --title TITLE --body TEXT",
     summary=(
@@ -93,78 +91,17 @@ def _content_root() -> Path:
 
 def _record(root: Path, title: str, body: str, wait: int) -> str:
     """Write the observation, commit it, and return its file name."""
-    git_directory = lock.git_dir(root)
     when = datetime.now(UTC)
     host = observation.short_host(socket.gethostname())
-    text = observation.render(title, body, _project(), host, when)
-    scratch = git_directory / "kb-tmp"
-    scratch.mkdir(parents=True, exist_ok=True)
-    found = secrets.findings(scratch, observation.scan_text(title, body))
-    if found:
-        raise KbError("\n".join(observation.refusal_lines(found)))
-    temporary = scratch / observation.temporary_name(os.urandom(4).hex())
-    try:
-        with temporary.open("x", encoding="utf-8") as handle:
-            handle.write(text)
-        backend = lock.default_backend(sys.platform)
-        with lock.write_lock(git_directory, root, wait, backend):
-            name = _publish(root, temporary, when)
-            _commit(root, name, title)
-    finally:
-        temporary.unlink(missing_ok=True)
-    return name
-
-
-def _publish(root: Path, temporary: Path, when: datetime) -> str:
-    """Rename the temporary file to a free name in observations/pending, and return the name."""
-    pending = root / PENDING
-    pending.mkdir(parents=True, exist_ok=True)
-    for _ in range(MAX_NAME_TRIES):
-        name = observation.file_name(when, os.urandom(4).hex())
-        if not (pending / name).exists():
-            temporary.rename(pending / name)
-            return name
-    raise KbError(f"observe: no free file name in {PENDING}")
-
-
-def _commit(root: Path, name: str, title: str) -> None:
-    """Commit the one new file. On failure, unstage it, delete it, and raise."""
-    path = f"{PENDING}/{name}"
-    result = _git(root, "add", "--", path)
-    if result.returncode == 0:
-        result = _git(root, "commit", "-q", "-m", f"Observe: {title}", "--", path)
-    if result.returncode == 0:
-        return
-    # The result is ignored: when staging failed, the path was never in the index.
-    _git(root, "rm", "-q", "--cached", "--", path)
-    (root / path).unlink(missing_ok=True)
-    detail = result.stderr.rstrip("\n")
-    raise KbError(f"observe: commit failed: {detail}" if detail else "observe: commit failed:")
-
-
-def _project() -> str:
-    """The top of the git repository that the process runs in, or its directory outside one."""
-    here = Path.cwd()
-    top = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
-        cwd=here,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
-    if top.returncode == 0:
-        return top.stdout.removesuffix("\n")
-    return str(here)
-
-
-def _git(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
-    """Run git in the content repository and capture its output."""
-    return subprocess.run(
-        ["git", *words],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
+    return write.publish_and_commit(
+        root,
+        PENDING,
+        observation.render(title, body, write.project(), host, when),
+        observation.scan_text(title, body),
+        when,
+        f"Observe: {title}",
+        "observe",
+        wait,
+        sys.platform,
+        observation.refusal_lines,
     )

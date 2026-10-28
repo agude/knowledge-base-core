@@ -125,7 +125,7 @@ def parse_wait(value: str | None) -> int:
     raise InvalidWait(value)
 
 
-def git_dir(content: Path) -> Path:
+def git_dir(content: Path, command: str = "observe") -> Path:
     """The git directory of the content repository, as git reports it.
 
     Raises KbError when the content root is not inside a git repository.
@@ -139,7 +139,7 @@ def git_dir(content: Path) -> Path:
         check=False,
     )
     if result.returncode != 0:
-        raise KbError(f"observe: the content repository is not a git repository: {content}")
+        raise KbError(f"{command}: the content repository is not a git repository: {content}")
     return (content / result.stdout.removesuffix("\n")).resolve()
 
 
