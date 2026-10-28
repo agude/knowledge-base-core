@@ -18,12 +18,12 @@ def isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def test_help_prints_the_usage_and_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
     assert setup.run(["--help"]) == 0
-    assert capsys.readouterr().out.startswith("Usage: kb setup --print")
+    assert capsys.readouterr().out.startswith("Usage: kb setup [--content PATH]")
 
 
-@pytest.mark.parametrize("words", [[], ["extra"], ["--print", "instructions", "extra"]])
-def test_missing_item_or_extra_word_is_a_usage_error(words: list[str]) -> None:
-    with pytest.raises(KbError, match="Usage: kb setup --print"):
+@pytest.mark.parametrize("words", [["extra"], ["--print", "instructions", "extra"]])
+def test_an_extra_word_is_a_usage_error(words: list[str]) -> None:
+    with pytest.raises(KbError, match="Usage: kb setup"):
         setup.run(words)
 
 

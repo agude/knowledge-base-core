@@ -50,8 +50,9 @@ def test_print_instructions_without_a_content_path_fails_with_the_setup_prefix(k
     assert result.stderr.startswith("setup: no content path;")
 
 
-def test_setup_without_print_prints_its_usage_and_fails(kb: Kb) -> None:
-    result = kb("setup")
+def test_print_with_another_option_is_a_usage_error(kb: Kb) -> None:
+    result = kb("setup", "--print", "allow-codex", "--kb", "/bin/true")
 
     assert result.returncode == 1
-    assert result.stderr == "Usage: kb setup --print {instructions|allow-claude|allow-codex}\n"
+    assert result.stdout == ""
+    assert result.stderr.startswith("Usage: kb setup")
