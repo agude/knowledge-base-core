@@ -12,7 +12,7 @@ from subprocess import CompletedProcess
 
 import pytest
 
-from .harness import HOLD_KERNEL_LOCK, Kb, make_git_kb
+from .harness import HOLD_KERNEL_LOCK, TODAY, Kb, make_git_kb
 
 RUN_RE = re.compile(r"Created batch: ([0-9]{8}T[0-9]{6}-[0-9a-f]{8})\n")
 OLD_HEADER = "filename\toriginal_sha256\tstatus\tdisposition\tdestination\n"
@@ -1709,11 +1709,29 @@ def test_full_local_curation_workflow_and_historical_defer(git_kb: Kb) -> None:
 
     lint = git_kb("lint", "knowledge/workflow.md", "--require-ttl")
     assert lint.returncode == 0, lint.stdout + lint.stderr
-    archived_read = git_kb("read", "observations/archived/incorporated.md#1")
-    assert archived_read.returncode == 0, archived_read.stderr
-    assert "Evidence for incorporated.md." in archived_read.stdout
+    for name in ("incorporated", "duplicate", "ephemeral", "interrupted"):
+        archived_read = git_kb("read", f"observations/archived/{name}.md#1")
+        assert archived_read.returncode == 0, archived_read.stderr
+        assert f"Evidence for {name}.md." in archived_read.stdout
+    cited_sources = [
+        line.removeprefix("  - ")
+        for line in article.read_text(encoding="utf-8").splitlines()
+        if line.startswith("  - observations/archived/")
+    ]
+    assert len(cited_sources) == 3
+    for source in cited_sources:
+        cited = git_kb("read", source)
+        assert cited.returncode == 0, cited.stderr
+        assert "Evidence for " in cited.stdout
+    manifest_before_verify = first_manifest.read_bytes()
     verify = git_kb("verify", "knowledge/workflow.md")
     assert verify.returncode == 0, verify.stderr
+    verified_text = article.read_text(encoding="utf-8")
+    assert f"verified: {TODAY}\n" in verified_text
+    assert "ttl: domain\n" in verified_text
+    assert "updated: 2026-10-20\n" in verified_text
+    lint_verified = git_kb("lint", "knowledge/workflow.md", "--require-ttl")
+    assert lint_verified.returncode == 0, lint_verified.stdout + lint_verified.stderr
     resolve = git_kb(
         "resolve",
         "questions/open/20261001T090000-bbbb2222.md",
@@ -1723,11 +1741,16 @@ def test_full_local_curation_workflow_and_historical_defer(git_kb: Kb) -> None:
         "knowledge/workflow.md#1",
     )
     assert resolve.returncode == 0, resolve.stderr
+    assert not (git_kb.content / "questions/open/20261001T090000-bbbb2222.md").exists()
+    assert (git_kb.content / "questions/resolved/20261001T090000-bbbb2222.md").is_file()
+    assert first_manifest.read_bytes() == manifest_before_verify
     recall = git_kb("recall", "workflow evidence")
+    assert recall.returncode == 0, recall.stderr
     assert "knowledge/workflow.md" in recall.stdout
     assert "observations/pending/incorporated.md" not in recall.stdout
     assert "observations/pending/duplicate.md" not in recall.stdout
     assert "observations/pending/ephemeral.md" not in recall.stdout
+    assert "observations/archived/" not in recall.stdout
 
     git_kb.git("add", "--all")
     git_kb.git("commit", "-q", "-m", "Settle synthetic local curation batch")
