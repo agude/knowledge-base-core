@@ -347,13 +347,15 @@ commands, but the guided run must still use them as evidence supports.
 This phase depends on retrieval, evidence access, safe writes, and sync.
 Until it is in use, core's `curate` skill continues to process the queue.
 
-The validation and local-processing pieces are built: `kb lint` checks
-article structure, metadata, and references; `kb verify` records an explicit
-article check; `kb resolve` records an answer or obsolescence; and local
-batches persist outcomes and recover interrupted archives. The synchronized
-start, finishing commit and push, and the content repository's pre-commit hook
-remain to be built. The one-time `ttl` pass is curation work that remains to
-be done. `kb lint` is for curators; do not add it to working-agent allow rules.
+The validation, local-processing, and publication pieces are built on fixtures:
+`kb lint` checks article structure, metadata, and references; `kb verify`
+records an explicit article check; `kb resolve` records an answer or
+obsolescence; local batches persist outcomes and recover interrupted archives;
+`kb curate start` synchronizes before it selects; `kb curate finish` validates,
+commits once, and pushes; and `kb hook pre-commit` validates and stamps every
+content commit. Installing that hook in the content repository is phase 4
+setup. The one-time `ttl` pass is curation work that remains to be done.
+`kb lint` is for curators; do not add it to working-agent allow rules.
 
 ### 4. Complete setup and diagnosis
 

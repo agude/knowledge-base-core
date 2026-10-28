@@ -699,3 +699,69 @@ and total branch coverage was 90.10%. Native Windows validation remains
 unrun. Phase 3 still needs synchronized start, the finishing commit and push,
 the content pre-commit hook, and the one-time real-content TTL pass. No batch
 was published or rolled out.
+
+## Publication and synchronization closeout (2026-10-28)
+
+Implementation commits: `f8c637e` checked the carried workflow criteria;
+`a258cc1` extracted the shared remote steps into `kb/remote.py`; `0393745`
+added the synchronized start and manifest schema version 2; `b96017d` added
+publication validation and `kb hook pre-commit`; `e1207d6` added
+`kb curate finish`; `b274957` added the two-clone cycle and old-hook
+compatibility tests. The documentation commit follows the tests.
+
+`just build package-check` passed with the default uv cache and registry access.
+The clean-environment install reported version 0.1.0, and the preexisting `dist/`
+directory was restored.
+
+`just check` passed on Linux with Python 3.15.0: lint, formatting, actionlint,
+offline zizmor, and strict mypy passed. 1,386 tests passed, 11 were skipped (the
+compatibility tests run under `just test-compat`), and total branch coverage was
+91.36%.
+
+`just test-compat` passed all 11 tests against `~/Knowledge`. The finish test
+commits through the old pre-commit hook. The old `lint` accepts the article, and
+the old `section` reads its first section. Each test used an isolated fixture.
+
+`just eval` exited 0. Both fixture sets met acceptance, and no evaluation case
+changed.
+
+Real-content check. A scratch copy received its own Git metadata and a scratch
+bare origin. The live repository was not written, and no real text is retained:
+
+| Measure | Result |
+|---|---:|
+| Articles in the copy | 210 |
+| Tracked files in the copy | 2,946 |
+| Validation with no changes: blocking findings | 0 |
+| Validation with no changes: preexisting findings | 2 (missing non-`.md` source references) |
+| Validation time | 0.29 s |
+| `kb lint` over the copy | 2 errors, 0 warnings in 210 files |
+| One synthetic finish in the copy | published; origin matched local; 0.65 s; 37,876 KiB peak RSS |
+
+The copy was removed after the run.
+
+Synthetic repository: 2,100 articles, 1,200 pending observations, 3,301 tracked
+files, and a bare origin. The repository was removed after the run.
+
+| Operation | Elapsed | Peak RSS |
+|---|---:|---:|
+| `curate start`, one observation selected, synchronized | 3.72 s | 41,772 KiB |
+| `curate finish`, topology change (one article deleted), pushed | 0.85 s | 39,780 KiB |
+| `kb hook pre-commit`, direct run, topology change | 0.66 s | 33,728 KiB |
+| `git commit` through the installed hook, one stamped article | 0.66 s | 33,916 KiB (git process) |
+
+Deviations and open items:
+
+- Native Windows validation remains unrun. The finish and hook end-to-end tests
+  skip there because the installed hook is a POSIX shell script; the unit tests
+  run in process.
+- The sync unit tests that scripted `sync._git` for the moved helpers now patch
+  `remote._git`. Their assertions are unchanged.
+- `curate status` reads local Git refs for settled batches. It still runs without
+  Git metadata and never contacts origin.
+- A dropped member's input joins the publication set only when the file was
+  deleted. A changed input refuses finish.
+- Installing the hook (phase 4), adoption (phase 5), and the one-time real TTL
+  pass remain. The 2026-10-27 baseline found 100 articles without `ttl`; this
+  closeout did not re-measure it.
+- The no-match recall latency follow-up is unchanged.
