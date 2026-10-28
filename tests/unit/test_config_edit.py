@@ -87,9 +87,31 @@ def test_invalid_toml_is_refused() -> None:
         setup_rules.set_content("content = \n", ROOT)
 
 
-def test_a_byte_order_mark_is_refused_because_the_reader_cannot_parse_it() -> None:
-    with pytest.raises(KbError, match="byte order mark"):
-        setup_rules.set_content("\ufeff", ROOT)
+def test_a_byte_order_mark_is_preserved_when_setting_content() -> None:
+    text = '\ufeff# machine config\r\ncontent = "/old"\r\n'
+
+    edited = setup_rules.set_content(text, ROOT)
+
+    assert edited == f'\ufeff# machine config\r\ncontent = "{ROOT}"\r\n'
+    assert tomllib.loads(edited.removeprefix("\ufeff"))["content"] == ROOT
+
+
+def test_a_byte_order_mark_on_a_content_line_is_preserved_when_replacing_it() -> None:
+    text = '\ufeffcontent = "/old"\r\n'
+
+    edited = setup_rules.set_content(text, ROOT)
+
+    assert edited == f'\ufeffcontent = "{ROOT}"\r\n'
+    assert tomllib.loads(edited.removeprefix("\ufeff"))["content"] == ROOT
+
+
+def test_a_content_line_inserted_before_a_bom_table_keeps_the_bom_at_file_start() -> None:
+    text = "\ufeff[section]\nvalue = 1\n"
+
+    edited = setup_rules.set_content(text, ROOT)
+
+    assert edited == f'\ufeffcontent = "{ROOT}"\n[section]\nvalue = 1\n'
+    assert tomllib.loads(edited.removeprefix("\ufeff"))["content"] == ROOT
 
 
 def test_a_windows_path_round_trips_through_its_escaped_value() -> None:

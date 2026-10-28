@@ -186,7 +186,7 @@ def capture_check(
             "capture",
             "warn",
             "Capture disabled (harvest_since unset)",
-            "set harvest_since at cutover, with the old capture hooks removed (phase 5)",
+            "remove old capture hooks, then run kb setup --enable-capture",
         )
     if unreadable:
         return Check(

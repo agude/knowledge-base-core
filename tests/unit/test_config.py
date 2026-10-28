@@ -1,6 +1,6 @@
 """Tests for finding the content repository."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path, PureWindowsPath
 
 import pytest
@@ -176,3 +176,63 @@ def test_a_bad_content_value_is_reported(tmp_path: Path, text: str, message: str
     with pytest.raises(KbError) as error:
         config.parse_content_setting(text, config_path)
     assert str(error.value) == f"knowledge base: invalid config file {config_path}: {message}"
+
+
+def test_set_harvest_since_preserves_bom_crlf_and_other_keys(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    text = '\ufeff# machine config\r\ncontent = "/content"\r\n[other]\r\nvalue = 1\r\n'
+    moment = datetime(2026, 10, 26, 12, 0, 0, 987654, tzinfo=timezone(timedelta(hours=-7)))
+
+    edited = config.set_harvest_since(text, moment, path)
+
+    assert edited == (
+        '\ufeff# machine config\r\ncontent = "/content"\r\n'
+        "harvest_since = 2026-10-26T19:00:00Z\r\n[other]\r\nvalue = 1\r\n"
+    )
+    assert config.parse_content_setting(edited, path) == Path("/content")
+    assert config.parse_harvest_since(edited, path) == datetime(2026, 10, 26, 19, tzinfo=UTC)
+
+
+def test_set_harvest_since_keeps_an_existing_value(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    text = "harvest_since = 2026-10-26T05:00:00-07:00\n"
+
+    assert config.set_harvest_since(text, datetime(2026, 10, 27, tzinfo=UTC), path) == text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "harvest_since = 2026-10-26\n",
+        "harvest_since = 12\n",
+        'harvest_since = "2026-10-26T12:00:00Z"\n',
+        "harvest_since = 2026-10-26T12:00:00\n",
+    ],
+)
+def test_set_harvest_since_refuses_an_invalid_existing_value(tmp_path: Path, text: str) -> None:
+    with pytest.raises(KbError, match="harvest_since must be a time-zone-aware TOML datetime"):
+        config.set_harvest_since(text, datetime(2026, 10, 27, tzinfo=UTC), tmp_path / "config.toml")
+
+
+def test_set_harvest_since_refuses_a_value_inside_a_table(tmp_path: Path) -> None:
+    text = "[capture]\nharvest_since = 2026-10-26T12:00:00Z\n"
+
+    with pytest.raises(KbError, match="harvest_since must be a top-level key"):
+        config.set_harvest_since(text, datetime(2026, 10, 27, tzinfo=UTC), tmp_path / "config.toml")
+
+
+def test_config_readers_accept_a_byte_order_mark(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    text = '\ufeffcontent = "/content"\nharvest_since = 2026-10-26T12:00:00Z\n'
+
+    assert config.parse_content_setting(text, path) == Path("/content")
+    assert config.parse_harvest_since(text, path) == datetime(2026, 10, 26, 12, tzinfo=UTC)
+
+
+def test_set_harvest_since_inserts_before_a_bom_table(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    text = "\ufeff[other]\nvalue = 1\n"
+
+    edited = config.set_harvest_since(text, datetime(2026, 10, 26, 12, tzinfo=UTC), path)
+
+    assert edited == "\ufeffharvest_since = 2026-10-26T12:00:00Z\n[other]\nvalue = 1\n"

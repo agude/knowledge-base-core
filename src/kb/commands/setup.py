@@ -1,9 +1,10 @@
-"""kb setup: set this machine's content path and install the content repository's hook.
+"""kb setup: configure this machine's content path, hooks, and transcript cutoff.
 
-Setup writes the config file's content key and the pre-commit hook. It reports each one as
-created, installed, updated, unchanged, or refused, and exits 1 when any was refused. A
-refusal does not stop the other resource. `kb setup --print` writes the host text that the
-dotfiles install. Setup never enables capture and never edits host settings or instructions.
+Setup writes the config file's content key, installs the pre-commit hook, and can enable
+transcript capture. It reports each resource as created, installed, updated, unchanged, or
+refused, and exits 1 when any was refused. A refusal does not stop the other resource.
+`kb setup --print` writes the host text that the dotfiles install. `--enable-capture` sets the
+transcript cutoff after the other setup work; it does not edit host settings or instructions.
 """
 
 import os
@@ -11,9 +12,10 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
+from datetime import UTC
 from pathlib import Path
 
-from kb import args, config, lock, setup_rules
+from kb import args, config, dates, lock, registrations, setup_rules
 from kb.args import Spec
 from kb.errors import KbError
 from kb.platform import config_file
@@ -36,16 +38,17 @@ POLICY_STUB = (
 INITIAL_COMMIT = "Initialize knowledge base content"
 SPEC = Spec(
     usage=(
-        "setup [--content PATH | --init PATH [--origin URL]] [--kb PATH] [--replace-old-hook]\n"
+        "setup [--content PATH | --init PATH [--origin URL]] [--kb PATH] "
+        "[--replace-old-hook] [--enable-capture]\n"
         "       setup --print {instructions|allow-claude|allow-codex}"
     ),
     summary=(
         "Set the content path and install the content repository's pre-commit hook, "
-        "create a content repository with --init, or print the host text that the dotfiles "
-        "install."
+        "create a content repository with --init, enable transcript capture, or print the host "
+        "text that the dotfiles install."
     ),
     valued=frozenset({"--content", "--init", "--origin", "--kb", "--print"}),
-    switches=frozenset({"--replace-old-hook"}),
+    switches=frozenset({"--replace-old-hook", "--enable-capture"}),
 )
 
 
@@ -130,6 +133,9 @@ def _configure(parsed: args.Parsed, environ: Mapping[str, str]) -> int:
         sys.stdout.write(f"Init: {init_state} {init_target}\n")
     sys.stdout.write(f"Config: {config_state} {configuration}\n")
     sys.stdout.write(f"Hook: {hook_state} {'-' if hook is None else hook}\n")
+    if "--enable-capture" in parsed.switches:
+        capture_state, cutoff = _enable_capture(configuration, environ, failures)
+        sys.stdout.write(f"Capture: {capture_state} {cutoff}\n")
     for failure in failures:
         sys.stderr.write(f"{failure}\n")
     return 1 if failures else 0
@@ -303,22 +309,42 @@ def _write_config(configuration: Path, content: str) -> str:
 
     A symbolic link is followed, so the link itself survives and its target is replaced.
     """
-    target = configuration.resolve() if configuration.is_symlink() else configuration
-    existed = target.exists()
-    old = target.read_bytes().decode("utf-8") if existed else ""
-    new = setup_rules.set_content(old, content)
-    if existed and new == old:
-        return "unchanged"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.parent / f".{target.name}.{os.urandom(4).hex()}.tmp"
+    state, _ = config.write_config(configuration, lambda old: setup_rules.set_content(old, content))
+    return state
+
+
+def _enable_capture(
+    configuration: Path, environ: Mapping[str, str], failures: list[str]
+) -> tuple[str, str]:
+    """Set the transcript cutoff only after every old capture registration is removed."""
+    home = Path.home()
+    config_home = Path(environ.get("XDG_CONFIG_HOME") or home / ".config").expanduser()
+    codex_home = Path(environ.get("CODEX_HOME") or home / ".codex").expanduser()
     try:
-        temporary.write_bytes(new.encode("utf-8"))
-        if existed:
-            shutil.copymode(target, temporary)
-        temporary.replace(target)
-    finally:
-        temporary.unlink(missing_ok=True)
-    return "updated" if existed else "created"
+        findings = registrations.capture_findings(config_home, codex_home)
+    except (KbError, OSError, UnicodeError) as error:
+        failures.append(f"setup: cannot check old capture registrations: {error}")
+        return "refused", str(configuration)
+    if findings:
+        failures.extend(
+            f"setup: remove the old capture registration before enabling capture: {finding}"
+            for finding in findings
+        )
+        return "refused", str(configuration)
+    try:
+        now = dates.now(environ).replace(microsecond=0)
+        state, text = config.write_config(
+            configuration,
+            lambda old: config.set_harvest_since(old, now, configuration),
+        )
+        cutoff = config.parse_harvest_since(text, configuration)
+        if cutoff is None:
+            raise KbError("harvest_since was not written")
+    except (KbError, OSError, UnicodeError) as error:
+        failures.append(f"setup: {configuration}: {error}")
+        return "refused", str(configuration)
+    value = cutoff.astimezone(UTC).isoformat().replace("+00:00", "Z")
+    return ("unchanged" if state == "unchanged" else "enabled"), value
 
 
 def _install(

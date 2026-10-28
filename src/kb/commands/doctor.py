@@ -18,7 +18,17 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from kb import __version__, args, config, dates, diagnosis, observation, setup_rules, sync_state
+from kb import (
+    __version__,
+    args,
+    config,
+    dates,
+    diagnosis,
+    observation,
+    registrations,
+    setup_rules,
+    sync_state,
+)
 from kb.args import Spec
 from kb.commands import curate, sync
 from kb.commands.setup import existing_hook
@@ -331,12 +341,7 @@ def _legacy(context: Context, root: Path | None) -> Check:
 def _coat_tree_findings(context: Context) -> list[str]:
     """Each coat-tree hook entry that the old tooling installed, named with its target."""
     config_home = Path(context.environ.get("XDG_CONFIG_HOME") or context.home / ".config")
-    hooks = config_home / "coat-tree" / "hooks.d"
-    findings = []
-    for entry in sorted(hooks.glob("*/010.knowledge*")):
-        target = str(entry.readlink()) if entry.is_symlink() else "a regular file"
-        findings.append(f"coat-tree {entry.parent.name}/{entry.name} -> {target}")
-    return findings
+    return registrations.coat_tree_findings(config_home)
 
 
 def _claude_hook_findings(settings: Path) -> list[str]:
@@ -351,15 +356,7 @@ def _claude_hook_findings(settings: Path) -> list[str]:
 
 def _codex_hook_findings(hooks_file: Path) -> list[str]:
     """Codex hook scripts whose text mentions the knowledge base."""
-    data = _json_object(hooks_file)
-    findings = []
-    for event, command in _hook_commands(data.get("hooks", {})):
-        script = Path(command.split()[-1]).expanduser() if command.split() else None
-        if script is not None and script.is_file():
-            text = script.read_text(encoding="utf-8", errors="replace")
-            if re.search("knowledge", text, re.IGNORECASE):
-                findings.append(f"Codex {event} hook: {command}")
-    return findings
+    return registrations.codex_hook_findings(hooks_file)
 
 
 def _content_hook_findings(root: Path) -> list[str]:
@@ -386,16 +383,7 @@ def _skill_findings(directory: Path, old_root: Path) -> list[str]:
 
 def _hook_commands(hooks: object) -> list[tuple[str, str]]:
     """Each (event, command) pair in a host's hooks mapping, tolerating unexpected shapes."""
-    pairs: list[tuple[str, str]] = []
-    if not isinstance(hooks, dict):
-        return pairs
-    for event, groups in hooks.items():
-        for group in groups if isinstance(groups, list) else []:
-            for hook in group.get("hooks", []) if isinstance(group, dict) else []:
-                command = hook.get("command") if isinstance(hook, dict) else None
-                if isinstance(command, str):
-                    pairs.append((str(event), command))
-    return pairs
+    return registrations.hook_commands(hooks)
 
 
 def _claude_allow(settings: Path) -> list[str] | None:

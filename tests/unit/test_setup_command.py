@@ -18,7 +18,9 @@ def isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def test_help_prints_the_usage_and_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
     assert setup.run(["--help"]) == 0
-    assert capsys.readouterr().out.startswith("Usage: kb setup [--content PATH | --init PATH")
+    output = capsys.readouterr().out
+    assert output.startswith("Usage: kb setup [--content PATH | --init PATH")
+    assert "--enable-capture" in output
 
 
 @pytest.mark.parametrize("words", [["extra"], ["--print", "instructions", "extra"]])

@@ -1035,3 +1035,18 @@ Open items:
 - In the interactive TUI, Codex submitted simple commands as literal `cmd` strings to its `exec` tool. All seven allowed prefixes ran without approval; the five read commands used `--help`, and `kb observe` and `kb gap` wrote only to the disposable fixture. Codex's documentation says simple commands are split for prefix matching; advanced shell syntax is treated as a `bash -lc` invocation. The non-interactive `codex exec --json` transcript showed `/usr/bin/zsh -lc` wrappers and `approval_policy: never`, so it was not used to judge prompt behavior.
 - `kb sync` produced an approval prompt before it could write to the outside-`/tmp` fixture. `kb curate start --no-sync --max-bytes 1` also produced an approval prompt. Neither command was approved. Sync did not exchange or publish fixture commits; curate did not start a batch.
 - Interactive probe session IDs: allowed commands `01a184d1-57dc-7491-86c1-8aa1b89d027c`; sync approval `01a184d0-337b-7062-b2a8-8dbc24580d25`; curator approval `01a184d2-102a-7723-bd74-a2530aa3b618`. No host credentials or settings were written into this repository.
+
+## Capture switch implementation (2026-10-28)
+
+- `kb setup --enable-capture` scans the four old coat-tree lifecycle events and Codex hook
+  scripts using the same registration readers as `kb doctor`. It refuses each remaining
+  registration before setting `harvest_since` and names it in stderr.
+- The config writer now lives in `kb/config.py`. Content and capture edits use the same sibling
+  temporary file and atomic replace. The capture edit preserves BOM, CRLF, and unrelated TOML
+  values; it inserts a UTC offset datetime at whole-second precision and refuses invalid or
+  nested `harvest_since` values. A second enable reports the saved cutoff unchanged.
+- Isolated e2e tests verified refusal and byte-identical config for each of the four coat-tree
+  events and one Codex hook, successful enable and repeat enable, and `kb sync` harvesting a
+  transcript newer than the boundary while skipping an older transcript.
+- `just check` passed: 1,641 passed, 12 skipped, 90.39% branch coverage; ruff, actionlint,
+  zizmor, and strict mypy passed.

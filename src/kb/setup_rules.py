@@ -138,25 +138,34 @@ def set_content(text: str, value: str) -> str:
     The old and new text must parse as TOML, and they must differ only in the content key.
     Raises KbError for text that cannot be edited that way.
     """
-    if text.startswith("﻿"):
-        raise KbError("the file starts with a byte order mark; remove it, then run setup again")
     before = _parse(text)
     lines = text.splitlines(keepends=True)
     assignment = f"content = {toml_string(value)}"
     first_table = next(
-        (index for index, line in enumerate(lines) if TABLE_HEADER.match(line)), len(lines)
+        (
+            index
+            for index, line in enumerate(lines)
+            if TABLE_HEADER.match(line.removeprefix("\ufeff"))
+        ),
+        len(lines),
     )
     index = _top_level_content_line(lines, first_table)
     if index is not None:
-        body = lines[index].rstrip("\r\n")
-        lines[index] = assignment + lines[index][len(body) :]
+        line = lines[index]
+        body = line.rstrip("\r\n")
+        bom = "\ufeff" if body.startswith("\ufeff") else ""
+        lines[index] = bom + assignment + line[len(body) :]
     else:
         if "content" in before:
             raise KbError("the content key must be a single-line basic string")
         newline = "\r\n" if "\r\n" in text else "\n"
         if first_table == len(lines) and lines and not lines[-1].endswith(("\n", "\r")):
             lines[-1] += newline
-        lines.insert(first_table, assignment + newline)
+        line = assignment + newline
+        if first_table == 0 and lines and lines[0].startswith("\ufeff"):
+            lines[0] = lines[0].removeprefix("\ufeff")
+            line = "\ufeff" + line
+        lines.insert(first_table, line)
     result = "".join(lines)
     _verify(before, _parse(result), value)
     return result
@@ -165,7 +174,8 @@ def set_content(text: str, value: str) -> str:
 def _top_level_content_line(lines: list[str], limit: int) -> int | None:
     """The index of a single-line content assignment before the first table header, if any."""
     for index in range(limit):
-        if CONTENT_LINE.fullmatch(lines[index].rstrip("\r\n")):
+        candidate = lines[index].removeprefix("\ufeff")
+        if CONTENT_LINE.fullmatch(candidate.rstrip("\r\n")):
             return index
     return None
 
@@ -173,7 +183,7 @@ def _top_level_content_line(lines: list[str], limit: int) -> int | None:
 def _parse(text: str) -> dict[str, Any]:
     """The config text as TOML data, or KbError."""
     try:
-        return tomllib.loads(text)
+        return tomllib.loads(text.removeprefix("\ufeff"))
     except tomllib.TOMLDecodeError as error:
         raise KbError(f"the file is not valid TOML: {error}") from None
 

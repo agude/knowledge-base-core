@@ -140,6 +140,7 @@ def test_the_capture_check_covers_each_warning_and_the_pass() -> None:
     assert passed.state == "pass"
     disabled = diagnosis.capture_check(False, (), None, "for 30 days (default)", "unknown", None)
     assert disabled.message == "Capture disabled (harvest_since unset)"
+    assert disabled.fix == "remove old capture hooks, then run kb setup --enable-capture"
     unreadable = diagnosis.capture_check(True, ("/x",), None, "d", "unknown", None)
     assert unreadable.message == "unreadable transcript root: /x"
     aging = diagnosis.capture_check(
