@@ -96,9 +96,10 @@ FINISH_SPEC = Spec(
 SPEC = Spec(
     usage="curate {start,status,next,complete,defer,drop,finish} ...",
     summary=(
-        "Manage local curation batches. Start selects bounded input; status reports persisted "
-        "progress without changing files or contacting Git. Complete records outcomes and "
-        "archives unchanged observations."
+        "Manage curation batches. Start synchronizes and selects bounded input; status reports "
+        "persisted progress and local publication state without changing files or contacting "
+        "origin. Complete records outcomes and archives unchanged observations. Finish validates "
+        "a settled batch, commits it once, and pushes it."
     ),
 )
 

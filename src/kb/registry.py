@@ -1,4 +1,4 @@
-"""The agent-facing commands: each one's name, one-line summary, and entry point."""
+"""The kb commands: each one's name, one-line summary, and entry point."""
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
