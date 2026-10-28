@@ -19,16 +19,32 @@ from kb.errors import KbError
 from kb.platform import config_file
 
 TMP = "kb-tmp"
+LAYOUT = (
+    "knowledge",
+    "sources",
+    "observations/pending",
+    "observations/archived",
+    "observations/batches",
+    "questions/open",
+    "questions/resolved",
+)
+GITATTRIBUTES = "* text=auto eol=lf\n"
+POLICY_STUB = (
+    "This file holds the content repository's rules for agents. Agents that read or change "
+    "this repository follow the rules in this file.\n"
+)
+INITIAL_COMMIT = "Initialize knowledge base content"
 SPEC = Spec(
     usage=(
-        "setup [--content PATH] [--kb PATH] [--replace-old-hook]\n"
+        "setup [--content PATH | --init PATH [--origin URL]] [--kb PATH] [--replace-old-hook]\n"
         "       setup --print {instructions|allow-claude|allow-codex}"
     ),
     summary=(
         "Set the content path and install the content repository's pre-commit hook, "
-        "or print the host text that the dotfiles install."
+        "create a content repository with --init, or print the host text that the dotfiles "
+        "install."
     ),
-    valued=frozenset({"--content", "--kb", "--print"}),
+    valued=frozenset({"--content", "--init", "--origin", "--kb", "--print"}),
     switches=frozenset({"--replace-old-hook"}),
 )
 
@@ -46,6 +62,10 @@ def run(words: Sequence[str]) -> int:
             raise SPEC.usage_error()
         sys.stdout.write(_render(parsed.values["--print"], os.environ))
         return 0
+    if "--init" in parsed.values and "--content" in parsed.values:
+        raise SPEC.usage_error()
+    if "--origin" in parsed.values and "--init" not in parsed.values:
+        raise SPEC.usage_error()
     return _configure(parsed, os.environ)
 
 
@@ -80,22 +100,125 @@ def _configure(parsed: args.Parsed, environ: Mapping[str, str]) -> int:
     """Set the config and install the hook, report each resource, and return the exit status."""
     configuration = config_file(environ, sys.platform, Path.home())
     failures: list[str] = []
-    content = parsed.values.get("--content")
-    root = _resolve_root(content, environ, configuration, failures)
-    if content is None:
-        config_state = "unchanged"
-    elif root is None:
-        config_state = "refused"
+    kb_argument = parsed.values.get("--kb")
+    init_argument = parsed.values.get("--init")
+    init_state: str | None = None
+    init_target: Path | None = None
+    if init_argument is not None:
+        init_target = Path(init_argument).expanduser().absolute()
+        init_state, hook_state, hook, root = _initialize(
+            init_target, parsed.values.get("--origin"), kb_argument, environ, failures
+        )
+        config_state = "refused" if root is None else _set_config(configuration, root, failures)
     else:
-        config_state = _set_config(configuration, root, failures)
-    hook_state, hook = _install(
-        root, parsed.values.get("--kb"), "--replace-old-hook" in parsed.switches, environ, failures
-    )
+        content = parsed.values.get("--content")
+        root = _resolve_root(content, environ, configuration, failures)
+        if content is None:
+            config_state = "unchanged"
+        elif root is None:
+            config_state = "refused"
+        else:
+            config_state = _set_config(configuration, root, failures)
+        hook_state, hook = _install(
+            root, kb_argument, "--replace-old-hook" in parsed.switches, environ, failures
+        )
+    if init_state is not None:
+        sys.stdout.write(f"Init: {init_state} {init_target}\n")
     sys.stdout.write(f"Config: {config_state} {configuration}\n")
     sys.stdout.write(f"Hook: {hook_state} {'-' if hook is None else hook}\n")
     for failure in failures:
         sys.stderr.write(f"{failure}\n")
     return 1 if failures else 0
+
+
+def _initialize(
+    target: Path,
+    origin: str | None,
+    kb_argument: str | None,
+    environ: Mapping[str, str],
+    failures: list[str],
+) -> tuple[str, str, Path | None, Path | None]:
+    """Create a content repository, install its hook, make its initial commit, and publish it.
+
+    Returns the init state, the hook state, the hook path, and the repository root, which is
+    None when nothing was created. A refusal before anything is created leaves the path alone.
+    A push failure keeps the local repository and reports the recovery command.
+    """
+    try:
+        _check_empty(target)
+        _kb_path(kb_argument)
+    except KbError as error:
+        failures.append(_labelled(str(error)))
+        return "refused", "refused", None, None
+    try:
+        _create_layout(target)
+        _git_ok(target, "init", "-q", "-b", "main")
+    except (KbError, OSError, UnicodeError) as error:
+        failures.append(_labelled(str(error)))
+        return "refused", "refused", None, None
+    hook_state, hook = _install(target, kb_argument, False, environ, failures)
+    if hook_state == "refused":
+        return "created", hook_state, hook, target
+    try:
+        _initial_commit(target, environ)
+    except lock.LockBusy as busy:
+        failures.append(f"setup: content repository is busy (waited {busy.waited}s for the lock)")
+        return "refused", hook_state, hook, None
+    except (KbError, OSError, UnicodeError) as error:
+        failures.append(_labelled(str(error)))
+        return "refused", hook_state, hook, None
+    if origin is not None:
+        _publish(target, origin, failures)
+    return "created", hook_state, hook, target
+
+
+def _check_empty(target: Path) -> None:
+    """Refuse a path that exists and is not an empty directory."""
+    if target.exists() and (not target.is_dir() or any(target.iterdir())):
+        raise KbError(f"{target} exists and is not an empty directory")
+
+
+def _create_layout(target: Path) -> None:
+    """Create the content layout, each empty directory with a .gitkeep, and the two files."""
+    for relative in LAYOUT:
+        directory = target / relative
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / ".gitkeep").touch()
+    (target / ".gitattributes").write_bytes(GITATTRIBUTES.encode("utf-8"))
+    (target / "AGENTS.md").write_bytes(POLICY_STUB.encode("utf-8"))
+
+
+def _initial_commit(target: Path, environ: Mapping[str, str]) -> None:
+    """Stage everything and commit once, under the writer lock, so the installed hook runs."""
+    git = lock.git_dir(target, "setup")
+    with lock.write_lock(git, target, _wait(environ), lock.default_backend(sys.platform)):
+        _git_ok(target, "add", "--all")
+        _git_ok(target, "commit", "-q", "-m", INITIAL_COMMIT)
+
+
+def _publish(target: Path, origin: str, failures: list[str]) -> None:
+    """Add origin and push main. A failure keeps the local repository and names the recovery."""
+    try:
+        _git_ok(target, "remote", "add", "origin", origin)
+        _git_ok(target, "push", "-q", "--set-upstream", "origin", "main")
+    except KbError as error:
+        failures.append(_labelled(str(error)))
+        failures.append("setup: the local repository is kept. After fixing origin, run: kb sync")
+
+
+def _git_ok(root: Path, *words: str) -> None:
+    """Run one git command in root, or raise KbError with its error output."""
+    result = subprocess.run(
+        ["git", *words],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.rstrip("\n")
+        raise KbError(f"git {words[0]} failed: {detail}")
 
 
 def _resolve_root(
