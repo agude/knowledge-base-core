@@ -292,7 +292,7 @@ def _install(
         script = setup_rules.hook_script(kb_path)
         wait = _wait(environ)
         with lock.write_lock(git, root, wait, lock.default_backend(sys.platform)):
-            action = setup_rules.hook_action(_existing(hook), script, replace_old)
+            action = setup_rules.hook_action(existing_hook(hook), script, replace_old)
             return _apply(action, hook, script, git), hook
     except lock.LockBusy as busy:
         failures.append(f"setup: content repository is busy (waited {busy.waited}s for the lock)")
@@ -348,8 +348,8 @@ def _hook_file(root: Path) -> Path:
     return Path(result.stdout.removesuffix("\n")) / "pre-commit"
 
 
-def _existing(hook: Path) -> setup_rules.ExistingHook:
-    """What occupies the hook path."""
+def existing_hook(hook: Path) -> setup_rules.ExistingHook:
+    """What occupies the hook path: nothing, a symbolic link, a regular file, or another kind."""
     if hook.is_symlink():
         return setup_rules.ExistingHook("link", link_target=str(hook.readlink()))
     if hook.is_file():

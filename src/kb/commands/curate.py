@@ -1644,6 +1644,52 @@ def _check_existing_batches(root: Path) -> None:
                 raise KbError(f"{WHO}: another batch has pending or archiving work: {path.name}")
 
 
+def doctor_findings(root: Path) -> tuple[str, ...]:
+    """Read-only findings for doctor: unsettled and unpublished batches, and malformed manifests.
+
+    Each finding names its batch and the command that settles it. Nothing is written.
+    """
+    directory = _fixed_directory(root, BATCHES, create=False, optional=True)
+    if directory is None:
+        return ()
+    findings: list[str] = []
+    for path in sorted(directory.iterdir(), key=lambda candidate: candidate.name):
+        if path.suffix == ".tsv":
+            try:
+                pending = _old_batch_has_pending(path)
+            except KbError as error:
+                findings.append(str(error))
+                continue
+            if pending:
+                findings.append(f"old batch {path.stem} has pending work; see the old tooling")
+        elif path.suffix == ".json":
+            try:
+                batch = _load_batch_file(path)
+            except KbError as error:
+                findings.append(str(error))
+                continue
+            if batch.id != path.stem:
+                findings.append(f"batch identifier does not match filename: {path.name}")
+            elif any(member.status in {"pending", "archiving"} for member in batch.members):
+                findings.append(
+                    f"batch {batch.id} has unsettled work; run: kb curate status {batch.id}"
+                )
+            else:
+                findings.extend(_settled_finding(root, batch))
+    return tuple(findings)
+
+
+def _settled_finding(root: Path, batch: curation.Batch) -> list[str]:
+    """The finding for a settled batch that is not yet published, or none."""
+    commit = _committed_batch(root, batch)
+    branch = _branch(root)
+    if commit is not None and branch is not None and _is_published(root, commit, branch):
+        return []
+    if commit is None:
+        return [f"batch {batch.id} is settled but not committed; run: kb curate status {batch.id}"]
+    return [f"batch {batch.id} is committed but not published; run: kb curate finish {batch.id}"]
+
+
 def _old_batch_has_pending(path: Path) -> bool:
     """Read the legacy TSV header and status cells, rejecting malformed manifests."""
     try:

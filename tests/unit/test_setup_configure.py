@@ -132,12 +132,12 @@ def test_each_kind_at_the_hook_path_is_classified(tmp_path: Path) -> None:
     subdirectory = directory / "dir"
     subdirectory.mkdir()
 
-    assert setup._existing(absent) == setup_rules.ExistingHook("absent")
-    assert setup._existing(file) == setup_rules.ExistingHook("file", data=b"x\n")
-    assert setup._existing(link) == setup_rules.ExistingHook(
+    assert setup.existing_hook(absent) == setup_rules.ExistingHook("absent")
+    assert setup.existing_hook(file) == setup_rules.ExistingHook("file", data=b"x\n")
+    assert setup.existing_hook(link) == setup_rules.ExistingHook(
         "link", link_target=str(tmp_path / "elsewhere")
     )
-    assert setup._existing(subdirectory) == setup_rules.ExistingHook("other")
+    assert setup.existing_hook(subdirectory) == setup_rules.ExistingHook("other")
 
 
 def test_applying_an_install_writes_the_script_executable_through_kb_tmp(tmp_path: Path) -> None:

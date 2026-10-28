@@ -4,6 +4,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from kb.commands import curate as curate_command
+from kb.commands import doctor as doctor_command
 from kb.commands import evidence as evidence_command
 from kb.commands import gap as gap_command
 from kb.commands import hook as hook_command
@@ -86,6 +87,11 @@ COMMANDS: tuple[Command, ...] = (
         name="hook",
         summary="Run a Git hook for the content repository.",
         run=hook_command.run,
+    ),
+    Command(
+        name="doctor",
+        summary="Check this machine's kb setup and name the fix for each problem.",
+        run=doctor_command.run,
     ),
     Command(
         name="evidence",

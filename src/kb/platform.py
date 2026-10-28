@@ -7,6 +7,7 @@ every branch can be tested on any machine.
 from collections.abc import Mapping
 from pathlib import Path
 
+LINUX = "linux"
 WINDOWS = "win32"
 
 
@@ -20,3 +21,16 @@ def config_file(environ: Mapping[str, str], platform: str, home: Path) -> Path:
         base = Path(local) if local else home / "AppData" / "Local"
         return base / "kb" / "config.toml"
     return home / ".config" / "kb" / "config.toml"
+
+
+def scheduler_commands(platform: str) -> tuple[tuple[str, ...], tuple[str, ...]] | None:
+    """The argument lists that ask whether the sync timer is enabled and active, or None.
+
+    Only Linux has a timer that kb installs, through systemd's user instance.
+    """
+    if platform != LINUX:
+        return None
+    return (
+        ("systemctl", "--user", "is-enabled", "kb-sync.timer"),
+        ("systemctl", "--user", "is-active", "kb-sync.timer"),
+    )

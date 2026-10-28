@@ -73,6 +73,7 @@ class Selection:
     ready_count: int
     waiting_count: int
     warnings: tuple[str, ...]
+    ready_modified: tuple[datetime, ...] = ()
 
 
 def reconstruct_state(
@@ -188,7 +189,8 @@ def select_candidates(
                 owners.setdefault((session.app, message.id), key)
             if len(plans) == limit:
                 break
-    return Selection(tuple(plans), len(ready), waiting, tuple(warnings))
+    ready_times = tuple(_utc(candidate.modified) for candidate, _, _ in ready)
+    return Selection(tuple(plans), len(ready), waiting, tuple(warnings), ready_times)
 
 
 def _valid_record(record: HarvestRecord, host: str) -> bool:
