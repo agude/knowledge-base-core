@@ -142,16 +142,19 @@ def run(words: Sequence[str]) -> int:
         raise KbError(f"sync: {error}") from None
 
 
-def _sync(
+def recover_and_harvest(
     root: Path,
     git_directory: Path,
     environ: Mapping[str, str],
     host: str,
     now: datetime,
     harvest_since: datetime | None,
-    no_push: bool,
-) -> int:
-    """Run recovery, optional harvest, then pull and push when the tree is clean."""
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Recover this host's interrupted observations, then harvest finished transcripts.
+
+    Prints the harvest totals and returns the warnings and the errors for the caller to
+    report. The caller holds the writer lock; this function takes none.
+    """
     errors: list[str] = []
     warnings: list[str] = []
     try:
@@ -180,7 +183,20 @@ def _sync(
             )
         if detectors:
             sys.stdout.write(f"Redacted by detector: {_format_counts(detectors)}\n")
+    return tuple(warnings), tuple(errors)
 
+
+def _sync(
+    root: Path,
+    git_directory: Path,
+    environ: Mapping[str, str],
+    host: str,
+    now: datetime,
+    harvest_since: datetime | None,
+    no_push: bool,
+) -> int:
+    """Run recovery, optional harvest, then pull and push when the tree is clean."""
+    warnings, errors = recover_and_harvest(root, git_directory, environ, host, now, harvest_since)
     for warning in warnings:
         sys.stderr.write(f"sync: warning: {warning}\n")
     for message in errors:

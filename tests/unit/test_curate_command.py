@@ -10,13 +10,15 @@ import subprocess
 import sys
 import tempfile
 import urllib.request
+from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
 
-from kb import archive, curation, dates, lock, secrets
+from kb import archive, config, curation, dates, lock, remote, secrets
 from kb.commands import curate
+from kb.commands import sync as sync_command
 from kb.context import Context
 from kb.errors import KbError
 
@@ -146,7 +148,7 @@ def test_start_snapshots_selection_and_reports_related_stale_knowledge(
         ["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True
     ).stdout
 
-    exit_code = curate._start(_context(root), root / ".git", budget, [])
+    exit_code = curate._start(_context(root), root / ".git", budget, [], synchronize=False)
     output = capsys.readouterr().out
 
     assert exit_code == 0
@@ -172,12 +174,12 @@ def test_start_with_no_fit_or_empty_queue_writes_no_manifest(
 ) -> None:
     root = _make_repo(tmp_path / "no-fit", {"large.md": _observation("Large", None, "x" * 100)})
 
-    assert curate._start(_context(root), root / ".git", 1, []) == 1
+    assert curate._start(_context(root), root / ".git", 1, [], synchronize=False) == 1
     assert "No observations fit --max-bytes 1." in capsys.readouterr().out
     assert not (root / "observations" / "batches").exists()
 
     empty_root = _make_repo(tmp_path / "empty")
-    assert curate._start(_context(empty_root), empty_root / ".git", 10, []) == 1
+    assert curate._start(_context(empty_root), empty_root / ".git", 10, [], synchronize=False) == 1
     assert "No pending observations." in capsys.readouterr().out
     assert not (empty_root / "observations" / "batches").exists()
 
@@ -226,15 +228,19 @@ def test_start_command_holds_the_shared_lock_and_wraps_runtime_errors(
     monkeypatch.setattr(lock, "default_backend", lambda *_args: object())
     monkeypatch.setattr(lock, "write_lock", lambda *_args: contextlib.nullcontext())
 
-    def start(*values: object) -> int:
+    def start(*values: object, synchronize: bool) -> int:
         observed.extend(values)
+        observed.append(synchronize)
         return 7
 
     monkeypatch.setattr(curate, "_start", start)
     assert curate._start_command(["--max-bytes", "12", "first.md"]) == 7
-    assert observed == [context, git_directory, 12, ["first.md"]]
+    assert observed == [context, git_directory, 12, ["first.md"], True]
+    observed.clear()
+    assert curate._start_command(["--no-sync", "--max-bytes", "12"]) == 7
+    assert observed == [context, git_directory, 12, [], False]
 
-    def fail(*_values: object) -> int:
+    def fail(*_values: object, **_keywords: object) -> int:
         raise KbError("unexpected failure")
 
     monkeypatch.setattr(curate, "_start", fail)
@@ -1017,3 +1023,116 @@ def test_transition_commands_run_under_shared_lock_and_handle_usage_and_busy(
     monkeypatch.setattr(lock, "write_lock", busy)
     with pytest.raises(KbError, match="content repository is busy"):
         curate._drop_command([RUN, "changed.md", "--reason", "Input changed"])
+
+
+@pytest.mark.parametrize(
+    ("outcome", "expected"),
+    [
+        (remote.Result(pulled=2, pushed=3), "Pulled: 2 commit(s)\nPushed: 3 commit(s)\n"),
+        (remote.Result(already_in_sync=True), "Already in sync.\n"),
+    ],
+)
+def test_synchronize_prints_the_remote_outcome(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    outcome: remote.Result,
+    expected: str,
+) -> None:
+    monkeypatch.setattr(config, "read_harvest_since", lambda _configuration: None)
+    monkeypatch.setattr(sync_command, "recover_and_harvest", lambda *_args: ((), ()))
+    monkeypatch.setattr(remote, "synchronize", lambda *_args, **_kwargs: outcome)
+
+    curate._synchronize(tmp_path, tmp_path / ".git")
+
+    assert capsys.readouterr().out == expected
+
+
+def test_synchronize_writes_harvest_warnings_and_errors_before_the_remote_step(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(config, "read_harvest_since", lambda _configuration: None)
+    monkeypatch.setattr(
+        sync_command,
+        "recover_and_harvest",
+        lambda *_args: (("rewritten transcript",), ("sync: skipped session one: reason",)),
+    )
+    monkeypatch.setattr(
+        remote, "synchronize", lambda *_args, **_kwargs: remote.Result(already_in_sync=True)
+    )
+
+    curate._synchronize(tmp_path, tmp_path / ".git")
+
+    captured = capsys.readouterr()
+    assert captured.err == (
+        "sync: warning: rewritten transcript\nsync: skipped session one: reason\n"
+    )
+    assert captured.out == "Already in sync.\n"
+
+
+@pytest.mark.parametrize(
+    ("outcome", "message"),
+    [
+        (
+            remote.Result(skipped_dirty=("a.md", "b.md")),
+            "curate: no batch created; uncommitted changes: a.md, b.md",
+        ),
+        (
+            remote.Result(errors=("sync: no origin remote", "sync: second")),
+            "curate: no batch created; sync: no origin remote; sync: second",
+        ),
+    ],
+)
+def test_synchronize_refuses_before_any_batch_is_created(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    outcome: remote.Result,
+    message: str,
+) -> None:
+    monkeypatch.setattr(config, "read_harvest_since", lambda _configuration: None)
+    monkeypatch.setattr(sync_command, "recover_and_harvest", lambda *_args: ((), ()))
+    monkeypatch.setattr(remote, "synchronize", lambda *_args, **_kwargs: outcome)
+
+    with pytest.raises(KbError) as refused:
+        curate._synchronize(tmp_path, tmp_path / ".git")
+
+    assert str(refused.value) == message
+
+
+def test_head_commit_refuses_a_repository_without_commits(tmp_path: Path) -> None:
+    subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
+
+    with pytest.raises(KbError, match="curate: cannot read HEAD"):
+        curate._head_commit(tmp_path)
+
+
+def test_synchronized_start_takes_the_writer_lock_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _make_repo(
+        tmp_path / "content",
+        {"20261024T094659-8d6fecbe.md": _observation("Lock once", "2026-10-24")},
+    )
+    monkeypatch.setenv("KB_CONTENT", str(root))
+    monkeypatch.setenv("KB_NOW", "2026-10-28T12:00:00Z")
+    monkeypatch.setenv("KB_TODAY", "2026-10-28")
+    taken: list[Path] = []
+    real_write_lock = lock.write_lock
+
+    @contextlib.contextmanager
+    def counting(git: Path, content: Path, wait: int, backend: lock.Backend) -> Iterator[None]:
+        taken.append(git)
+        with real_write_lock(git, content, wait, backend):
+            yield
+
+    monkeypatch.setattr(lock, "write_lock", counting)
+    monkeypatch.setattr(config, "read_harvest_since", lambda _configuration: None)
+    monkeypatch.setattr(sync_command, "recover_and_harvest", lambda *_args: ((), ()))
+    monkeypatch.setattr(
+        remote, "synchronize", lambda *_args, **_kwargs: remote.Result(already_in_sync=True)
+    )
+
+    assert curate.run(["start", "--max-bytes", "100000"]) == 0
+    assert len(taken) == 1

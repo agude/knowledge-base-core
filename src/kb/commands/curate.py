@@ -3,6 +3,7 @@
 import hashlib
 import os
 import shlex
+import socket
 import stat
 import sys
 import tempfile
@@ -16,6 +17,7 @@ from typing import cast
 from kb import (
     archive,
     args,
+    config,
     corpus,
     curation,
     dates,
@@ -25,12 +27,16 @@ from kb import (
     locators,
     lock,
     model,
+    observation,
+    remote,
     secrets,
 )
 from kb.args import Spec
 from kb.commands import recall as recall_command
+from kb.commands import sync as sync_command
 from kb.context import Context, load
 from kb.errors import KbError
+from kb.platform import config_file
 
 WHO = "curate"
 PENDING = "observations/pending"
@@ -38,12 +44,14 @@ ARCHIVED = "observations/archived"
 BATCHES = "observations/batches"
 MAX_REPORT_ITEMS = curation.MAX_REPORT_ITEMS
 START_SPEC = Spec(
-    usage="curate start --max-bytes N [FILENAME...]",
+    usage="curate start [--no-sync] --max-bytes N [FILENAME...]",
     summary=(
-        "Create a local batch from pending observations. N counts original UTF-8 bytes; "
-        "selection is bounded and remains unpublished until committed."
+        "Synchronize with origin, then create a local batch from pending observations. "
+        "N counts original UTF-8 bytes; selection is bounded. --no-sync skips "
+        "synchronization for offline work and records the batch as local."
     ),
     valued=frozenset({"--max-bytes"}),
+    switches=frozenset({"--no-sync"}),
 )
 STATUS_SPEC = Spec(
     usage="curate status RUN",
@@ -143,8 +151,15 @@ def _start_command(words: Sequence[str]) -> int:
         context = load(os.environ, sys.platform, Path.home())
         git_directory = lock.git_dir_path(context.root, WHO)
         backend = lock.default_backend(sys.platform)
+        synchronize = "--no-sync" not in parsed.switches
         with lock.write_lock(git_directory, context.root, wait, backend):
-            return _start(context, git_directory, max_bytes, parsed.words)
+            return _start(
+                context,
+                git_directory,
+                max_bytes,
+                parsed.words,
+                synchronize=synchronize,
+            )
     except lock.LockBusy as busy:
         raise KbError(
             f"{WHO}: content repository is busy (waited {busy.waited}s for the lock)"
@@ -310,11 +325,16 @@ def _start(
     git_directory: Path,
     max_bytes: int,
     explicit_names: Sequence[str],
+    *,
+    synchronize: bool,
 ) -> int:
-    """Validate repository gates, snapshot the chosen inputs, and publish one manifest."""
+    """Validate gates, synchronize, snapshot the chosen inputs, and publish one manifest."""
     root = context.root
     _require_clean_tree(root)
     _check_existing_batches(root)
+    if synchronize:
+        _synchronize(root, git_directory)
+    base_commit = _head_commit(root)
     entries = _pending_entries(root)
     selection = curation.select(
         [entry.snapshot for entry in entries],
@@ -347,7 +367,12 @@ def _start(
     now = dates.now(os.environ)
     members = [curation.make_member(item.filename, item.content) for item in selection.selected]
     batch = curation.make_batch(
-        curation.make_run_id(now, os.urandom(4).hex()), now, max_bytes, members
+        curation.make_run_id(now, os.urandom(4).hex()),
+        now,
+        max_bytes,
+        members,
+        synchronized=synchronize,
+        base_commit=base_commit,
     )
     batches_directory = _fixed_directory(root, BATCHES, create=True)
     assert batches_directory is not None
@@ -355,6 +380,8 @@ def _start(
     if target.exists() or target.is_symlink():
         raise KbError(f"{WHO}: batch manifest already exists: {target.name}")
     _publish_manifest(git_directory, target, curation.render_batch(batch))
+    if not synchronize:
+        sys.stdout.write("Not synchronized: local batch\n")
     sys.stdout.write(
         _start_report(
             batch.id,
@@ -369,6 +396,53 @@ def _start(
     return 0
 
 
+def _synchronize(root: Path, git_directory: Path) -> None:
+    """Recover, harvest when configured, then integrate with origin under the caller's lock.
+
+    Sync lines go to stdout and warnings to stderr. Raises KbError, and no batch is created,
+    when the tree is not clean or a remote step fails.
+    """
+    configuration = config_file(os.environ, sys.platform, Path.home())
+    harvest_since = config.read_harvest_since(configuration)
+    host = observation.short_host(socket.gethostname())
+    warnings, errors = sync_command.recover_and_harvest(
+        root, git_directory, os.environ, host, dates.now(os.environ), harvest_since
+    )
+    for warning in warnings:
+        sys.stderr.write(f"sync: warning: {warning}\n")
+    for message in errors:
+        sys.stderr.write(f"{message}\n")
+    result = remote.synchronize(root, push=True)
+    if result.skipped_dirty:
+        listing = ", ".join(result.skipped_dirty[:MAX_REPORT_ITEMS])
+        raise KbError(f"{WHO}: no batch created; uncommitted changes: {listing}")
+    if result.errors:
+        raise KbError(f"{WHO}: no batch created; " + "; ".join(result.errors))
+    if result.pulled:
+        sys.stdout.write(f"Pulled: {result.pulled} commit(s)\n")
+    if result.pushed:
+        sys.stdout.write(f"Pushed: {result.pushed} commit(s)\n")
+    if result.already_in_sync:
+        sys.stdout.write("Already in sync.\n")
+
+
+def _head_commit(root: Path) -> str:
+    """The full identifier of HEAD, read without changing the repository."""
+    result = run_process(
+        ["git", "rev-parse", "--verify", "--quiet", "HEAD"],
+        cwd=root,
+        env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    commit = result.stdout.strip()
+    if result.returncode != 0 or not curation.is_commit_id(commit):
+        raise KbError(f"{WHO}: cannot read HEAD")
+    return commit
+
+
 def _status(root: Path, batch: curation.Batch) -> tuple[str, int]:
     """Format progress, checking pending inputs and archives without mutations."""
     counts = Counter(member.status for member in batch.members)
@@ -380,6 +454,8 @@ def _status(root: Path, batch: curation.Batch) -> tuple[str, int]:
     )
     lines = [
         f"Batch {batch.id}: {len(batch.members)} observation(s)",
+        f"Synchronized: {'yes' if batch.synchronized else 'no'}",
+        f"Base commit: {batch.base_commit or 'none'}",
         f"States: pending={counts['pending']}, archiving={counts['archiving']}, "
         f"complete={counts['complete']}, deferred={counts['deferred']}, dropped={counts['dropped']}",
         f"Dispositions: incorporated={dispositions['incorporated']}, "

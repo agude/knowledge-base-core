@@ -11,16 +11,29 @@ from typing import Literal, cast
 
 from kb.locators import parse_locator
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+# Version 1 manifests load as unsynchronized local batches with no base commit.
+LEGACY_SCHEMA_VERSION = 1
 MAX_REPORT_ITEMS = 8
 Disposition = Literal["incorporated", "duplicate", "ephemeral"]
 Status = Literal["pending", "archiving", "complete", "deferred", "dropped"]
 _RUN = re.compile(r"[0-9]{8}T[0-9]{6}-[0-9a-f]{8}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+_COMMIT = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 _SECTION = re.compile(r"[1-9][0-9]*(?:\.[1-9][0-9]*)?")
 _DESTINATION_FRAGMENTS = frozenset({"title", "top"})
 _WINDOWS_FORBIDDEN = frozenset('<>:"/\\|?*')
 _TOP_FIELDS = (
+    "schema_version",
+    "id",
+    "created",
+    "max_bytes",
+    "selected_bytes",
+    "synchronized",
+    "base_commit",
+    "members",
+)
+_LEGACY_TOP_FIELDS = (
     "schema_version",
     "id",
     "created",
@@ -88,6 +101,8 @@ class Batch:
     max_bytes: int
     selected_bytes: int
     members: tuple[Member, ...]
+    synchronized: bool = False
+    base_commit: str | None = None
 
     def __post_init__(self) -> None:
         validate_batch(self)
@@ -203,6 +218,9 @@ def make_batch(
     created: datetime,
     max_bytes: int,
     members: Iterable[Member],
+    *,
+    synchronized: bool = False,
+    base_commit: str | None = None,
 ) -> Batch:
     """Create a validated batch with byte totals derived from its members."""
     if created.tzinfo is None or created.utcoffset() is None:
@@ -210,7 +228,16 @@ def make_batch(
     timestamp = created.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
     ordered_members = tuple(members)
     total = sum(member.original_bytes for member in ordered_members)
-    return Batch(SCHEMA_VERSION, run_id, timestamp, max_bytes, total, ordered_members)
+    return Batch(
+        SCHEMA_VERSION,
+        run_id,
+        timestamp,
+        max_bytes,
+        total,
+        ordered_members,
+        synchronized,
+        base_commit,
+    )
 
 
 def render_batch(batch: Batch) -> str:
@@ -231,21 +258,34 @@ def load_batch(text: str) -> Batch:
         raise StateError(f"invalid batch JSON: {error}") from error
     if not isinstance(value, dict):
         raise StateError("batch must be a JSON object")
-    _exact_fields(value, _TOP_FIELDS, "batch")
-    if type(value["schema_version"]) is not int or value["schema_version"] != SCHEMA_VERSION:
-        raise StateError(f"unsupported batch schema version: {value['schema_version']!r}")
+    version = value.get("schema_version")
+    if type(version) is not int or version not in (LEGACY_SCHEMA_VERSION, SCHEMA_VERSION):
+        raise StateError(f"unsupported batch schema version: {version!r}")
+    _exact_fields(value, _TOP_FIELDS if version == SCHEMA_VERSION else _LEGACY_TOP_FIELDS, "batch")
     members_value = value["members"]
     if not isinstance(members_value, list):
         raise StateError("batch members must be an array")
     members = tuple(_member_from_object(item) for item in members_value)
+    synchronized = False
+    base_commit = None
+    if version == SCHEMA_VERSION:
+        synchronized = _boolean(value["synchronized"], "batch synchronized")
+        base_commit = _nullable_string(value["base_commit"], "batch base_commit")
     return Batch(
-        schema_version=value["schema_version"],
+        schema_version=SCHEMA_VERSION,
         id=_string(value["id"], "batch id"),
         created=_string(value["created"], "batch created"),
         max_bytes=_integer(value["max_bytes"], "batch max_bytes"),
         selected_bytes=_integer(value["selected_bytes"], "batch selected_bytes"),
         members=members,
+        synchronized=synchronized,
+        base_commit=base_commit,
     )
+
+
+def is_commit_id(value: str) -> bool:
+    """Whether value is a full lowercase hexadecimal Git object identifier."""
+    return _COMMIT.fullmatch(value) is not None
 
 
 def validate_batch(batch: Batch) -> None:
@@ -256,6 +296,12 @@ def validate_batch(batch: Batch) -> None:
     _validate_timestamp(batch.created)
     _nonnegative_int(batch.max_bytes, "max_bytes")
     _nonnegative_int(batch.selected_bytes, "selected_bytes")
+    if type(batch.synchronized) is not bool:
+        raise StateError("synchronized must be a boolean")
+    if batch.base_commit is not None and not (
+        type(batch.base_commit) is str and is_commit_id(batch.base_commit)
+    ):
+        raise StateError("base_commit must be a full lowercase hexadecimal commit identifier")
     if not batch.members:
         raise StateError("batch must contain at least one member")
     filenames = [member.filename for member in batch.members]
@@ -466,6 +512,8 @@ def _batch_object(batch: Batch) -> dict[str, object]:
         "created": batch.created,
         "max_bytes": batch.max_bytes,
         "selected_bytes": batch.selected_bytes,
+        "synchronized": batch.synchronized,
+        "base_commit": batch.base_commit,
         "members": [_member_object(member) for member in batch.members],
     }
 
@@ -543,6 +591,12 @@ def _string(value: object, name: str) -> str:
 def _nullable_string(value: object, name: str) -> str | None:
     if value is not None and not isinstance(value, str):
         raise StateError(f"{name} must be a string or null")
+    return value
+
+
+def _boolean(value: object, name: str) -> bool:
+    if type(value) is not bool:
+        raise StateError(f"{name} must be a boolean")
     return value
 
 

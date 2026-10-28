@@ -121,7 +121,9 @@ def _interrupt_archive(kb: Kb, *arguments: str) -> CompletedProcess[str]:
 def test_start_help_usage_and_budget_validation(git_kb: Kb) -> None:
     help_result = git_kb("curate", "start", "--help")
     assert help_result.returncode == 0
-    assert help_result.stdout.startswith("Usage: kb curate start --max-bytes N [FILENAME...]\n\n")
+    assert help_result.stdout.startswith(
+        "Usage: kb curate start [--no-sync] --max-bytes N [FILENAME...]\n\n"
+    )
     assert git_kb("curate").stdout.startswith(
         "Usage: kb curate {start,status,next,complete,defer,drop} ..."
     )
@@ -129,9 +131,9 @@ def test_start_help_usage_and_budget_validation(git_kb: Kb) -> None:
     missing = git_kb("curate", "start")
     assert missing.returncode == 1
     assert missing.stdout == ""
-    assert missing.stderr == "Usage: kb curate start --max-bytes N [FILENAME...]\n"
+    assert missing.stderr == "Usage: kb curate start [--no-sync] --max-bytes N [FILENAME...]\n"
     for budget in ("-1", "1.5", chr(0x661)):
-        invalid = git_kb("curate", "start", "--max-bytes", budget)
+        invalid = git_kb("curate", "start", "--no-sync", "--max-bytes", budget)
         _failure(invalid, "nonnegative ASCII decimal integer")
 
 
@@ -140,7 +142,7 @@ def test_start_snapshots_date_ordered_inputs_and_stale_context(git_kb: Kb) -> No
     contents = {name: _pending(git_kb, name).read_bytes() for name in names}
     head = git_kb.git("rev-parse", "HEAD")
 
-    result = git_kb("curate", "start", "--max-bytes", "100000")
+    result = git_kb("curate", "start", "--no-sync", "--max-bytes", "100000")
 
     assert result.returncode == 0, result.stderr
     assert result.stderr == ""
@@ -155,7 +157,9 @@ def test_start_snapshots_date_ordered_inputs_and_stale_context(git_kb: Kb) -> No
     assert [member["original_sha256"] for member in manifest["members"]] == [
         hashlib.sha256(contents[name]).hexdigest() for name in manifest_member_names(manifest)
     ]
-    assert result.stdout.startswith(f"Created batch: {run_id}\nSelected: 2 observation(s)\n")
+    assert result.stdout.startswith(
+        f"Not synchronized: local batch\nCreated batch: {run_id}\nSelected: 2 observation(s)\n"
+    )
     assert "Eligible pending observations: 2" in result.stdout
     assert "Open questions: " in result.stdout
     assert "Related stale articles: " in result.stdout
@@ -182,6 +186,7 @@ def test_explicit_selection_preserves_order_and_counts_utf8_bytes(git_kb: Kb) ->
     result = git_kb(
         "curate",
         "start",
+        "--no-sync",
         "--max-bytes",
         str(len(first_text.encode()) + len(second_text.encode())),
         "second.md",
@@ -209,7 +214,7 @@ def test_selection_skips_nonfitting_items_then_uses_remaining_budget(git_kb: Kb)
     paths = [f"observations/pending/{name}" for name in ("a-first.md", "b-skip.md", "c-fit.md")]
     _commit(git_kb, *paths)
 
-    result = git_kb("curate", "start", "--max-bytes", "700")
+    result = git_kb("curate", "start", "--no-sync", "--max-bytes", "700")
 
     assert result.returncode == 0, result.stderr
     manifest = json.loads(
@@ -226,7 +231,7 @@ def test_selection_skips_nonfitting_items_then_uses_remaining_budget(git_kb: Kb)
 def test_zero_budget_creates_no_manifest(git_kb: Kb) -> None:
     before = set((git_kb.content / "observations/batches").glob("*.json"))
 
-    result = git_kb("curate", "start", "--max-bytes", "0")
+    result = git_kb("curate", "start", "--no-sync", "--max-bytes", "0")
 
     assert result.returncode == 1
     assert result.stderr == ""
@@ -235,7 +240,7 @@ def test_zero_budget_creates_no_manifest(git_kb: Kb) -> None:
 
 
 def test_larger_than_budget_report_gives_a_working_single_item_command(git_kb: Kb) -> None:
-    result = git_kb("curate", "start", "--max-bytes", "10")
+    result = git_kb("curate", "start", "--no-sync", "--max-bytes", "10")
 
     assert result.returncode == 1
     assert result.stderr == ""
@@ -247,7 +252,8 @@ def test_larger_than_budget_report_gives_a_working_single_item_command(git_kb: K
     )
     command = shlex.split(line.strip().removeprefix("Larger than --max-bytes; select alone: "))
     assert command[:4] == ["kb", "curate", "start", "--max-bytes"]
-    suggested = git_kb(*command[1:])
+    # The fixture has no origin, so the suggested synchronized command runs offline.
+    suggested = git_kb(*command[1:], "--no-sync")
     assert suggested.returncode == 0, suggested.stderr
     assert "Selected: 1 observation(s)" in suggested.stdout
 
@@ -261,7 +267,7 @@ def test_empty_queue_fails_without_publishing(git_kb: Kb) -> None:
         "observations/pending/20261025T180000-1f2e3d4c.md",
     )
 
-    result = git_kb("curate", "start", "--max-bytes", "100")
+    result = git_kb("curate", "start", "--no-sync", "--max-bytes", "100")
 
     assert result.returncode == 1
     assert "Eligible pending observations: 0" in result.stdout
@@ -270,7 +276,7 @@ def test_empty_queue_fails_without_publishing(git_kb: Kb) -> None:
 
 
 def test_start_requires_git_metadata(kb: Kb) -> None:
-    no_git = kb("curate", "start", "--max-bytes", "10000")
+    no_git = kb("curate", "start", "--no-sync", "--max-bytes", "10000")
     _failure(no_git, "Git directory")
 
 
@@ -278,25 +284,25 @@ def test_start_requires_a_clean_index_and_worktree(git_kb: Kb) -> None:
     staged = git_kb.content / "staged.txt"
     staged.write_text("staged\n", encoding="utf-8")
     git_kb.git("add", "--", "staged.txt")
-    dirty_index = git_kb("curate", "start", "--max-bytes", "10000")
+    dirty_index = git_kb("curate", "start", "--no-sync", "--max-bytes", "10000")
     _failure(dirty_index, "uncommitted changes")
 
     git_kb.git("reset", "-q", "--", "staged.txt")
     staged.unlink()
     untracked = git_kb.content / "untracked.txt"
     untracked.write_text("untracked\n", encoding="utf-8")
-    dirty_worktree = git_kb("curate", "start", "--max-bytes", "10000")
+    dirty_worktree = git_kb("curate", "start", "--no-sync", "--max-bytes", "10000")
     _failure(dirty_worktree, "uncommitted changes")
 
 
 def test_start_ignores_its_legacy_lock_but_rejects_pending_old_batches(git_kb: Kb) -> None:
-    result = git_kb("curate", "start", "--max-bytes", "10000")
+    result = git_kb("curate", "start", "--no-sync", "--max-bytes", "10000")
     assert result.returncode == 0, result.stderr
 
     # Commit the new batch so the clean-tree gate passes and the active-batch gate is tested.
     run_id = _run_id(result)
     _commit(git_kb, f"observations/batches/{run_id}.json")
-    blocked = git_kb("curate", "start", "--max-bytes", "10000")
+    blocked = git_kb("curate", "start", "--no-sync", "--max-bytes", "10000")
     _failure(blocked, "pending or archiving work")
 
 
@@ -308,7 +314,7 @@ def test_start_rejects_malformed_new_manifests_and_allows_settled_batches(git_kb
     malformed.write_text('{"schema_version": 1, "schema_version": 1}\n', encoding="utf-8")
     _commit(git_kb, f"observations/batches/{malformed.name}")
 
-    refused = git_kb("curate", "start", "--max-bytes", "10000")
+    refused = git_kb("curate", "start", "--no-sync", "--max-bytes", "10000")
     _failure(refused, "malformed batch manifest")
 
     malformed.unlink()
@@ -323,7 +329,7 @@ def test_start_rejects_malformed_new_manifests_and_allows_settled_batches(git_kb
     _commit(git_kb, f"observations/batches/{malformed.name}")
     _commit(git_kb, f"observations/pending/{content.name}", f"observations/batches/{settled.name}")
 
-    allowed = git_kb("curate", "start", "--max-bytes", "10000")
+    allowed = git_kb("curate", "start", "--no-sync", "--max-bytes", "10000")
 
     assert allowed.returncode == 0, allowed.stderr
     assert "Created batch:" in allowed.stdout
@@ -348,7 +354,7 @@ def test_old_tsv_batches_are_read_only_and_gate_only_pending_work(
     _commit(git_kb, "observations/batches/old.tsv")
     before = path.read_bytes()
 
-    result = git_kb("curate", "start", "--max-bytes", "10000")
+    result = git_kb("curate", "start", "--no-sync", "--max-bytes", "10000")
 
     if expected is None:
         assert result.returncode == 0, result.stderr
@@ -367,7 +373,7 @@ def test_ignored_nested_markdown_is_not_eligible_or_reported(git_kb: Kb) -> None
     ignore.write_text(existing + "observations/pending/nested/\n", encoding="utf-8")
     _commit(git_kb, ".gitignore")
 
-    result = git_kb("curate", "start", "--max-bytes", "10000")
+    result = git_kb("curate", "start", "--no-sync", "--max-bytes", "10000")
 
     assert result.returncode == 0, result.stderr
     manifest = json.loads(
@@ -389,7 +395,7 @@ def test_pending_symlink_is_refused(git_kb: Kb, tmp_path: Path) -> None:
         pytest.skip(f"symlink creation unavailable: {error}")
     _commit(git_kb, "observations/pending/linked.md")
 
-    result = git_kb("curate", "start", "--max-bytes", "10000")
+    result = git_kb("curate", "start", "--no-sync", "--max-bytes", "10000")
 
     _failure(result, "symlink")
     assert not list((git_kb.content / "observations/batches").glob("*.json"))
@@ -401,7 +407,9 @@ def test_repository_and_filename_paths_with_spaces_are_safe(tmp_path: Path) -> N
     content.write_text("---\ntitle: A spaced path\ncreated: 2026-10-20\n---\n", encoding="utf-8")
     _commit(git_kb, "observations/pending/20261028T010000-a space.md")
 
-    result = git_kb("curate", "start", "--max-bytes", str(len(content.read_bytes())), content.name)
+    result = git_kb(
+        "curate", "start", "--no-sync", "--max-bytes", str(len(content.read_bytes())), content.name
+    )
 
     assert result.returncode == 0, result.stderr
     manifest = json.loads(
@@ -413,7 +421,7 @@ def test_repository_and_filename_paths_with_spaces_are_safe(tmp_path: Path) -> N
 
 
 def test_later_observe_and_gap_commits_do_not_change_the_selected_set(git_kb: Kb) -> None:
-    started = git_kb("curate", "start", "--max-bytes", "100000")
+    started = git_kb("curate", "start", "--no-sync", "--max-bytes", "100000")
     assert started.returncode == 0, started.stderr
     run_id = _run_id(started)
     manifest_path = git_kb.content / "observations/batches" / f"{run_id}.json"
@@ -463,7 +471,7 @@ def test_related_stale_article_report_is_deduplicated_and_bounded(git_kb: Kb) ->
         *(f"observations/pending/{path.name}" for path in pending_dir.glob("20261028*.md")),
     )
 
-    result = git_kb("curate", "start", "--max-bytes", "100000")
+    result = git_kb("curate", "start", "--no-sync", "--max-bytes", "100000")
 
     assert result.returncode == 0, result.stderr
     assert "Related stale articles: 10" in result.stdout
@@ -1600,6 +1608,7 @@ def test_full_local_curation_workflow_and_historical_defer(git_kb: Kb) -> None:
     start = git_kb(
         "curate",
         "start",
+        "--no-sync",
         "--max-bytes",
         str(sum(map(len, observations.values()))),
         *filenames,
@@ -1757,6 +1766,7 @@ def test_full_local_curation_workflow_and_historical_defer(git_kb: Kb) -> None:
     later = git_kb(
         "curate",
         "start",
+        "--no-sync",
         "--max-bytes",
         str(len(observations["deferred.md"])),
         "deferred.md",

@@ -21,7 +21,7 @@ def item(name: str, size: int, created: date | None) -> curation.PendingInput:
 def make_batch(*members: curation.Member, maximum: int | None = None) -> curation.Batch:
     total = sum(member.original_bytes for member in members)
     return curation.Batch(
-        schema_version=1,
+        schema_version=curation.SCHEMA_VERSION,
         id=RUN,
         created="2026-10-28T12:00:00Z",
         max_bytes=total if maximum is None else maximum,
@@ -177,7 +177,7 @@ def test_manifest_loader_rejects_unknown_fields_and_unsupported_schema() -> None
     with pytest.raises(curation.StateError, match="unknown unexpected"):
         curation.load_batch(json.dumps(value))
     value.pop("unexpected")
-    value["schema_version"] = 2
+    value["schema_version"] = curation.SCHEMA_VERSION + 1
     with pytest.raises(curation.StateError, match="unsupported"):
         curation.load_batch(json.dumps(value))
 
@@ -283,3 +283,57 @@ def test_replace_member_is_immutable_and_requires_membership() -> None:
     assert changed.members[0] == deferred
     with pytest.raises(curation.StateError, match="not a batch member"):
         curation.replace_member(batch, pending("other.md"))
+
+
+def test_version_one_manifests_load_unsynchronized_and_render_version_two() -> None:
+    value = json.loads(curation.render_batch(make_batch(pending())))
+    legacy = {
+        key: value[key]
+        for key in ("schema_version", "id", "created", "max_bytes", "selected_bytes", "members")
+    }
+    legacy["schema_version"] = curation.LEGACY_SCHEMA_VERSION
+
+    batch = curation.load_batch(json.dumps(legacy))
+
+    assert batch.schema_version == curation.SCHEMA_VERSION
+    assert batch.synchronized is False
+    assert batch.base_commit is None
+    rendered = json.loads(curation.render_batch(batch))
+    assert rendered["schema_version"] == curation.SCHEMA_VERSION
+    assert rendered["synchronized"] is False
+    assert rendered["base_commit"] is None
+
+
+def test_synchronized_manifest_round_trips_its_base_commit() -> None:
+    base = "b" * 40
+    batch = curation.make_batch(
+        RUN,
+        datetime(2026, 10, 28, 12, tzinfo=UTC),
+        100,
+        [pending()],
+        synchronized=True,
+        base_commit=base,
+    )
+
+    loaded = curation.load_batch(curation.render_batch(batch))
+
+    assert loaded == batch
+    assert loaded.base_commit == base
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("synchronized", "yes"),
+        ("synchronized", 1),
+        ("base_commit", "ABC"),
+        ("base_commit", "c" * 39),
+        ("base_commit", 7),
+    ],
+)
+def test_loader_rejects_invalid_synchronization_fields(field: str, value: object) -> None:
+    raw = json.loads(curation.render_batch(make_batch(pending())))
+    raw[field] = value
+
+    with pytest.raises(curation.StateError):
+        curation.load_batch(json.dumps(raw))
