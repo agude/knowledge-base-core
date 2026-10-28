@@ -8,8 +8,10 @@ record finished Claude Code and Codex transcripts. `kb lint`, `kb verify`, and
 `kb resolve` provide curator checks and explicit updates. `kb curate` runs
 resumable batches: `start` synchronizes with `origin`, and `finish` validates a
 batch, commits it once, and pushes it. The content pre-commit hook,
-`kb hook pre-commit`, checks every content commit. Installing that hook is
-phase 4 setup, and adoption on the user's machines is phase 5.
+`kb hook pre-commit`, checks every content commit. `kb setup` configures a
+machine and installs that hook, and `kb doctor` names each problem with its
+fix. Turning capture on and retiring the old tooling happen together at
+cutover, which is phase 5.
 
 ## Usage
 
@@ -416,9 +418,9 @@ committed locally, or published as the commit that holds the manifest.
 ### Content pre-commit hook
 
 `kb hook pre-commit` is the content repository's Git pre-commit hook. Git runs
-it with the content repository as the working directory. The installed file is
-a one-line script that calls this command. Phase 4 setup writes it; no machine
-has it installed yet.
+it with the content repository as the working directory. `kb setup` installs a
+three-line script that calls this command by its absolute path. See
+[`kb setup`](#kb-setup).
 
 - A commit that stages no article, and no removal or move under `knowledge/`,
   `sources/`, or an archive, exits at once without output.
@@ -565,6 +567,12 @@ A dirty working tree prints `sync: uncommitted changes in <root>; not
 pulling or pushing` and up to 10 paths; that notice alone exits 0 and leaves
 pull and push for a later run.
 
+A regular `kb sync` also records its outcome in `<git dir>/kb/sync-state.json`,
+in the common Git directory, where Git never commits it. The record names the
+run's outcome (`ok`, `dirty`, or `error`), the time of the last successful
+exchange with `origin`, and the first line of any failure. `kb sync --status`
+and `kb sync --dry-run` write nothing. `kb doctor` reads this record.
+
 #### Install the user timer
 
 The timer files are examples in `contrib/systemd/`; `kb` does not install or
@@ -581,6 +589,111 @@ systemctl --user enable --now kb-sync.timer
 The service defaults to `%h/.local/bin/kb`. Edit `ExecStart` in the copied
 service file if `kb` is installed elsewhere. The timer runs every 15 minutes
 and catches up after the machine was off.
+
+## Setup and diagnosis
+
+### `kb setup`
+
+`kb setup` configures one machine. It sets the config file's `content` key,
+installs the content repository's pre-commit hook, and can create a content
+repository. It prints one line per resource, `Config:` and `Hook:` (and
+`Init:` with `--init`), each with its state. It exits 1 when it refused any
+resource, and a refusal does not stop the other resources.
+
+```text
+kb setup [--content PATH] [--kb PATH] [--replace-old-hook]
+kb setup --init PATH [--origin URL] [--kb PATH]
+kb setup --print {instructions|allow-claude|allow-codex}
+```
+
+- `--content PATH` sets `content` to the absolute path and installs the hook
+  in that repository. Without it, setup installs the hook in the configured
+  repository and leaves the config file unchanged.
+- The config edit changes only the top-level `content` line. It keeps every
+  other byte, and the result must parse as TOML with no other key changed. A
+  file that does not parse, starts with a byte order mark, or has a `content`
+  key that is not a single-line basic string is refused, and the message names
+  the file.
+- `--kb PATH` names the `kb` that the hook calls. Without it, setup uses the
+  `kb` on `PATH`. The path is made absolute without resolving symbolic links,
+  and it must print `kb` followed by a version. A path with a single quote, a
+  line break, or NUL is refused.
+- The hook is a POSIX `sh` script. Setup writes it through the Git directory's
+  `kb-tmp`, under the writer lock, and it honors `core.hooksPath`. Setup
+  rewrites its own script when the bytes differ, for example after `kb` moves.
+- A hook that kb did not write is refused and left unchanged. A symbolic link
+  to the old tooling's hook is refused unless `--replace-old-hook` is given.
+  With the flag, setup replaces only the link, and the link's target is not
+  changed.
+- `--init PATH` creates a content repository. It refuses a path that exists and
+  is not an empty directory, and it refuses when `kb` cannot be found; both
+  refusals come before anything is created. It writes the layout, with a
+  `.gitkeep` in each empty directory, `.gitattributes` with
+  `* text=auto eol=lf`, and an `AGENTS.md` policy stub. Then it runs
+  `git init -b main`, installs the hook, and makes one commit,
+  `Initialize knowledge base content`. `--origin URL` adds `origin` and pushes
+  `main`. A failed push keeps the local repository, exits 1, and prints the
+  `kb sync` command that recovers.
+- Setup never enables capture, never writes `harvest_since`, and never edits
+  host settings or instruction files. Capture enablement and the removal of the
+  old capture hooks happen together at cutover, which is phase 5.
+
+### `kb setup --print`
+
+`kb setup --print` writes host text to stdout and changes nothing. The
+dotfiles install this text.
+
+- `instructions` writes the instruction block between `<!-- kb:begin -->` and
+  `<!-- kb:end -->`. Its content policy line imports the content repository's
+  `AGENTS.md`. Claude Code loads the import, and Codex reads the same line as
+  a path, because the dotfiles install one file for both hosts. The line needs
+  a content path, from `KB_CONTENT` or the config file.
+- `allow-claude` writes a settings fragment with `permissions.allow` set to
+  `Bash(kb COMMAND *)` for each working-agent command.
+- `allow-codex` writes a rules file with one `prefix_rule` per working-agent
+  command, each with `decision = "allow"`. Install it under `$CODEX_HOME/rules/`.
+
+The working-agent commands are `recall`, `read`, `map`, `questions`,
+`evidence`, `observe`, and `gap`. No rule approves another `kb` command or a
+bare `kb`. Codex matches a rule against a command's argument list, so an agent
+must call `kb` by name. The Codex matcher does not unwrap a shell wrapper such
+as `bash -c`.
+
+The dotfiles install the instruction block in each host's global file:
+`CLAUDE.md` under `CLAUDE_CONFIG_DIR` (default `~/.claude`), and `AGENTS.md`
+under `CODEX_HOME` (default `~/.codex`). They install the Claude rules in the
+`permissions.allow` list of `settings.json` in the same directory, and the
+Codex rules in `rules/kb.rules` under `CODEX_HOME`. They install the timer
+units in `~/.config/systemd/user/`, as the install section below describes.
+
+### `kb doctor`
+
+`kb doctor` prints one line per check, `PASS`, `WARN`, or `FAIL`, with the
+check's name and message. Each `WARN` or `FAIL` line is followed by a `fix:`
+line. Doctor exits 1 when a check fails. It only reads: it takes no lock, sets
+`GIT_OPTIONAL_LOCKS=0`, never fetches, and writes no file. A check that cannot
+gather its facts reports why, and the other checks still run.
+
+| Check | Passes when | Warns when | Fails when |
+|---|---|---|---|
+| `version` | always | | |
+| `config` | the content root resolves | | there is no content setting, the file does not parse, or the root is not a directory |
+| `content` | a Git repository on a branch, with `origin`, a clean tree, and level with the last fetched `origin` | the tree is dirty, or the branch is ahead or behind | it is not a repository, HEAD is detached, or there is no `origin` |
+| `gitattributes` | `* text=auto eol=lf` is in effect | the attributes differ | |
+| `hook` | kb installed it, and its `kb` runs `--version` | a symbolic link to the old tooling's hook | the hook is absent or foreign, or its `kb` is missing |
+| `curation` | no unsettled batch | a batch is unsettled, or committed but not published | |
+| `sync` | the last exchange was within 60 minutes | the last run ended `dirty` or `error`, or the exchange is older | there is no record |
+| `scheduler` | on Linux, `kb-sync.timer` is enabled and active | it is not enabled or not active; elsewhere, `not checked on PLATFORM` | |
+| `capture` | `harvest_since` is set, the transcript roots are readable, and no ready transcript is older than 20 days | capture is disabled, a root is unreadable, or old ready transcripts exist | |
+| `instructions` | each host's global file has the canonical block | a block is missing or differs | |
+| `allow-rules` | each host has every working-agent rule and no broader `kb` rule | a rule is missing, or a broader rule exists | |
+| `legacy` | no old-tooling registration | the old tooling's registrations are named | |
+
+- `capture` reports Claude Code's `cleanupPeriodDays`, which defaults to 30.
+  Codex retention is reported as `unknown`, because its configuration documents
+  no retention setting.
+- `scheduler` asks `systemctl --user` whether `kb-sync.timer` is enabled and
+  active. A missing `systemctl` produces a warning.
 
 ## Development
 

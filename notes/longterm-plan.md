@@ -234,15 +234,15 @@ Checked on 2026-10-27 at `3d3cfb7`:
 | W3 Explore an area | `kb map`, `kb read` | Built |
 | W4 Record a fact | `kb observe` | Built |
 | W5 Record a gap | `kb gap` | Built |
-| H1 Session start | Instruction block in the dotfiles | Not done |
+| H1 Session start | Instruction block from `kb setup --print instructions`; the dotfiles install it | Built on fixtures; not installed in the dotfiles |
 | H2 Capture the conversation | Harvest in `kb sync` | Built and validated on real data; not enabled (2026-10-27, `ed5a02d`) |
 | H3 Session end | Covered by H2 | Superseded |
-| H4 Tool approval | Allow rules in the dotfiles | Not done |
+| H4 Tool approval | Allow rules from `kb setup --print allow-claude` and `allow-codex`; the dotfiles install them | Built on fixtures; not installed in the dotfiles |
 | C1-C6 Curation | Phase 3 | Built on fixtures (synchronized start, finish, content hook); not adopted |
-| U1 Set up a machine | `kb setup`, phase 4 | Config reading only |
+| U1 Set up a machine | `kb setup`, phase 4 | Built on fixtures (config, hook, `--init`); not run on a real machine |
 | U2 Bring machines together | `kb sync` | Built |
-| U3 Diagnose a failure | `kb doctor`, phase 4 | Not built |
-| U4 Set policy | Content `AGENTS.md` import or path in the instruction block | Not done |
+| U3 Diagnose a failure | `kb doctor`, phase 4 | Built on fixtures; on this machine it names the setup work that remains |
+| U4 Set policy | Content `AGENTS.md` import in the instruction block | Built on fixtures; the policy line is rendered from the configured content path |
 
 [plan-retrieval.md](plan-retrieval.md) and
 [plan-observe.md](plan-observe.md) preserve the earlier component plans.
@@ -263,7 +263,8 @@ remains operational until the synchronized workflow is built and adopted.
 No-match recall latency has a separate follow-up to reach <= 5 seconds on the
 same snapshot. [plan-phase3-batches.md](plan-phase3-batches.md) and
 [plan-phase3-publication.md](plan-phase3-publication.md) preserve the phase 3
-plans. The current [root plan](../plan.md) covers phase 4 setup and diagnosis.
+plans, and [plan-phase4-setup.md](plan-phase4-setup.md) preserves the phase 4
+plan.
 
 Update this table when a plan finishes. Retirement requires every row to be
 covered and in use on every machine.
@@ -354,9 +355,9 @@ records an explicit article check; `kb resolve` records an answer or
 obsolescence; local batches persist outcomes and recover interrupted archives;
 `kb curate start` synchronizes before it selects; `kb curate finish` validates,
 commits once, and pushes; and `kb hook pre-commit` validates and stamps every
-content commit. Installing that hook in the content repository is phase 4
-setup. Curation commitments C1-C6 are built on fixtures; real use waits for
-phase 4 installation and phase 5 adoption. The one-time `ttl` pass is curation
+content commit. `kb setup` installs that hook in phase 4. It is built on
+fixtures and has not run on a real machine. Curation commitments C1-C6 are
+built on fixtures; real use waits for phase 5 rollout and adoption. The one-time `ttl` pass is curation
 work that remains to be done.
 `kb lint` is for curators; do not add it to working-agent allow rules.
 
@@ -378,11 +379,21 @@ still registered.
 This phase can proceed after phase 1. Complete the parts needed to operate
 capture before switching capture on.
 
+Status: built on fixtures, and not run on a real machine. `kb setup` sets the
+content path, installs the hook, creates a repository with `--init`, and prints
+the host text for the dotfiles. `kb doctor` checks each fact in its table and
+names the fix. Skill linking moved to phase 5 (decision 1 of the phase 4 plan),
+because no `kb` skill exists yet.
+
 ### 5. Adopt on Linux and retire the old tooling
 
 Adopt components as they become usable. Retrieval already works beside the
 old system, and capture can switch before the new curation workflow is
 complete. Full retirement waits until every scenario has a `kb` replacement.
+
+Skill linking belongs here. The new `knowledge-base` and `curate` skills are
+written, and setup links them, in the same change that replaces core's skill
+links and updates the instruction block (phase 4 plan, decision 1).
 
 For the capture switch on each machine, remove the old capture hooks and set
 `harvest_since` at the same moment, and let the sync timer take over. Keep

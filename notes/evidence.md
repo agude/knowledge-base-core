@@ -765,3 +765,241 @@ Deviations and open items:
   pass remain. The 2026-10-27 baseline found 100 articles without `ttl`; this
   closeout did not re-measure it.
 - The no-match recall latency follow-up is unchanged.
+
+## Host conventions for setup and diagnosis (2026-10-28)
+
+Phase 4 step 1, read only. Installed: Claude Code 2.1.312 and Codex CLI
+0.165.0. Documentation was read on 2026-10-28 at code.claude.com/docs and at
+learn.chatgpt.com/docs (developers.openai.com/codex redirects there). No host
+setting was edited. Codex probes ran `codex execpolicy check` with a scratch
+`CODEX_HOME` under `~/.cache`, not the live `~/.codex`. The `codex` shell
+function adds `--profile agude`, which `execpolicy` rejects, so the probes
+called the binary at `~/.local/bin/codex` directly.
+
+### Claude Code
+
+- Allow rules live in `permissions.allow` of the user settings file,
+  `~/.claude/settings.json`, or `$CLAUDE_CONFIG_DIR/settings.json`.
+  Source: code.claude.com/docs/en/permissions, "Wildcard patterns". The form
+  is `Bash(kb recall *)`. A trailing `*` after a space also matches the bare
+  command. `Bash(kb recall:*)` is equivalent, but the permission dialog writes
+  the space form. Rules match the command text as typed, so the agent must
+  call `kb` by name, not by absolute path.
+- Compound commands: "Claude Code is aware of shell operators, so a rule like
+  `Bash(safe-cmd *)` won't give it permission to run the command
+  `safe-cmd && other-cmd`." Separators are `&&`, `||`, `;`, `|`, `|&`, `&`,
+  and newlines. Every subcommand must be allowed. Deny and ask rules also
+  reach subshells and command substitutions; allow rules need each part to
+  qualify.
+- Wrappers stripped before matching: `timeout`, `time`, `nice`, `nohup`,
+  `stdbuf`, `command`, `builtin`, `noglob`, and bare `xargs`. `env`, `npx`,
+  `direnv exec`, and `docker exec` are not stripped.
+- Rule text for the seven working-agent commands:
+
+  ```json
+  "Bash(kb recall *)",
+  "Bash(kb read *)",
+  "Bash(kb map *)",
+  "Bash(kb questions *)",
+  "Bash(kb evidence *)",
+  "Bash(kb observe *)",
+  "Bash(kb gap *)"
+  ```
+
+- Global instruction file: `~/.claude/CLAUDE.md`. "If you set
+  `CLAUDE_CONFIG_DIR`, every `~/.claude` path on this page lives under that
+  directory instead." Source: code.claude.com/docs/en/claude-directory. On this
+  machine the file is a symlink to `~/.dotfiles/llm/AGENTS.md`.
+- Import: supported. `@path/to/file` in CLAUDE.md. Relative paths resolve
+  against the importing file. Absolute and `~/` paths are allowed. Imports
+  nest four hops deep. Imports inside code spans and fenced blocks are not
+  read. A user-scope file's imports load without the external-import
+  approval dialog. Source: code.claude.com/docs/en/memory, "Import additional
+  files".
+- Transcript retention: `cleanupPeriodDays` deletes
+  `projects/<project>/<session>.jsonl` and the session's subagent transcripts
+  once older than the value. Default 30 days, minimum 1, and `0` fails
+  validation. Source: code.claude.com/docs/en/claude-directory, "Cleaned up
+  automatically". This machine sets `cleanupPeriodDays` to 36500 in the
+  dotfiles-linked `~/.claude/settings.json`, so the default cutoff never
+  applies here.
+- Hook registration: `~/.claude/settings.json` has one `coat-tree` command for
+  each of PreToolUse, PostToolUse, SessionStart, UserPromptSubmit, Stop, and
+  SessionEnd. The old tooling's entries are in `~/.config/coat-tree/hooks.d`:
+  `PreToolUse/010.knowledge` (symlink to `~/Knowledge/scripts/adapters/claude/pretool-allow`,
+  an auto-approve hook), and `SessionStart`, `UserPromptSubmit`, `Stop`, and
+  `SessionEnd` `010.knowledge.sh` (symlinks to dotfiles shims). Other entries
+  (`010.git-guard.sh`, `030.gh-guard.sh`, `040.skill-guard.sh`, and the
+  `020.wiki` links) are not legacy.
+- Permission rules installed now: 121 `permissions.allow` entries, none naming
+  `kb` or `Knowledge`.
+
+### Codex CLI
+
+- Rule files: `.rules` files under `rules/` in the config layer. The user
+  layer is `$CODEX_HOME/rules/`, which is `~/.codex/rules/` by default. Source:
+  learn.chatgpt.com/docs/agent-configuration/rules. The directory does not
+  exist on this machine.
+- Syntax: `prefix_rule(pattern = [...], decision = "allow" | "prompt" |
+  "forbidden", justification = "...", match = [...], not_match = [...])`.
+  `pattern` is required. `decision` defaults to `allow`. `match` and
+  `not_match` are checked when the file loads.
+- Matching, measured with `codex execpolicy check --rules FILE -- ARGV`, one
+  rule `prefix_rule(pattern = ["kb", "recall"], decision = "allow")`:
+
+  | Command (argv) | Result |
+  |---|---|
+  | `kb recall foo` | allow |
+  | `kb recall` | allow |
+  | `kb recall --help` | allow (arguments after the prefix are not checked) |
+  | `kb observe foo` | no matching rule |
+  | `kb --verbose recall foo` | no matching rule (a word before the subcommand breaks the prefix) |
+  | `bash -lc 'kb recall foo'`, `bash -c`, `sh -c`, `zsh -lc`, `/bin/bash -c` | no matching rule |
+  | `env kb recall foo`, `timeout 5 kb recall foo` | no matching rule |
+  | `bash -lc 'kb recall foo && rm -rf /tmp/x'` | no matching rule |
+
+  The evaluator matches the argv prefix only. It does not unwrap shell
+  wrappers or split compound commands. Multiple matching rules resolve to the
+  strictest decision: forbidden, then prompt, then allow.
+- A matching `allow` rule runs the command outside the sandbox without asking.
+  Source: the rules page, "Use rules to control which commands Codex can run
+  outside the sandbox."
+- Rule text for the seven working-agent commands (one `prefix_rule` each):
+
+  ```starlark
+  prefix_rule(pattern = ["kb", "recall"], decision = "allow")
+  prefix_rule(pattern = ["kb", "read"], decision = "allow")
+  prefix_rule(pattern = ["kb", "map"], decision = "allow")
+  prefix_rule(pattern = ["kb", "questions"], decision = "allow")
+  prefix_rule(pattern = ["kb", "evidence"], decision = "allow")
+  prefix_rule(pattern = ["kb", "observe"], decision = "allow")
+  prefix_rule(pattern = ["kb", "gap"], decision = "allow")
+  ```
+
+- Global instruction file: `$CODEX_HOME/AGENTS.md`, which is `~/.codex/AGENTS.md`
+  by default. `AGENTS.override.md` replaces it when non-empty. Source:
+  learn.chatgpt.com/docs/agent-configuration/agents-md. Read at session start.
+  Combined instruction files are capped by `project_doc_max_bytes`, 32 KiB by
+  default.
+- Import: not supported. The page documents concatenation only, so the
+  instruction block names the content `AGENTS.md` by path. On this machine
+  `~/.codex/AGENTS.md` is a symlink to `~/.dotfiles/llm/AGENTS.md`, the same
+  file as Claude's global file.
+- Transcript storage: rollouts are `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl`.
+  This machine has 1,020 of them, and the oldest, created 2026-08-17, is still
+  present 72 days later. The config reference (learn.chatgpt.com/docs/config-file/config-reference)
+  documents no retention or deletion key for rollouts. `history.persistence`
+  (`save-all` or `none`) controls only `history.jsonl`, and `history.max_bytes`
+  caps only that file by size. Retention is recorded as `unknown`.
+- Hook registration: `~/.codex/hooks.json` (symlink to
+  `~/.dotfiles/llm/codex/hooks.json`) has SessionStart, UserPromptSubmit, Stop,
+  and SessionEnd entries, each `bash ~/.codex/hooks.d/session-*.sh`. Those are
+  symlinks to `~/.dotfiles/llm/codex/hooks.d/*.sh`, and their headers say they
+  "delegate to the knowledge-base adapter". `~/.codex/config.toml` has no hook
+  entries. Codex has no coat-tree links.
+
+### Open items
+
+- Codex runtime invocation: whether Codex passes an agent's command to the
+  rules as argv or wraps it in a shell is not measured. A live session would
+  show it, and it writes a transcript, so it waits for rollout. If the
+  runtime wraps commands, the Codex rules approve none of them.
+- Allow rules match the typed command text. The instruction block and the
+  allow rules must name `kb`, not an absolute path.
+
+## Phase 4 closeout: setup and diagnosis (2026-10-28)
+
+Commits, in order. Step 0 is four atomic commits, not one, because each
+defect and the roadmap edit are separate changes: `b1de41f` (name renamed
+articles in the finish message), `e69d24f` (report the rebased finish commit),
+`2bb6139` (read the partial-commit index from the hook's environment), and
+`dff83db` (update the longterm plan). Then `c3898ce` (sync outcome record,
+step 2), `19d81b9` (instruction block and `--print`, step 3), `a17dc16` (config
+and hook, step 4), `7f67564` (`--init`, step 5), and `9380f35` (`kb doctor`,
+step 6), `302b2cd` (skip the POSIX shell tests on Windows), `af9c267` (the
+compatibility test for the installed hook), and `6ef1eba` (gap and
+`curate start` on a new repository). Each commit passed `just check` before
+it was made.
+
+Measurements:
+
+- `kb doctor` on a synthetic configured machine: 2,100 articles, 1,200 pending
+  observations, 500 Claude transcript sessions, an origin, and a sync record.
+  Three runs took 0.46, 0.46, and 0.45 seconds. Peak resident memory was
+  29,304 KiB. The target was under 5 seconds.
+- Live read-only check, this machine, `uv run --locked python -m kb doctor`.
+  Before and after the run, the status of the content repository and the
+  modification times of the content root and its `.git` were unchanged. The
+  states were 3 PASS (version, config, curation), 8 WARN (content, gitattributes,
+  hook, scheduler, capture, instructions, allow-rules, legacy), and 1 FAIL
+  (sync: no record). Exit status 1. Counts: 55 unpublished commits in the
+  content repository, and 14 old-tooling registrations.
+- Scratch-copy rehearsal. The copy had its own Git metadata and a scratch
+  origin. Its config and host files were in a scratch home, and the live config
+  was not touched. `kb setup --content COPY --replace-old-hook` created the config
+  and replaced the old hook's link, and the link's target was not changed. An
+  article edit committed through the installed hook was stamped. Doctor reported
+  5 PASS (version, config, hook, curation, legacy), 6 WARN (content with one
+  unpublished commit, gitattributes, scheduler, capture, instructions,
+  allow-rules), and 1 FAIL (sync: no record). The copy was removed.
+- Renormalization. Adding `* text=auto eol=lf` to the copy changed 0 of its
+  2,950 tracked files under `git add --renormalize .`, which took 0.12 seconds.
+- `just test-compat`: 12 passed against the old tooling checkout. The new test
+  installs the hook with `kb setup`, runs the old `observe` and `archive` through
+  it, and checks that the new hook stamps a staged article.
+- `just eval`: exit 0, acceptance met. Answerable cases in the top 3: 32 of 32.
+  Unanswerable cases with no curated result: 4 of 4. `requires_all` cases: 10 of
+  10.
+- `just build package-check`: passed. The installed wheel prints the instruction
+  block.
+- `just check`: 1,614 passed and 11 skipped at the doctor commit, with branch
+  coverage of 90.71%.
+
+Deviations and contract amendments:
+
+- The sync record's `message` is the first line of the failure, as section 5.1
+  says. Git and operating-system messages can contain a path, so the record can
+  contain one, which section 5.1 says it must not. The implementation keeps the
+  line unredacted. Redacting it or truncating it at the first path is a decision
+  for the user.
+- The installed instruction block is one block for both hosts, because the
+  dotfiles install one file for both. Its policy line is an import. Claude Code
+  loads the import, and Codex reads the same line as a path. This replaces
+  section 5.3's "import where supported, otherwise path".
+- `kb setup --print instructions` needs a content path, from `KB_CONTENT` or the
+  config file, but the directory need not exist. This is the reading of "needs
+  no content repository" that the implementation uses.
+- The hook refuses a kb path that contains a carriage return, in addition to the
+  three characters section 5.2 lists. The refusal is stricter, and no valid path
+  is refused.
+- `kb setup` with no options configures the machine: it installs the hook in the
+  configured repository and leaves the config unchanged. The usage in section 5.2
+  allows this form.
+- `harvest.Selection` gained `ready_modified`, a defaulted field, so the capture
+  check can count ready transcripts older than 20 days. `kb/commands/curate.py`
+  gained a read-only `doctor_findings`, and the hook classifier is now the public
+  `existing_hook`, which setup and doctor share.
+- Codex retention is reported as `unknown`. Its configuration documents no
+  retention setting. The oldest rollout on this machine, created 2026-08-17, was
+  still present 72 days later.
+- Claude Code's `cleanupPeriodDays` is 36500 on this machine, not the default
+  30. Doctor reports the configured value. At that value, transcripts do not age
+  out under the default cutoff.
+
+Open items:
+
+- Native Windows is not verified here. CI runs `just test` on Windows, so the
+  POSIX-shell tests skip on `win32`, and the Windows hook behavior is untested.
+- Codex's runtime invocation is unmeasured. The rules match an argument list,
+  and a `bash -c` wrapper does not match. If Codex's runtime wraps the agent's
+  commands in a shell, the Codex allow rules approve none of them. A live session
+  would show which form it uses.
+- Capture is not enabled. `harvest_since` is unset, and the old capture hooks are
+  still registered. Enabling and removing them happens together at phase 5.
+- On this machine, the dotfiles do not yet install the instruction block or the
+  allow rules, the timer is not installed, and no sync record exists under the
+  new code. The content repository has 55 unpublished commits, and the old hook's
+  link remains. These are rollout work, phase 5.
+- The content repository does not have `.gitattributes`. The renormalization
+  count is 0, so adding the file needs no renormalizing commit. Adding it is a
+  rollout decision.
