@@ -124,6 +124,13 @@ package-check: build
         exit 1
     fi
     "$scratch/venv/bin/kb" --help >/dev/null
+    # The instruction block is package data, so the installed wheel must carry it. The
+    # content path only names the policy import; the directory is not created.
+    block="$(KB_CONTENT="$scratch/content" "$scratch/venv/bin/kb" setup --print instructions)"
+    if [[ "$block" != *"<!-- kb:begin -->"* || "$block" != *"<!-- kb:end -->"* ]]; then
+        echo "package-check: the installed wheel prints no instruction block" >&2
+        exit 1
+    fi
     echo "package-check: ${wheels[0]#dist/} installs and reports version $installed"
 
 # Score retrieval against question sets. Arguments: QUESTIONS [CONTENT]. Without them, every

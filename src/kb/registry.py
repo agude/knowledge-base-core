@@ -14,6 +14,7 @@ from kb.commands import questions as questions_command
 from kb.commands import read as read_command
 from kb.commands import recall as recall_command
 from kb.commands import resolve as resolve_command
+from kb.commands import setup as setup_command
 from kb.commands import sync as sync_command
 from kb.commands import verify as verify_command
 from kb.errors import KbError
@@ -75,6 +76,11 @@ COMMANDS: tuple[Command, ...] = (
         name="sync",
         summary="Harvest transcripts and sync the content repository.",
         run=sync_command.run,
+    ),
+    Command(
+        name="setup",
+        summary="Print the instruction block or the allow rules that the dotfiles install.",
+        run=setup_command.run,
     ),
     Command(
         name="hook",
