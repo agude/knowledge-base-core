@@ -5,13 +5,28 @@ import os
 import shlex
 import stat
 import sys
+import tempfile
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from subprocess import run as run_process
+from typing import cast
 
-from kb import args, corpus, curation, dates, evidence, freshness, lock, model
+from kb import (
+    archive,
+    args,
+    corpus,
+    curation,
+    dates,
+    evidence,
+    freshness,
+    lint,
+    locators,
+    lock,
+    model,
+    secrets,
+)
 from kb.args import Spec
 from kb.commands import recall as recall_command
 from kb.context import Context, load
@@ -42,11 +57,20 @@ NEXT_SPEC = Spec(
     ),
     valued=frozenset({"--query"}),
 )
+COMPLETE_SPEC = Spec(
+    usage="curate complete RUN FILENAME --disposition DISPOSITION [--reason TEXT] [LOCATOR...]",
+    summary=(
+        "Record an observation outcome and archive it. Incorporated and duplicate outcomes need "
+        "knowledge locators; ephemeral outcomes need a reason."
+    ),
+    valued=frozenset({"--disposition", "--reason"}),
+)
 SPEC = Spec(
-    usage="curate {start,status,next} ...",
+    usage="curate {start,status,next,complete} ...",
     summary=(
         "Manage local curation batches. Start selects bounded input; status reports persisted "
-        "progress without changing files or contacting Git."
+        "progress without changing files or contacting Git. Complete records outcomes and "
+        "archives unchanged observations."
     ),
 )
 
@@ -80,6 +104,8 @@ def run(words: Sequence[str]) -> int:
         return _status_command(arguments)
     if command == "next":
         return _next_command(arguments)
+    if command == "complete":
+        return _complete_command(arguments)
     raise KbError(f"Usage: kb {SPEC.usage}")
 
 
@@ -165,6 +191,52 @@ def _next_command(words: Sequence[str]) -> int:
         raise KbError(f"{WHO}: {error}") from error
     sys.stdout.write(output)
     return exit_code
+
+
+def _complete_command(words: Sequence[str]) -> int:
+    parsed = args.parse(COMPLETE_SPEC, words)
+    if parsed.help:
+        sys.stdout.write(COMPLETE_SPEC.help_text())
+        return 0
+    if len(parsed.words) < 2:
+        raise COMPLETE_SPEC.usage_error()
+    raw_disposition = parsed.values.get("--disposition")
+    if raw_disposition not in {"incorporated", "duplicate", "ephemeral"}:
+        raise KbError("curate: --disposition must be incorporated, duplicate, or ephemeral")
+    try:
+        wait = lock.parse_wait(os.environ.get("KB_LOCK_WAIT"))
+    except lock.InvalidWait:
+        raise COMPLETE_SPEC.usage_error() from None
+
+    try:
+        context = load(os.environ, sys.platform, Path.home())
+        git_directory = lock.git_dir_path(context.root, WHO)
+        backend = lock.default_backend(sys.platform)
+        with lock.write_lock(git_directory, context.root, wait, backend):
+            batch = _read_batch(context.root, parsed.words[0])
+            output = _complete(
+                context,
+                git_directory,
+                batch,
+                parsed.words[1],
+                cast(curation.Disposition, raw_disposition),
+                parsed.words[2:],
+                parsed.values.get("--reason"),
+            )
+    except lock.LockBusy as busy:
+        raise KbError(
+            f"{WHO}: content repository is busy (waited {busy.waited}s for the lock)"
+        ) from None
+    except curation.StateError as error:
+        raise KbError(f"{WHO}: {error}") from error
+    except KbError as error:
+        if str(error).startswith((f"{WHO}:", "Usage:")):
+            raise
+        raise KbError(f"{WHO}: {error}") from error
+    except (OSError, RuntimeError, UnicodeError) as error:
+        raise KbError(f"{WHO}: {error}") from error
+    sys.stdout.write(output)
+    return 0
 
 
 def _start(
@@ -332,6 +404,403 @@ def _next(context: Context, batch: curation.Batch, query_override: str | None) -
         context, query_words, has_curated_matches=bool(sections)
     )
     return _render_next(batch, pending, content, text, query, sections, question_rows), 0
+
+
+def _complete(
+    context: Context,
+    git_directory: Path,
+    batch: curation.Batch,
+    filename: str,
+    disposition: curation.Disposition,
+    destination_words: Sequence[str],
+    reason: str | None,
+) -> str:
+    """Record an outcome and finish or resume its durable archive intent."""
+    root = context.root
+    _scan_completion_text(destination_words, reason)
+    member = next((item for item in batch.members if item.filename == filename), None)
+    if member is None:
+        raise KbError(f"{WHO}: not a batch member")
+    try:
+        destinations = _requested_destinations(root, destination_words, disposition, reason)
+    except KbError as error:
+        if member.status != "archiving":
+            raise
+        command = shlex.join(_completion_words(batch.id, member))
+        raise KbError(f"{error}; resume with: {command}") from error
+
+    if member.status == "complete":
+        if not _same_outcome(member, disposition, destinations, reason):
+            raise KbError(f"{WHO}: member is complete with a different outcome")
+        pending_bytes = _member_file_bytes(root, PENDING, member.filename)
+        archive_bytes = _member_file_bytes(root, ARCHIVED, member.filename)
+        if pending_bytes is not None:
+            raise KbError(f"{WHO}: completed member still has a pending copy; inspect manually")
+        if (
+            archive_bytes is None
+            or hashlib.sha256(archive_bytes).hexdigest() != member.archive_sha256
+        ):
+            raise KbError(f"{WHO}: completed archive is missing or changed; inspect manually")
+        return _archived_line(member.filename)
+
+    if member.status not in {"pending", "archiving"}:
+        raise KbError(f"{WHO}: cannot complete member in {member.status} state")
+    if member.status == "archiving":
+        if not _same_outcome(member, disposition, destinations, reason):
+            command = shlex.join(_completion_words(batch.id, member))
+            raise KbError(
+                f"{WHO}: requested outcome differs from the stored archive intent; "
+                f"resume with: {command}"
+            )
+        if tuple(destinations) != member.destinations:
+            command = shlex.join(_completion_words(batch.id, member))
+            raise KbError(
+                f"{WHO}: destination heading changed since the archive intent; inspect the "
+                f"article, then resume with: {command}"
+            )
+        try:
+            return _resume_archive(context, git_directory, batch, member)
+        except Exception as error:
+            command = shlex.join(_completion_words(batch.id, member))
+            raise KbError(
+                f"{WHO}: archive operation failed: {error}; inspect the files, "
+                f"then resume with: {command}"
+            ) from error
+
+    original = _member_file_bytes(root, PENDING, member.filename)
+    if original is None or not _matches_bytes(member, original):
+        raise KbError(f"{WHO}: input is changed or missing")
+    if _member_file_bytes(root, ARCHIVED, member.filename) is not None:
+        raise KbError(f"{WHO}: archive already exists: {ARCHIVED}/{member.filename}")
+    _refuse_inbound_pending_references(root, member.filename)
+
+    try:
+        original_text = original.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise KbError(f"{WHO}: pending observation is not valid UTF-8: {error.reason}") from error
+    try:
+        rendered = archive.render(
+            original_text,
+            disposition,
+            member.original_sha256,
+            batch.id,
+            destinations,
+            reason,
+        ).encode("utf-8")
+    except (model.FrontMatterEditError, curation.StateError) as error:
+        raise KbError(f"{WHO}: unsafe pending front matter or outcome: {error}") from error
+
+    intent = curation.begin_archive(
+        member,
+        disposition,
+        destinations,
+        reason,
+        hashlib.sha256(rendered).hexdigest(),
+    )
+    intent_batch = curation.replace_member(batch, intent)
+    manifest = _batch_path(root, batch.id)
+    try:
+        _replace_manifest(git_directory, manifest, intent_batch)
+        return _resume_archive(context, git_directory, intent_batch, intent)
+    except Exception as error:
+        persisted = _read_batch(root, batch.id)
+        persisted_member = next(item for item in persisted.members if item.filename == filename)
+        if persisted_member.status in {"archiving", "complete"}:
+            command = shlex.join(_completion_words(batch.id, persisted_member))
+            raise KbError(
+                f"{WHO}: archive operation failed: {error}; inspect the files, "
+                f"then resume with: {command}"
+            ) from error
+        raise
+
+
+def _resume_archive(
+    context: Context,
+    git_directory: Path,
+    batch: curation.Batch,
+    member: curation.Member,
+) -> str:
+    """Apply the recovery table to an already persisted archive intent."""
+    root = context.root
+    stored_destinations = _requested_destinations(
+        root,
+        [destination.locator for destination in member.destinations],
+        cast(curation.Disposition, member.disposition),
+        member.reason,
+    )
+    if stored_destinations != member.destinations:
+        raise KbError(f"{WHO}: a destination heading changed; inspect the archive intent")
+    _refuse_inbound_pending_references(root, member.filename)
+
+    pending_bytes = _member_file_bytes(root, PENDING, member.filename)
+    archive_bytes = _member_file_bytes(root, ARCHIVED, member.filename)
+    pending_exists = _member_file_exists(root, PENDING, member.filename)
+    archive_exists = _member_file_exists(root, ARCHIVED, member.filename)
+    if pending_exists and (pending_bytes is None or not _matches_bytes(member, pending_bytes)):
+        raise KbError(f"{WHO}: pending copy changed; manual inspection needed")
+    if archive_exists and (
+        archive_bytes is None or hashlib.sha256(archive_bytes).hexdigest() != member.archive_sha256
+    ):
+        raise KbError(f"{WHO}: archive conflicts with the stored intent; manual inspection needed")
+    if not pending_exists and not archive_exists:
+        raise KbError(f"{WHO}: both copies are missing; manual inspection needed")
+
+    if pending_exists and not archive_exists:
+        assert pending_bytes is not None
+        try:
+            original_text = pending_bytes.decode("utf-8")
+            rendered = archive.render(
+                original_text,
+                cast(curation.Disposition, member.disposition),
+                member.original_sha256,
+                batch.id,
+                member.destinations,
+                member.reason,
+            ).encode("utf-8")
+        except (UnicodeDecodeError, model.FrontMatterEditError, curation.StateError) as error:
+            raise KbError(f"{WHO}: cannot reconstruct the expected archive: {error}") from error
+        if hashlib.sha256(rendered).hexdigest() != member.archive_sha256:
+            raise KbError(f"{WHO}: reconstructed archive does not match the stored intent")
+        source_mode = (root / PENDING / member.filename).stat().st_mode
+        _publish_archive(root, git_directory, member.filename, rendered, stat.S_IMODE(source_mode))
+        archive_exists = True
+
+    if pending_exists:
+        _remove_pending(root, member)
+
+    completed = curation.finish_archive(member)
+    completed_batch = curation.replace_member(batch, completed)
+    _replace_manifest(git_directory, _batch_path(root, batch.id), completed_batch)
+    return _archived_line(member.filename)
+
+
+def _requested_destinations(
+    root: Path,
+    words: Sequence[str],
+    disposition: curation.Disposition,
+    reason: str | None,
+) -> tuple[curation.Destination, ...]:
+    """Resolve, canonicalize, and validate a caller's outcome destinations."""
+    if disposition == "ephemeral":
+        if words:
+            raise KbError(f"{WHO}: ephemeral outcome does not accept destinations")
+        if reason is None or not reason.strip() or "\n" in reason or "\r" in reason:
+            raise KbError(f"{WHO}: ephemeral outcome needs a nonempty single-line --reason")
+        return ()
+    if reason is not None:
+        raise KbError(f"{WHO}: --reason is only valid for an ephemeral outcome")
+    if not words:
+        raise KbError(f"{WHO}: {disposition} outcome needs at least one knowledge destination")
+
+    destinations: list[curation.Destination] = []
+    seen: set[str] = set()
+    for word in words:
+        locator = locators.parse_locator(word)
+        relpath = corpus.resolve_path(root, locator.path, WHO)
+        if relpath is None:
+            raise KbError(f"{WHO}: no such destination: {word}")
+        if not relpath.startswith("knowledge/") or not relpath.endswith(".md"):
+            raise KbError(f"{WHO}: destination must resolve under knowledge/: {relpath}")
+        path = root / relpath
+        if not path.is_file() or not path.resolve().is_relative_to(root.resolve()):
+            raise KbError(f"{WHO}: destination must name a contained Markdown file: {relpath}")
+        document = corpus.read_document(root, relpath)
+        fragment = locator.fragment
+        heading: str | None = None
+        if fragment is not None:
+            selection = locators.select(document, fragment)
+            if selection is None:
+                available = [f"  {item}" for item in locators.outline(document)]
+                raise KbError(
+                    "\n".join(
+                        [f"{WHO}: {relpath} has no section {fragment}. Its locators:", *available]
+                    )
+                )
+            heading = selection.heading
+        if disposition == "duplicate" and (
+            fragment is None or locators.NUMBERED.fullmatch(fragment) is None
+        ):
+            raise KbError(f"{WHO}: duplicate destinations must name numbered sections")
+        canonical = relpath if fragment is None else f"{relpath}#{fragment}"
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        destinations.append(curation.Destination(canonical, heading))
+    return tuple(destinations)
+
+
+def _same_outcome(
+    member: curation.Member,
+    disposition: curation.Disposition,
+    destinations: Sequence[curation.Destination],
+    reason: str | None,
+) -> bool:
+    """Compare outcome fields and canonical locators, excluding current heading text."""
+    stored = tuple(item.locator for item in member.destinations)
+    requested = tuple(item.locator for item in destinations)
+    return member.disposition == disposition and member.reason == reason and stored == requested
+
+
+def _scan_completion_text(destination_words: Sequence[str], reason: str | None) -> None:
+    """Scan supplied locators and reasons before diagnostics or state writes."""
+    entries = [(f"destination {index}", word) for index, word in enumerate(destination_words, 1)]
+    if reason is not None:
+        entries.append(("--reason", reason))
+    for label, value in entries:
+        findings = secrets.findings(Path(tempfile.gettempdir()), value)
+        if findings:
+            detectors = ", ".join(sorted({detector for detector, _line in findings}))
+            raise KbError(f"{WHO}: possible secret in {label}: {detectors}")
+
+
+def _refuse_inbound_pending_references(root: Path, filename: str) -> None:
+    """Refuse curated documents that still point at the pending file."""
+    pending = (root / PENDING / filename).resolve()
+    found: list[str] = []
+    for directory in ("knowledge", "sources"):
+        for relpath in corpus.markdown_files(root, directory):
+            document = corpus.read_document(root, relpath)
+            for reference in lint.references(document):
+                target_text = reference.destination.partition("#")[0]
+                if (
+                    not target_text
+                    or target_text.startswith("/")
+                    or target_text.startswith("//")
+                    or PureWindowsPath(target_text).is_absolute()
+                ):
+                    continue
+                base = root if reference.kind == "source" else (root / relpath).parent
+                try:
+                    target = (base / target_text).resolve()
+                except (OSError, RuntimeError) as error:
+                    raise KbError(
+                        f"{WHO}: cannot resolve a reference in {relpath}: {error}"
+                    ) from error
+                if target == pending:
+                    found.append(f"{reference.source_path}:{reference.line} ({reference.kind})")
+    if found:
+        lines = [
+            f"{WHO}: references still target the pending observation {PENDING}/{filename}:",
+            *(f"  {item}" for item in sorted(set(found))),
+        ]
+        raise KbError("\n".join(lines))
+
+
+def _batch_path(root: Path, run_id: str) -> Path:
+    """The validated file path for a batch manifest that must already exist."""
+    directory = _fixed_directory(root, BATCHES, create=False)
+    assert directory is not None
+    path = directory / f"{run_id}.json"
+    if path.is_symlink() or not path.is_file():
+        raise KbError(f"{WHO}: batch manifest is missing or unsafe: {run_id}")
+    return path
+
+
+def _replace_manifest(git_directory: Path, target: Path, batch: curation.Batch) -> None:
+    """Atomically replace one existing manifest from the common Git scratch directory."""
+    temporary = _write_scratch_file(git_directory, curation.render_batch(batch).encode("utf-8"))
+    try:
+        if target.is_symlink() or not target.is_file():
+            raise KbError(f"{WHO}: batch manifest is missing or unsafe: {target.name}")
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _publish_archive(
+    root: Path,
+    git_directory: Path,
+    filename: str,
+    content: bytes,
+    mode: int,
+) -> None:
+    """Atomically publish an archive without replacing an existing file."""
+    directory = _fixed_directory(root, ARCHIVED, create=True)
+    assert directory is not None
+    target = directory / filename
+    if target.exists() or target.is_symlink():
+        raise KbError(f"{WHO}: archive already exists: {ARCHIVED}/{filename}")
+    temporary = _write_scratch_file(git_directory, content)
+    try:
+        temporary.chmod(mode)
+        try:
+            os.link(temporary, target)
+        except FileExistsError as error:
+            raise KbError(f"{WHO}: archive already exists: {ARCHIVED}/{filename}") from error
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _write_scratch_file(git_directory: Path, content: bytes) -> Path:
+    """Write and fsync temporary bytes under the common Git scratch directory."""
+    scratch = git_directory / "kb-tmp"
+    if scratch.is_symlink():
+        raise KbError(f"{WHO}: temporary directory is a symlink: {scratch}")
+    scratch.mkdir(parents=True, exist_ok=True)
+    if not scratch.resolve().is_relative_to(git_directory.resolve()):
+        raise KbError(f"{WHO}: temporary directory escapes the Git directory")
+    temporary = scratch / f"curate-{os.urandom(8).hex()}.tmp"
+    try:
+        with temporary.open("xb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+    return temporary
+
+
+def _remove_pending(root: Path, member: curation.Member) -> None:
+    """Remove only a pending file that still matches its original snapshot."""
+    if not _member_file_exists(root, PENDING, member.filename):
+        raise KbError(f"{WHO}: pending copy disappeared before removal")
+    content = _member_file_bytes(root, PENDING, member.filename)
+    if content is None or not _matches_bytes(member, content):
+        raise KbError(f"{WHO}: pending copy changed before removal")
+    (root / PENDING / member.filename).unlink()
+
+
+def _member_file_exists(root: Path, directory: str, filename: str) -> bool:
+    """Whether a direct member file exists, rejecting symlinks and special files."""
+    fixed_directory = _fixed_directory(root, directory, create=False, optional=True)
+    if fixed_directory is None:
+        return False
+    path = fixed_directory / filename
+    if path.is_symlink():
+        raise KbError(f"{WHO}: unsafe symlink: {directory}/{filename}")
+    if not path.exists():
+        return False
+    if not path.is_file():
+        raise KbError(f"{WHO}: unsafe non-file: {directory}/{filename}")
+    return True
+
+
+def _member_file_bytes(root: Path, directory: str, filename: str) -> bytes | None:
+    """Read one direct member file without following links or special files."""
+    fixed_directory = _fixed_directory(root, directory, create=False, optional=True)
+    if fixed_directory is None:
+        return None
+    path = fixed_directory / filename
+    if path.is_symlink():
+        raise KbError(f"{WHO}: unsafe symlink: {directory}/{filename}")
+    if not path.exists():
+        return None
+    if not path.is_file():
+        raise KbError(f"{WHO}: unsafe non-file: {directory}/{filename}")
+    return path.read_bytes()
+
+
+def _matches_bytes(member: curation.Member, content: bytes) -> bool:
+    """Whether bytes match both fields of the pending snapshot."""
+    return len(content) == member.original_bytes and hashlib.sha256(content).hexdigest() == (
+        member.original_sha256
+    )
+
+
+def _archived_line(filename: str) -> str:
+    """The success line shared by initial completion and recovery."""
+    return f"Archived: {PENDING}/{filename} -> {ARCHIVED}/{filename}\n"
 
 
 def _render_next(

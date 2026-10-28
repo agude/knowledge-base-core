@@ -2,14 +2,17 @@
 
 import hashlib
 import json
+import os
 import re
 import shlex
+import subprocess
+import sys
 from pathlib import Path
 from subprocess import CompletedProcess
 
 import pytest
 
-from .harness import Kb, make_git_kb
+from .harness import HOLD_KERNEL_LOCK, Kb, make_git_kb
 
 RUN_RE = re.compile(r"Created batch: ([0-9]{8}T[0-9]{6}-[0-9a-f]{8})\n")
 OLD_HEADER = "filename\toriginal_sha256\tstatus\tdisposition\tdestination\n"
@@ -23,6 +26,13 @@ def _run_id(result: CompletedProcess[str]) -> str:
 
 def _pending(kb: Kb, filename: str) -> Path:
     return kb.content / "observations" / "pending" / filename
+
+
+def _write_article(kb: Kb, relative: str, content: str) -> Path:
+    path = kb.content / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return path
 
 
 def _member(
@@ -89,7 +99,7 @@ def test_start_help_usage_and_budget_validation(git_kb: Kb) -> None:
     help_result = git_kb("curate", "start", "--help")
     assert help_result.returncode == 0
     assert help_result.stdout.startswith("Usage: kb curate start --max-bytes N [FILENAME...]\n\n")
-    assert git_kb("curate").stdout.startswith("Usage: kb curate {start,status,next} ...")
+    assert git_kb("curate").stdout.startswith("Usage: kb curate {start,status,next,complete} ...")
 
     missing = git_kb("curate", "start")
     assert missing.returncode == 1
@@ -772,3 +782,684 @@ def test_next_help_and_usage(kb: Kb) -> None:
     missing = kb("curate", "next")
     assert missing.returncode == 1
     assert missing.stderr == "Usage: kb curate next RUN [--query TEXT]\n"
+
+
+def test_complete_archives_each_outcome_with_canonical_destinations_without_committing(
+    git_kb: Kb,
+) -> None:
+    run_id = "20261028T120000-a1b2c3d4"
+    incorporated_name = "incorporated.md"
+    duplicate_name = "duplicate.md"
+    ephemeral_name = "ephemeral.md"
+    contents = {
+        incorporated_name: (
+            b"---\ntitle: Network and services handoff\ncreated: 2026-10-24\n---\n\n"
+            b"## 1. user, 2026-10-24T09:00:00Z\n\nNetwork access details.\n\n"
+            b"## 2. assistant, 2026-10-24T09:01:00Z\n\nService restart order.\n"
+        ),
+        duplicate_name: b"---\ntitle: Duplicate detail\n---\n\nAlready known.\n",
+        ephemeral_name: b"---\ntitle: Temporary detail\n---\n\nNo durable fact.\n",
+    }
+    for filename, content in contents.items():
+        _pending(git_kb, filename).write_bytes(content)
+
+    network_article = _write_article(
+        git_kb,
+        "knowledge/curation/network.md",
+        "---\n"
+        "title: Network setup\n"
+        "updated: 2026-10-20\n"
+        "verified: 2026-10-20\n"
+        "ttl: domain\n"
+        "sources:\n"
+        f"  - observations/archived/{incorporated_name}#1\n"
+        "---\n\n"
+        "# Network setup\n\n"
+        "## Access\n"
+        f"<!-- kb-section: verified=2026-10-20; ttl=domain; sources=observations/archived/{incorporated_name}#1 -->\n\n"
+        "Use the documented network route.\n",
+    )
+    services_article = _write_article(
+        git_kb,
+        "knowledge/curation/services.md",
+        "---\n"
+        "title: Service restart\n"
+        "updated: 2026-10-21\n"
+        "verified: 2026-10-21\n"
+        "ttl: domain\n"
+        "sources:\n"
+        f"  - observations/archived/{incorporated_name}#2\n"
+        "---\n\n"
+        "# Service restart\n\n"
+        "## Order\n\n"
+        "Restart in dependency order.\n",
+    )
+    article_bytes = {path: path.read_bytes() for path in (network_article, services_article)}
+    _write_batch(
+        git_kb,
+        run_id,
+        [_member(filename, content) for filename, content in contents.items()],
+    )
+    original_head = git_kb.git("rev-parse", "HEAD")
+    original_index = git_kb.git("diff", "--cached", "--name-only")
+
+    incorporated = git_kb(
+        "curate",
+        "complete",
+        run_id,
+        incorporated_name,
+        "--disposition",
+        "incorporated",
+        "knowledge/curation/network.md#01",
+        "knowledge/curation/network.md#1",
+        "knowledge/curation/services.md#1",
+    )
+    duplicate = git_kb(
+        "curate",
+        "complete",
+        run_id,
+        duplicate_name,
+        "--disposition",
+        "duplicate",
+        "knowledge/curation/network.md#1",
+    )
+    ephemeral = git_kb(
+        "curate",
+        "complete",
+        run_id,
+        ephemeral_name,
+        "--disposition",
+        "ephemeral",
+        "--reason",
+        "No durable details",
+    )
+
+    assert incorporated.returncode == 0, incorporated.stderr
+    assert incorporated.stdout == (
+        f"Archived: observations/pending/{incorporated_name} -> "
+        f"observations/archived/{incorporated_name}\n"
+    )
+    assert duplicate.returncode == 0, duplicate.stderr
+    assert f"observations/archived/{duplicate_name}" in duplicate.stdout
+    assert ephemeral.returncode == 0, ephemeral.stderr
+    assert f"observations/archived/{ephemeral_name}" in ephemeral.stdout
+    state = json.loads(
+        (git_kb.content / "observations/batches" / f"{run_id}.json").read_text(encoding="utf-8")
+    )
+    members = {member["filename"]: member for member in state["members"]}
+    assert members[incorporated_name]["status"] == "complete"
+    assert members[incorporated_name]["destinations"] == [
+        {"locator": "knowledge/curation/network.md#1", "heading": "Access"},
+        {"locator": "knowledge/curation/services.md#1", "heading": "Order"},
+    ]
+    assert members[duplicate_name]["disposition"] == "duplicate"
+    assert members[ephemeral_name]["disposition"] == "ephemeral"
+    archived = git_kb.content / "observations" / "archived"
+    incorporated_text = (archived / incorporated_name).read_text(encoding="utf-8")
+    assert "disposition: incorporated" in incorporated_text
+    assert 'destination: "knowledge/curation/network.md#1"' in incorporated_text
+    assert 'destination_heading: "Access"' in incorporated_text
+    assert (
+        f"original_sha256: {hashlib.sha256(contents[incorporated_name]).hexdigest()}"
+        in incorporated_text
+    )
+    assert f"curation_batch: {run_id}" in incorporated_text
+    assert 'destination: "knowledge/curation/network.md#1"' in (
+        archived / duplicate_name
+    ).read_text(encoding="utf-8")
+    ephemeral_text = (archived / ephemeral_name).read_text(encoding="utf-8")
+    assert "disposition: ephemeral" in ephemeral_text
+    assert 'curation_reason: "No durable details"' in ephemeral_text
+    assert all(path.read_bytes() == content for path, content in article_bytes.items())
+    linted = git_kb("lint", "knowledge/curation/network.md", "knowledge/curation/services.md")
+    assert linted.returncode == 0, linted.stdout + linted.stderr
+    assert git_kb.git("rev-parse", "HEAD") == original_head
+    assert git_kb.git("diff", "--cached", "--name-only") == original_index
+
+    archived_path = archived / incorporated_name
+    manifest_path = git_kb.content / "observations/batches" / f"{run_id}.json"
+    archive_mtime = archived_path.stat().st_mtime_ns
+    manifest_mtime = manifest_path.stat().st_mtime_ns
+    repeated = git_kb(
+        "curate",
+        "complete",
+        run_id,
+        incorporated_name,
+        "--disposition",
+        "incorporated",
+        "knowledge/curation/network.md#1",
+        "knowledge/curation/services.md#1",
+    )
+    assert repeated.returncode == 0, repeated.stderr
+    assert archived_path.stat().st_mtime_ns == archive_mtime
+    assert manifest_path.stat().st_mtime_ns == manifest_mtime
+    different = git_kb(
+        "curate",
+        "complete",
+        run_id,
+        incorporated_name,
+        "--disposition",
+        "ephemeral",
+        "--reason",
+        "Temporary instead",
+    )
+    _failure(different, "member is complete with a different outcome")
+
+
+def test_complete_rejects_missing_ambiguous_and_unsectioned_duplicate_destinations(
+    git_kb: Kb,
+) -> None:
+    run_id = "20261028T120000-a1b2c3d4"
+    filename = "destination-check.md"
+    content = b"---\ntitle: Destination check\n---\n\nText.\n"
+    _pending(git_kb, filename).write_bytes(content)
+    _write_batch(git_kb, run_id, [_member(filename, content)])
+    _write_article(
+        git_kb, "knowledge/left/shared.md", "---\ntitle: Shared\n---\n# Shared\n## One\n"
+    )
+    _write_article(
+        git_kb, "knowledge/right/shared.md", "---\ntitle: Shared\n---\n# Shared\n## One\n"
+    )
+
+    missing = git_kb(
+        "curate",
+        "complete",
+        run_id,
+        filename,
+        "--disposition",
+        "incorporated",
+        "knowledge/missing.md#1",
+    )
+    ambiguous = git_kb(
+        "curate", "complete", run_id, filename, "--disposition", "incorporated", "shared.md#1"
+    )
+    unsectioned = git_kb(
+        "curate",
+        "complete",
+        run_id,
+        filename,
+        "--disposition",
+        "duplicate",
+        "knowledge/left/shared.md",
+    )
+
+    _failure(missing, "no such destination")
+    _failure(ambiguous, "matches 2 files")
+    _failure(unsectioned, "duplicate destinations must name numbered sections")
+    assert _pending(git_kb, filename).read_bytes() == content
+    assert not (git_kb.content / "observations/archived" / filename).exists()
+    assert (
+        json.loads((git_kb.content / "observations/batches" / f"{run_id}.json").read_text())[
+            "members"
+        ][0]["status"]
+        == "pending"
+    )
+
+
+def test_complete_rejects_nonmembers_changed_inputs_and_existing_archives(git_kb: Kb) -> None:
+    run_id = "20261028T120000-a1b2c3d4"
+    filename = "complete-check.md"
+    content = b"---\ntitle: Complete check\n---\n\nOriginal.\n"
+    pending = _pending(git_kb, filename)
+    pending.write_bytes(content)
+    _write_batch(git_kb, run_id, [_member(filename, content)])
+
+    nonmember = git_kb(
+        "curate",
+        "complete",
+        run_id,
+        "other.md",
+        "--disposition",
+        "ephemeral",
+        "--reason",
+        "Temporary",
+    )
+    _failure(nonmember, "not a batch member")
+
+    pending.write_bytes(b"Changed bytes.\n")
+    changed = git_kb(
+        "curate",
+        "complete",
+        run_id,
+        filename,
+        "--disposition",
+        "ephemeral",
+        "--reason",
+        "Temporary",
+    )
+    _failure(changed, "input is changed or missing")
+    assert pending.read_bytes() == b"Changed bytes.\n"
+    assert (
+        json.loads((git_kb.content / "observations/batches" / f"{run_id}.json").read_text())[
+            "members"
+        ][0]["status"]
+        == "pending"
+    )
+
+    pending.write_bytes(content)
+    archive_path = git_kb.content / "observations" / "archived" / filename
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    archive_path.write_bytes(b"Existing archive must survive.\n")
+    conflict = git_kb(
+        "curate",
+        "complete",
+        run_id,
+        filename,
+        "--disposition",
+        "ephemeral",
+        "--reason",
+        "Temporary",
+    )
+    _failure(conflict, "archive already exists")
+    assert archive_path.read_bytes() == b"Existing archive must survive.\n"
+    assert pending.read_bytes() == content
+
+
+def test_complete_requires_git_metadata_for_the_shared_writer_lock(kb: Kb) -> None:
+    filename = "no-git.md"
+    content = b"---\ntitle: No Git metadata\n---\n\nEvidence.\n"
+    pending = _pending(kb, filename)
+    pending.write_bytes(content)
+    manifest = _write_batch(kb, "20261028T120000-a1b2c3d4", [_member(filename, content)])
+    before = manifest.read_bytes()
+
+    result = kb(
+        "curate",
+        "complete",
+        "20261028T120000-a1b2c3d4",
+        filename,
+        "--disposition",
+        "ephemeral",
+        "--reason",
+        "Temporary",
+    )
+
+    _failure(result, "cannot locate the Git directory")
+    assert pending.read_bytes() == content
+    assert manifest.read_bytes() == before
+    assert not (kb.content / "observations/archived" / filename).exists()
+
+
+def test_recovery_detects_a_destination_heading_shift(git_kb: Kb) -> None:
+    filename = "shifted-destination.md"
+    original = b"---\ntitle: Shifted destination\n---\n\nEvidence.\n"
+    pending = _pending(git_kb, filename)
+    pending.write_bytes(original)
+    article = _write_article(
+        git_kb,
+        "knowledge/shifted.md",
+        "---\ntitle: Shifted\n---\n# Shifted\n## Replacement heading\n",
+    )
+    _write_batch(
+        git_kb,
+        "20261028T120000-a1b2c3d4",
+        [
+            _member(
+                filename,
+                original,
+                status="archiving",
+                disposition="incorporated",
+                destinations=[{"locator": "knowledge/shifted.md#1", "heading": "Original heading"}],
+                archived=b"Expected archive bytes.",
+            )
+        ],
+    )
+
+    result = git_kb(
+        "curate",
+        "complete",
+        "20261028T120000-a1b2c3d4",
+        filename,
+        "--disposition",
+        "incorporated",
+        "knowledge/shifted.md#1",
+    )
+
+    assert result.returncode == 1
+    assert "destination heading changed since the archive intent" in result.stderr
+    assert article.is_file()
+    assert pending.read_bytes() == original
+    assert not (git_kb.content / "observations/archived" / filename).exists()
+
+
+@pytest.mark.parametrize(
+    "existing_field",
+    [
+        "disposition: processed\n",
+        "destination: knowledge/example.md#1\n",
+        "original_sha256: " + "a" * 64 + "\n",
+        "curation_batch: 20261028T120000-a1b2c3d4\n",
+    ],
+)
+def test_complete_rejects_preexisting_archive_metadata(git_kb: Kb, existing_field: str) -> None:
+    run_id = "20261028T120000-a1b2c3d4"
+    filename = "unsafe-metadata.md"
+    content = f"---\ntitle: Unsafe\n{existing_field}---\n\nEvidence.\n".encode()
+    _pending(git_kb, filename).write_bytes(content)
+    _write_batch(git_kb, run_id, [_member(filename, content)])
+
+    result = git_kb(
+        "curate",
+        "complete",
+        run_id,
+        filename,
+        "--disposition",
+        "ephemeral",
+        "--reason",
+        "Temporary",
+    )
+
+    _failure(result, "archive fields already exist")
+    assert _pending(git_kb, filename).read_bytes() == content
+    assert (
+        json.loads((git_kb.content / "observations/batches" / f"{run_id}.json").read_text())[
+            "members"
+        ][0]["status"]
+        == "pending"
+    )
+
+
+@pytest.mark.parametrize(
+    ("kind", "reference"),
+    [
+        ("front matter source", "sources:\n  - observations/pending/referenced.md#1\n"),
+        (
+            "section source",
+            "# Inbound\n\n## Claim\n<!-- kb-section: sources=observations/pending/referenced.md#1 -->\n\nFact.\n",
+        ),
+        (
+            "inline link",
+            "# Inbound\n\n[the pending note](../observations/pending/referenced.md#1)\n",
+        ),
+        (
+            "reference link",
+            "# Inbound\n\n[the pending note][pending]\n\n[pending]: ../observations/pending/referenced.md#1\n",
+        ),
+    ],
+)
+def test_complete_rejects_every_inbound_pending_reference(
+    git_kb: Kb, kind: str, reference: str
+) -> None:
+    run_id = "20261028T120000-a1b2c3d4"
+    filename = "referenced.md"
+    content = b"---\ntitle: Referenced\n---\n\nEvidence.\n"
+    _pending(git_kb, filename).write_bytes(content)
+    _write_batch(git_kb, run_id, [_member(filename, content)])
+    if kind == "front matter source":
+        article_text = (
+            "---\ntitle: Inbound reference\nupdated: 2026-10-20\n"
+            "verified: 2026-10-20\nttl: domain\n" + reference + "---\n\n"
+        )
+    else:
+        article_text = (
+            "---\ntitle: Inbound reference\nupdated: 2026-10-20\n"
+            "verified: 2026-10-20\nttl: domain\n---\n\n" + reference
+        )
+    source = _write_article(git_kb, "knowledge/inbound.md", article_text)
+
+    result = git_kb(
+        "curate",
+        "complete",
+        run_id,
+        filename,
+        "--disposition",
+        "ephemeral",
+        "--reason",
+        "Temporary",
+    )
+
+    _failure(result, "references still target the pending observation")
+    assert "knowledge/inbound.md" in result.stderr
+    assert source.read_text(encoding="utf-8") == article_text
+    assert _pending(git_kb, filename).read_bytes() == content
+    assert not (git_kb.content / "observations/archived" / filename).exists()
+    assert (
+        json.loads((git_kb.content / "observations/batches" / f"{run_id}.json").read_text())[
+            "members"
+        ][0]["status"]
+        == "pending"
+    )
+
+
+def test_complete_checks_inbound_references_under_sources(git_kb: Kb) -> None:
+    run_id = "20261028T120000-a1b2c3d4"
+    filename = "source-referenced.md"
+    content = b"---\ntitle: Source referenced\n---\n\nEvidence.\n"
+    _pending(git_kb, filename).write_bytes(content)
+    _write_batch(git_kb, run_id, [_member(filename, content)])
+    source = _write_article(
+        git_kb,
+        "sources/inbound.md",
+        "---\ntitle: Imported document\nsources:\n"
+        f"  - observations/pending/{filename}#1\n---\n\nImported text.\n",
+    )
+
+    result = git_kb(
+        "curate",
+        "complete",
+        run_id,
+        filename,
+        "--disposition",
+        "ephemeral",
+        "--reason",
+        "Temporary",
+    )
+
+    _failure(result, "references still target the pending observation")
+    assert "sources/inbound.md" in result.stderr
+    assert source.is_file()
+    assert _pending(git_kb, filename).read_bytes() == content
+    assert not (git_kb.content / "observations/archived" / filename).exists()
+
+
+def _archiving_fixture(kb: Kb, filename: str) -> tuple[bytes, bytes, Path]:
+    """Write an archiving intent with the exact expected ephemeral archive bytes."""
+    original = b"---\ntitle: Recovery fixture\n---\n\nEvidence to retain.\n"
+    original_hash = hashlib.sha256(original).hexdigest()
+    archived = (
+        "---\ntitle: Recovery fixture\n"
+        "disposition: ephemeral\n"
+        f"original_sha256: {original_hash}\n"
+        f"curation_batch: 20261028T120000-a1b2c3d4\n"
+        'curation_reason: "Temporary note"\n'
+        "---\n\nEvidence to retain.\n"
+    ).encode()
+    pending = _pending(kb, filename)
+    pending.write_bytes(original)
+    member = _member(
+        filename,
+        original,
+        status="archiving",
+        disposition="ephemeral",
+        reason="Temporary note",
+        archived=archived,
+    )
+    _write_batch(kb, "20261028T120000-a1b2c3d4", [member])
+    return original, archived, pending
+
+
+@pytest.mark.parametrize(
+    ("disk_state", "expected_error"),
+    [
+        ("changed pending", "pending copy changed"),
+        ("conflicting archive", "archive conflicts with the stored intent"),
+        ("neither copy", "both copies are missing"),
+    ],
+)
+def test_recovery_refuses_changed_or_conflicting_copies(
+    git_kb: Kb, disk_state: str, expected_error: str
+) -> None:
+    filename = "recovery-case.md"
+    original, expected_archive, pending = _archiving_fixture(git_kb, filename)
+    archive_path = git_kb.content / "observations" / "archived" / filename
+    if disk_state == "changed pending":
+        pending.write_bytes(b"Changed evidence.\n")
+    elif disk_state == "conflicting archive":
+        archive_path.parent.mkdir(parents=True, exist_ok=True)
+        archive_path.write_bytes(b"Unexpected archive bytes.\n")
+    else:
+        pending.unlink()
+
+    status = git_kb("curate", "status", "20261028T120000-a1b2c3d4")
+    assert status.returncode == 0, status.stderr
+    line = next(
+        line.strip() for line in status.stdout.splitlines() if "Run: kb curate complete" in line
+    )
+    command = shlex.split(line.removeprefix("Run: "))
+    result = git_kb(*command[1:])
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert expected_error in result.stderr
+    assert (
+        json.loads(
+            (git_kb.content / "observations/batches" / "20261028T120000-a1b2c3d4.json").read_text(
+                encoding="utf-8"
+            )
+        )["members"][0]["status"]
+        == "archiving"
+    )
+    if disk_state == "changed pending":
+        assert pending.read_bytes() == b"Changed evidence.\n"
+        assert not archive_path.exists()
+    elif disk_state == "conflicting archive":
+        assert pending.read_bytes() == original
+        assert archive_path.read_bytes() == b"Unexpected archive bytes.\n"
+    else:
+        assert not pending.exists()
+        assert not archive_path.exists()
+    assert expected_archive
+
+
+def test_complete_refuses_a_different_outcome_from_the_stored_intent(git_kb: Kb) -> None:
+    filename = "intent.md"
+    original, _archived, pending = _archiving_fixture(git_kb, filename)
+
+    result = git_kb(
+        "curate",
+        "complete",
+        "20261028T120000-a1b2c3d4",
+        filename,
+        "--disposition",
+        "incorporated",
+        "knowledge/infra/nas.md#1",
+    )
+
+    assert result.returncode == 1
+    assert "requested outcome differs from the stored archive intent" in result.stderr
+    assert "resume with: kb curate complete 20261028T120000-a1b2c3d4 intent.md" in result.stderr
+    assert pending.read_bytes() == original
+    assert not (git_kb.content / "observations/archived" / filename).exists()
+
+
+def test_complete_help_usage_invalid_wait_and_reason_validation(git_kb: Kb) -> None:
+    help_result = git_kb("curate", "complete", "--help")
+    assert help_result.returncode == 0
+    assert help_result.stdout.startswith(
+        "Usage: kb curate complete RUN FILENAME --disposition DISPOSITION [--reason TEXT] [LOCATOR...]\n\n"
+    )
+    missing = git_kb("curate", "complete")
+    assert missing.returncode == 1
+    assert missing.stderr == (
+        "Usage: kb curate complete RUN FILENAME --disposition DISPOSITION [--reason TEXT] [LOCATOR...]\n"
+    )
+    filename = "invalid-reason.md"
+    content = b"---\ntitle: Invalid reason\n---\n\nEvidence.\n"
+    _pending(git_kb, filename).write_bytes(content)
+    _write_batch(git_kb, "20261028T120000-a1b2c3d4", [_member(filename, content)])
+    invalid_wait = git_kb(
+        "curate",
+        "complete",
+        "20261028T120000-a1b2c3d4",
+        filename,
+        "--disposition",
+        "ephemeral",
+        "--reason",
+        "Temporary",
+        env={"KB_LOCK_WAIT": "soon"},
+    )
+    assert invalid_wait.returncode == 1
+    assert invalid_wait.stderr == missing.stderr
+    for reason in ("", "Two\nlines"):
+        invalid_reason = git_kb(
+            "curate",
+            "complete",
+            "20261028T120000-a1b2c3d4",
+            filename,
+            "--disposition",
+            "ephemeral",
+            "--reason",
+            reason,
+        )
+        assert invalid_reason.returncode == 1
+        assert "nonempty single-line --reason" in invalid_reason.stderr
+
+
+def test_kernel_lock_blocks_completion_before_publishing(git_kb: Kb) -> None:
+    filename = "locked.md"
+    content = b"---\ntitle: Locked\n---\n\nEvidence.\n"
+    pending = _pending(git_kb, filename)
+    pending.write_bytes(content)
+    manifest = _write_batch(git_kb, "20261028T120000-a1b2c3d4", [_member(filename, content)])
+    before_manifest = manifest.read_bytes()
+    holder = subprocess.Popen(
+        [sys.executable, "-c", HOLD_KERNEL_LOCK, str(git_kb.content / ".git" / "kb.lock")],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+    )
+    assert holder.stdin is not None
+    assert holder.stdout is not None
+    try:
+        assert holder.stdout.readline() == "locked\n"
+        result = git_kb(
+            "curate",
+            "complete",
+            "20261028T120000-a1b2c3d4",
+            filename,
+            "--disposition",
+            "ephemeral",
+            "--reason",
+            "Temporary",
+        )
+    finally:
+        holder.stdin.close()
+        holder.wait(timeout=30)
+
+    assert result.returncode == 1
+    assert result.stderr == "curate: content repository is busy (waited 1s for the lock)\n"
+    assert pending.read_bytes() == content
+    assert manifest.read_bytes() == before_manifest
+    assert not (git_kb.content / "observations/archived" / filename).exists()
+    assert not list((git_kb.content / ".git" / "kb-tmp").glob("*"))
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="legacy lock is a POSIX-only protocol")
+def test_legacy_lock_blocks_completion_and_is_left_alone(git_kb: Kb) -> None:
+    filename = "legacy-locked.md"
+    content = b"---\ntitle: Legacy lock\n---\n\nEvidence.\n"
+    pending = _pending(git_kb, filename)
+    pending.write_bytes(content)
+    manifest = _write_batch(git_kb, "20261028T120000-a1b2c3d4", [_member(filename, content)])
+    legacy = git_kb.content / ".observe.lock"
+    legacy.mkdir()
+    (legacy / "pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
+
+    result = git_kb(
+        "curate",
+        "complete",
+        "20261028T120000-a1b2c3d4",
+        filename,
+        "--disposition",
+        "ephemeral",
+        "--reason",
+        "Temporary",
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == "curate: content repository is busy (waited 1s for the lock)\n"
+    assert pending.read_bytes() == content
+    assert manifest.is_file()
+    assert (legacy / "pid").read_text(encoding="utf-8") == f"{os.getpid()}\n"
+    assert not list((git_kb.content / ".git" / "kb-tmp").glob("*"))
