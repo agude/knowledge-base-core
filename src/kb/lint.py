@@ -2,13 +2,22 @@
 
 import re
 from dataclasses import dataclass
+from typing import Literal
 
+from kb import locators
 from kb.dates import parse_date
 from kb.freshness import MAX_TTL_DAYS, NAMED_TTL_DAYS
 from kb.model import Document, Section
 
 MAX_H2_LINES = 50
 _SECTION_LOCATOR = re.compile(r"[0-9]+(?:\.[0-9]+)?")
+_MARKDOWN_LINK = re.compile(r"\[[^\]]+\]\(([^)]*)\)")
+_INLINE_CODE = re.compile(r"`+[^`]*`+")
+_EXTERNAL_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
+_NON_SLUG = re.compile(r"[^A-Za-z0-9 _-]")
+_WHITESPACE = re.compile(r"[ \t\f\v]+")
+_HYPHENS = re.compile(r"-+")
+_ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
 _VALID_SECTION_STATUSES = {"current", "superseded", "unresolved"}
 
 
@@ -20,6 +29,63 @@ class Finding:
     line: int
     severity: str
     message: str
+
+
+@dataclass(frozen=True)
+class Reference:
+    """One local Markdown link or source reference at a one-based source line."""
+
+    source_path: str
+    line: int
+    kind: Literal["link", "source"]
+    destination: str
+
+
+def references(document: Document) -> list[Reference]:
+    """Return Markdown links and source entries read from one parsed document."""
+    found = _front_matter_sources(document)
+    metadata_lines = {
+        line_index
+        for comment in document.metadata_comments
+        for line_index in range(comment.span.start, comment.span.end)
+    }
+    for section in document.sections:
+        comment = section.metadata_comment
+        if "sources" not in section.meta or comment is None:
+            continue
+        entry = next((entry for entry in comment.entries if entry.name == "sources"), None)
+        if entry is not None:
+            found.extend(_source_values(document.path, entry.value, entry.line_index + 1))
+
+    for line_index, line in enumerate(document.lines):
+        if (
+            line_index < document.body_start
+            or line_index in document.fenced_lines
+            or line_index in metadata_lines
+        ):
+            continue
+        text = _INLINE_CODE.sub("", line)
+        for match in _MARKDOWN_LINK.finditer(text):
+            destination = _link_destination(match.group(1))
+            if destination:
+                found.append(Reference(document.path, line_index + 1, "link", destination))
+    return sorted(found, key=lambda reference: reference.line)
+
+
+def fragment_resolves(document: Document, fragment: str) -> bool:
+    """Whether a fragment selects text or names an H2/H3 heading in the document."""
+    if fragment in {"title", "top"} and locators.select(document, fragment) is not None:
+        return True
+    if locators.NUMBERED.fullmatch(fragment):
+        normalized = ".".join(part.lstrip("0") or "0" for part in fragment.split("."))
+        if locators.select(document, normalized) is not None:
+            return True
+    slug = _heading_slug(fragment)
+    return any(
+        section.level in (2, 3)
+        and (section.heading == fragment or (slug and _heading_slug(section.heading) == slug))
+        for section in document.sections
+    )
 
 
 def check_document(document: Document, require_ttl: bool = False) -> list[Finding]:
@@ -252,6 +318,46 @@ def _front_field_line(document: Document, name: str) -> int | None:
     """The one-based line of the first front matter occurrence named name."""
     field = next((field for field in document.front_fields if field.name == name), None)
     return None if field is None else field.span.start + 1
+
+
+def _front_matter_sources(document: Document) -> list[Reference]:
+    """Return sources from the first front-matter field occurrence."""
+    field = next((field for field in document.front_fields if field.name == "sources"), None)
+    if field is None:
+        return []
+    if isinstance(field.value, tuple):
+        return [
+            Reference(document.path, line_index + 1, "source", value)
+            for value, line_index in zip(field.value, field.item_line_indices, strict=True)
+            if value
+        ]
+    if field.value:
+        return [Reference(document.path, field.span.start + 1, "source", field.value)]
+    return []
+
+
+def _source_values(path: str, value: str, line: int) -> list[Reference]:
+    """Split a comma-separated section source field into reference entries."""
+    return [
+        Reference(path, line, "source", item.strip()) for item in value.split(",") if item.strip()
+    ]
+
+
+def _link_destination(raw: str) -> str:
+    """Remove Markdown angle brackets or an optional link title."""
+    destination = raw.strip()
+    if destination.startswith("<"):
+        closing = destination.find(">")
+        if closing >= 0:
+            return destination[1:closing]
+    return destination.split(maxsplit=1)[0] if destination else ""
+
+
+def _heading_slug(heading: str) -> str:
+    """The ASCII GitHub-style slug accepted by the old lint script."""
+    slug = _NON_SLUG.sub("", heading.translate(_ASCII_LOWER))
+    slug = _WHITESPACE.sub("-", slug)
+    return _HYPHENS.sub("-", slug).strip("-")
 
 
 def _section_field_line(section: Section, name: str) -> int:

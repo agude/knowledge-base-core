@@ -425,6 +425,7 @@ def test_front_matter_spans_include_duplicate_fields_and_block_lists() -> None:
         ("title", LineSpan(6, 7), False),
     ]
     assert document.front_fields[1].value == ("one", "two")
+    assert document.front_fields[1].item_line_indices == (3, 5)
     assert document.front_fields[2].value == "Second"
 
 
@@ -450,6 +451,7 @@ def test_unclosed_fence_records_its_opening_line() -> None:
     document = parse("# Title\n## Section\n   ~~~python\n## Hidden\n")
 
     assert document.unclosed_fence_start == 2
+    assert document.fenced_lines == frozenset({2, 3})
     assert heading_texts(document) == ["Section"]
 
 

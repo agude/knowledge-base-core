@@ -163,6 +163,63 @@ def test_missing_supersedes_target_is_reported() -> None:
     assert [finding[2] for finding in inspect(text)] == ["supersedes section does not exist: 9"]
 
 
+def test_fragments_accept_kb_locators_exact_headings_and_ascii_slugs() -> None:
+    document = model.parse(
+        "knowledge/target.md",
+        valid_article(
+            "# Example\n## Exact Heading!\n### Child Heading\n#### Deep Heading\n"
+            "```markdown\n## Hidden Heading\n```\n"
+        ),
+    )
+
+    assert lint.fragment_resolves(document, "title")
+    assert lint.fragment_resolves(document, "top")
+    assert lint.fragment_resolves(document, "1")
+    assert lint.fragment_resolves(document, "01")
+    assert not lint.fragment_resolves(document, "Example")
+    assert not lint.fragment_resolves(document, "example")
+    assert lint.fragment_resolves(document, "Exact Heading!")
+    assert lint.fragment_resolves(document, "exact-heading")
+    assert lint.fragment_resolves(document, "Child Heading")
+    assert lint.fragment_resolves(document, "child-heading")
+    assert not lint.fragment_resolves(document, "Deep Heading")
+    assert not lint.fragment_resolves(document, "Hidden Heading")
+    assert not lint.fragment_resolves(document, "missing")
+    assert not lint.fragment_resolves(document, "9" * 5000)
+
+
+def test_references_keep_frontmatter_items_and_skip_code() -> None:
+    document = model.parse(
+        "knowledge/source.md",
+        "---\n"
+        "title: Source\n"
+        "sources:\n"
+        "  - first.md\n"
+        "  - second.md#section\n"
+        "---\n"
+        "# Source\n"
+        "[body](third.md)\n"
+        "`[inline](inline.md)`\n"
+        "```markdown\n"
+        "[fenced](fenced.md)\n"
+        "```\n"
+        "## Section\n"
+        "<!-- kb-section: sources=fourth.md, fifth.md#part; "
+        "label=[not a link](missing-meta-link.md) -->\n",
+    )
+
+    assert [
+        (reference.kind, reference.destination, reference.line)
+        for reference in lint.references(document)
+    ] == [
+        ("source", "first.md", 4),
+        ("source", "second.md#section", 5),
+        ("link", "third.md", 8),
+        ("source", "fourth.md", 14),
+        ("source", "fifth.md#part", 14),
+    ]
+
+
 def test_superseded_section_must_not_declare_even_an_invalid_supersedes_target() -> None:
     text = valid_article(
         "# Example\n## One\n<!-- kb-section: status=superseded; supersedes=abc -->\n"

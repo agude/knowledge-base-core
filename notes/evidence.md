@@ -539,3 +539,24 @@ old script points to end of file.
 actionlint, offline zizmor, and strict mypy passed; 998 tests passed, 6 were
 skipped, and total coverage was 97.60%. Tool caches and coverage output used
 scratch paths under `/tmp`.
+
+## Curation lint references (2026-10-27)
+
+The old `scripts/lint` and `kb lint` both checked the fixture knowledge tree
+without reporting a missing source or Markdown-link target or fragment. The
+step 3 tests also cover valid and missing front-matter and section sources,
+archived observations, `sources/` articles, relative links, repository
+escapes, external URLs, `mailto:`, absolute paths, kb locators, exact H2/H3
+headings, ASCII slugs, and headings inside code fences.
+
+One accepted anchor difference is covered directly. The old script's anchor
+scanner accepts ATX headings at levels 1 through 6. The plan's fragment
+contract accepts kb locators and exact or slug H2/H3 headings, so the new
+linter rejects a link to an H1 or H4 slug. On a disposable fixture, old lint
+passed links to both levels; `kb lint` reported both missing anchors. The
+fixture was removed.
+
+`just check` passed on Linux with Python 3.15.0: lint, formatting,
+actionlint, offline zizmor, and strict mypy passed; 1,004 tests passed, 6
+were skipped, and total coverage was 96.99%. Tool caches and coverage output
+used scratch paths under `/tmp`.

@@ -31,6 +31,11 @@ def test_run_parses_each_path_once_and_does_not_write_or_use_external_services(
 ) -> None:
     content = tmp_path / "content"
     shutil.copytree(FIXTURE, content)
+    source = content / "knowledge" / "rules" / "backups.md"
+    source.write_text(
+        source.read_text(encoding="utf-8") + "\n[existing](../infra/nas.md#1)\n",
+        encoding="utf-8",
+    )
     monkeypatch.setenv("KB_CONTENT", str(content))
     monkeypatch.setenv("KB_TODAY", "2026-10-26")
     before = _tree_bytes(content)
@@ -54,6 +59,43 @@ def test_run_parses_each_path_once_and_does_not_write_or_use_external_services(
     result = lint_command.run(["knowledge/rules/backups.md", "knowledge/rules/backups.md"])
 
     assert result == 0
-    assert parsed == ["knowledge/rules/backups.md"]
+    assert parsed == ["knowledge/rules/backups.md", "knowledge/infra/nas.md"]
     assert capsys.readouterr().out == "Lint: 0 errors, 0 warnings in 1 file(s)\n"
     assert _tree_bytes(content) == before
+
+
+def test_each_reference_target_is_parsed_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    content = tmp_path / "content"
+    knowledge = content / "knowledge"
+    knowledge.mkdir(parents=True)
+    (knowledge / "target.md").write_text(
+        "---\ntitle: Target\nupdated: 2026-10-20\nverified: 2026-10-20\nttl: domain\n---\n"
+        "# Target\n## Section\nText.\n",
+        encoding="utf-8",
+    )
+    (knowledge / "source.md").write_text(
+        "---\ntitle: Source\nupdated: 2026-10-20\nverified: 2026-10-20\nttl: domain\n"
+        "sources:\n  - knowledge/target.md#1\n  - knowledge/target.md#Section\n---\n"
+        "# Source\n[one](target.md#1)\n[two](target.md#Section)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("KB_CONTENT", str(content))
+    monkeypatch.setenv("KB_TODAY", "2026-10-26")
+    parsed: list[str] = []
+    read_document = corpus.read_document
+
+    def track_read(root: Path, relpath: str) -> Document:
+        parsed.append(relpath)
+        return read_document(root, relpath)
+
+    monkeypatch.setattr(corpus, "read_document", track_read)
+
+    result = lint_command.run(["knowledge/source.md"])
+
+    assert result == 0
+    assert parsed == ["knowledge/source.md", "knowledge/target.md"]
+    assert capsys.readouterr().out == "Lint: 0 errors, 0 warnings in 1 file(s)\n"

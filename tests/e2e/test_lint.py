@@ -152,3 +152,134 @@ def test_runtime_path_error_uses_the_lint_prefix(kb: Kb) -> None:
     assert result.returncode == 1
     assert result.stdout == ""
     assert result.stderr == "lint: no such path: knowledge/missing.md\n"
+
+
+def test_missing_and_escaping_references_report_their_source_lines(kb: Kb) -> None:
+    article = kb.content / "knowledge" / "references.md"
+    article.write_text(
+        "---\n"
+        "title: Reference failures\n"
+        "updated: 2026-10-20\n"
+        "verified: 2026-10-20\n"
+        "ttl: domain\n"
+        "sources:\n"
+        "  - missing-source.md#nope\n"
+        "  - ../../outside-source.md\n"
+        "  - knowledge/infra/nas.md#missing-source-fragment\n"
+        "---\n"
+        "\n"
+        "# Reference failures\n"
+        "[missing](missing-link.md)\n"
+        "[escape](../../outside.md)\n"
+        "[missing heading](infra/nas.md#missing)\n"
+        "[fenced heading](rules/sections-structure.md#not-a-heading-inside-a-fence)\n"
+        "\n"
+        "## Section sources\n"
+        "<!-- kb-section: sources=missing-section-source.md#nope -->\n",
+        encoding="utf-8",
+    )
+
+    result = kb("lint", "knowledge/references.md")
+
+    assert result.returncode == 1
+    assert result.stdout == (
+        "knowledge/references.md:7: error: missing local source reference: missing-source.md#nope\n"
+        "knowledge/references.md:8: error: local source reference escapes content root: "
+        "../../outside-source.md\n"
+        "knowledge/references.md:9: error: missing source reference anchor "
+        "'#missing-source-fragment': knowledge/infra/nas.md#missing-source-fragment\n"
+        "knowledge/references.md:13: error: missing local Markdown link target: missing-link.md\n"
+        "knowledge/references.md:14: error: local Markdown link escapes content root: ../../outside.md\n"
+        "knowledge/references.md:15: error: missing local Markdown link anchor '#missing': infra/nas.md#missing\n"
+        "knowledge/references.md:16: error: missing local Markdown link anchor "
+        "'#not-a-heading-inside-a-fence': "
+        "rules/sections-structure.md#not-a-heading-inside-a-fence\n"
+        "knowledge/references.md:19: error: missing local source reference: "
+        "missing-section-source.md#nope\n"
+        "Lint: 8 errors, 0 warnings in 1 file(s)\n"
+    )
+    assert result.stderr == ""
+
+
+def test_existing_source_and_link_fragments_resolve(kb: Kb) -> None:
+    target = kb.content / "knowledge" / "target.md"
+    target.write_text(
+        "---\n"
+        "title: Reference target\n"
+        "updated: 2026-10-20\n"
+        "verified: 2026-10-20\n"
+        "ttl: domain\n"
+        "---\n"
+        "# Target\n"
+        "Top text.\n"
+        "## Exact Heading\n"
+        "Section text.\n"
+        "## GitHub Heading\n"
+        "Heading text.\n"
+        "### Child Heading\n"
+        "Child text.\n",
+        encoding="utf-8",
+    )
+    source = kb.content / "knowledge" / "reference-source.md"
+    source.write_text(
+        "---\n"
+        "title: Reference source\n"
+        "updated: 2026-10-20\n"
+        "verified: 2026-10-20\n"
+        "ttl: domain\n"
+        "sources:\n"
+        "  - knowledge/target.md#1\n"
+        "  - knowledge/target.md#title\n"
+        "  - knowledge/target.md#top\n"
+        "  - knowledge/target.md#Exact Heading\n"
+        "  - knowledge/target.md#github-heading\n"
+        "  - knowledge/target.md#Child Heading\n"
+        "  - sources/vendor-guide.md#Firmware update\n"
+        "  - observations/archived/20260412T101500-a1b2c3d4.md\n"
+        "---\n"
+        "# Reference source\n"
+        "[numbered](target.md#2.1)\n"
+        "[exact](<../sources/vendor-guide.md#Firmware update>)\n"
+        "`[inline code](missing-inline.md)`\n"
+        "```markdown\n"
+        "[fenced code](missing-fenced.md)\n"
+        "```\n"
+        "\n"
+        "## Section sources\n"
+        "<!-- kb-section: sources=knowledge/target.md#Child Heading -->\n",
+        encoding="utf-8",
+    )
+
+    result = kb("lint", "knowledge/reference-source.md")
+
+    assert result.returncode == 0
+    assert result.stdout == "Lint: 0 errors, 0 warnings in 1 file(s)\n"
+    assert result.stderr == ""
+
+
+def test_external_mailto_and_absolute_references_are_skipped(kb: Kb) -> None:
+    article = kb.content / "knowledge" / "external-references.md"
+    article.write_text(
+        "---\n"
+        "title: External references\n"
+        "updated: 2026-10-20\n"
+        "verified: 2026-10-20\n"
+        "ttl: domain\n"
+        "sources:\n"
+        "  - https://example.invalid/guide\n"
+        "  - mailto:help@example.invalid\n"
+        "  - /absolute/source.md\n"
+        "---\n"
+        "# External references\n"
+        "[url](https://example.invalid/guide)\n"
+        "[mail](mailto:help@example.invalid)\n"
+        "[absolute](/absolute/guide.md)\n"
+        "[protocol relative](//example.invalid/guide)\n",
+        encoding="utf-8",
+    )
+
+    result = kb("lint", "knowledge/external-references.md")
+
+    assert result.returncode == 0
+    assert result.stdout == "Lint: 0 errors, 0 warnings in 1 file(s)\n"
+    assert result.stderr == ""

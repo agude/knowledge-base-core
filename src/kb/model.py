@@ -66,6 +66,7 @@ class FrontMatterField:
     span: LineSpan
     value: FrontValue
     block: bool
+    item_line_indices: tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -134,6 +135,7 @@ class Document:
     top_headings: tuple[str, ...]
     h1: str | None
     h1_positions: tuple[int, ...]
+    fenced_lines: frozenset[int]
     unclosed_fence_start: int | None
     sections: tuple[Section, ...]
     metadata_comments: tuple[MetadataComment, ...]
@@ -227,6 +229,7 @@ def parse(path: str, text: str) -> Document:
         top_headings=tuple(heading for index, _, heading in headings if index < top_end),
         h1=next((heading for _, level, heading in headings if level == 1), None),
         h1_positions=h1_positions,
+        fenced_lines=frozenset(index for index, is_fenced in enumerate(inside) if is_fenced),
         unclosed_fence_start=unclosed_fence_start,
         sections=tuple(sections),
         metadata_comments=metadata_comments,
@@ -261,6 +264,7 @@ def _front_matter(
     ends: list[int] = []
     values: list[str | list[str]] = []
     blocks: list[bool] = []
+    item_line_indices: list[list[int]] = []
     open_field_index: int | None = None
     for line_index in range(1, close):
         line = lines[line_index]
@@ -271,6 +275,7 @@ def _front_matter(
                 current_items = values[open_field_index]
                 if isinstance(current_items, list):
                     current_items.append(_scalar(item.group(1)))
+                    item_line_indices[open_field_index].append(line_index)
             continue
         pair = _KEY.fullmatch(line)
         if pair is None:
@@ -283,6 +288,7 @@ def _front_matter(
         starts.append(line_index)
         ends.append(line_index + 1)
         blocks.append(not value)
+        item_line_indices.append([])
         if value:
             scalar = _scalar(value)
             values.append(scalar)
@@ -310,8 +316,11 @@ def _front_matter(
             if isinstance(value, list) and value
             else ("" if isinstance(value, list) else value),
             block=block,
+            item_line_indices=tuple(item_line_indices[index]),
         )
-        for name, start, end, value, block in zip(names, starts, ends, values, blocks, strict=True)
+        for index, (name, start, end, value, block) in enumerate(
+            zip(names, starts, ends, values, blocks, strict=True)
+        )
     )
     return front, close + 1, fields, LineSpan(0, close + 1), True, True
 
