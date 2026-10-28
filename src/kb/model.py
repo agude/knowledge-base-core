@@ -42,6 +42,7 @@ FrontValue = str | tuple[str, ...]
 
 _RULE = re.compile(r"---[ \t]*")
 _KEY = re.compile(r"([A-Za-z_][A-Za-z0-9_-]*)[ \t]*:(.*)")
+_FIELD_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
 _ITEM = re.compile(r"[ \t]*-[ \t]+(.*)")
 _FENCE = re.compile(r"[ \t]{0,3}(`{3,}|~{3,})(.*)")
 _HEADING = re.compile(r"(#{1,6})[ \t]+(.*)")
@@ -56,6 +57,10 @@ class LineSpan:
 
     start: int
     end: int
+
+
+class FrontMatterEditError(ValueError):
+    """A front-matter edit cannot be applied without guessing."""
 
 
 @dataclass(frozen=True)
@@ -239,11 +244,108 @@ def parse(path: str, text: str) -> Document:
     )
 
 
+def edit_front_matter(
+    text: str,
+    name: str,
+    value: str,
+    after: str | None = None,
+) -> str:
+    """Replace one scalar field or insert it after a field or before the closing delimiter.
+
+    The field and insertion anchor must each be unique scalar fields. The new value is a
+    single-line string; only its field line is replaced, and insertions use the surrounding
+    line ending.
+    """
+    if _FIELD_NAME.fullmatch(name) is None:
+        raise FrontMatterEditError(f"invalid field name: {name}")
+    if "\n" in value or "\r" in value:
+        raise FrontMatterEditError("front matter value must be a single line")
+
+    document = parse("", text)
+    if not document.front_matter_opened:
+        raise FrontMatterEditError("front matter is missing")
+    if not document.front_matter_closed:
+        raise FrontMatterEditError("front matter is unclosed")
+
+    matches = [field for field in document.front_fields if field.name == name]
+    if len(matches) > 1:
+        raise FrontMatterEditError(f"front matter field is duplicated: {name}")
+    raw_lines = _split_raw_lines(text)
+    if matches:
+        field = matches[0]
+        if field.block:
+            raise FrontMatterEditError(f"front matter field is a block list: {name}")
+        line_ending = _line_ending(raw_lines[field.span.start])
+        raw_lines[field.span.start] = f"{name}: {_scalar_source(value)}{line_ending}"
+        result = "".join(raw_lines)
+        if parse("", result).scalar(name) != value:
+            raise FrontMatterEditError(f"edited value did not round-trip: {name}")
+        return result
+
+    span = document.front_matter_span
+    if span is None:
+        raise FrontMatterEditError("front matter is missing")
+    if after is None:
+        insert_at = span.end - 1
+    else:
+        if _FIELD_NAME.fullmatch(after) is None:
+            raise FrontMatterEditError(f"invalid insertion anchor: {after}")
+        anchors = [field for field in document.front_fields if field.name == after]
+        if not anchors:
+            raise FrontMatterEditError(f"insertion anchor is missing: {after}")
+        if len(anchors) > 1:
+            raise FrontMatterEditError(f"insertion anchor is duplicated: {after}")
+        anchor = anchors[0]
+        if anchor.block:
+            raise FrontMatterEditError(f"insertion anchor is a block list: {after}")
+        insert_at = anchor.span.end
+
+    line_ending = _line_ending(raw_lines[insert_at - 1]) if insert_at else ""
+    if not line_ending and insert_at < len(raw_lines):
+        line_ending = _line_ending(raw_lines[insert_at])
+    if not line_ending:
+        line_ending = "\n"
+    raw_lines.insert(insert_at, f"{name}: {_scalar_source(value)}{line_ending}")
+    result = "".join(raw_lines)
+    if parse("", result).scalar(name) != value:
+        raise FrontMatterEditError(f"edited value did not round-trip: {name}")
+    return result
+
+
 def _split_lines(text: str) -> list[str]:
     lines = text.split("\n")
     if lines and lines[-1] == "":
         lines.pop()
     return [line[:-1] if line.endswith("\r") else line for line in lines]
+
+
+def _split_raw_lines(text: str) -> list[str]:
+    """Split on the parser's newline boundary while preserving every character."""
+    lines = text.split("\n")
+    return [f"{line}\n" for line in lines[:-1]] + ([lines[-1]] if lines[-1] else [])
+
+
+def _line_ending(line: str) -> str:
+    """The line ending on one original line, if any."""
+    if line.endswith("\r\n"):
+        return "\r\n"
+    if line.endswith("\n"):
+        return "\n"
+    if line.endswith("\r"):
+        return "\r"
+    return ""
+
+
+def _scalar_source(value: str) -> str:
+    """Write a single-line scalar without changing its parsed value."""
+    if (
+        not value
+        or value != value.strip(" \t")
+        or (len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'")
+    ):
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    return value
 
 
 def _front_matter(

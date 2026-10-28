@@ -560,3 +560,9 @@ fixture was removed.
 actionlint, offline zizmor, and strict mypy passed; 1,004 tests passed, 6
 were skipped, and total coverage was 96.99%. Tool caches and coverage output
 used scratch paths under `/tmp`.
+
+## Front-matter editor (2026-10-27)
+
+The pure model editor replaces a unique scalar field line or inserts one after a unique scalar field or before the closing delimiter. It uses the parser's line spans, refuses missing or unclosed front matter, duplicate fields, block-list targets and anchors, invalid names, and multiline values. Insertions follow the surrounding LF or CRLF convention. Replacement values are quoted and escaped when needed, and every edit is reparsed to confirm the requested value.
+
+Tests assert that replacement changes only its target line, insertion adds one line, other quoted fields and body bytes remain unchanged, CRLF is preserved, and ambiguous or unsafe edits fail. `just check` passed on Linux with Python 3.15.0: lint, formatting, actionlint, offline zizmor, and strict mypy passed; 1,017 tests passed, 6 were skipped, and total coverage was 96.67%. Tool caches and coverage output used scratch paths under `/tmp`.
