@@ -1,8 +1,20 @@
 """End-to-end tests for `kb read`."""
 
+import shutil
+from pathlib import Path
+
 import pytest
 
 from .harness import Kb
+
+ADDRESSABLE_SOURCE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "evidence-content"
+    / "observations"
+    / "archived"
+    / "20261021T120000-abcd1234.md"
+)
 
 POWER_LOSS = (
     "knowledge/infra/nas.md#2 | Power loss | fresh, verified 2026-08-16 | 1 source\n"
@@ -258,6 +270,81 @@ def test_sources_flag_prints_nothing_without_sources(kb: Kb) -> None:
     result = kb("read", "knowledge/infra/syncthing.md#1", "--sources")
     assert result.returncode == 0
     assert result.stdout == ""
+
+
+def test_inherited_source_locators_can_be_followed_without_rewriting(git_kb: Kb) -> None:
+    transcript_relative = "observations/archived/20261021T120000-abcd1234.md"
+    transcript = git_kb.content / transcript_relative
+    shutil.copyfile(ADDRESSABLE_SOURCE, transcript)
+    article_relative = "knowledge/source-links.md"
+    article = git_kb.content / article_relative
+    article.write_text(
+        "---\n"
+        "title: Source links\n"
+        "sources:\n"
+        "  - 20260412T101500-a1b2c3d4.md\n"
+        "---\n"
+        "\n"
+        "# Source links\n"
+        "\n"
+        "## Parent sources\n"
+        "\n"
+        "<!-- kb-section: sources=observations/archived/20260412T101500-a1b2c3d4.md, "
+        f"{transcript_relative}#2 -->\n"
+        "\n"
+        "Parent source metadata.\n"
+        "\n"
+        "### Child inherits sources\n"
+        "\n"
+        "The child inherits the parent's source list.\n"
+        "\n"
+        "## Broken references\n"
+        "\n"
+        "<!-- kb-section: sources=missing-observation.md, backups.md -->\n"
+        "\n"
+        "Keep unresolved references readable.\n",
+        encoding="utf-8",
+    )
+    before_article = article.read_bytes()
+    before_transcript = transcript.read_bytes()
+    before_status = git_kb.git("status", "--porcelain")
+    before_head = git_kb.git("rev-parse", "HEAD")
+
+    article_sources = git_kb("read", article_relative, "--sources")
+    assert article_sources.returncode == 0
+    assert article_sources.stdout == "20260412T101500-a1b2c3d4.md\n"
+    legacy = git_kb("read", "20260412T101500-a1b2c3d4.md")
+    assert legacy.returncode == 0
+    assert legacy.stdout.startswith("observations/archived/20260412T101500-a1b2c3d4.md | ")
+    assert "Traefik must come up before Syncthing" in legacy.stdout
+
+    inherited = git_kb("read", f"{article_relative}#1.1", "--sources")
+    assert inherited.returncode == 0
+    assert inherited.stdout == (
+        f"observations/archived/20260412T101500-a1b2c3d4.md\n{transcript_relative}#2\n"
+    )
+    archived = git_kb("read", "observations/archived/20260412T101500-a1b2c3d4.md")
+    assert archived.returncode == 0
+    assert "Traefik must come up before Syncthing" in archived.stdout
+    message = git_kb("read", f"{transcript_relative}#2")
+    assert message.returncode == 0
+    assert message.stdout.startswith(f"{transcript_relative}#2 | ")
+    assert "The queue waited for credentials." in message.stdout
+
+    broken = git_kb("read", f"{article_relative}#2", "--sources")
+    assert broken.returncode == 0
+    assert broken.stdout == "missing-observation.md\nbackups.md\n"
+    missing = git_kb("read", "missing-observation.md")
+    assert missing.returncode == 1
+    assert missing.stderr == 'kb read: no file matches "missing-observation.md"\n'
+    ambiguous = git_kb("read", "backups.md")
+    assert ambiguous.returncode == 1
+    assert '"backups.md" matches 2 files:' in ambiguous.stderr
+
+    assert article.read_bytes() == before_article
+    assert transcript.read_bytes() == before_transcript
+    assert git_kb.git("status", "--porcelain") == before_status
+    assert git_kb.git("rev-parse", "HEAD") == before_head
 
 
 def test_observation_prints_title_without_status(kb: Kb) -> None:

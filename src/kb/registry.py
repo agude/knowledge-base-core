@@ -7,6 +7,7 @@ from kb.commands import evidence as evidence_command
 from kb.commands import gap as gap_command
 from kb.commands import map as map_command
 from kb.commands import observe as observe_command
+from kb.commands import questions as questions_command
 from kb.commands import read as read_command
 from kb.commands import recall as recall_command
 from kb.commands import sync as sync_command
@@ -39,6 +40,11 @@ COMMANDS: tuple[Command, ...] = (
         name="gap",
         summary="Record one attributed question and commit it.",
         run=gap_command.run,
+    ),
+    Command(
+        name="questions",
+        summary="List open questions by context.",
+        run=questions_command.run,
     ),
     Command(
         name="sync",
