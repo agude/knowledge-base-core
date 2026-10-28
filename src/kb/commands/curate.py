@@ -34,8 +34,16 @@ STATUS_SPEC = Spec(
     usage="curate status RUN",
     summary="Show local batch progress and any commands needed to recover or drop an item.",
 )
+NEXT_SPEC = Spec(
+    usage="curate next RUN [--query TEXT]",
+    summary=(
+        "Show the next unchanged observation in full with matching curated sections and open "
+        "questions. --query overrides the observation title for related context."
+    ),
+    valued=frozenset({"--query"}),
+)
 SPEC = Spec(
-    usage="curate {start,status} ...",
+    usage="curate {start,status,next} ...",
     summary=(
         "Manage local curation batches. Start selects bounded input; status reports persisted "
         "progress without changing files or contacting Git."
@@ -70,6 +78,8 @@ def run(words: Sequence[str]) -> int:
         return _start_command(arguments)
     if command == "status":
         return _status_command(arguments)
+    if command == "next":
+        return _next_command(arguments)
     raise KbError(f"Usage: kb {SPEC.usage}")
 
 
@@ -131,6 +141,29 @@ def _status_command(words: Sequence[str]) -> int:
     except (OSError, RuntimeError, UnicodeError) as error:
         raise KbError(f"{WHO}: {error}") from error
     sys.stdout.write(status)
+    return exit_code
+
+
+def _next_command(words: Sequence[str]) -> int:
+    parsed = args.parse(NEXT_SPEC, words)
+    if parsed.help:
+        sys.stdout.write(NEXT_SPEC.help_text())
+        return 0
+    if len(parsed.words) != 1:
+        raise NEXT_SPEC.usage_error()
+    try:
+        context = load(os.environ, sys.platform, Path.home())
+        batch = _read_batch(context.root, parsed.words[0])
+        output, exit_code = _next(context, batch, parsed.values.get("--query"))
+    except curation.StateError as error:
+        raise KbError(f"{WHO}: {error}") from error
+    except KbError as error:
+        if str(error).startswith((f"{WHO}:", "Usage:")):
+            raise
+        raise KbError(f"{WHO}: {error}") from error
+    except (OSError, RuntimeError, UnicodeError) as error:
+        raise KbError(f"{WHO}: {error}") from error
+    sys.stdout.write(output)
     return exit_code
 
 
@@ -261,6 +294,106 @@ def _status(root: Path, batch: curation.Batch) -> tuple[str, int]:
     if curation.is_settled(batch):
         lines.append("Batch is locally settled and unpublished.")
     return "\n".join(lines) + "\n", int(bool(problems))
+
+
+def _next(context: Context, batch: curation.Batch, query_override: str | None) -> tuple[str, int]:
+    """Render the first pending member with recall context, without changing state."""
+    recoverable = [member for member in batch.members if member.status == "archiving"]
+    if recoverable:
+        commands = [
+            "Run: " + shlex.join(_completion_words(batch.id, member)) for member in recoverable
+        ]
+        return "\n".join(
+            ["Batch has an interrupted archive; finish it before presenting more work.", *commands]
+        ) + "\n", 1
+
+    pending = next((member for member in batch.members if member.status == "pending"), None)
+    if pending is None:
+        return "No pending members; batch is locally settled and unpublished.\n", 0
+
+    content = _snapshot_bytes(context.root, PENDING, pending)
+    if content is None:
+        command = (
+            shlex.join(["kb", "curate", "drop", batch.id, pending.filename]) + " --reason TEXT"
+        )
+        return (
+            f"Pending input is missing or changed: {PENDING}/{pending.filename}\nRun: {command}\n",
+            1,
+        )
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise KbError(f"{WHO}: pending observation is not valid UTF-8: {error.reason}") from error
+    document = model.parse(f"{PENDING}/{pending.filename}", text.removeprefix("\ufeff"))
+    query = query_override if query_override is not None else (document.title or "")
+    query_words = [query] if query else []
+    sections = recall_command.matching_sections(context, query_words, limit=3)
+    question_rows = recall_command.matching_open_question_rows(
+        context, query_words, has_curated_matches=bool(sections)
+    )
+    return _render_next(batch, pending, content, text, query, sections, question_rows), 0
+
+
+def _render_next(
+    batch: curation.Batch,
+    member: curation.Member,
+    content: bytes,
+    text: str,
+    query: str,
+    sections: Sequence[str],
+    question_rows: Sequence[str],
+) -> str:
+    """Format the full observation and bounded context in the documented order."""
+    complete_count = sum(item.status == "complete" for item in batch.members)
+    deferred_count = sum(item.status == "deferred" for item in batch.members)
+    dropped_count = sum(item.status == "dropped" for item in batch.members)
+    pending_count = sum(item.status == "pending" for item in batch.members)
+    lines = [
+        f"Batch: {batch.id}",
+        f"Progress: {complete_count} complete, {deferred_count} deferred, "
+        f"{dropped_count} dropped of {len(batch.members)}; {pending_count} pending",
+        f"Pending locator: {PENDING}/{member.filename}",
+        f"Input bytes: {len(content)}",
+        f"SHA-256: {member.original_sha256}",
+        "Observation:",
+    ]
+    output = "\n".join(lines) + "\n" + text
+    if not text.endswith("\n"):
+        output += "\n"
+    output += f"\nQuery: {query}\n"
+    if sections:
+        output += "Matching curated sections:\n" + "".join(sections)
+    elif query:
+        output += f'No curated sections match "{query}".\n'
+    else:
+        output += "No curated sections match an empty query.\n"
+    if question_rows:
+        output += "Related open questions:\n"
+        output += "\n".join(question_rows) + "\n"
+        output += evidence.READ_WITH + "\n"
+    else:
+        output += "No related open questions.\n"
+
+    complete = shlex.join(
+        ["kb", "curate", "complete", batch.id, member.filename, "--disposition", "incorporated"]
+    )
+    duplicate = shlex.join(
+        ["kb", "curate", "complete", batch.id, member.filename, "--disposition", "duplicate"]
+    )
+    ephemeral = shlex.join(
+        ["kb", "curate", "complete", batch.id, member.filename, "--disposition", "ephemeral"]
+    )
+    defer = shlex.join(["kb", "curate", "defer", batch.id, member.filename])
+    output += (
+        "Commands:\n"
+        f"  {complete} LOCATOR...\n"
+        f"  {duplicate} LOCATOR...\n"
+        f"  {ephemeral} --reason TEXT\n"
+        f"  {defer} --reason TEXT\n"
+        "Check related stale claims with kb verify only when evidence supports verification.\n"
+        "Close supported gaps with kb resolve; leave unanswered questions open.\n"
+    )
+    return output
 
 
 def _completion_words(run_id: str, member: curation.Member) -> list[str]:
@@ -522,21 +655,34 @@ def _matches_snapshot(
     archive: bool = False,
 ) -> bool:
     """Whether a safe file currently matches a pending or archived state hash."""
+    return _snapshot_bytes(root, directory, member, archive=archive) is not None
+
+
+def _snapshot_bytes(
+    root: Path,
+    directory: str,
+    member: curation.Member,
+    *,
+    archive: bool = False,
+) -> bytes | None:
+    """Read a safe file only when it matches the hash and size recorded in state."""
     fixed_directory = _fixed_directory(root, directory, create=False, optional=True)
     if fixed_directory is None:
-        return False
+        return None
     path = fixed_directory / member.filename
     if path.is_symlink() or not path.is_file():
-        return False
+        return None
     try:
         data = path.read_bytes()
     except OSError:
-        return False
+        return None
     expected_hash = member.archive_sha256 if archive else member.original_sha256
     expected_bytes = None if archive else member.original_bytes
-    return hashlib.sha256(data).hexdigest() == expected_hash and (
-        expected_bytes is None or len(data) == expected_bytes
-    )
+    if hashlib.sha256(data).hexdigest() != expected_hash:
+        return None
+    if expected_bytes is not None and len(data) != expected_bytes:
+        return None
+    return data
 
 
 def _fixed_directory(

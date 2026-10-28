@@ -130,10 +130,11 @@ def test_dispatch_and_nested_command_usage(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert curate.run([]) == 0
-    assert "Usage: kb curate {start,status} ..." in capsys.readouterr().out
+    assert "Usage: kb curate {start,status,next} ..." in capsys.readouterr().out
     assert curate.run(["--help"]) == 0
     assert curate.run(["start", "--help"]) == 0
     assert curate.run(["status", "--help"]) == 0
+    assert curate.run(["next", "--help"]) == 0
     with pytest.raises(KbError, match="Usage: kb curate"):
         curate.run(["other"])
     with pytest.raises(KbError, match="Usage: kb curate start"):
@@ -145,6 +146,8 @@ def test_dispatch_and_nested_command_usage(
         curate._start_command(["--max-bytes", "1"])
     with pytest.raises(KbError, match="Usage: kb curate status"):
         curate._status_command([])
+    with pytest.raises(KbError, match="Usage: kb curate next"):
+        curate._next_command([])
 
 
 def test_start_command_holds_the_shared_lock_and_wraps_runtime_errors(
@@ -243,3 +246,51 @@ def test_status_does_not_write_call_git_lock_scan_secrets_or_network(
     assert "States: pending=1" in output
     assert {path: path.stat().st_mtime_ns for path in before} == before
     assert sorted(path.name for path in batches_directory.iterdir()) == [manifest.name]
+
+
+def test_next_is_read_only_and_does_not_call_git_lock_or_network(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    filename = "item.md"
+    content = _observation("A focused synthetic title", "2026-10-20", "Full body context.")
+    root = _make_repo(tmp_path / "content", {filename: content})
+    article = root / "knowledge" / "context.md"
+    article.write_text(
+        "---\ntitle: A focused synthetic title\nverified: 2026-10-20\n---\n"
+        "# A focused synthetic title\n\nA matching fact.\n",
+        encoding="utf-8",
+    )
+    _commit_repo(root, "knowledge/context.md")
+    context = _context(root)
+    pending = root / "observations" / "pending" / filename
+    member = curation.make_member(filename, pending.read_bytes())
+    batch = curation.make_batch(RUN, datetime(2026, 10, 28, tzinfo=UTC), 100, [member])
+    manifest = root / "observations" / "batches" / f"{RUN}.json"
+    (manifest.parent).mkdir(parents=True, exist_ok=True)
+    manifest.write_text(curation.render_batch(batch), encoding="utf-8")
+    before = {path: path.stat().st_mtime_ns for path in (pending, article, manifest)}
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True
+    ).stdout
+
+    def unexpected(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("next attempted an external or writing operation")
+
+    monkeypatch.setattr(curate, "load", lambda *_args: context)
+    monkeypatch.setattr(curate, "_read_batch", lambda *_args: batch)
+    monkeypatch.setattr(curate, "run_process", unexpected)
+    monkeypatch.setattr(lock, "write_lock", unexpected)
+    monkeypatch.setattr(secrets, "findings", unexpected)
+    monkeypatch.setattr(socket, "create_connection", unexpected)
+    monkeypatch.setattr(urllib.request, "urlopen", unexpected)
+
+    assert curate._next_command([RUN]) == 0
+    output = capsys.readouterr().out
+
+    assert "Full body context." in output
+    assert {path: path.stat().st_mtime_ns for path in before} == before
+    current_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True
+    ).stdout
+    assert current_head == head
+    assert not list((root / ".git" / "kb-tmp").glob("*"))

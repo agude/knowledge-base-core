@@ -56,23 +56,26 @@ def run(words: Sequence[str]) -> int:
 
 def answer(context: Context, words: Sequence[str], limit: int, scope: str | None) -> str:
     """The text of the answer to a query."""
-    terms = search.query_terms(words)
     results = _ranked(context.root, words, scope)
     if not results:
-        items = evidence.select(
-            _evidence(context.root, scope, (PENDING, ARCHIVED, *ALL_QUESTIONS)),
-            terms,
-            None,
-            None,
-            None,
+        items = _matching_evidence(
+            context,
+            words,
+            scope,
+            (PENDING, ARCHIVED, *ALL_QUESTIONS),
             FOLLOW_UP,
         )
+        questions = matching_open_questions(context, words, scope, candidates=items)
+        question_paths = {item.path for item in questions}
+        items = [
+            item for item in items if item.kind != "open-question" or item.path in question_paths
+        ]
         head = f'No curated knowledge matches "{" ".join(words)}".'
         if not items:
             return head + "\n"
         return head + "\n" + evidence.format_results(" ".join(words), items)
     blocks = [
-        _result_block(context, document, candidate) for document, candidate in results[:limit]
+        section_block(context, document, candidate) for document, candidate in results[:limit]
     ]
     tail: list[str] = []
     follow = results[limit : limit + FOLLOW_UP]
@@ -82,14 +85,18 @@ def answer(context: Context, words: Sequence[str], limit: int, scope: str | None
             f"  {document.path}#{candidate.fragment} | {candidate.heading}"
             for document, candidate in follow
         )
-    uncurated = evidence.select(
-        _evidence(context.root, scope, (PENDING, OPEN_QUESTIONS)),
-        terms,
-        None,
-        None,
-        None,
+    uncurated = _matching_evidence(
+        context,
+        words,
+        scope,
+        (PENDING, OPEN_QUESTIONS),
         FOLLOW_UP,
     )
+    questions = matching_open_questions(context, words, scope, candidates=uncurated)
+    question_paths = {item.path for item in questions}
+    uncurated = [
+        item for item in uncurated if item.kind != "open-question" or item.path in question_paths
+    ]
     if uncurated:
         tail.append("Uncurated (pending, not yet verified):")
         tail.extend(evidence.format_rows(uncurated))
@@ -105,6 +112,63 @@ def ranked_locators(root: Path, words: Sequence[str], scope: str | None = None) 
     ]
 
 
+def matching_sections(
+    context: Context,
+    words: Sequence[str],
+    limit: int = DEFAULT_LIMIT,
+    scope: str | None = None,
+) -> list[str]:
+    """The formatted, ranked curated sections that recall would show for a query."""
+    return [
+        section_block(context, document, candidate)
+        for document, candidate in _ranked(context.root, words, scope)[:limit]
+    ]
+
+
+def matching_open_questions(
+    context: Context,
+    words: Sequence[str],
+    scope: str | None = None,
+    limit: int = FOLLOW_UP,
+    *,
+    candidates: Sequence[evidence.Item] | None = None,
+    has_curated_matches: bool | None = None,
+) -> list[evidence.Item]:
+    """The open-question rows that occur in recall's bounded evidence matches."""
+    if candidates is None:
+        if has_curated_matches is None:
+            has_curated_matches = bool(_ranked(context.root, words, scope))
+        directories = (
+            (PENDING, OPEN_QUESTIONS)
+            if has_curated_matches
+            else (PENDING, ARCHIVED, *ALL_QUESTIONS)
+        )
+        candidates = _matching_evidence(context, words, scope, directories, limit)
+    return [item for item in candidates if item.kind == "open-question"][:limit]
+
+
+def matching_open_question_rows(
+    context: Context,
+    words: Sequence[str],
+    scope: str | None = None,
+    *,
+    has_curated_matches: bool | None = None,
+) -> list[str]:
+    """The question rows recall would show, retaining its shared column widths."""
+    if has_curated_matches is None:
+        has_curated_matches = bool(_ranked(context.root, words, scope))
+    directories = (
+        (PENDING, OPEN_QUESTIONS) if has_curated_matches else (PENDING, ARCHIVED, *ALL_QUESTIONS)
+    )
+    candidates = _matching_evidence(context, words, scope, directories, FOLLOW_UP)
+    questions = matching_open_questions(context, words, scope, candidates=candidates)
+    rows_by_path = {
+        item.path: row
+        for item, row in zip(candidates, evidence.format_rows(candidates), strict=True)
+    }
+    return [rows_by_path[item.path] for item in questions]
+
+
 def _ranked(
     root: Path, words: Sequence[str], scope: str | None
 ) -> list[tuple[Document, search.Candidate]]:
@@ -118,7 +182,7 @@ def _ranked(
     return [pairs[hit.index] for hit in hits]
 
 
-def _result_block(context: Context, document: Document, candidate: search.Candidate) -> str:
+def section_block(context: Context, document: Document, candidate: search.Candidate) -> str:
     section = None if candidate.fragment == "top" else document.section(candidate.fragment)
     lines = document.top_lines() if section is None else document.section_lines(section)
     head = locators.header(
@@ -128,6 +192,22 @@ def _result_block(context: Context, document: Document, candidate: search.Candid
         len(document.items("sources", section)),
     )
     return locators.block(head, lines)
+
+
+def _matching_evidence(
+    context: Context,
+    words: Sequence[str],
+    scope: str | None,
+    directories: Sequence[str],
+    limit: int,
+) -> list[evidence.Item]:
+    """Select the evidence rows recall uses for a query and its scope."""
+    terms = search.query_terms(words)
+    if not terms:
+        return []
+    return evidence.select(
+        _evidence(context.root, scope, directories), terms, None, None, None, limit
+    )
 
 
 def _scope(context: Context, value: str | None) -> str | None:

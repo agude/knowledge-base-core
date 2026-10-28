@@ -1,4 +1,4 @@
-"""End-to-end tests for local curation batch selection and status."""
+"""End-to-end tests for local curation batch selection, status, and next context."""
 
 import hashlib
 import json
@@ -89,7 +89,7 @@ def test_start_help_usage_and_budget_validation(git_kb: Kb) -> None:
     help_result = git_kb("curate", "start", "--help")
     assert help_result.returncode == 0
     assert help_result.stdout.startswith("Usage: kb curate start --max-bytes N [FILENAME...]\n\n")
-    assert git_kb("curate").stdout.startswith("Usage: kb curate {start,status} ...")
+    assert git_kb("curate").stdout.startswith("Usage: kb curate {start,status,next} ...")
 
     missing = git_kb("curate", "start")
     assert missing.returncode == 1
@@ -585,3 +585,190 @@ def test_status_rejects_malformed_manifest_and_path_like_run_id(kb: Kb) -> None:
     _failure(bad_json, "malformed batch manifest")
     path_run = kb("curate", "status", "../20261028T120000-a1b2c3d4")
     _failure(path_run, "unsafe batch id")
+
+
+def test_next_prints_full_observation_stable_context_and_three_section_limit(git_kb: Kb) -> None:
+    filename = "full transcript note.md"
+    observation = (
+        '---\ntitle: "Curation context crimson"\n'
+        "source: session-transcript\n"
+        'session: "fixture-session"\n'
+        "part: 1\n"
+        'first_message: "message-1"\n'
+        'last_message: "message-4"\n'
+        "started: 2026-10-24T09:00:00Z\n"
+        "ended: 2026-10-24T09:03:00Z\n"
+        "created: 2026-10-24T09:03:00Z\n---\n\n"
+        "## 1. user, 2026-10-24T09:00:00Z\n\n"
+        "````text\nThe first user turn reported a restart problem.\n````\n\n"
+        "## 2. assistant, 2026-10-24T09:01:00Z\n\n"
+        "````text\nCheck the logs after the service restart.\n````\n\n"
+        "## 3. user, 2026-10-24T09:02:00Z\n\n"
+        "````text\nThe failure happened after the network came back.\n````\n\n"
+        "## 4. assistant, 2026-10-24T09:03:00Z\n\n"
+        "````sh\nrestart-services --after-network\n````\n"
+    )
+    pending = _pending(git_kb, filename)
+    pending.write_text(observation, encoding="utf-8")
+    for index in range(4):
+        article = git_kb.content / f"knowledge/next-context-{index}.md"
+        conflict = "conflict: unresolved\n" if index == 0 else ""
+        article.write_text(
+            "---\n"
+            'title: "Curation context crimson"\n'
+            "verified: 2020-01-01\n"
+            "ttl: 1\n"
+            f"{conflict}"
+            "---\n\n"
+            "# Curation context crimson\n\n"
+            f"Context entry {index}.\n",
+            encoding="utf-8",
+        )
+    manifest = _write_batch(
+        git_kb, "20261028T120000-a1b2c3d4", [_member(filename, pending.read_bytes())]
+    )
+    pending_mtime = pending.stat().st_mtime_ns
+    manifest_mtime = manifest.stat().st_mtime_ns
+    original_head = git_kb.git("rev-parse", "HEAD")
+
+    first = git_kb("curate", "next", "20261028T120000-a1b2c3d4")
+    second = git_kb("curate", "next", "20261028T120000-a1b2c3d4")
+    path_read = git_kb("read", f"observations/pending/{filename}")
+
+    assert first.returncode == 0, first.stderr
+    assert first.stderr == ""
+    assert first.stdout == second.stdout
+    assert f"Observation:\n{observation}" in first.stdout
+    assert "The failure happened after the network came back." in first.stdout
+    assert "restart-services --after-network" in first.stdout
+    assert path_read.returncode == 0, path_read.stderr
+    assert "The failure happened after the network came back." not in path_read.stdout
+    assert "restart-services --after-network" not in path_read.stdout
+    assert "Query: Curation context crimson" in first.stdout
+    sections = first.stdout.split("Matching curated sections:\n", 1)[1].split(
+        "Related open questions:", 1
+    )[0]
+    headers = [line for line in sections.splitlines() if line.startswith("knowledge/")]
+    assert len(headers) == 3
+    assert all("stale, verified 2020-01-01 (ttl 1)" in header for header in headers)
+    assert any(", conflict |" in header for header in headers)
+    assert "knowledge/next-context-3.md" not in sections
+    assert pending.read_text(encoding="utf-8") == observation
+    assert pending.stat().st_mtime_ns == pending_mtime
+    assert manifest.stat().st_mtime_ns == manifest_mtime
+    assert git_kb.git("rev-parse", "HEAD") == original_head
+
+
+def test_next_supports_query_override_and_no_match_output(git_kb: Kb) -> None:
+    filename = "unrelated.md"
+    content = b"---\ntitle: A random observation\n---\n\nA separate note.\n"
+    _pending(git_kb, filename).write_bytes(content)
+    _write_batch(git_kb, "20261028T120000-a1b2c3d4", [_member(filename, content)])
+
+    default = git_kb("curate", "next", "20261028T120000-a1b2c3d4")
+    overridden = git_kb(
+        "curate", "next", "20261028T120000-a1b2c3d4", "--query", "NAS restart order"
+    )
+    unmatched = git_kb("curate", "next", "20261028T120000-a1b2c3d4", "--query", "quantum zebra")
+
+    assert default.returncode == 0, default.stderr
+    assert 'No curated sections match "A random observation".' in default.stdout
+    assert overridden.returncode == 0, overridden.stderr
+    assert "Query: NAS restart order" in overridden.stdout
+    assert "knowledge/infra/nas.md#1 | Restart order" in overridden.stdout
+    assert unmatched.returncode == 0, unmatched.stderr
+    assert 'No curated sections match "quantum zebra".' in unmatched.stdout
+    assert "No related open questions." in unmatched.stdout
+
+
+def test_next_open_question_rows_match_recall_exactly(git_kb: Kb) -> None:
+    filename = "question-context.md"
+    content = b"---\ntitle: disk owner listed\n---\n\nCheck this open question.\n"
+    _pending(git_kb, filename).write_bytes(content)
+    _write_batch(git_kb, "20261028T120000-a1b2c3d4", [_member(filename, content)])
+
+    next_result = git_kb("curate", "next", "20261028T120000-a1b2c3d4")
+    recall_result = git_kb("recall", "disk owner listed")
+
+    assert next_result.returncode == 0, next_result.stderr
+    assert recall_result.returncode == 0, recall_result.stderr
+    expected = [
+        line for line in recall_result.stdout.splitlines() if line.startswith("  questions/open/")
+    ]
+    section = next_result.stdout.split("Related open questions:\n", 1)[1].split("Read with:", 1)[0]
+    actual = [line for line in section.splitlines() if line.startswith("  questions/open/")]
+    assert expected
+    assert actual == expected
+
+
+def test_next_refuses_interrupted_archive_until_the_stored_completion_is_repeated(kb: Kb) -> None:
+    filename = "interrupted.md"
+    original = b"Original input.\n"
+    pending = _pending(kb, filename)
+    pending.write_bytes(original)
+    _write_batch(
+        kb,
+        "20261028T120000-a1b2c3d4",
+        [
+            _member(
+                filename,
+                original,
+                status="archiving",
+                disposition="ephemeral",
+                reason="Session-only",
+                archived=original + b"\n---\n",
+            )
+        ],
+    )
+
+    result = kb("curate", "next", "20261028T120000-a1b2c3d4")
+
+    assert result.returncode == 1
+    assert "finish it before presenting more work" in result.stdout
+    assert (
+        "Run: kb curate complete 20261028T120000-a1b2c3d4 interrupted.md "
+        "--disposition ephemeral --reason Session-only"
+    ) in result.stdout
+
+
+@pytest.mark.parametrize("change", ["changed", "missing"])
+def test_next_refuses_changed_or_missing_input_with_drop_command(kb: Kb, change: str) -> None:
+    filename = "changed input.md"
+    original = b"Original input.\n"
+    pending = _pending(kb, filename)
+    pending.write_bytes(original)
+    _write_batch(kb, "20261028T120000-a1b2c3d4", [_member(filename, original)])
+    if change == "changed":
+        pending.write_bytes(b"Modified input.\n")
+    else:
+        pending.unlink()
+
+    result = kb("curate", "next", "20261028T120000-a1b2c3d4")
+
+    assert result.returncode == 1
+    assert f"Pending input is missing or changed: observations/pending/{filename}" in result.stdout
+    assert (
+        "kb curate drop 20261028T120000-a1b2c3d4 'changed input.md' --reason TEXT" in result.stdout
+    )
+
+
+def test_next_reports_locally_settled_batch(kb: Kb) -> None:
+    _write_batch(
+        kb,
+        "20261028T120000-a1b2c3d4",
+        [_member("deferred.md", b"Deferred input", status="deferred", reason="Need context")],
+    )
+
+    result = kb("curate", "next", "20261028T120000-a1b2c3d4")
+
+    assert result.returncode == 0
+    assert result.stdout == "No pending members; batch is locally settled and unpublished.\n"
+
+
+def test_next_help_and_usage(kb: Kb) -> None:
+    help_result = kb("curate", "next", "--help")
+    assert help_result.returncode == 0
+    assert help_result.stdout.startswith("Usage: kb curate next RUN [--query TEXT]\n\n")
+    missing = kb("curate", "next")
+    assert missing.returncode == 1
+    assert missing.stderr == "Usage: kb curate next RUN [--query TEXT]\n"
