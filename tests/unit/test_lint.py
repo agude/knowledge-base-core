@@ -1,5 +1,7 @@
 """Unit tests for article structure and metadata checks."""
 
+from pathlib import Path
+
 from kb import lint, model
 
 
@@ -186,6 +188,57 @@ def test_fragments_accept_kb_locators_exact_headings_and_ascii_slugs() -> None:
     assert not lint.fragment_resolves(document, "Hidden Heading")
     assert not lint.fragment_resolves(document, "missing")
     assert not lint.fragment_resolves(document, "9" * 5000)
+    assert lint.fragment_resolves(document, "EXACT-HEADING")
+    assert lint.fragment_resolves(document, "Child-Heading")
+    for fragment in ("exact-heading!!!", "Exact Heading?", "EXACT HEADING", "exact-headingİ"):
+        assert not lint.fragment_resolves(document, fragment)
+
+
+def test_links_with_parentheses_and_reference_labels_keep_their_destinations() -> None:
+    document = model.parse(
+        "knowledge/source.md",
+        valid_article(
+            "# Source\n"
+            '[inline](guide(v2).md "Guide")\n'
+            "[full][Guide label]\n[collapsed][]\n[shortcut]\n"
+            "\n[guide LABEL]: guide(v2).md\n"
+            "[collapsed]: <guide(v2).md#Exact Heading!>\n"
+            "[shortcut]: missing.md\n"
+        ),
+    )
+
+    assert [(reference.line, reference.destination) for reference in lint.references(document)] == [
+        (8, "guide(v2).md"),
+        (9, "guide(v2).md"),
+        (10, "guide(v2).md#Exact Heading!"),
+        (11, "missing.md"),
+    ]
+
+
+def test_reference_findings_check_reference_links_and_exact_anchors(tmp_path: Path) -> None:
+    knowledge = tmp_path / "knowledge"
+    knowledge.mkdir()
+    (knowledge / "guide(v2).md").write_text(
+        valid_article("# Guide\n## Exact Heading!\n"), encoding="utf-8"
+    )
+    document = model.parse(
+        "knowledge/source.md",
+        valid_article(
+            "# Source\n[valid](guide(v2).md#exact-heading)\n"
+            "[broken][missing]\n[wrong](guide(v2).md#Exact-Heading!)\n"
+            "[missing]: missing.md\n"
+        ),
+    )
+
+    findings = lint.reference_findings(tmp_path, document, {})
+
+    assert [(finding.line, finding.message) for finding in findings] == [
+        (9, "missing local Markdown link target: missing.md"),
+        (
+            10,
+            "missing local Markdown link anchor '#Exact-Heading!': guide(v2).md#Exact-Heading!",
+        ),
+    ]
 
 
 def test_references_keep_frontmatter_items_and_skip_code() -> None:

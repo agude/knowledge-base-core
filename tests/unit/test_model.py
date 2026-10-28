@@ -519,3 +519,20 @@ def test_metadata_examples_inside_fences_are_not_diagnosed() -> None:
 
     assert document.metadata_comments == ()
     assert document.metadata_diagnostics == ()
+
+
+def test_unclosed_comment_does_not_hide_later_section_metadata() -> None:
+    document = parse(
+        "---\nverified: 2026-10-27\nttl: people\n---\n# Example\n"
+        "<!-- kb-section: ttl=domain\n"
+        "## Section\n<!-- kb-section: verified=2026-01-01 -->\nClaim.\n"
+    )
+
+    section = document.section("1")
+    assert section is not None
+    assert section.meta == {"verified": "2026-01-01"}
+    assert document.scalar("verified", section) == "2026-01-01"
+    assert any(
+        diagnostic.message == "section metadata appears before the first section"
+        for diagnostic in document.metadata_diagnostics
+    )

@@ -611,12 +611,12 @@ def _metadata_comments(
             line_index += 1
             continue
 
-        comment, last_line = _read_metadata_comment(
-            lines, line_index, section_locations, section_lines
-        )
+        comment, _ = _read_metadata_comment(lines, line_index, section_locations, section_lines)
         comments.append(comment)
         diagnostics.extend(comment.diagnostics)
-        line_index = last_line + 1
+        # Inspect later openers independently, as retrieval did before diagnostics
+        # were added. A malformed earlier comment must not hide section overrides.
+        line_index += 1
     return tuple(comments), tuple(diagnostics)
 
 

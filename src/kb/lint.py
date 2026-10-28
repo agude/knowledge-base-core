@@ -5,14 +5,13 @@ from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from typing import Literal
 
-from kb import corpus, locators
+from kb import corpus, links, locators
 from kb.dates import parse_date
 from kb.freshness import MAX_TTL_DAYS, NAMED_TTL_DAYS
 from kb.model import Document, Section
 
 MAX_H2_LINES = 50
 _SECTION_LOCATOR = re.compile(r"[0-9]+(?:\.[0-9]+)?")
-_MARKDOWN_LINK = re.compile(r"\[[^\]]+\]\(([^)]*)\)")
 _EXTERNAL_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 _INLINE_CODE = re.compile(r"`+[^`]*`+")
 _NON_SLUG = re.compile(r"[^A-Za-z0-9 _-]")
@@ -58,18 +57,20 @@ def references(document: Document) -> list[Reference]:
         if entry is not None:
             found.extend(_source_values(document.path, entry.value, entry.line_index + 1))
 
-    for line_index, line in enumerate(document.lines):
+    link_lines = [
+        ""
         if (
             line_index < document.body_start
             or line_index in document.fenced_lines
             or line_index in metadata_lines
-        ):
-            continue
-        text = _INLINE_CODE.sub("", line)
-        for match in _MARKDOWN_LINK.finditer(text):
-            destination = _link_destination(match.group(1))
-            if destination:
-                found.append(Reference(document.path, line_index + 1, "link", destination))
+        )
+        else _INLINE_CODE.sub("", line)
+        for line_index, line in enumerate(document.lines)
+    ]
+    found.extend(
+        Reference(document.path, line, "link", destination)
+        for line, destination in links.destinations(link_lines)
+    )
     return sorted(found, key=lambda reference: reference.line)
 
 
@@ -81,10 +82,12 @@ def fragment_resolves(document: Document, fragment: str) -> bool:
         normalized = ".".join(part.lstrip("0") or "0" for part in fragment.split("."))
         if locators.select(document, normalized) is not None:
             return True
-    slug = _heading_slug(fragment)
+    # The old lint lowercases ASCII letters in the fragment, then requires the
+    # remaining text to equal the heading slug exactly.
+    lowered = fragment.translate(_ASCII_LOWER)
     return any(
         section.level in (2, 3)
-        and (section.heading == fragment or (slug and _heading_slug(section.heading) == slug))
+        and (section.heading == fragment or _heading_slug(section.heading) == lowered)
         for section in document.sections
     )
 
@@ -396,16 +399,6 @@ def _source_values(path: str, value: str, line: int) -> list[Reference]:
     return [
         Reference(path, line, "source", item.strip()) for item in value.split(",") if item.strip()
     ]
-
-
-def _link_destination(raw: str) -> str:
-    """Remove Markdown angle brackets or an optional link title."""
-    destination = raw.strip()
-    if destination.startswith("<"):
-        closing = destination.find(">")
-        if closing >= 0:
-            return destination[1:closing]
-    return destination.split(maxsplit=1)[0] if destination else ""
 
 
 def _external_or_absolute(destination: str, path: str) -> bool:

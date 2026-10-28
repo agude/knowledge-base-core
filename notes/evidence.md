@@ -602,3 +602,52 @@ Three timed `kb lint` runs took 0.41, 0.35, and 0.37 seconds; the median was 0.3
 `just eval` exited 0 and met acceptance on both fixture sets. `just build package-check` passed; the clean environment installed the 0.1.0 wheel and confirmed its version. The existing `dist/` directory was restored after the check. Native Windows validation remains unrun. The guided curation run, dispositions and archiving, finishing commit and sync, content pre-commit hook, and one-time `ttl` assignment pass remain outstanding. Installed host allow rules and the separate no-match recall latency follow-up also remain open.
 
 `just check` passed on Linux with Python 3.15.0: lint, formatting, actionlint, offline zizmor, and strict mypy passed; 1,068 tests passed, 9 were skipped, and total coverage was 93.16%. Tool caches and coverage output used scratch paths under `/tmp`.
+
+## Curation lint link syntax and anchor case (2026-10-27)
+
+Base revision: `611dbdf Document curation checks and closeout`. This change
+corrects three reference-check defects found after closeout.
+
+- Link targets now follow Markdown syntax. A new `kb/links.py` reads inline
+  targets with balanced parentheses, angle-bracket targets, titles, escaped
+  punctuation, and nested link text. It also resolves full, collapsed, and
+  shortcut reference-style links against their `[label]: target`
+  definitions. The first definition wins, labels ignore case and collapse
+  whitespace, and a definition may follow its use.
+- Slug anchors match the old lint's rule. The old `heading_slug` comparison
+  lowercases ASCII letters in the fragment, then requires the result to
+  equal the heading slug. `kb lint` now does the same, so
+  `#EXACT-HEADING` resolves to `## Exact Heading!`. Before this change, the
+  linter slugged both sides and accepted fragments such as
+  `#exact-heading!!!`, which the old lint rejects.
+- An unclosed or malformed section-metadata comment no longer hides later
+  section metadata. The model inspects each later opener independently, as
+  retrieval did before metadata diagnostics existed, and keeps the
+  diagnostics for the malformed comment.
+
+Accepted differences from the old `scripts/lint`:
+
+- The old script ends a link target at the first `)`, so
+  `[x](guide(v2).md)` reported the missing target `guide(v2`. `kb lint`
+  resolves the full target.
+- The old script does not check reference-style links. `kb lint` reports a
+  missing target or anchor in a reference definition at the line that uses
+  it.
+
+A disposable fixture confirmed each difference. Old lint and the step 3
+`kb lint` reported the truncated target. The corrected `kb lint` accepted the
+target with parentheses and the uppercase slug, and it reported the missing
+reference-style target. The fixture was removed.
+
+Real-data validation used a copy of content revision
+`b9ddbb6d6942597fc6f08217faa4471b5e8248d9`. The copy excluded the live
+`.git` directory and received its own scratch Git metadata. Old lint exited
+0 with 0 errors and 0 warnings in 210 files. `kb lint` reported 2 errors and
+0 warnings in 210 files. Both errors are the non-`.md` `sources` targets
+recorded at closeout, so every per-check count matches the closeout table.
+The old pattern and the new parser each found 292 local Markdown links in the
+copy. No link target contains parentheses, and no fragment contains uppercase
+letters. Three timed runs took
+0.44, 0.41, and 0.45 seconds (median 0.44 seconds), with a peak RSS of
+27,548 KiB. The copy was deleted, and the live content worktree remained
+clean at the same revision.

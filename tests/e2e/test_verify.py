@@ -51,6 +51,49 @@ def test_replaces_verified_and_adds_ttl_after_it(git_kb: Kb) -> None:
     assert article.read_bytes() == expected
 
 
+@pytest.mark.parametrize(
+    "link",
+    [
+        "[broken](target(v2).md#Exact-Heading!)",
+        "[broken][answer]\n\n[answer]: missing.md",
+    ],
+)
+def test_invalid_anchors_and_reference_links_prevent_verification(git_kb: Kb, link: str) -> None:
+    target = _article(git_kb, "target(v2).md")
+    target.write_text("# Target\n## Exact Heading!\n", encoding="utf-8")
+    article = _article(git_kb, "source.md")
+    original = (
+        "---\ntitle: Source\nupdated: 2026-10-20\nverified: 2026-10-20\n"
+        f"ttl: domain\n---\n# Source\n{link}\n"
+    ).encode()
+    article.write_bytes(original)
+
+    result = git_kb("verify", "knowledge/source.md")
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "proposed result has lint errors" in result.stderr
+    assert article.read_bytes() == original
+
+
+def test_valid_links_with_parentheses_and_reference_labels_allow_verification(git_kb: Kb) -> None:
+    target = _article(git_kb, "target(v2).md")
+    target.write_text("# Target\n## Exact Heading!\n", encoding="utf-8")
+    article = _article(git_kb, "source.md")
+    article.write_text(
+        "---\ntitle: Source\nupdated: 2026-10-20\nverified: 2026-10-20\n"
+        "ttl: domain\n---\n# Source\n[inline](target(v2).md#exact-heading)\n"
+        "[upper](target(v2).md#EXACT-HEADING)\n"
+        "[reference][answer]\n\n[answer]: target(v2).md#1\n",
+        encoding="utf-8",
+    )
+
+    result = git_kb("verify", "knowledge/source.md")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "Verified: knowledge/source.md (ttl domain)\n"
+
+
 @pytest.mark.parametrize("ttl", ["people", "14"])
 def test_replaces_an_existing_ttl_with_a_named_or_numeric_value(git_kb: Kb, ttl: str) -> None:
     article = _article(git_kb, "infra/nas.md")
