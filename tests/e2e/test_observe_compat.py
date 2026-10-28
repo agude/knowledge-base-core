@@ -459,3 +459,42 @@ def test_kb_finish_commits_through_the_old_hook_and_old_tools_read_the_result(
 def _write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+
+
+def test_the_hook_that_kb_setup_installs_takes_old_writes_and_stamps_a_new_edit(git_kb: Kb) -> None:
+    shim = git_kb.home / "bin" / "kb"
+    shim.parent.mkdir(parents=True, exist_ok=True)
+    shim.write_text(f'#!/bin/sh\nexec "{sys.executable}" -m kb "$@"\n', encoding="utf-8")
+    shim.chmod(0o755)
+    installed = git_kb("setup", "--content", str(git_kb.content), "--kb", str(shim))
+    assert installed.returncode == 0, installed.stderr
+
+    name = written_name(
+        run_old(
+            git_kb, "observe", "--title", "Compat hook", "--body", "Written by the old observe."
+        )
+    )
+    archived = run_old(git_kb, "archive", name)
+    assert archived.returncode == 0, archived.stderr
+    assert git_kb.git("log", "-1", "--format=%s") == "Archive: 1 observation(s)\n"
+
+    article = git_kb.content / "knowledge" / "infra" / "backups.md"
+    article.write_text(
+        "---\ntitle: Backups\nupdated: 2026-10-20\nverified: 2026-10-20\nttl: domain\n---\n"
+        "# Backups\n\n## 1. Schedule\n\nNightly and weekly.\n",
+        encoding="utf-8",
+    )
+    git_kb.git("add", "--", "knowledge/infra/backups.md")
+    commit = subprocess.run(
+        ["git", "commit", "-q", "-m", "Describe the backup schedule"],
+        cwd=git_kb.content,
+        env=git_kb.environment({}),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+        timeout=60,
+    )
+    assert commit.returncode == 0, commit.stderr
+    assert "hook: stamped updated: 2026-10-26 on 1 article(s)" in commit.stderr
+    assert "updated: 2026-10-26\n" in git_kb.git("show", "HEAD:knowledge/infra/backups.md")
