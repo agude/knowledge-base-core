@@ -1,5 +1,6 @@
 ---
 title: 'Single ''quoted'' title'
+updated: 2026-10-20
 verified: "2026-10-20"
 ttl: "people"
 aliases:

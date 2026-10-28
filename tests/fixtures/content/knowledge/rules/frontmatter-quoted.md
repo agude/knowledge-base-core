@@ -1,5 +1,6 @@
 ---
 title: "Quoted \"title\" with a \\ backslash"
+updated: 2026-10-20
 verified: 2026-10-20
 ttl: status
 aliases: ["quoted alias", 'single alias']

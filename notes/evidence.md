@@ -483,3 +483,59 @@ the clone was removed. The live content repository advanced from the baseline
 revision to `2298c0e4f7dcb923455d4b861db46042e9211f56` in one
 observations-only commit during the measurement. The run did not write to the
 live repository.
+
+## Curation lint structure and metadata (2026-10-27)
+
+The step 2 comparison used the repository's `tests/fixtures/content` tree.
+Fixture front matter was given valid `updated` dates where that was not the
+case under test; the CRLF fixture remained CRLF. No real knowledge content
+was read or written for this comparison.
+
+The old `scripts/lint knowledge/rules` exited 1 with 22 errors and 2 warnings
+across 24 files. `kb lint knowledge/rules` reported 29 errors and 2 warnings
+across the same files. Both found the duplicate H1, unclosed fence, missing
+H1, long and duplicate H2, effective-date ordering, supersedes locator and
+cycle errors, and the core metadata placement and syntax problems. The new
+fixture test asserts every finding and its output order.
+
+Accepted differences:
+
+- The old script treats CRLF front matter delimiters as missing and reported
+  three missing-field errors for that fixture. The shared model recognizes
+  CRLF, so the new linter reports it cleanly.
+- The old script uses the H1 as a fallback title when front matter has no
+  `title`. The new contract requires the front-matter field, so it reports
+  the missing title in the no-front-matter and unclosed-front-matter cases.
+- The old front-matter check validates date shape only and does not validate
+  article `ttl`. The new linter checks actual calendar dates and validates
+  article TTLs against the named values and `MAX_TTL_DAYS`.
+- The old section TTL parser accepts zero as a nonnegative number. The new
+  contract requires a positive integer within `MAX_TTL_DAYS`, so `ttl=0` is
+  an error.
+- For duplicate section fields, the old shell checker validates the last
+  value. The shared model's existing retrieval behavior keeps the first
+  value; lint preserves that behavior, reports the conflict, and validates
+  the first value.
+- The old shell checker accepts both `key=value` and `key: value` section
+  fields, while the shared Python model reads only the documented
+  `key=value` syntax. A synthetic `ttl: people` comment passed old lint and
+  produces a malformed-field error in the new linter. This follows the
+  specified comment syntax and keeps retrieval behavior unchanged.
+- The old shell checker ignores text after a metadata comment's closing
+  marker. The model retains that span and the new linter reports the trailing
+  text.
+- Finding locations and formatting follow the new path/line contract. The
+  old script reports some front-matter errors at line 1 and section metadata
+  errors at section locators, and combines several metadata errors into one
+  message.
+
+The colon-syntax comparison ran both commands against the same disposable
+fixture copy: old lint exited 0; `kb lint` reported one malformed field. The
+copy was removed. The old and new linter also both ignore an H1 inside the
+unclosed fence; the new linter points to the fence's opening line, while the
+old script points to end of file.
+
+`just check` passed on Linux with Python 3.15.0: lint, formatting,
+actionlint, offline zizmor, and strict mypy passed; 998 tests passed, 6 were
+skipped, and total coverage was 97.60%. Tool caches and coverage output used
+scratch paths under `/tmp`.

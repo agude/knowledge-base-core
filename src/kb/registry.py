@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from kb.commands import evidence as evidence_command
 from kb.commands import gap as gap_command
+from kb.commands import lint as lint_command
 from kb.commands import map as map_command
 from kb.commands import observe as observe_command
 from kb.commands import questions as questions_command
@@ -31,6 +32,11 @@ COMMANDS: tuple[Command, ...] = (
     ),
     Command(name="read", summary="Print the text that LOCATORs name.", run=read_command.run),
     Command(name="map", summary="List articles and their sections.", run=map_command.run),
+    Command(
+        name="lint",
+        summary="Check article structure and metadata.",
+        run=lint_command.run,
+    ),
     Command(
         name="observe",
         summary="Record one observation and commit it.",

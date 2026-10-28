@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from kb import model
-from kb.model import Document
+from kb.model import Document, LineSpan
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 CONTENT = FIXTURES / "content"
@@ -408,3 +408,112 @@ def test_heading_and_comment_line_sets_are_recorded() -> None:
     document = parse("## A\n<!-- kb-section: ttl=people;\n   verified=2026-01-01 -->\nText\n")
     assert document.heading_lines == frozenset({0})
     assert document.comment_lines == frozenset({1, 2})
+
+
+def test_front_matter_spans_include_duplicate_fields_and_block_lists() -> None:
+    document = parse(
+        "---\ntitle: First\naliases:\n  - one\n\n  - two\ntitle: Second\n---\n# Title\n"
+    )
+
+    assert document.front_matter_opened is True
+    assert document.front_matter_closed is True
+    assert document.front_matter_span == LineSpan(0, 8)
+    assert document.front["title"] == "First"
+    assert [(field.name, field.span, field.block) for field in document.front_fields] == [
+        ("title", LineSpan(1, 2), False),
+        ("aliases", LineSpan(2, 6), True),
+        ("title", LineSpan(6, 7), False),
+    ]
+    assert document.front_fields[1].value == ("one", "two")
+    assert document.front_fields[2].value == "Second"
+
+
+def test_unclosed_front_matter_has_a_span_but_keeps_existing_parse_behavior() -> None:
+    document = parse("---\ntitle: Ignored\n# Body\n")
+
+    assert document.front_matter_opened is True
+    assert document.front_matter_closed is False
+    assert document.front_matter_span == LineSpan(0, 3)
+    assert document.front_fields == ()
+    assert document.front == {}
+    assert document.h1 == "Body"
+
+
+def test_all_h1_positions_exclude_fenced_headings() -> None:
+    document = parse("# First\n```\n# Inside\n```\n# Second\n")
+
+    assert document.h1 == "First"
+    assert document.h1_positions == (0, 4)
+
+
+def test_unclosed_fence_records_its_opening_line() -> None:
+    document = parse("# Title\n## Section\n   ~~~python\n## Hidden\n")
+
+    assert document.unclosed_fence_start == 2
+    assert heading_texts(document) == ["Section"]
+
+
+def test_metadata_comments_keep_spans_entries_and_syntax_diagnostics() -> None:
+    document = parse(
+        "# Title\n"
+        "<!-- kb-section: ttl=people -->\n"
+        "\n"
+        "## Section\n"
+        "  <!-- kb-section: verified=2026-01-01; ttl=bad; "
+        "verified=2026-02-01; colour=blue; malformed -->\n"
+    )
+
+    section = document.section("1")
+    assert section is not None
+    assert dict(section.meta) == {"verified": "2026-01-01", "ttl": "bad"}
+    assert section.metadata_comment is document.metadata_comments[1]
+    assert section.metadata_comment.span == LineSpan(4, 5)
+    assert section.metadata_comment.section_key == "1"
+    assert [entry.name for entry in section.metadata_comment.entries] == [
+        "verified",
+        "ttl",
+        "verified",
+        "colour",
+    ]
+    messages = [diagnostic.message for diagnostic in document.metadata_diagnostics]
+    assert messages == [
+        "section metadata appears before the first section",
+        "conflicting values for field 'verified'",
+        "unknown field 'colour'",
+        "malformed field 'malformed'",
+    ]
+
+
+def test_multiline_metadata_diagnostics_point_to_the_entry_line() -> None:
+    document = parse("## Section\n<!-- kb-section: verified=2026-01-01;\n    ttl: bad -->\n")
+
+    assert [
+        (diagnostic.line_index, diagnostic.message) for diagnostic in document.metadata_diagnostics
+    ] == [(2, "malformed field 'ttl: bad'")]
+
+
+def test_misplaced_trailing_and_unclosed_metadata_are_diagnosed() -> None:
+    document = parse(
+        "# Title\n"
+        "## One\n"
+        "Body text.\n"
+        "<!-- kb-section: ttl=people -->\n"
+        "## Two\n"
+        "<!-- kb-section: ttl=people --> trailing\n"
+        "## Three\n"
+        "<!-- kb-section: verified=2026-01-01\n"
+    )
+
+    messages = [diagnostic.message for diagnostic in document.metadata_diagnostics]
+    assert messages == [
+        "section metadata appears after section content",
+        "section metadata has trailing text",
+        "section metadata comment is unclosed",
+    ]
+
+
+def test_metadata_examples_inside_fences_are_not_diagnosed() -> None:
+    document = parse("## Example\n```markdown\n<!-- kb-section: ttl=people -->\n```\n")
+
+    assert document.metadata_comments == ()
+    assert document.metadata_diagnostics == ()
