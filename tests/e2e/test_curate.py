@@ -95,11 +95,36 @@ def _failure(result: CompletedProcess[str], text: str) -> None:
     assert text in result.stderr
 
 
+def _interrupt_archive(kb: Kb, *arguments: str) -> CompletedProcess[str]:
+    """Fail archive publication after the command has persisted its intent."""
+    words = ["curate", "complete", *arguments]
+    script = (
+        "from kb import cli\n"
+        "from kb.commands import curate\n"
+        "def interrupt(*_args, **_kwargs):\n"
+        "    raise OSError('injected interruption')\n"
+        "curate._publish_archive = interrupt\n"
+        f"raise SystemExit(cli.main({words!r}))\n"
+    )
+    return subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=kb.home,
+        env=kb.environment({}),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+        timeout=60,
+    )
+
+
 def test_start_help_usage_and_budget_validation(git_kb: Kb) -> None:
     help_result = git_kb("curate", "start", "--help")
     assert help_result.returncode == 0
     assert help_result.stdout.startswith("Usage: kb curate start --max-bytes N [FILENAME...]\n\n")
-    assert git_kb("curate").stdout.startswith("Usage: kb curate {start,status,next,complete} ...")
+    assert git_kb("curate").stdout.startswith(
+        "Usage: kb curate {start,status,next,complete,defer,drop} ..."
+    )
 
     missing = git_kb("curate", "start")
     assert missing.returncode == 1
@@ -1463,3 +1488,282 @@ def test_legacy_lock_blocks_completion_and_is_left_alone(git_kb: Kb) -> None:
     assert manifest.is_file()
     assert (legacy / "pid").read_text(encoding="utf-8") == f"{os.getpid()}\n"
     assert not list((git_kb.content / ".git" / "kb-tmp").glob("*"))
+
+
+def test_defer_and_drop_preserve_files_require_reasons_and_allow_identical_retries(
+    git_kb: Kb,
+) -> None:
+    run_id = "20261028T120000-a1b2c3d4"
+    contents = {
+        "defer.md": b"unchanged observation\n",
+        "changed.md": b"original observation\n",
+        "missing.md": b"observation removed by another writer\n",
+        "unchanged.md": b"do not drop this observation\n",
+    }
+    for filename, content in contents.items():
+        _pending(git_kb, filename).write_bytes(content)
+    manifest = _write_batch(
+        git_kb,
+        run_id,
+        [_member(filename, content) for filename, content in contents.items()],
+    )
+    changed = _pending(git_kb, "changed.md")
+    changed.write_bytes(b"updated by another writer\n")
+    _pending(git_kb, "missing.md").unlink()
+
+    deferred = git_kb("curate", "defer", run_id, "defer.md", "--reason", "Need owner input")
+    assert deferred.returncode == 0, deferred.stderr
+    assert deferred.stdout == f"Deferred: defer.md in batch {run_id}\n"
+    assert _pending(git_kb, "defer.md").read_bytes() == contents["defer.md"]
+    repeated = git_kb("curate", "defer", run_id, "defer.md", "--reason", "Need owner input")
+    assert repeated.returncode == 0, repeated.stderr
+    different = git_kb("curate", "defer", run_id, "defer.md", "--reason", "Changed reason")
+    _failure(different, "already deferred with a different reason")
+
+    for filename in ("changed.md", "missing.md"):
+        dropped = git_kb(
+            "curate", "drop", run_id, filename, "--reason", "Input changed outside this batch"
+        )
+        assert dropped.returncode == 0, dropped.stderr
+        assert dropped.stdout == f"Dropped: {filename} in batch {run_id}\n"
+        repeated_drop = git_kb(
+            "curate", "drop", run_id, filename, "--reason", "Input changed outside this batch"
+        )
+        assert repeated_drop.returncode == 0, repeated_drop.stderr
+    assert changed.read_bytes() == b"updated by another writer\n"
+    assert not _pending(git_kb, "missing.md").exists()
+    unchanged_drop = git_kb(
+        "curate", "drop", run_id, "unchanged.md", "--reason", "No longer needed"
+    )
+    _failure(unchanged_drop, "input is unchanged; use defer")
+
+    for command, filename in (("defer", "unchanged.md"), ("drop", "unchanged.md")):
+        missing_reason = git_kb("curate", command, run_id, filename)
+        assert missing_reason.returncode == 1
+        assert missing_reason.stderr == f"Usage: kb curate {command} RUN FILENAME --reason TEXT\n"
+        invalid_wait = git_kb(
+            "curate",
+            command,
+            run_id,
+            filename,
+            "--reason",
+            "A reason",
+            env={"KB_LOCK_WAIT": "invalid"},
+        )
+        assert invalid_wait.returncode == 1
+        assert invalid_wait.stderr == missing_reason.stderr
+
+    secret = 'password = "hunter2hunter2"'
+    refused = git_kb("curate", "defer", run_id, "unchanged.md", "--reason", secret)
+    _failure(refused, "possible secret in --reason")
+    assert secret not in refused.stderr
+    assert _pending(git_kb, "unchanged.md").read_bytes() == contents["unchanged.md"]
+    state = json.loads(manifest.read_text(encoding="utf-8"))
+    assert {member["filename"]: member["status"] for member in state["members"]} == {
+        "defer.md": "deferred",
+        "changed.md": "dropped",
+        "missing.md": "dropped",
+        "unchanged.md": "pending",
+    }
+
+
+def test_full_local_curation_workflow_and_historical_defer(git_kb: Kb) -> None:
+    filenames = [
+        "incorporated.md",
+        "duplicate.md",
+        "ephemeral.md",
+        "deferred.md",
+        "dropped.md",
+        "interrupted.md",
+    ]
+    observations = {
+        filename: (
+            f"---\ntitle: Workflow evidence {filename.removesuffix('.md')}\n"
+            f"created: 2026-10-2{index}\n---\n\n## 1. Evidence\n\nEvidence for {filename}.\n"
+        ).encode()
+        for index, filename in enumerate(filenames, start=1)
+    }
+    for filename, content in observations.items():
+        _pending(git_kb, filename).write_bytes(content)
+    article = _write_article(
+        git_kb,
+        "knowledge/workflow.md",
+        "---\ntitle: Workflow evidence\nupdated: 2026-10-20\nverified: 2026-10-20\n"
+        "ttl: domain\n---\n# Workflow evidence\n\n## 1. Incorporated fact\n\n"
+        "A durable workflow fact.\n\n## 2. Duplicate fact\n\nA repeated durable fact.\n",
+    )
+    _commit(
+        git_kb,
+        "knowledge/workflow.md",
+        *(f"observations/pending/{filename}" for filename in filenames),
+    )
+    start = git_kb(
+        "curate",
+        "start",
+        "--max-bytes",
+        str(sum(map(len, observations.values()))),
+        *filenames,
+    )
+    assert start.returncode == 0, start.stderr
+    run_id = _run_id(start)
+    first_manifest = git_kb.content / "observations" / "batches" / f"{run_id}.json"
+    first_state = json.loads(first_manifest.read_text(encoding="utf-8"))
+    assert [member["filename"] for member in first_state["members"]] == filenames
+
+    new_arrival = b"---\ntitle: New arrival\ncreated: 2026-10-28\n---\n\nOutside the batch.\n"
+    _pending(git_kb, "new-arrival.md").write_bytes(new_arrival)
+    article.write_text(
+        "---\ntitle: Workflow evidence\nupdated: 2026-10-20\nverified: 2026-10-20\n"
+        "ttl: domain\nsources:\n"
+        "  - observations/archived/incorporated.md#1\n"
+        "  - observations/archived/duplicate.md#1\n"
+        "  - observations/archived/interrupted.md#1\n"
+        "---\n# Workflow evidence\n\n## 1. Incorporated fact\n\n"
+        "A durable workflow fact.\n\n## 2. Duplicate fact\n\nA repeated durable fact.\n",
+        encoding="utf-8",
+    )
+    article_before_completion = article.read_bytes()
+    verify_before_archive = git_kb("verify", "knowledge/workflow.md")
+    assert verify_before_archive.returncode == 1
+    assert verify_before_archive.stdout == ""
+    assert verify_before_archive.stderr.startswith("verify:")
+    assert "proposed result has lint errors" in verify_before_archive.stderr
+    assert article.read_bytes() == article_before_completion
+
+    incorporated = git_kb(
+        "curate",
+        "complete",
+        run_id,
+        "incorporated.md",
+        "--disposition",
+        "incorporated",
+        "knowledge/workflow.md",
+    )
+    assert incorporated.returncode == 0, incorporated.stderr
+    duplicate = git_kb(
+        "curate",
+        "complete",
+        run_id,
+        "duplicate.md",
+        "--disposition",
+        "duplicate",
+        "knowledge/workflow.md#1",
+    )
+    assert duplicate.returncode == 0, duplicate.stderr
+    ephemeral = git_kb(
+        "curate",
+        "complete",
+        run_id,
+        "ephemeral.md",
+        "--disposition",
+        "ephemeral",
+        "--reason",
+        "Session-only detail",
+    )
+    assert ephemeral.returncode == 0, ephemeral.stderr
+    deferred = git_kb("curate", "defer", run_id, "deferred.md", "--reason", "Need owner input")
+    assert deferred.returncode == 0, deferred.stderr
+    _pending(git_kb, "dropped.md").unlink()
+    dropped = git_kb(
+        "curate", "drop", run_id, "dropped.md", "--reason", "Input was removed externally"
+    )
+    assert dropped.returncode == 0, dropped.stderr
+
+    interrupted = _interrupt_archive(
+        git_kb,
+        run_id,
+        "interrupted.md",
+        "--disposition",
+        "ephemeral",
+        "--reason",
+        "Resume after interruption",
+    )
+    _failure(interrupted, "archive operation failed")
+    assert "resume with: kb curate complete" in interrupted.stderr
+    status = git_kb("curate", "status", run_id)
+    assert status.returncode == 0, status.stderr
+    recovery_line = next(
+        line.strip()
+        for line in status.stdout.splitlines()
+        if line.lstrip().startswith("Run: kb curate complete")
+    )
+    recovery_command = shlex.split(recovery_line.removeprefix("Run: "))
+    recovered = git_kb(*recovery_command[1:])
+    assert recovered.returncode == 0, recovered.stderr
+    assert _pending(git_kb, "interrupted.md").exists() is False
+    assert (git_kb.content / "observations/archived/interrupted.md").is_file()
+    assert article.read_bytes() == article_before_completion
+
+    settled = git_kb("curate", "status", run_id)
+    assert settled.returncode == 0, settled.stderr
+    assert "States: pending=0, archiving=0, complete=4, deferred=1, dropped=1" in settled.stdout
+    assert "locally settled and unpublished" in settled.stdout
+    next_work = git_kb("curate", "next", run_id)
+    assert next_work.returncode == 0, next_work.stderr
+    assert next_work.stdout == "No pending members; batch is locally settled and unpublished.\n"
+    for filename in ("incorporated.md", "duplicate.md", "ephemeral.md", "interrupted.md"):
+        assert not _pending(git_kb, filename).exists()
+    assert _pending(git_kb, "deferred.md").read_bytes() == observations["deferred.md"]
+    assert not _pending(git_kb, "dropped.md").exists()
+    assert _pending(git_kb, "new-arrival.md").read_bytes() == new_arrival
+
+    lint = git_kb("lint", "knowledge/workflow.md", "--require-ttl")
+    assert lint.returncode == 0, lint.stdout + lint.stderr
+    archived_read = git_kb("read", "observations/archived/incorporated.md#1")
+    assert archived_read.returncode == 0, archived_read.stderr
+    assert "Evidence for incorporated.md." in archived_read.stdout
+    verify = git_kb("verify", "knowledge/workflow.md")
+    assert verify.returncode == 0, verify.stderr
+    resolve = git_kb(
+        "resolve",
+        "questions/open/20261001T090000-bbbb2222.md",
+        "--answer",
+        "The local workflow retains a reusable example.",
+        "--destination",
+        "knowledge/workflow.md#1",
+    )
+    assert resolve.returncode == 0, resolve.stderr
+    recall = git_kb("recall", "workflow evidence")
+    assert "knowledge/workflow.md" in recall.stdout
+    assert "observations/pending/incorporated.md" not in recall.stdout
+    assert "observations/pending/duplicate.md" not in recall.stdout
+    assert "observations/pending/ephemeral.md" not in recall.stdout
+
+    git_kb.git("add", "--all")
+    git_kb.git("commit", "-q", "-m", "Settle synthetic local curation batch")
+    later = git_kb(
+        "curate",
+        "start",
+        "--max-bytes",
+        str(len(observations["deferred.md"])),
+        "deferred.md",
+    )
+    assert later.returncode == 0, later.stderr
+    later_run = _run_id(later)
+    later_manifest = json.loads(
+        (git_kb.content / "observations" / "batches" / f"{later_run}.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert [member["filename"] for member in later_manifest["members"]] == ["deferred.md"]
+    later_complete = git_kb(
+        "curate",
+        "complete",
+        later_run,
+        "deferred.md",
+        "--disposition",
+        "ephemeral",
+        "--reason",
+        "Processed in a later batch",
+    )
+    assert later_complete.returncode == 0, later_complete.stderr
+    old_state = json.loads(first_manifest.read_text(encoding="utf-8"))
+    old_deferred = next(
+        member for member in old_state["members"] if member["filename"] == "deferred.md"
+    )
+    assert old_deferred["status"] == "deferred"
+    assert old_deferred["reason"] == "Need owner input"
+    old_status = git_kb("curate", "status", run_id)
+    assert old_status.returncode == 0, old_status.stderr
+    assert "locally settled and unpublished" in old_status.stdout
+    assert _pending(git_kb, "new-arrival.md").read_bytes() == new_arrival

@@ -65,8 +65,18 @@ COMPLETE_SPEC = Spec(
     ),
     valued=frozenset({"--disposition", "--reason"}),
 )
+DEFER_SPEC = Spec(
+    usage="curate defer RUN FILENAME --reason TEXT",
+    summary="Keep an unchanged pending observation for a later local batch.",
+    valued=frozenset({"--reason"}),
+)
+DROP_SPEC = Spec(
+    usage="curate drop RUN FILENAME --reason TEXT",
+    summary="Settle a pending member whose input is missing or changed without altering that file.",
+    valued=frozenset({"--reason"}),
+)
 SPEC = Spec(
-    usage="curate {start,status,next,complete} ...",
+    usage="curate {start,status,next,complete,defer,drop} ...",
     summary=(
         "Manage local curation batches. Start selects bounded input; status reports persisted "
         "progress without changing files or contacting Git. Complete records outcomes and "
@@ -106,6 +116,10 @@ def run(words: Sequence[str]) -> int:
         return _next_command(arguments)
     if command == "complete":
         return _complete_command(arguments)
+    if command == "defer":
+        return _defer_command(arguments)
+    if command == "drop":
+        return _drop_command(arguments)
     raise KbError(f"Usage: kb {SPEC.usage}")
 
 
@@ -222,6 +236,58 @@ def _complete_command(words: Sequence[str]) -> int:
                 cast(curation.Disposition, raw_disposition),
                 parsed.words[2:],
                 parsed.values.get("--reason"),
+            )
+    except lock.LockBusy as busy:
+        raise KbError(
+            f"{WHO}: content repository is busy (waited {busy.waited}s for the lock)"
+        ) from None
+    except curation.StateError as error:
+        raise KbError(f"{WHO}: {error}") from error
+    except KbError as error:
+        if str(error).startswith((f"{WHO}:", "Usage:")):
+            raise
+        raise KbError(f"{WHO}: {error}") from error
+    except (OSError, RuntimeError, UnicodeError) as error:
+        raise KbError(f"{WHO}: {error}") from error
+    sys.stdout.write(output)
+    return 0
+
+
+def _defer_command(words: Sequence[str]) -> int:
+    return _transition_command(words, DEFER_SPEC, "deferred")
+
+
+def _drop_command(words: Sequence[str]) -> int:
+    return _transition_command(words, DROP_SPEC, "dropped")
+
+
+def _transition_command(words: Sequence[str], spec: Spec, outcome: str) -> int:
+    """Run a locked reason-bearing transition that only replaces the manifest."""
+    parsed = args.parse(spec, words)
+    if parsed.help:
+        sys.stdout.write(spec.help_text())
+        return 0
+    reason = parsed.values.get("--reason")
+    if len(parsed.words) != 2 or reason is None:
+        raise spec.usage_error()
+    try:
+        wait = lock.parse_wait(os.environ.get("KB_LOCK_WAIT"))
+    except lock.InvalidWait:
+        raise spec.usage_error() from None
+
+    try:
+        context = load(os.environ, sys.platform, Path.home())
+        git_directory = lock.git_dir_path(context.root, WHO)
+        backend = lock.default_backend(sys.platform)
+        with lock.write_lock(git_directory, context.root, wait, backend):
+            batch = _read_batch(context.root, parsed.words[0])
+            output = _transition_member(
+                context,
+                git_directory,
+                batch,
+                parsed.words[1],
+                reason,
+                outcome,
             )
     except lock.LockBusy as busy:
         raise KbError(
@@ -512,6 +578,49 @@ def _complete(
                 f"then resume with: {command}"
             ) from error
         raise
+
+
+def _transition_member(
+    context: Context,
+    git_directory: Path,
+    batch: curation.Batch,
+    filename: str,
+    reason: str,
+    outcome: str,
+) -> str:
+    """Defer an unchanged input or drop a changed/missing one in the manifest only."""
+    _scan_completion_text((), reason)
+    if not reason.strip() or "\n" in reason or "\r" in reason:
+        raise KbError(f"{WHO}: {outcome} reason must be nonempty and single-line")
+    member = next((item for item in batch.members if item.filename == filename), None)
+    if member is None:
+        raise KbError(f"{WHO}: not a batch member")
+    if member.status == outcome:
+        if member.reason == reason:
+            return f"{outcome.capitalize()}: {filename} in batch {batch.id}\n"
+        raise KbError(f"{WHO}: member is already {outcome} with a different reason")
+    if member.status != "pending":
+        verb = "defer" if outcome == "deferred" else "drop"
+        raise KbError(f"{WHO}: cannot {verb} member in {member.status} state")
+
+    content = _member_file_bytes(context.root, PENDING, filename)
+    unchanged = content is not None and _matches_bytes(member, content)
+    if outcome == "deferred":
+        if not unchanged:
+            raise KbError(f"{WHO}: input is changed or missing; use drop to settle this member")
+        updated = curation.defer_member(member, reason)
+    else:
+        if unchanged:
+            raise KbError(f"{WHO}: input is unchanged; use defer to keep it for a later batch")
+        updated = curation.drop_member(member, reason)
+
+    updated_batch = curation.replace_member(batch, updated)
+    _replace_manifest(
+        git_directory,
+        _batch_path(context.root, batch.id),
+        updated_batch,
+    )
+    return f"{outcome.capitalize()}: {filename} in batch {batch.id}\n"
 
 
 def _resume_archive(

@@ -186,11 +186,13 @@ def test_dispatch_and_nested_command_usage(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert curate.run([]) == 0
-    assert "Usage: kb curate {start,status,next,complete} ..." in capsys.readouterr().out
+    assert "Usage: kb curate {start,status,next,complete,defer,drop} ..." in capsys.readouterr().out
     assert curate.run(["--help"]) == 0
     assert curate.run(["start", "--help"]) == 0
     assert curate.run(["status", "--help"]) == 0
     assert curate.run(["next", "--help"]) == 0
+    assert curate.run(["defer", "--help"]) == 0
+    assert curate.run(["drop", "--help"]) == 0
     with pytest.raises(KbError, match="Usage: kb curate"):
         curate.run(["other"])
     with pytest.raises(KbError, match="Usage: kb curate start"):
@@ -204,6 +206,10 @@ def test_dispatch_and_nested_command_usage(
         curate._status_command([])
     with pytest.raises(KbError, match="Usage: kb curate next"):
         curate._next_command([])
+    with pytest.raises(KbError, match="Usage: kb curate defer"):
+        curate._defer_command([])
+    with pytest.raises(KbError, match="Usage: kb curate drop"):
+        curate._drop_command([])
 
 
 def test_start_command_holds_the_shared_lock_and_wraps_runtime_errors(
@@ -873,3 +879,141 @@ def test_inbound_reference_resolver_ignores_external_paths_and_reports_local_pat
         encoding="utf-8",
     )
     curate._refuse_inbound_pending_references(root, "item.md")
+
+
+def test_transition_member_defers_unchanged_input_and_allows_identical_retries(
+    tmp_path: Path,
+) -> None:
+    root, original, batch = _completion_fixture(tmp_path)
+
+    result = curate._transition_member(
+        _context(root), root / ".git", batch, "item.md", "Need owner input", "deferred"
+    )
+
+    manifest = curate._read_batch(root, RUN)
+    assert result == f"Deferred: item.md in batch {RUN}\n"
+    assert manifest.members[0].status == "deferred"
+    assert manifest.members[0].reason == "Need owner input"
+    assert (root / "observations" / "pending" / "item.md").read_bytes() == original
+    assert curation.is_settled(manifest)
+    assert (
+        curate._transition_member(
+            _context(root), root / ".git", manifest, "item.md", "Need owner input", "deferred"
+        )
+        == result
+    )
+    with pytest.raises(KbError, match="already deferred with a different reason"):
+        curate._transition_member(
+            _context(root), root / ".git", manifest, "item.md", "Different reason", "deferred"
+        )
+
+
+@pytest.mark.parametrize("disk_state", ["changed", "missing"])
+def test_transition_member_drops_changed_or_missing_input_without_modifying_it(
+    tmp_path: Path, disk_state: str
+) -> None:
+    root, _original, batch = _completion_fixture(tmp_path)
+    pending = root / "observations" / "pending" / "item.md"
+    if disk_state == "changed":
+        pending.write_bytes(b"newer bytes from another writer")
+        expected = pending.read_bytes()
+    else:
+        pending.unlink()
+        expected = None
+
+    result = curate._transition_member(
+        _context(root),
+        root / ".git",
+        batch,
+        "item.md",
+        "Input changed outside the batch",
+        "dropped",
+    )
+
+    member = curate._read_batch(root, RUN).members[0]
+    assert result == f"Dropped: item.md in batch {RUN}\n"
+    assert member.status == "dropped"
+    assert member.reason == "Input changed outside the batch"
+    assert curation.is_settled(curate._read_batch(root, RUN))
+    if expected is None:
+        assert not pending.exists()
+    else:
+        assert pending.read_bytes() == expected
+    with pytest.raises(KbError, match="already dropped with a different reason"):
+        curate._transition_member(
+            _context(root),
+            root / ".git",
+            curate._read_batch(root, RUN),
+            "item.md",
+            "Different reason",
+            "dropped",
+        )
+
+
+def test_transition_member_refuses_the_wrong_file_state_and_scans_reasons(
+    tmp_path: Path,
+) -> None:
+    root, _original, batch = _completion_fixture(tmp_path)
+    with pytest.raises(KbError, match="input is unchanged; use defer"):
+        curate._transition_member(
+            _context(root), root / ".git", batch, "item.md", "Reason", "dropped"
+        )
+    (root / "observations" / "pending" / "item.md").write_bytes(b"changed")
+    with pytest.raises(KbError, match="input is changed or missing; use drop"):
+        curate._transition_member(
+            _context(root), root / ".git", batch, "item.md", "Reason", "deferred"
+        )
+    for reason in ("", "two\nlines"):
+        with pytest.raises(KbError, match="reason must be nonempty and single-line"):
+            curate._transition_member(
+                _context(root), root / ".git", batch, "item.md", reason, "dropped"
+            )
+    with pytest.raises(KbError, match="not a batch member"):
+        curate._transition_member(
+            _context(root), root / ".git", batch, "missing.md", "Reason", "dropped"
+        )
+
+
+def test_transition_commands_run_under_shared_lock_and_handle_usage_and_busy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    keep = _observation("Keep for later", "2026-10-20")
+    changed = _observation("Changed elsewhere", "2026-10-21")
+    root = _make_repo(tmp_path / "content", {"keep.md": keep, "changed.md": changed})
+    members = [
+        curation.make_member("keep.md", (root / "observations/pending/keep.md").read_bytes()),
+        curation.make_member("changed.md", (root / "observations/pending/changed.md").read_bytes()),
+    ]
+    batch = curation.make_batch(RUN, datetime(2026, 10, 28, tzinfo=UTC), 1000, members)
+    batches = root / "observations" / "batches"
+    batches.mkdir()
+    (batches / f"{RUN}.json").write_text(curation.render_batch(batch), encoding="utf-8")
+    context = _context(root)
+    git_directory = root / ".git"
+    monkeypatch.setattr(curate, "load", lambda *_args: context)
+    monkeypatch.setattr(lock, "git_dir_path", lambda *_args: git_directory)
+    monkeypatch.setattr(lock, "default_backend", lambda *_args: object())
+    monkeypatch.setattr(lock, "write_lock", lambda *_args: contextlib.nullcontext())
+    monkeypatch.setenv("KB_LOCK_WAIT", "1")
+
+    assert curate._defer_command([RUN, "keep.md", "--reason", "Need more evidence"]) == 0
+    assert capsys.readouterr().out == f"Deferred: keep.md in batch {RUN}\n"
+    changed_path = root / "observations" / "pending" / "changed.md"
+    changed_path.write_text("modified by another writer", encoding="utf-8")
+    assert curate._drop_command([RUN, "changed.md", "--reason", "Input changed"]) == 0
+    assert capsys.readouterr().out == f"Dropped: changed.md in batch {RUN}\n"
+    assert changed_path.read_text(encoding="utf-8") == "modified by another writer"
+
+    monkeypatch.setenv("KB_LOCK_WAIT", "bad")
+    with pytest.raises(KbError, match="Usage: kb curate drop"):
+        curate._drop_command([RUN, "changed.md", "--reason", "Input changed"])
+    monkeypatch.setenv("KB_LOCK_WAIT", "1")
+
+    def busy(*_args: object) -> None:
+        raise lock.LockBusy(1)
+
+    monkeypatch.setattr(lock, "write_lock", busy)
+    with pytest.raises(KbError, match="content repository is busy"):
+        curate._drop_command([RUN, "changed.md", "--reason", "Input changed"])
