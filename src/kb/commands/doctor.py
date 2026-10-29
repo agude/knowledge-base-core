@@ -25,7 +25,6 @@ from kb import (
     dates,
     diagnosis,
     observation,
-    registrations,
     setup_rules,
     skills,
     sync_state,
@@ -107,7 +106,6 @@ def gather(context: Context) -> list[Check]:
         _guarded("instructions", "warn", lambda: _instructions(context, root)),
         _guarded("skills", "warn", lambda: _skills(context)),
         _guarded("allow-rules", "warn", lambda: _allow_rules(context)),
-        _guarded("legacy", "warn", lambda: _legacy(context, root)),
     ]
 
 
@@ -349,72 +347,6 @@ def _allow_rules(context: Context) -> Check:
             "codex": diagnosis.codex_allow_problems(*_codex_rules(codex_store / "rules")),
         }
     )
-
-
-def _legacy(context: Context, root: Path | None) -> Check:
-    """The old tooling's registrations: coat-tree links, hook entries, old hooks, and skill links."""
-    findings: list[str] = []
-    findings.extend(_coat_tree_findings(context))
-    claude_store = _store(context.environ, "CLAUDE_CONFIG_DIR", context.home / ".claude")
-    findings.extend(_claude_hook_findings(claude_store / "settings.json"))
-    codex_store = _store(context.environ, "CODEX_HOME", context.home / ".codex")
-    findings.extend(_codex_hook_findings(codex_store / "hooks.json"))
-    if root is not None:
-        findings.extend(_content_hook_findings(root))
-    old_root = Path(
-        context.environ.get("KNOWLEDGE_BASE") or context.home / "Knowledge"
-    ).expanduser()
-    findings.extend(_skill_findings(claude_store / "skills", old_root))
-    findings.extend(_skill_findings(context.home / ".agents" / "skills", old_root))
-    return diagnosis.legacy_check(tuple(findings))
-
-
-def _coat_tree_findings(context: Context) -> list[str]:
-    """Each coat-tree hook entry that the old tooling installed, named with its target."""
-    config_home = Path(context.environ.get("XDG_CONFIG_HOME") or context.home / ".config")
-    return registrations.coat_tree_findings(config_home)
-
-
-def _claude_hook_findings(settings: Path) -> list[str]:
-    """Claude Code hook commands that mention the knowledge base."""
-    data = _json_object(settings)
-    findings = []
-    for event, command in _hook_commands(data.get("hooks", {})):
-        if re.search("knowledge", command, re.IGNORECASE):
-            findings.append(f"Claude settings {event} hook: {command}")
-    return findings
-
-
-def _codex_hook_findings(hooks_file: Path) -> list[str]:
-    """Codex hook scripts whose text mentions the knowledge base."""
-    return registrations.codex_hook_findings(hooks_file)
-
-
-def _content_hook_findings(root: Path) -> list[str]:
-    """A content pre-commit hook that is a link into the old tooling."""
-    hooks = _git(root, "rev-parse", "--path-format=absolute", "--git-path", "hooks")
-    if hooks.returncode != 0:
-        return []
-    hook = Path(hooks.stdout.strip()) / "pre-commit"
-    if not hook.is_symlink() or not setup_rules.is_old_hook_target(str(hook.readlink())):
-        return []
-    return [f"content pre-commit link -> {hook.readlink()}"]
-
-
-def _skill_findings(directory: Path, old_root: Path) -> list[str]:
-    """Skill links whose targets lie inside the old tooling's checkout."""
-    if not directory.is_dir():
-        return []
-    findings = []
-    for link in sorted(directory.iterdir()):
-        if link.is_symlink() and link.resolve().is_relative_to(old_root.resolve()):
-            findings.append(f"skill link {link} -> {link.resolve()}")
-    return findings
-
-
-def _hook_commands(hooks: object) -> list[tuple[str, str]]:
-    """Each (event, command) pair in a host's hooks mapping, tolerating unexpected shapes."""
-    return registrations.hook_commands(hooks)
 
 
 def _claude_allow(settings: Path) -> list[str] | None:

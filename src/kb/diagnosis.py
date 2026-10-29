@@ -250,18 +250,6 @@ def allow_rules_check(problems: dict[str, Sequence[str]]) -> Check:
     )
 
 
-def legacy_check(findings: Sequence[str]) -> Check:
-    """The old tooling's registrations that are still present. Warns, because coexistence is expected."""
-    if not findings:
-        return Check("legacy", "pass", "no old-tooling registration found")
-    return Check(
-        "legacy",
-        "warn",
-        f"{len(findings)} old-tooling registration(s): " + "; ".join(findings),
-        "remove them at cutover (phase 5)",
-    )
-
-
 def instruction_problem(text: str | None, canonical: str) -> str | None:
     """What is wrong with a host's global file, or None when it holds the canonical block."""
     if text is None:

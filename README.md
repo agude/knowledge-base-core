@@ -701,7 +701,6 @@ gather its facts reports why, and the other checks still run.
 | `instructions` | each host's global file has the canonical block | a block is missing or differs | |
 | `skills` | both packaged skills at both host destinations match the package | a skill is missing, differs, or links into the old tooling | |
 | `allow-rules` | each host has every working-agent rule and no broader `kb` rule | a rule is missing, a broader rule exists, or a Codex rules file is a symbolic link | |
-| `legacy` | no old-tooling registration | the old tooling's registrations are named | |
 
 - `capture` reports Claude Code's `cleanupPeriodDays`, which defaults to 30.
   Codex retention is reported as `unknown`, because its configuration documents

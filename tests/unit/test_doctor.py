@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from kb import diagnosis, setup_rules
+from kb import diagnosis, setup_rules, sync_state
 from kb.commands import doctor
 from kb.diagnosis import Check
 from kb.errors import KbError
@@ -71,17 +71,6 @@ def test_the_claude_retention_is_the_setting_or_the_default(tmp_path: Path) -> N
     assert doctor._claude_retention(tmp_path) == "for 30 days (default)"
 
 
-def test_hook_commands_skip_every_unexpected_shape() -> None:
-    hooks = {
-        "SessionStart": [{"hooks": [{"command": "bash a.sh"}, {"command": 3}, "text"]}],
-        "Stop": "not a list",
-        "Odd": ["not a group", {"hooks": "not a list"}],
-    }
-
-    assert doctor._hook_commands(hooks) == [("SessionStart", "bash a.sh")]
-    assert doctor._hook_commands("not a mapping") == []
-
-
 def test_claude_allow_reads_only_a_list_of_strings(tmp_path: Path) -> None:
     settings = tmp_path / "settings.json"
     assert doctor._claude_allow(settings) is None
@@ -133,93 +122,6 @@ def test_the_kb_path_of_a_managed_hook_must_exist_and_print_a_version(tmp_path: 
     assert doctor._kb_problem(setup_rules.hook_script(str(right)).encode()) is None
 
 
-def test_coat_tree_entries_for_the_knowledge_base_are_named(tmp_path: Path) -> None:
-    hooks = tmp_path / "xdg" / "coat-tree" / "hooks.d"
-    (hooks / "Stop").mkdir(parents=True)
-    (hooks / "Stop" / "010.knowledge.sh").write_text("#!/bin/sh\n", encoding="utf-8")
-    (hooks / "Stop" / "020.other.sh").write_text("#!/bin/sh\n", encoding="utf-8")
-    ctx = context(tmp_path, environ={"XDG_CONFIG_HOME": str(tmp_path / "xdg")})
-
-    assert doctor._coat_tree_findings(ctx) == ["coat-tree Stop/010.knowledge.sh -> a regular file"]
-
-
-@SKIP_LINKS
-def test_coat_tree_links_name_their_targets(tmp_path: Path) -> None:
-    hooks = tmp_path / "home" / ".config" / "coat-tree" / "hooks.d" / "PreToolUse"
-    hooks.mkdir(parents=True)
-    (hooks / "010.knowledge").symlink_to(tmp_path / "old" / "pretool-allow")
-    ctx = context(tmp_path, home=tmp_path / "home")
-
-    assert doctor._coat_tree_findings(ctx) == [
-        f"coat-tree PreToolUse/010.knowledge -> {tmp_path / 'old' / 'pretool-allow'}"
-    ]
-
-
-def test_claude_and_codex_hook_entries_that_mention_the_knowledge_base_are_named(
-    tmp_path: Path,
-) -> None:
-    settings = tmp_path / "settings.json"
-    settings.write_text(
-        json.dumps({"hooks": {"Stop": [{"hooks": [{"command": "run ~/Knowledge/hook"}]}]}}),
-        encoding="utf-8",
-    )
-    script = tmp_path / "shim.sh"
-    script.write_text("# delegates to the knowledge-base adapter\n", encoding="utf-8")
-    other = tmp_path / "other.sh"
-    other.write_text("# nothing here\n", encoding="utf-8")
-    hooks = tmp_path / "hooks.json"
-    hooks.write_text(
-        json.dumps(
-            {
-                "hooks": {
-                    "Stop": [
-                        {"hooks": [{"command": f"bash {script}"}, {"command": f"bash {other}"}]}
-                    ],
-                    "Start": [{"hooks": [{"command": ""}]}],
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    assert doctor._claude_hook_findings(settings) == [
-        "Claude settings Stop hook: run ~/Knowledge/hook"
-    ]
-    assert doctor._codex_hook_findings(hooks) == [f"Codex Stop hook: bash {script}"]
-
-
-@SKIP_LINKS
-def test_skill_links_into_the_old_checkout_are_named(tmp_path: Path) -> None:
-    old = tmp_path / "Knowledge"
-    (old / "skills" / "curate").mkdir(parents=True)
-    skills = tmp_path / "skills"
-    skills.mkdir()
-    (skills / "curate").symlink_to(old / "skills" / "curate")
-    (skills / "elsewhere").symlink_to(tmp_path / "Other")
-    (skills / "plain").mkdir()
-
-    assert doctor._skill_findings(skills, old) == [
-        f"skill link {skills / 'curate'} -> {(old / 'skills' / 'curate').resolve()}"
-    ]
-    assert doctor._skill_findings(tmp_path / "absent", old) == []
-
-
-@SKIP_LINKS
-def test_a_content_hook_linked_into_the_old_tooling_is_named(
-    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory
-) -> None:
-    subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
-    old = tmp_path / "Knowledge" / "scripts" / "hooks" / "pre-commit"
-    old.parent.mkdir(parents=True)
-    old.write_text("old\n", encoding="utf-8")
-    hook = tmp_path / ".git" / "hooks" / "pre-commit"
-    if sys.platform != "win32":
-        hook.symlink_to(old)
-        assert doctor._content_hook_findings(tmp_path) == [f"content pre-commit link -> {old}"]
-    outside = tmp_path_factory.mktemp("not-a-repository")
-    assert doctor._content_hook_findings(outside) == []
-
-
 def test_a_gatherer_error_becomes_a_named_check() -> None:
     def broken() -> Check:
         raise KbError("disk gone")
@@ -260,7 +162,6 @@ def test_gather_reports_every_check_when_nothing_is_configured(tmp_path: Path) -
         "instructions",
         "skills",
         "allow-rules",
-        "legacy",
     ]
     assert checks[2] == Check(
         "content", "fail", "no content root; see the config check", diagnosis.CONFIG_FIX
@@ -341,3 +242,41 @@ def test_the_git_helper_never_asks_for_optional_locks(
     doctor._git(tmp_path, "status")
 
     assert seen[0]["GIT_OPTIONAL_LOCKS"] == "0"
+
+
+def test_content_check_names_a_root_that_is_not_a_repository(tmp_path: Path) -> None:
+    assert doctor._content(tmp_path) == diagnosis.content_check(
+        False, None, False, 0, False, None, None
+    )
+
+
+def test_dirty_count_refuses_a_root_that_is_not_a_repository(tmp_path: Path) -> None:
+    with pytest.raises(KbError, match="cannot inspect working tree"):
+        doctor._dirty_count(tmp_path)
+
+
+def test_gitattributes_refuses_a_root_that_is_not_a_repository(tmp_path: Path) -> None:
+    with pytest.raises(KbError, match="cannot read attributes"):
+        doctor._gitattributes(tmp_path)
+
+
+def test_hook_refuses_a_root_that_is_not_a_repository(tmp_path: Path) -> None:
+    with pytest.raises(KbError, match="cannot locate the hooks directory"):
+        doctor._hook(tmp_path)
+
+
+def test_sync_refuses_a_root_that_is_not_a_repository(tmp_path: Path) -> None:
+    with pytest.raises(KbError, match="cannot locate the Git directory"):
+        doctor._sync(tmp_path, context(tmp_path))
+
+
+def test_sync_reports_an_unreadable_record_in_a_repository(tmp_path: Path) -> None:
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    record = sync_state.path(tmp_path / ".git")
+    record.parent.mkdir(parents=True)
+    record.write_text("not json\n", encoding="utf-8")
+
+    result = doctor._sync(tmp_path, context(tmp_path))
+
+    assert result.state == "fail"
+    assert result.message.startswith("record unreadable: sync state: invalid JSON")

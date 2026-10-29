@@ -34,7 +34,6 @@ CHECKS = (
     "instructions",
     "skills",
     "allow-rules",
-    "legacy",
 )
 
 
@@ -220,13 +219,6 @@ def _sync_failed(kb: Kb) -> dict[str, str | None]:
     return {}
 
 
-def _legacy_link(kb: Kb) -> dict[str, str | None]:
-    hooks = kb.home / "xdg" / "coat-tree" / "hooks.d" / "Stop"
-    hooks.mkdir(parents=True)
-    (hooks / "010.knowledge.sh").symlink_to(kb.home / "legacy-hook.sh")
-    return {}
-
-
 def _old_transcript(kb: Kb) -> dict[str, str | None]:
     destination = kb.claude_config_dir / "projects" / "demo" / "main.jsonl"
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -262,7 +254,6 @@ REMOVALS: list[tuple[str, Mutation, str, int]] = [
         "WARN sync: last run ended error: sync: push origin/main",
         0,
     ),
-    ("legacy coat-tree link", _legacy_link, "coat-tree Stop/010.knowledge.sh", 0),
     (
         "ready transcript older than 20 days",
         _old_transcript,

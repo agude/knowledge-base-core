@@ -173,14 +173,6 @@ def test_the_skills_check_passes_or_names_the_setup_fix() -> None:
     assert (old_link.state, old_link.fix) == ("warn", "run kb setup --replace-old-skills")
 
 
-def test_the_legacy_check_names_each_registration() -> None:
-    assert diagnosis.legacy_check(()) == Check(
-        "legacy", "pass", "no old-tooling registration found"
-    )
-    warned = diagnosis.legacy_check(("coat-tree a", "skill link b"))
-    assert warned.message == "2 old-tooling registration(s): coat-tree a; skill link b"
-
-
 def test_an_instruction_file_without_the_canonical_block_has_a_named_problem() -> None:
     assert diagnosis.instruction_problem(None, CANONICAL) == "no global file"
     assert diagnosis.instruction_problem("plain text\n", CANONICAL) == "no kb block"
@@ -231,3 +223,19 @@ def test_codex_rules_missing_broader_and_decision_aware() -> None:
     )
     pattern_less = 'prefix_rule(decision = "allow")\n' + complete
     assert diagnosis.codex_allow_problems(pattern_less) == ()
+
+
+def test_skills_check_names_the_fix_for_unmanaged_paths() -> None:
+    finding = ("Codex curate is not managed",)
+    assert diagnosis.skills_check(finding, old_link=True, foreign=True) == Check(
+        "skills",
+        "warn",
+        "Codex curate is not managed",
+        "move unmanaged skill paths aside, then run kb setup --replace-old-skills",
+    )
+    assert diagnosis.skills_check(finding, old_link=False, foreign=True) == Check(
+        "skills",
+        "warn",
+        "Codex curate is not managed",
+        "move unmanaged skill paths aside, then run kb setup",
+    )

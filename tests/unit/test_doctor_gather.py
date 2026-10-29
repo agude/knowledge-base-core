@@ -130,7 +130,6 @@ def test_a_configured_machine_passes_every_gathered_check(machine: doctor.Contex
             "instructions",
             "skills",
             "allow-rules",
-            "legacy",
         ),
         "pass",
     )
@@ -287,24 +286,6 @@ def test_allow_rules_ignore_a_symlinked_codex_rules_file(
 
     assert check.state == "warn"
     assert check.message == "codex: kb.rules is a symbolic link, which Codex skips; no rules files"
-
-
-@SKIP
-def test_legacy_names_a_content_hook_link_into_the_old_tooling(
-    machine: doctor.Context, tmp_path: Path
-) -> None:
-    root = Path(machine.environ["KB_CONTENT"])
-    hook = root / ".git" / "hooks" / "pre-commit"
-    old = tmp_path / "Knowledge" / "scripts" / "hooks" / "pre-commit"
-    old.parent.mkdir(parents=True)
-    old.write_text("old\n", encoding="utf-8")
-    hook.unlink()
-    hook.symlink_to(old)
-
-    legacy = by_name(doctor.gather(machine))["legacy"]
-
-    assert legacy.state == "warn"
-    assert f"content pre-commit link -> {old}" in legacy.message
 
 
 @SKIP
