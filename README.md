@@ -570,8 +570,10 @@ pull and push for a later run.
 A regular `kb sync` also records its outcome in `<git dir>/kb/sync-state.json`,
 in the common Git directory, where Git never commits it. The record names the
 run's outcome (`ok`, `dirty`, or `error`), the time of the last successful
-exchange with `origin`, and the first line of any failure. `kb sync --status`
-and `kb sync --dry-run` write nothing. `kb doctor` reads this record.
+exchange with `origin`, and the first line of any failure, unredacted. That
+line may contain a local path. The record stays in the common Git directory and
+is never committed. `kb sync --status` and `kb sync --dry-run` write nothing.
+`kb doctor` reads this record.
 
 #### Install the user timer
 
@@ -596,12 +598,12 @@ and catches up after the machine was off.
 
 `kb setup` configures one machine. It sets the config file's `content` key,
 installs the content repository's pre-commit hook, and can create a content
-repository. It prints one line per resource, `Config:` and `Hook:` (and
-`Init:` with `--init`), each with its state. It exits 1 when it refused any
-resource, and a refusal does not stop the other resources.
+repository. It prints one line per resource: `Config:`, `Hook:`, and `Skill:`
+(and `Init:` with `--init`; `Capture:` with `--enable-capture`). It exits 1 when
+it refused any resource, and a refusal does not stop the other resources.
 
 ```text
-kb setup [--content PATH] [--kb PATH] [--replace-old-hook]
+kb setup [--content PATH] [--kb PATH] [--replace-old-hook] [--replace-old-skills] [--enable-capture]
 kb setup --init PATH [--origin URL] [--kb PATH]
 kb setup --print {instructions|allow-claude|allow-codex}
 ```
@@ -625,6 +627,13 @@ kb setup --print {instructions|allow-claude|allow-codex}
   to the old tooling's hook is refused unless `--replace-old-hook` is given.
   With the flag, setup replaces only the link, and the link's target is not
   changed.
+- Setup copies the packaged `knowledge-base` and `curate` skills into
+  `$CLAUDE_CONFIG_DIR/skills/` (default `~/.claude/skills/`) and
+  `~/.agents/skills/`. A `.kb-managed` marker records
+  the package version. Setup updates only directories with that marker; it
+  refuses foreign directories and unrelated symlinks. `--replace-old-skills`
+  replaces only a symlink into the old tooling's `skills/` directory and leaves
+  its target unchanged.
 - `--init PATH` creates a content repository. It refuses a path that exists and
   is not an empty directory, and it refuses when `kb` cannot be found; both
   refusals come before anything is created. It writes the layout, with a
@@ -637,9 +646,12 @@ kb setup --print {instructions|allow-claude|allow-codex}
   A failed push keeps the local repository, exits 1, and prints the
   `git push --set-upstream origin main` command that recovers. `kb sync` cannot
   make the first push, because it fetches `origin/main` first.
-- Setup never enables capture, never writes `harvest_since`, and never edits
-  host settings or instruction files. Capture enablement and the removal of the
-  old capture hooks happen together at cutover, which is phase 5.
+- `--enable-capture` refuses while an old capture registration remains in the
+  four coat-tree lifecycle hooks or Codex lifecycle hooks. After those hooks
+  are removed, it writes top-level `harvest_since` at the current UTC second
+  when the setting is unset; an existing cutoff stays unchanged. It does not
+  run `kb sync` or enable the timer. Setup never enables the timer or edits host
+  settings or instruction files.
 
 ### `kb setup --print`
 
@@ -689,6 +701,7 @@ gather its facts reports why, and the other checks still run.
 | `scheduler` | on Linux, `kb-sync.timer` is enabled and active | it is not enabled or not active; elsewhere, `not checked on PLATFORM` | |
 | `capture` | `harvest_since` is set, the transcript roots are readable, and no ready transcript is older than 20 days | capture is disabled, a root is unreadable, or old ready transcripts exist | |
 | `instructions` | each host's global file has the canonical block | a block is missing or differs | |
+| `skills` | both packaged skills at both host destinations match the package | a skill is missing, differs, or links into the old tooling | |
 | `allow-rules` | each host has every working-agent rule and no broader `kb` rule | a rule is missing, or a broader rule exists | |
 | `legacy` | no old-tooling registration | the old tooling's registrations are named | |
 

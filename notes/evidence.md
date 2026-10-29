@@ -957,11 +957,11 @@ Measurements:
 
 Deviations and contract amendments:
 
-- The sync record's `message` is the first line of the failure, as section 5.1
-  says. Git and operating-system messages can contain a path, so the record can
-  contain one, which section 5.1 says it must not. The implementation keeps the
-  line unredacted. Redacting it or truncating it at the first path is a decision
-  for the user.
+- The sync record's `message` is the unredacted first line of a failure. Git
+  and operating-system messages can contain paths. This is acceptable because
+  `sync-state.json` is in the common Git directory and is never committed; no
+  path leaves the machine through Git. README's sync-record contract now says
+  the line is unredacted and may contain a local path.
 - The installed instruction block is one block for both hosts, because the
   dotfiles install one file for both. Its policy line is an import. Claude Code
   loads the import, and Codex reads the same line as a path. This replaces
@@ -1050,3 +1050,91 @@ Open items:
   transcript newer than the boundary while skipping an older transcript.
 - `just check` passed: 1,641 passed, 12 skipped, 90.39% branch coverage; ruff, actionlint,
   zizmor, and strict mypy passed.
+
+## Sync record contract decision (2026-10-28)
+
+- Keep the sync failure message unredacted, including a local path, because the record lives
+  only in the common Git directory and Git never commits it. The README now states this
+  explicitly. No code changed for this decision.
+
+## Part A closeout (2026-10-28)
+
+### Implementation commits
+
+- Knowledge Base commits after the A0 starting revision: `1c1544e` (recover from
+  failed setup initialization), `9f05a08` (top-level setup help), `be5ee09`
+  (roadmap link), `21faebe` (dirac baseline and Codex runtime results),
+  `964d997` (safe capture switch), `2edbcb8` (packaged skills), and `4da0541`
+  (managed skill installation and doctor check).
+- Dotfiles commit `0940ed7691298bebd16b749ff1a35a1e167e2251` is on the isolated
+  `kb-cutover` worktree, one commit above base
+  `70751e74b90569a1002c70860fcd0130633c1da6`. It changes 16 files with 91
+  insertions and 245 deletions. It installs the generated instruction and
+  allow-rule text, removes the Codex session shims, and adds the kb rules and
+  sync timer units. The dotfiles checks passed; `main` was not merged or pushed.
+
+### Measurements and setup behavior
+
+- The A1 measurements and successful isolated Codex runtime probe are recorded
+  above under `dirac adoption baseline`. The probe exercised all seven allowed
+  command prefixes without approval and confirmed that `kb sync` and the
+  curator command require approval. Codex submitted simple commands as literal
+  `cmd` strings; shell-wrapped commands were not approved by the tested rules.
+- Skill setup installs or updates managed copies for both skills at both host
+  destinations, then reports `unchanged` on a repeat. The e2e cases cover
+  refusal of foreign content, old-tooling links without the flag, replacement
+  with `--replace-old-skills` while preserving the target, and doctor findings
+  for missing, different, old, and foreign skills. Doctor remains read-only.
+- Capture enablement refuses each of the four old coat-tree lifecycle
+  registrations and the Codex lifecycle registration without changing config.
+  It enables once, preserves the same cutoff on a second run, and sync harvests
+  a fixture transcript after the cutoff while skipping one before it. The
+  switch does not start the timer or run sync.
+- A5 adds the `skills` doctor check to the recorded A1 baseline. The expected
+  pre-cutover state after A5 is 3 PASS, 9 WARN, and the same single expected
+  `sync: No record` FAIL. No live doctor run was made during A7.
+
+### Cutover rehearsal
+
+- The scratch rehearsal used a disposable home, fixture content repository and
+  bare origin, a one-commit fixture `kb-cutover` branch, and fake `kb` and
+  `systemctl` executables. The expected initial doctor exit 1 and `sync: No
+  record` were recorded in the journal; final doctor required every check to
+  pass.
+- All 24 actions in a successful cutover were failed in turn and then rolled
+  back. Three additional missing-directory actions were also failed and
+  rolled back. Partial setup, partial capture enablement, partial timer enable,
+  interrupted link/capture/timer actions, and an interrupted managed-skill
+  rename all recovered. Checks confirmed original config and links, old skill
+  symlinks, preserved unrelated hooks, scheduler state, and absence of new
+  resources. Committed content changes remained.
+- Rollback resumed after an interruption between a restoration mutation and
+  its completion record, after an injected restoration failure, and after a
+  timer-stop failure. While the timer remained active, rollback retained the
+  capture boundary and left old capture hooks disabled.
+- Full cutover and rollback succeeded, followed by retries both after reverting
+  the cutover commit and after a failure before that commit was applied. Retry
+  did not duplicate the `.gitattributes` commit. Dirty content, an unfinished
+  batch, a changed dotfiles base, and an unexpected doctor finding were refused.
+  A sync command that returned 0 without writing a successful exchange record
+  failed the exchange gate.
+
+### Evaluation and package checks
+
+- `just eval` passed: retrieval-question-v1 answerable 8/8 and unanswerable
+  2/2; retrieval-v1 answerable 32/32, unanswerable 4/4, and `requires_all`
+  10/10.
+- `just build package-check` passed for the 0.1.0 wheel, including the installed
+  instruction block and both packaged skills.
+- `just check` passed: 1,665 passed, 12 skipped, 90.18% branch coverage;
+  ruff, formatting, actionlint, zizmor, and strict mypy passed. zizmor reported
+  no findings in offline mode.
+
+### Open items
+
+- Part B remains unrun. The 0.2.0 release, install, live doctor, live sync,
+  timer enablement, Claude and Codex sessions, transcript verification, and
+  content commit through the installed hook all remain user-run steps.
+- No machine is recorded as moved. Native Windows behavior, adoption on other
+  machines, first `kb curate` use, the one-time `ttl` pass, and retirement of
+  the old tooling remain open.

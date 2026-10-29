@@ -382,10 +382,10 @@ This phase can proceed after phase 1. Complete the parts needed to operate
 capture before switching capture on.
 
 Status: built on fixtures, and not run on a real machine. `kb setup` sets the
-content path, installs the hook, creates a repository with `--init`, and prints
-the host text for the dotfiles. `kb doctor` checks each fact in its table and
-names the fix. Skill linking moved to phase 5 (decision 1 of the phase 4 plan),
-because no `kb` skill exists yet.
+content path, installs the hook, copies the packaged skills, creates a
+repository with `--init`, and prints the host text for the dotfiles.
+`kb doctor` checks each fact in its table, including package-matched skills,
+and names the fix. The skill-installation policy is recorded below.
 
 ### 5. Adopt on Linux and retire the old tooling
 
@@ -393,15 +393,22 @@ Adopt components as they become usable. Retrieval already works beside the
 old system, and capture can switch before the new curation workflow is
 complete. Full retirement waits until every scenario has a `kb` replacement.
 
-Skill linking belongs here. The new `knowledge-base` and `curate` skills are
-written, and setup links them, in the same change that replaces core's skill
-links and updates the instruction block (phase 4 plan, decision 1).
+**Decision 1: copy skills, not link them.** `kb setup` copies the packaged
+`knowledge-base` and `curate` skills into `~/.claude/skills/` and
+`~/.agents/skills/`. The package can move when uv changes interpreters, so a
+link into its installation would break. Setup marks managed copies with
+`.kb-managed`; `kb doctor` compares both skills at both host destinations with
+the package. It replaces an old-tooling skill symlink only when explicitly
+given `--replace-old-skills` and leaves the link target unchanged.
 
-For the capture switch on each machine, remove the old capture hooks and set
-`harvest_since` at the same moment, and let the sync timer take over. Keep
-the already captured history; do not backfill it. Verify capture and
-synchronization from a real session before treating that machine as moved.
-Record which responsibilities still use the old tooling.
+For the capture switch on each machine, remove the old capture registrations,
+then run `kb setup --enable-capture`. It refuses while an old coat-tree or
+Codex lifecycle registration remains. It writes `harvest_since` at the current
+UTC second when unset and keeps an existing cutoff unchanged. Enable the sync
+timer only after the new links are installed. Keep already captured history;
+do not backfill it. Verify capture and synchronization from a real session
+before treating that machine as moved. Record which responsibilities still use
+the old tooling.
 
 Replace the old session-start and tool-approval hooks with the instruction
 block and allow rules. Move recording, gap handling, and curation to their
