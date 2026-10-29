@@ -1613,17 +1613,12 @@ def _require_clean_tree(root: Path) -> None:
 
 
 def _check_existing_batches(root: Path) -> None:
-    """Refuse active new batches and old pending TSV batches without changing them."""
+    """Refuse active new batches without changing them."""
     directory = _fixed_directory(root, BATCHES, create=False, optional=True)
     if directory is None:
         return
     for path in sorted(directory.iterdir(), key=lambda candidate: candidate.name):
-        if path.suffix == ".tsv":
-            if path.is_symlink() or not stat.S_ISREG(path.lstat().st_mode):
-                raise KbError(f"{WHO}: malformed old batch manifest: {path.name}")
-            if _old_batch_has_pending(path):
-                raise KbError(f"{WHO}: an old batch has pending work: {path.name}")
-        elif path.suffix == ".json":
+        if path.suffix == ".json":
             if path.is_symlink() or not stat.S_ISREG(path.lstat().st_mode):
                 raise KbError(f"{WHO}: malformed batch manifest: {path.name}")
             batch = _load_batch_file(path)
@@ -1648,15 +1643,7 @@ def doctor_findings(root: Path) -> tuple[str, ...]:
         return ()
     findings: list[str] = []
     for path in sorted(directory.iterdir(), key=lambda candidate: candidate.name):
-        if path.suffix == ".tsv":
-            try:
-                pending = _old_batch_has_pending(path)
-            except KbError as error:
-                findings.append(str(error))
-                continue
-            if pending:
-                findings.append(f"old batch {path.stem} has pending work; see the old tooling")
-        elif path.suffix == ".json":
+        if path.suffix == ".json":
             try:
                 batch = _load_batch_file(path)
             except KbError as error:
@@ -1682,24 +1669,6 @@ def _settled_finding(root: Path, batch: curation.Batch) -> list[str]:
     if commit is None:
         return [f"batch {batch.id} is settled but not committed; run: kb curate status {batch.id}"]
     return [f"batch {batch.id} is committed but not published; run: kb curate finish {batch.id}"]
-
-
-def _old_batch_has_pending(path: Path) -> bool:
-    """Read the legacy TSV header and status cells, rejecting malformed manifests."""
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeError) as error:
-        raise KbError(f"{WHO}: malformed old batch manifest: {path.name}: {error}") from error
-    expected = ["filename", "original_sha256", "status", "disposition", "destination"]
-    if not lines or lines[0].split("\t") != expected:
-        raise KbError(f"{WHO}: malformed old batch manifest: {path.name}")
-    pending = False
-    for line in lines[1:]:
-        fields = line.split("\t")
-        if len(fields) != len(expected) or fields[2] not in {"pending", "complete", "deferred"}:
-            raise KbError(f"{WHO}: malformed old batch manifest: {path.name}")
-        pending = pending or fields[2] == "pending"
-    return pending
 
 
 def _read_batch(root: Path, run_id: str) -> curation.Batch:

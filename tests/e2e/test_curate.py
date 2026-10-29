@@ -14,7 +14,6 @@ import pytest
 from .harness import HOLD_KERNEL_LOCK, TODAY, Kb, make_git_kb
 
 RUN_RE = re.compile(r"Created batch: ([0-9]{8}T[0-9]{6}-[0-9a-f]{8})\n")
-OLD_HEADER = "filename\toriginal_sha256\tstatus\tdisposition\tdestination\n"
 
 
 def _run_id(result: CompletedProcess[str]) -> str:
@@ -332,35 +331,6 @@ def test_start_rejects_malformed_new_manifests_and_allows_settled_batches(git_kb
 
     assert allowed.returncode == 0, allowed.stderr
     assert "Created batch:" in allowed.stdout
-
-
-@pytest.mark.parametrize(
-    ("contents", "expected"),
-    [
-        (OLD_HEADER, None),
-        (OLD_HEADER + "old.md\tabc\tcomplete\tprocessed\t\n", None),
-        (OLD_HEADER + "old.md\tabc\tpending\t\t\n", "pending work"),
-        ("broken header\n", "malformed old batch"),
-        (OLD_HEADER + "short\trow\n", "malformed old batch"),
-    ],
-)
-def test_old_tsv_batches_are_read_only_and_gate_only_pending_work(
-    git_kb: Kb, contents: str, expected: str | None
-) -> None:
-    path = git_kb.content / "observations/batches" / "old.tsv"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(contents, encoding="utf-8")
-    _commit(git_kb, "observations/batches/old.tsv")
-    before = path.read_bytes()
-
-    result = git_kb("curate", "start", "--no-sync", "--max-bytes", "10000")
-
-    if expected is None:
-        assert result.returncode == 0, result.stderr
-        assert path.read_bytes() == before
-    else:
-        _failure(result, expected)
-        assert path.read_bytes() == before
 
 
 def test_ignored_nested_markdown_is_not_eligible_or_reported(git_kb: Kb) -> None:
