@@ -10,8 +10,7 @@ resumable batches: `start` synchronizes with `origin`, and `finish` validates a
 batch, commits it once, and pushes it. The content pre-commit hook,
 `kb hook pre-commit`, checks every content commit. `kb setup` configures a
 machine and installs that hook, and `kb doctor` names each problem with its
-fix. Turning capture on and retiring the old tooling happen together at
-cutover, which is phase 5.
+fix.
 
 ## Usage
 
@@ -482,9 +481,7 @@ kb observe --title "Meeting notes" --body - < notes.txt
   nothing, and exits 1.
 
 The write takes one lock: an exclusive kernel lock on `<git dir>/kb.lock`, which the
-kernel releases when the process exits. The old scripts in `~/Knowledge/scripts` take
-a different lock, `<content>/.observe.lock`, which `kb` does not take. Do not run those
-scripts while `kb` is writing.
+kernel releases when the process exits.
 
 Temporary files for a write live in `<git dir>/kb-tmp` and are removed on every
 path.
