@@ -592,7 +592,7 @@ def _publication_changes(root: Path, batch: curation.Batch) -> list[publish.Chan
 
 
 def _worktree_entries(root: Path) -> list[tuple[str, str]]:
-    """Each changed or untracked path with its two-letter Git status, excluding the old lock."""
+    """Each changed or untracked path with its two-letter Git status."""
     output = _git_output(
         root,
         "status",

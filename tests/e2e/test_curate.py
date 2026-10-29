@@ -897,19 +897,16 @@ def test_complete_archives_each_outcome_with_canonical_destinations_without_comm
     assert members[ephemeral_name]["disposition"] == "ephemeral"
     archived = git_kb.content / "observations" / "archived"
     incorporated_text = (archived / incorporated_name).read_text(encoding="utf-8")
-    assert "disposition: incorporated" in incorporated_text
-    assert 'destination: "knowledge/curation/network.md#1"' in incorporated_text
-    assert 'destination_heading: "Access"' in incorporated_text
+    assert "\ndisposition:" not in incorporated_text
+    assert "\ndestination" not in incorporated_text
     assert (
         f"original_sha256: {hashlib.sha256(contents[incorporated_name]).hexdigest()}"
         in incorporated_text
     )
     assert f"curation_batch: {run_id}" in incorporated_text
-    assert 'destination: "knowledge/curation/network.md#1"' in (
-        archived / duplicate_name
-    ).read_text(encoding="utf-8")
+    assert "\ndestination" not in (archived / duplicate_name).read_text(encoding="utf-8")
     ephemeral_text = (archived / ephemeral_name).read_text(encoding="utf-8")
-    assert "disposition: ephemeral" in ephemeral_text
+    assert "\ndisposition:" not in ephemeral_text
     assert 'curation_reason: "No durable details"' in ephemeral_text
     assert all(path.read_bytes() == content for path, content in article_bytes.items())
     linted = git_kb("lint", "knowledge/curation/network.md", "knowledge/curation/services.md")
@@ -1126,10 +1123,9 @@ def test_recovery_detects_a_destination_heading_shift(git_kb: Kb) -> None:
 @pytest.mark.parametrize(
     "existing_field",
     [
-        "disposition: processed\n",
-        "destination: knowledge/example.md#1\n",
         "original_sha256: " + "a" * 64 + "\n",
         "curation_batch: 20261028T120000-a1b2c3d4\n",
+        'curation_reason: "Old note"\n',
     ],
 )
 def test_complete_rejects_preexisting_archive_metadata(git_kb: Kb, existing_field: str) -> None:
@@ -1259,7 +1255,6 @@ def _archiving_fixture(kb: Kb, filename: str) -> tuple[bytes, bytes, Path]:
     original_hash = hashlib.sha256(original).hexdigest()
     archived = (
         "---\ntitle: Recovery fixture\n"
-        "disposition: ephemeral\n"
         f"original_sha256: {original_hash}\n"
         f"curation_batch: 20261028T120000-a1b2c3d4\n"
         'curation_reason: "Temporary note"\n'

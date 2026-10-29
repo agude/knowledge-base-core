@@ -141,6 +141,12 @@ def test_child_effective_date_ignores_an_invalid_inherited_verification_date() -
     assert [finding[2] for finding in inspect(text)] == ["invalid section verified date"]
 
 
+def test_knowledge_sections_reject_synced_and_use_verified() -> None:
+    text = valid_article("# Example\n## Section\n<!-- kb-section: synced=2026-10-01 -->\n")
+
+    assert [finding[2] for finding in inspect(text)] == ["synced is a sources/ field; use verified"]
+
+
 def test_supersedes_requires_existing_other_sections_and_acyclic_edges() -> None:
     text = valid_article(
         "# Example\n"

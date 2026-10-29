@@ -6,16 +6,7 @@ from typing import Literal
 from kb import curation, model
 
 Disposition = Literal["incorporated", "duplicate", "ephemeral"]
-_ARCHIVE_FIELDS = frozenset(
-    {
-        "disposition",
-        "destination",
-        "original_sha256",
-        "curation_batch",
-        "destination_heading",
-        "curation_reason",
-    }
-)
+_ARCHIVE_FIELDS = frozenset({"original_sha256", "curation_batch", "curation_reason"})
 
 
 def render(
@@ -27,7 +18,8 @@ def render(
     reason: str | None = None,
 ) -> str:
     """Append archive provenance while preserving the source's body and line endings."""
-    member = curation.Member(
+    # Constructing the member validates the outcome shape before anything is written.
+    curation.Member(
         filename="archive.md",
         original_sha256=original_sha256,
         original_bytes=len(original.encode("utf-8")),
@@ -48,17 +40,10 @@ def render(
     if existing:
         raise model.FrontMatterEditError("archive fields already exist: " + ", ".join(existing))
 
-    fields: list[tuple[str, str]] = [("disposition", disposition)]
-    if member.destinations:
-        fields.append(("destination", member.destinations[0].locator))
-    fields.extend(
-        [
-            ("original_sha256", original_sha256),
-            ("curation_batch", batch_id),
-        ]
-    )
-    if member.destinations and member.destinations[0].heading is not None:
-        fields.append(("destination_heading", member.destinations[0].heading))
+    fields: list[tuple[str, str]] = [
+        ("original_sha256", original_sha256),
+        ("curation_batch", batch_id),
+    ]
     if reason is not None:
         fields.append(("curation_reason", reason))
 
@@ -70,7 +55,7 @@ def render(
             name,
             value,
             after=previous,
-            quoted=name in {"destination", "destination_heading", "curation_reason"},
+            quoted=name == "curation_reason",
         )
         previous = name
     return bom + rendered

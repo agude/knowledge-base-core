@@ -398,12 +398,12 @@ complete. Full retirement waits until every scenario has a `kb` replacement.
 `~/.agents/skills/`. The package can move when uv changes interpreters, so a
 link into its installation would break. Setup marks managed copies with
 `.kb-managed`; `kb doctor` compares both skills at both host destinations with
-the package. It replaces an old-tooling skill symlink only when explicitly
-given `--replace-old-skills` and leaves the link target unchanged.
+the package. A skill symlink into the old tooling is foreign like any other:
+setup refuses it and leaves its target unchanged, and doctor reports it as
+unmanaged.
 
 For the capture switch on each machine, remove the old capture registrations,
-then run `kb setup --enable-capture`. It refuses while an old coat-tree or
-Codex lifecycle registration remains. It writes `harvest_since` at the current
+then run `kb setup --enable-capture`. It writes `harvest_since` at the current
 UTC second when unset and keeps an existing cutoff unchanged. Enable the sync
 timer only after the new links are installed. Keep already captured history;
 do not backfill it. Verify capture and synchronization from a real session
@@ -417,11 +417,9 @@ block together so agents follow the installed behavior. Verify the complete
 cycle across machines: learn, capture, sync, curate, publish, and recall from
 a later session.
 
-Remove the legacy `.observe.lock` protocol, stale-PID handling, and their
-tests only when the old writing scripts have stopped running on every
-machine. Switching capture alone does not satisfy that dependency. Remove
-the remaining shims and obsolete environment variables, then archive the
-old tooling.
+The legacy `.observe.lock` protocol, its stale-PID handling, the remaining
+shims, and the obsolete environment variables are removed from `kb`. Archiving
+the old tooling is the last step.
 
 ### 6. Add Windows
 

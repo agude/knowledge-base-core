@@ -736,16 +736,15 @@ def _metadata_fields(
         if name not in SECTION_FIELDS:
             diagnostics.append(MetadataDiagnostic(line_index, f"unknown field '{name}'"))
             continue
-        canonical_name = "verified" if name in {"verified", "synced"} else name
-        if canonical_name in seen_fields and seen_fields[canonical_name] != value:
+        if name in seen_fields and seen_fields[name] != value:
             diagnostics.append(
                 MetadataDiagnostic(
                     line_index,
-                    f"conflicting values for field '{canonical_name}'",
+                    f"conflicting values for field '{name}'",
                 )
             )
         else:
-            seen_fields[canonical_name] = value
+            seen_fields[name] = value
     if not body.strip(" \t"):
         line_index = parts[0][1] if parts else 0
         diagnostics.append(MetadataDiagnostic(line_index, "section metadata comment is empty"))

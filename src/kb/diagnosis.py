@@ -179,7 +179,7 @@ def capture_check(
             "capture",
             "warn",
             "Capture disabled (harvest_since unset)",
-            "remove old capture hooks, then run kb setup --enable-capture",
+            "run kb setup --enable-capture",
         )
     if unreadable:
         return Check(

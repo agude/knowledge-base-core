@@ -87,8 +87,8 @@ def fragment_resolves(document: Document, fragment: str) -> bool:
         normalized = ".".join(part.lstrip("0") or "0" for part in fragment.split("."))
         if locators.select(document, normalized) is not None:
             return True
-    # The old lint lowercases ASCII letters in the fragment, then requires the
-    # remaining text to equal the heading slug exactly.
+    # A heading matches by its exact text or by its ASCII GitHub-style slug, the form
+    # that Markdown heading anchors take.
     lowered = fragment.translate(_ASCII_LOWER)
     return any(
         section.level in (2, 3)
@@ -248,12 +248,14 @@ def _check_section_metadata(document: Document, findings: list[Finding]) -> None
 
 
 def _check_section_values(document: Document, section: Section, findings: list[Finding]) -> None:
-    for name in ("verified", "synced", "effective"):
+    for name in ("verified", "effective"):
         value = section.meta.get(name)
         if value is not None and parse_date(value) is None:
             line = _section_field_line(section, name)
-            label = "verified" if name == "synced" else name
-            _add(findings, document, line, "error", f"invalid section {label} date")
+            _add(findings, document, line, "error", f"invalid section {name} date")
+    if "synced" in section.meta:
+        line = _section_field_line(section, "synced")
+        _add(findings, document, line, "error", "synced is a sources/ field; use verified")
 
     ttl_value = section.meta.get("ttl")
     if ttl_value is not None and not valid_ttl(ttl_value):
@@ -356,13 +358,11 @@ def _check_supersedes_cycles(
 
 
 def _inherited_verified(document: Document, section: Section) -> tuple[str | None, int]:
-    """The section's verified date, including the legacy `synced` alias."""
+    """The section's verified date, inherited from its parents and then the article."""
     current: Section | None = section
     while current is not None:
         if "verified" in current.meta:
             return current.meta["verified"], _section_field_line(current, "verified")
-        if "synced" in current.meta:
-            return current.meta["synced"], _section_field_line(current, "synced")
         current = document.section(current.parent) if current.parent is not None else None
     front_value = document.front.get("verified")
     value = front_value if isinstance(front_value, str) else None
@@ -421,7 +421,7 @@ def _external_or_absolute(destination: str, path: str) -> bool:
 
 
 def _heading_slug(heading: str) -> str:
-    """The ASCII GitHub-style slug accepted by the old lint script."""
+    """The ASCII GitHub-style slug of a heading, the form that Markdown heading anchors take."""
     slug = _NON_SLUG.sub("", heading.translate(_ASCII_LOWER))
     slug = _WHITESPACE.sub("-", slug)
     return _HYPHENS.sub("-", slug).strip("-")

@@ -574,14 +574,13 @@ def test_complete_publishes_each_outcome_and_is_idempotent(
     assert member.archive_sha256 == hashlib.sha256(archived).hexdigest()
     assert f"original_sha256: {member.original_sha256}".encode() in archived
     assert b"curation_batch: " + RUN.encode() in archived
+    assert b"\ndisposition:" not in archived
+    assert b"\ndestination" not in archived
     if disposition == "ephemeral":
         assert b'curation_reason: "Temporary evidence"' in archived
     else:
         assert member.destinations[0].locator == "knowledge/topic.md#1"
         assert member.destinations[0].heading == "1. First section"
-        assert archived.count(b"destination:") == 1
-        assert archived.count(b"destination_heading:") == 1
-        assert b"knowledge/topic.md#1" in archived
     assert destination.read_text(encoding="utf-8").endswith("A curated fact.\n")
     assert not list((git_directory / "kb-tmp").glob("*"))
 

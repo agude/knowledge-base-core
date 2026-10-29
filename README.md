@@ -356,10 +356,11 @@ questions with `kb resolve` when evidence supports an answer.
 `incorporated` accepts a whole knowledge article or a readable section.
 `duplicate` requires a numbered section. Both can name multiple destinations;
 the manifest stores each canonical locator and its current heading. `ephemeral`
-accepts no destination and requires a single-line reason. Completion adds
-legacy-compatible scalar outcome metadata to the archived observation and
-retains the full destination list and archive hash in the manifest. It does
-not change article dates or stage or commit files.
+accepts no destination and requires a single-line reason. Completion adds the
+batch identifier, the original file's hash, and an ephemeral reason to the
+archived observation. The manifest keeps the disposition, the full destination
+list, and the archived file's hash. It does not change article dates or stage
+or commit files.
 The command scans supplied destinations and ephemeral reasons for possible
 secrets before reporting validation errors. Successful completion prints the
 pending-to-archived path; failures use the `curate:` prefix and exit 1.
