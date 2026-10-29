@@ -310,28 +310,22 @@ def _skills(context: Context) -> Check:
         ("Claude Code", claude_store / "skills"),
         ("Codex", context.home / ".agents" / "skills"),
     )
-    old_root = Path(
-        context.environ.get("KNOWLEDGE_BASE") or context.home / "Knowledge"
-    ).expanduser()
     findings = []
-    old_link = False
     foreign = False
     descriptions = {
         skills.SkillAction.INSTALL: "is missing",
         skills.SkillAction.UPDATE: "differs from the package",
-        skills.SkillAction.REFUSE_OLD_LINK: "links into old tooling",
         skills.SkillAction.REFUSE_FOREIGN: "is unmanaged",
         skills.SkillAction.UNCHANGED: "is unchanged",
     }
     for host, directory in hosts:
         for name in skills.SKILL_NAMES:
-            action = skills.classify(directory / name, skills.package_files(name), old_root)
+            action = skills.classify(directory / name, skills.package_files(name))
             if action is skills.SkillAction.UNCHANGED:
                 continue
             findings.append(f"{host} {name} {descriptions[action]}")
-            old_link = old_link or action is skills.SkillAction.REFUSE_OLD_LINK
             foreign = foreign or action is skills.SkillAction.REFUSE_FOREIGN
-    return diagnosis.skills_check(tuple(findings), old_link, foreign)
+    return diagnosis.skills_check(tuple(findings), foreign)
 
 
 def _allow_rules(context: Context) -> Check:

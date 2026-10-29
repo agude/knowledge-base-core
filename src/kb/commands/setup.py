@@ -40,7 +40,7 @@ INITIAL_COMMIT = "Initialize knowledge base content"
 SPEC = Spec(
     usage=(
         "setup [--content PATH | --init PATH [--origin URL]] [--kb PATH] "
-        "[--replace-old-skills] [--enable-capture]\n"
+        "[--enable-capture]\n"
         "       setup --print {instructions|allow-claude|allow-codex}"
     ),
     summary=(
@@ -49,7 +49,7 @@ SPEC = Spec(
         "text that the dotfiles install."
     ),
     valued=frozenset({"--content", "--init", "--origin", "--kb", "--print"}),
-    switches=frozenset({"--replace-old-skills", "--enable-capture"}),
+    switches=frozenset({"--enable-capture"}),
 )
 
 
@@ -132,9 +132,7 @@ def _configure(parsed: args.Parsed, environ: Mapping[str, str]) -> int:
         sys.stdout.write(f"Init: {init_state} {init_target}\n")
     sys.stdout.write(f"Config: {config_state} {configuration}\n")
     sys.stdout.write(f"Hook: {hook_state} {'-' if hook is None else hook}\n")
-    for state, path in _install_skills(
-        environ, "--replace-old-skills" in parsed.switches, failures
-    ):
+    for state, path in _install_skills(environ, failures):
         sys.stdout.write(f"Skill: {state} {path}\n")
     if "--enable-capture" in parsed.switches:
         capture_state, cutoff = _enable_capture(configuration, environ, failures)
@@ -316,14 +314,11 @@ def _write_config(configuration: Path, content: str) -> str:
     return state
 
 
-def _install_skills(
-    environ: Mapping[str, str], replace_old: bool, failures: list[str]
-) -> list[tuple[str, Path]]:
+def _install_skills(environ: Mapping[str, str], failures: list[str]) -> list[tuple[str, Path]]:
     """Install both package skills in each supported host directory."""
     home = Path.home()
     claude_store = Path(environ.get("CLAUDE_CONFIG_DIR") or home / ".claude").expanduser()
     codex_store = home / ".agents"
-    old_root = Path(environ.get("KNOWLEDGE_BASE") or home / "Knowledge").expanduser()
     targets = (
         ("Claude Code", claude_store / "skills"),
         ("Codex", codex_store / "skills"),
@@ -334,13 +329,7 @@ def _install_skills(
             path = directory / name
             state: str
             try:
-                state = skills.install(
-                    path,
-                    skills.package_files(name),
-                    __version__,
-                    old_root,
-                    replace_old,
-                )
+                state = skills.install(path, skills.package_files(name), __version__)
             except (KbError, OSError, UnicodeError) as error:
                 failures.append(_labelled(str(error)))
                 state = "refused"

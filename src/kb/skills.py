@@ -22,8 +22,6 @@ class SkillAction(Enum):
     INSTALL = "install"
     UNCHANGED = "unchanged"
     UPDATE = "update"
-    REPLACE_OLD_LINK = "replace-old-link"
-    REFUSE_OLD_LINK = "refuse-old-link"
     REFUSE_FOREIGN = "refuse-foreign"
 
 
@@ -35,16 +33,9 @@ def package_files(name: str) -> dict[str, bytes]:
     return {"SKILL.md": resource.read_bytes()}
 
 
-def classify(
-    path: Path,
-    wanted: Mapping[str, bytes],
-    old_root: Path,
-    replace_old: bool = False,
-) -> SkillAction:
+def classify(path: Path, wanted: Mapping[str, bytes]) -> SkillAction:
     """Classify one host skill path without changing it."""
     if path.is_symlink():
-        if _old_skill_target(path, old_root):
-            return SkillAction.REPLACE_OLD_LINK if replace_old else SkillAction.REFUSE_OLD_LINK
         return SkillAction.REFUSE_FOREIGN
     if not path.exists():
         return SkillAction.INSTALL
@@ -56,22 +47,11 @@ def classify(
     return SkillAction.UNCHANGED if _skill_files(path) == dict(wanted) else SkillAction.UPDATE
 
 
-def install(
-    path: Path,
-    wanted: Mapping[str, bytes],
-    version: str,
-    old_root: Path,
-    replace_old: bool = False,
-) -> SkillState:
+def install(path: Path, wanted: Mapping[str, bytes], version: str) -> SkillState:
     """Install a package skill with a sibling directory rename, preserving foreign targets."""
-    action = classify(path, wanted, old_root, replace_old)
+    action = classify(path, wanted)
     if action is SkillAction.UNCHANGED:
         return "unchanged"
-    if action is SkillAction.REFUSE_OLD_LINK:
-        raise KbError(
-            f"{path} links into the old tooling's skills; run again with --replace-old-skills "
-            "to replace the link. Its target is not changed."
-        )
     if action is SkillAction.REFUSE_FOREIGN:
         raise KbError(
             f"{path} exists and kb did not install it; it is unchanged. "
@@ -89,7 +69,7 @@ def install(
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(data)
         (temporary / MARKER).write_text(f"{version}\n", encoding="utf-8")
-        if action in {SkillAction.UPDATE, SkillAction.REPLACE_OLD_LINK}:
+        if action is SkillAction.UPDATE:
             path.replace(backup)
             old_moved = True
         temporary.replace(path)
@@ -105,16 +85,6 @@ def install(
     if old_moved:
         _remove(backup)
     return "installed" if action is SkillAction.INSTALL else "updated"
-
-
-def _old_skill_target(path: Path, old_root: Path) -> bool:
-    """Whether a symbolic link resolves into old_root/skills."""
-    target = path.resolve()
-    try:
-        relative = target.relative_to(old_root.resolve())
-    except ValueError:
-        return False
-    return bool(relative.parts) and relative.parts[0] == "skills"
 
 
 def _skill_files(path: Path) -> dict[str, bytes] | None:

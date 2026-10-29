@@ -163,13 +163,11 @@ def test_the_instructions_and_allow_checks_name_each_host() -> None:
 
 
 def test_the_skills_check_passes_or_names_the_setup_fix() -> None:
-    passed = diagnosis.skills_check((), False)
+    passed = diagnosis.skills_check(())
     assert passed.state == "pass"
     assert passed.message == "both skills match the package for Claude Code and Codex"
-    missing = diagnosis.skills_check(("Claude Code curate is missing",), False)
+    missing = diagnosis.skills_check(("Claude Code curate is missing",))
     assert (missing.state, missing.fix) == ("warn", "run kb setup")
-    old_link = diagnosis.skills_check(("Codex curate links into old tooling",), True)
-    assert (old_link.state, old_link.fix) == ("warn", "run kb setup --replace-old-skills")
 
 
 def test_an_instruction_file_without_the_canonical_block_has_a_named_problem() -> None:
@@ -226,13 +224,7 @@ def test_codex_rules_missing_broader_and_decision_aware() -> None:
 
 def test_skills_check_names_the_fix_for_unmanaged_paths() -> None:
     finding = ("Codex curate is not managed",)
-    assert diagnosis.skills_check(finding, old_link=True, foreign=True) == Check(
-        "skills",
-        "warn",
-        "Codex curate is not managed",
-        "move unmanaged skill paths aside, then run kb setup --replace-old-skills",
-    )
-    assert diagnosis.skills_check(finding, old_link=False, foreign=True) == Check(
+    assert diagnosis.skills_check(finding, foreign=True) == Check(
         "skills",
         "warn",
         "Codex curate is not managed",

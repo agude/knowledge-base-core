@@ -77,12 +77,7 @@ def machine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> doctor.Context:
     (codex / "rules" / "kb.rules").write_text(setup_rules.allow_codex(), encoding="utf-8")
     for directory in (claude / "skills", home / ".agents" / "skills"):
         for name in skills.SKILL_NAMES:
-            skills.install(
-                directory / name,
-                skills.package_files(name),
-                "0.1.0",
-                home / "Knowledge",
-            )
+            skills.install(directory / name, skills.package_files(name), "0.1.0")
     configuration = tmp_path / "config.toml"
     configuration.write_text(
         f'content = "{root}"\nharvest_since = 2026-10-24T00:00:00Z\n', encoding="utf-8"

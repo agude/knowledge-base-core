@@ -75,14 +75,14 @@ def test_a_refused_foreign_skill_does_not_stop_config_or_hook_setup(git_kb: Kb) 
     assert (foreign / "SKILL.md").read_bytes() == original
 
 
-def test_old_tooling_link_needs_the_flag_and_keeps_its_target(git_kb: Kb) -> None:
+def test_a_symbolic_link_skill_is_refused_and_its_target_is_kept(git_kb: Kb) -> None:
     installed = setup(git_kb)
     assert installed.returncode == 0, installed.stderr
     path = git_kb.home / ".claude" / "skills" / "curate"
     shutil.rmtree(path)
-    target = git_kb.home / "Knowledge" / "skills" / "curate"
+    target = git_kb.home / "elsewhere" / "curate"
     target.mkdir(parents=True)
-    (target / "README.md").write_bytes(b"old skill bytes\n")
+    (target / "README.md").write_bytes(b"other skill bytes\n")
     target_digest = hashlib.sha256((target / "README.md").read_bytes()).hexdigest()
     path.symlink_to(target)
 
@@ -90,15 +90,7 @@ def test_old_tooling_link_needs_the_flag_and_keeps_its_target(git_kb: Kb) -> Non
 
     assert refused.returncode == 1
     assert f"Skill: refused {path}" in refused.stdout
-    assert "--replace-old-skills" in refused.stderr
     assert path.is_symlink()
-
-    replaced = git_kb("setup", "--replace-old-skills", "--kb", str(kb_executable(git_kb)))
-
-    assert replaced.returncode == 0, replaced.stderr
-    assert f"Skill: updated {path}" in replaced.stdout
-    assert not path.is_symlink()
-    assert (path / ".kb-managed").is_file()
     assert hashlib.sha256((target / "README.md").read_bytes()).hexdigest() == target_digest
 
 
@@ -121,10 +113,8 @@ def test_doctor_reports_missing_different_old_and_foreign_skills(git_kb: Kb) -> 
     assert "Codex knowledge-base is missing" in skills_line()
 
     shutil.rmtree(claude)
-    old = git_kb.home / "Knowledge" / "skills" / "knowledge-base"
-    old.mkdir(parents=True)
-    claude.symlink_to(old)
-    assert "Claude Code knowledge-base links into old tooling" in skills_line()
+    claude.symlink_to(git_kb.home / "elsewhere")
+    assert "Claude Code knowledge-base is unmanaged" in skills_line()
 
     claude.unlink()
     claude.mkdir()

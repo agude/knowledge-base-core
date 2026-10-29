@@ -599,7 +599,7 @@ repository. It prints one line per resource: `Config:`, `Hook:`, and `Skill:`
 it refused any resource, and a refusal does not stop the other resources.
 
 ```text
-kb setup [--content PATH] [--kb PATH] [--replace-old-skills] [--enable-capture]
+kb setup [--content PATH] [--kb PATH] [--enable-capture]
 kb setup --init PATH [--origin URL] [--kb PATH]
 kb setup --print {instructions|allow-claude|allow-codex}
 ```
@@ -625,9 +625,8 @@ kb setup --print {instructions|allow-claude|allow-codex}
   `$CLAUDE_CONFIG_DIR/skills/` (default `~/.claude/skills/`) and
   `~/.agents/skills/`. A `.kb-managed` marker records
   the package version. Setup updates only directories with that marker; it
-  refuses foreign directories and unrelated symlinks. `--replace-old-skills`
-  replaces only a symlink into the old tooling's `skills/` directory and leaves
-  its target unchanged.
+  refuses foreign directories and symbolic links, and leaves their targets
+  unchanged.
 - `--init PATH` creates a content repository. It refuses a path that exists and
   is not an empty directory, and it refuses when `kb` cannot be found; both
   refusals come before anything is created. It writes the layout, with a
@@ -697,7 +696,7 @@ gather its facts reports why, and the other checks still run.
 | `scheduler` | on Linux, `kb-sync.timer` is enabled and active | it is not enabled or not active; elsewhere, `not checked on PLATFORM` | |
 | `capture` | `harvest_since` is set, the transcript roots are readable, and no ready transcript is older than 20 days | capture is disabled, a root is unreadable, or old ready transcripts exist | |
 | `instructions` | each host's global file has the canonical block | a block is missing or differs | |
-| `skills` | both packaged skills at both host destinations match the package | a skill is missing, differs, or links into the old tooling | |
+| `skills` | both packaged skills at both host destinations match the package | a skill is missing, differs, or is unmanaged | |
 | `allow-rules` | each host has every working-agent rule and no broader `kb` rule | a rule is missing, a broader rule exists, or a Codex rules file is a symbolic link | |
 
 - `capture` reports Claude Code's `cleanupPeriodDays`, which defaults to 30.
