@@ -1209,3 +1209,37 @@ host configuration change was made.
   neither covered the installed form.
 - This blocks the cutover until the dotfiles branch installs a regular file
   or another form that Codex loads, and the rehearsal is rerun.
+
+## Codex rules-file fix (2026-10-28)
+
+This resolves the blocker above. The commit IDs here supersede the dotfiles
+commit and release named in the Part A closeout and the preparation section.
+
+- Direct check: Codex 0.165.0 was run in two isolated homes with debug
+  logging for `codex_core::exec_policy`. With `rules/kb.rules` as a symbolic
+  link, it logged `loaded 0 .rules files`. With the same bytes as a regular
+  file, it logged `loaded 1 .rules files`. No credentials were used; the runs
+  stopped at the model connection after the policy loaded.
+- Dotfiles: `kb-cutover` is now `b32b0615350e0054a5ef282e05eeee12c675e965`,
+  still one commit above base `70751e74b90569a1002c70860fcd0130633c1da6`. It
+  changes 20 files with 125 insertions and 620 deletions. `kb.rules` leaves
+  `links.conf`; a new `install_managed_copy` helper in `install.sh` copies it
+  as a regular file on every install, backs up a differing or foreign target,
+  and replaces an owned symlink. The integration test requires a regular file
+  identical to the source. `just lint` and `just test` passed.
+- kb: doctor's `allow-rules` check now reads only regular `*.rules` files
+  and names each symlinked one as a problem, so it cannot PASS while Codex
+  ignores the rules (`23556a4`). The generated rules header and the README
+  say to install a regular file. `just check` passed: 1,666 passed,
+  12 skipped.
+- Release: `v0.2.1` on `e7b2b2e`, installed as `~/.local/bin/kb`. Not pushed.
+  `v0.2.0` remains tagged but is not the cutover release.
+- Cutover script: the reviewed link step copies `kb.rules` atomically with
+  mode 0644 and journals it as a file with its SHA-256; the link manifest no
+  longer receives it. `VERSION` is `0.2.1` and `DOTFILES_CUTOVER` is the new
+  commit. The rehearsal fixture's final doctor now requires the regular-file
+  copy. The full rehearsal passed, including all 24 after-action failure
+  points, rollback resume, both retries, and the refusals.
+- Live `kb doctor` on 0.2.1: exit 1 with 3 PASS, 9 WARN, and 1 FAIL
+  (`sync: No record`), the expected pre-cutover baseline; 14 legacy
+  registrations.
