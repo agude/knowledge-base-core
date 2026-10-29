@@ -163,6 +163,16 @@ def test_the_instructions_and_allow_checks_name_each_host() -> None:
     assert (rules.state, rules.message) == ("warn", "claude: missing x")
 
 
+def test_the_skills_check_passes_or_names_the_setup_fix() -> None:
+    passed = diagnosis.skills_check((), False)
+    assert passed.state == "pass"
+    assert passed.message == "both skills match the package for Claude Code and Codex"
+    missing = diagnosis.skills_check(("Claude Code curate is missing",), False)
+    assert (missing.state, missing.fix) == ("warn", "run kb setup")
+    old_link = diagnosis.skills_check(("Codex curate links into old tooling",), True)
+    assert (old_link.state, old_link.fix) == ("warn", "run kb setup --replace-old-skills")
+
+
 def test_the_legacy_check_names_each_registration() -> None:
     assert diagnosis.legacy_check(()) == Check(
         "legacy", "pass", "no old-tooling registration found"

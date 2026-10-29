@@ -27,6 +27,7 @@ from kb import (
     observation,
     registrations,
     setup_rules,
+    skills,
     sync_state,
 )
 from kb.args import Spec
@@ -104,6 +105,7 @@ def gather(context: Context) -> list[Check]:
         _guarded("scheduler", "warn", lambda: _scheduler(context)),
         _guarded("capture", "warn", lambda: _capture(context, root)),
         _guarded("instructions", "warn", lambda: _instructions(context, root)),
+        _guarded("skills", "warn", lambda: _skills(context)),
         _guarded("allow-rules", "warn", lambda: _allow_rules(context)),
         _guarded("legacy", "warn", lambda: _legacy(context, root)),
     ]
@@ -304,6 +306,37 @@ def _instructions(context: Context, root: Path | None) -> Check:
             "codex": diagnosis.instruction_problem(_read_text(codex_file), canonical),
         }
     )
+
+
+def _skills(context: Context) -> Check:
+    """Whether Claude Code and Codex have both packaged skills installed and unchanged."""
+    claude_store = _store(context.environ, "CLAUDE_CONFIG_DIR", context.home / ".claude")
+    hosts = (
+        ("Claude Code", claude_store / "skills"),
+        ("Codex", context.home / ".agents" / "skills"),
+    )
+    old_root = Path(
+        context.environ.get("KNOWLEDGE_BASE") or context.home / "Knowledge"
+    ).expanduser()
+    findings = []
+    old_link = False
+    foreign = False
+    descriptions = {
+        skills.SkillAction.INSTALL: "is missing",
+        skills.SkillAction.UPDATE: "differs from the package",
+        skills.SkillAction.REFUSE_OLD_LINK: "links into old tooling",
+        skills.SkillAction.REFUSE_FOREIGN: "is unmanaged",
+        skills.SkillAction.UNCHANGED: "is unchanged",
+    }
+    for host, directory in hosts:
+        for name in skills.SKILL_NAMES:
+            action = skills.classify(directory / name, skills.package_files(name), old_root)
+            if action is skills.SkillAction.UNCHANGED:
+                continue
+            findings.append(f"{host} {name} {descriptions[action]}")
+            old_link = old_link or action is skills.SkillAction.REFUSE_OLD_LINK
+            foreign = foreign or action is skills.SkillAction.REFUSE_FOREIGN
+    return diagnosis.skills_check(tuple(findings), old_link, foreign)
 
 
 def _allow_rules(context: Context) -> Check:

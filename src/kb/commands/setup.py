@@ -1,8 +1,9 @@
 """kb setup: configure this machine's content path, hooks, and transcript cutoff.
 
 Setup writes the config file's content key, installs the pre-commit hook, and can enable
-transcript capture. It reports each resource as created, installed, updated, unchanged, or
-refused, and exits 1 when any was refused. A refusal does not stop the other resource.
+transcript capture. It copies the managed agent skills into both host skill directories. It
+reports each resource as created, installed, updated, unchanged, or refused, and exits 1 when
+any was refused. A refusal does not stop the other resources.
 `kb setup --print` writes the host text that the dotfiles install. `--enable-capture` sets the
 transcript cutoff after the other setup work; it does not edit host settings or instructions.
 """
@@ -15,7 +16,7 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC
 from pathlib import Path
 
-from kb import args, config, dates, lock, registrations, setup_rules
+from kb import __version__, args, config, dates, lock, registrations, setup_rules, skills
 from kb.args import Spec
 from kb.errors import KbError
 from kb.platform import config_file
@@ -39,16 +40,16 @@ INITIAL_COMMIT = "Initialize knowledge base content"
 SPEC = Spec(
     usage=(
         "setup [--content PATH | --init PATH [--origin URL]] [--kb PATH] "
-        "[--replace-old-hook] [--enable-capture]\n"
+        "[--replace-old-hook] [--replace-old-skills] [--enable-capture]\n"
         "       setup --print {instructions|allow-claude|allow-codex}"
     ),
     summary=(
-        "Set the content path and install the content repository's pre-commit hook, "
+        "Set the content path, install the pre-commit hook and agent skills, "
         "create a content repository with --init, enable transcript capture, or print the host "
         "text that the dotfiles install."
     ),
     valued=frozenset({"--content", "--init", "--origin", "--kb", "--print"}),
-    switches=frozenset({"--replace-old-hook", "--enable-capture"}),
+    switches=frozenset({"--replace-old-hook", "--replace-old-skills", "--enable-capture"}),
 )
 
 
@@ -133,6 +134,10 @@ def _configure(parsed: args.Parsed, environ: Mapping[str, str]) -> int:
         sys.stdout.write(f"Init: {init_state} {init_target}\n")
     sys.stdout.write(f"Config: {config_state} {configuration}\n")
     sys.stdout.write(f"Hook: {hook_state} {'-' if hook is None else hook}\n")
+    for state, path in _install_skills(
+        environ, "--replace-old-skills" in parsed.switches, failures
+    ):
+        sys.stdout.write(f"Skill: {state} {path}\n")
     if "--enable-capture" in parsed.switches:
         capture_state, cutoff = _enable_capture(configuration, environ, failures)
         sys.stdout.write(f"Capture: {capture_state} {cutoff}\n")
@@ -311,6 +316,38 @@ def _write_config(configuration: Path, content: str) -> str:
     """
     state, _ = config.write_config(configuration, lambda old: setup_rules.set_content(old, content))
     return state
+
+
+def _install_skills(
+    environ: Mapping[str, str], replace_old: bool, failures: list[str]
+) -> list[tuple[str, Path]]:
+    """Install both package skills in each supported host directory."""
+    home = Path.home()
+    claude_store = Path(environ.get("CLAUDE_CONFIG_DIR") or home / ".claude").expanduser()
+    codex_store = home / ".agents"
+    old_root = Path(environ.get("KNOWLEDGE_BASE") or home / "Knowledge").expanduser()
+    targets = (
+        ("Claude Code", claude_store / "skills"),
+        ("Codex", codex_store / "skills"),
+    )
+    results: list[tuple[str, Path]] = []
+    for _host, directory in targets:
+        for name in skills.SKILL_NAMES:
+            path = directory / name
+            state: str
+            try:
+                state = skills.install(
+                    path,
+                    skills.package_files(name),
+                    __version__,
+                    old_root,
+                    replace_old,
+                )
+            except (KbError, OSError, UnicodeError) as error:
+                failures.append(_labelled(str(error)))
+                state = "refused"
+            results.append((state, path))
+    return results
 
 
 def _enable_capture(

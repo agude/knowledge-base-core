@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from .harness import HOLD_KERNEL_LOCK, TODAY, Kb, run_git
+from .harness import HOLD_KERNEL_LOCK, TODAY, Kb, run_git, skill_lines
 
 pytestmark = pytest.mark.skipif(
     sys.platform == "win32", reason="the installed pre-commit hook is a POSIX shell script"
@@ -67,6 +67,7 @@ def test_the_first_run_writes_the_config_and_the_hook_and_the_second_changes_not
     assert first.returncode == 0, first.stderr
     assert first.stdout == (
         f"Config: created {git_kb.config_file}\nHook: installed {hook_of(git_kb)}\n"
+        f"{skill_lines(git_kb, 'installed')}"
     )
     assert git_kb.config_file.read_text(encoding="utf-8") == (
         f'content = "{git_kb.content.as_posix()}"\n'
@@ -80,6 +81,7 @@ def test_the_first_run_writes_the_config_and_the_hook_and_the_second_changes_not
     assert second.returncode == 0, second.stderr
     assert second.stdout == (
         f"Config: unchanged {git_kb.config_file}\nHook: unchanged {hook_of(git_kb)}\n"
+        f"{skill_lines(git_kb, 'unchanged')}"
     )
 
 
@@ -92,6 +94,7 @@ def test_a_foreign_hook_is_refused_and_left_alone_while_the_config_is_written(gi
     assert result.returncode == 1
     assert result.stdout == (
         f"Config: created {git_kb.config_file}\nHook: refused {hook_of(git_kb)}\n"
+        f"{skill_lines(git_kb, 'installed')}"
     )
     assert f"setup: {hook_of(git_kb)} exists and kb did not install it" in result.stderr
     assert hook_of(git_kb).read_text(encoding="utf-8") == foreign
@@ -163,6 +166,7 @@ def test_a_held_write_lock_refuses_the_hook_while_the_config_is_written(git_kb: 
         assert result.returncode == 1
         assert result.stdout == (
             f"Config: created {git_kb.config_file}\nHook: refused {hook_of(git_kb)}\n"
+            f"{skill_lines(git_kb, 'installed')}"
         )
         assert "setup: content repository is busy" in result.stderr
         assert not hook_of(git_kb).exists()
@@ -187,7 +191,9 @@ def test_without_kb_on_path_the_hook_is_refused_and_the_config_is_written(git_kb
     result = git_kb("setup", "--content", str(git_kb.content), env={"PATH": ""})
 
     assert result.returncode == 1
-    assert result.stdout == f"Config: created {git_kb.config_file}\nHook: refused -\n"
+    assert result.stdout == (
+        f"Config: created {git_kb.config_file}\nHook: refused -\n{skill_lines(git_kb, 'installed')}"
+    )
     assert "setup: kb is not on PATH; pass --kb PATH" in result.stderr
 
 
@@ -197,7 +203,9 @@ def test_a_content_path_that_is_not_a_directory_refuses_both_resources(git_kb: K
     result = git_kb("setup", "--content", str(missing), "--kb", str(shim(git_kb)))
 
     assert result.returncode == 1
-    assert result.stdout == f"Config: refused {git_kb.config_file}\nHook: refused -\n"
+    assert result.stdout == (
+        f"Config: refused {git_kb.config_file}\nHook: refused -\n{skill_lines(git_kb, 'installed')}"
+    )
     assert f"not a directory: {missing}" in result.stderr
     assert not git_kb.config_file.exists()
 
@@ -206,7 +214,10 @@ def test_setup_without_a_content_path_refuses_the_hook_and_keeps_the_config(git_
     result = git_kb("setup", "--kb", str(shim(git_kb)), env={"KB_CONTENT": None})
 
     assert result.returncode == 1
-    assert result.stdout == f"Config: unchanged {git_kb.config_file}\nHook: refused -\n"
+    assert result.stdout == (
+        f"Config: unchanged {git_kb.config_file}\nHook: refused -\n"
+        f"{skill_lines(git_kb, 'installed')}"
+    )
     assert "no content repository" in result.stderr
 
 
@@ -219,4 +230,5 @@ def test_setup_without_options_installs_into_the_configured_repository(git_kb: K
     assert result.returncode == 0, result.stderr
     assert result.stdout == (
         f"Config: unchanged {git_kb.config_file}\nHook: installed {hook_of(git_kb)}\n"
+        f"{skill_lines(git_kb, 'installed')}"
     )

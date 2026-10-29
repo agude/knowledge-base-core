@@ -132,6 +132,18 @@ class Kb:
         return run_git(self.content, *args)
 
 
+def skill_paths(kb: Kb) -> list[Path]:
+    """The Claude Code and Codex skill paths in setup's install order."""
+    return [kb.home / ".claude" / "skills" / name for name in ("knowledge-base", "curate")] + [
+        kb.home / ".agents" / "skills" / name for name in ("knowledge-base", "curate")
+    ]
+
+
+def skill_lines(kb: Kb, state: str) -> str:
+    """The four skill report lines in setup's install order."""
+    return "".join(f"Skill: {state} {path}\n" for path in skill_paths(kb))
+
+
 def make_kb(root: Path) -> Kb:
     """A kb whose home and content repository live under root."""
     home = root / "home"

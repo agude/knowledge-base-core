@@ -256,6 +256,7 @@ def test_gather_reports_every_check_when_nothing_is_configured(tmp_path: Path) -
         "scheduler",
         "capture",
         "instructions",
+        "skills",
         "allow-rules",
         "legacy",
     ]
@@ -264,6 +265,13 @@ def test_gather_reports_every_check_when_nothing_is_configured(tmp_path: Path) -
     )
     assert checks[9].state == "warn"
     assert checks[9].message.startswith("cannot check: no content root")
+    assert checks[10] == Check(
+        "skills",
+        "warn",
+        "Claude Code knowledge-base is missing; Claude Code curate is missing; "
+        "Codex knowledge-base is missing; Codex curate is missing",
+        "run kb setup",
+    )
 
 
 def test_the_scheduler_is_queried_through_the_platform_or_skipped(tmp_path: Path) -> None:

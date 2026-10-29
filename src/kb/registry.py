@@ -80,7 +80,7 @@ COMMANDS: tuple[Command, ...] = (
     ),
     Command(
         name="setup",
-        summary="Configure the content repository and hook, create a repository, or print host text.",
+        summary="Configure the content repository, hook, and skills, or print host text.",
         run=setup_command.run,
     ),
     Command(

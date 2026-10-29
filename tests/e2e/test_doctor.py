@@ -32,6 +32,7 @@ CHECKS = (
     "scheduler",
     "capture",
     "instructions",
+    "skills",
     "allow-rules",
     "legacy",
 )

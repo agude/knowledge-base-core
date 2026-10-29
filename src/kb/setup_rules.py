@@ -1,7 +1,8 @@
 """The host text that the dotfiles install, and the edits that setup makes to its targets.
 
 These are pure functions. `kb setup --print` writes the text to stdout, doctor compares the
-installed copies with it, and setup applies the edits to the config file and the hook.
+installed copies with it, and setup applies the edits to the config file and the hook. Skill
+package data and installation are handled by kb.skills.
 """
 
 import json

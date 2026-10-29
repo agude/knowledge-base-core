@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from .harness import Kb, run_git
+from .harness import Kb, run_git, skill_lines
 
 pytestmark = pytest.mark.skipif(
     sys.platform == "win32", reason="the installed pre-commit hook is a POSIX shell script"
@@ -49,6 +49,7 @@ def test_init_creates_the_layout_the_hook_the_config_and_one_commit_on_main(kb: 
         f"Init: created {target}\n"
         f"Config: created {kb.config_file}\n"
         f"Hook: installed {target / '.git' / 'hooks' / 'pre-commit'}\n"
+        f"{skill_lines(kb, 'installed')}"
     )
     for relative in LAYOUT:
         assert (target / relative / ".gitkeep").read_bytes() == b""
@@ -90,6 +91,7 @@ def test_a_non_empty_path_is_refused_and_nothing_is_written(kb: Kb) -> None:
     assert result.returncode == 1
     assert result.stdout == (
         f"Init: refused {target}\nConfig: refused {kb.config_file}\nHook: refused -\n"
+        f"{skill_lines(kb, 'installed')}"
     )
     assert f"setup: {target} exists and is not an empty directory" in result.stderr
     assert (target / "notes.txt").read_text(encoding="utf-8") == "mine\n"
@@ -105,6 +107,7 @@ def test_without_kb_on_path_init_creates_nothing(kb: Kb) -> None:
     assert result.returncode == 1
     assert result.stdout == (
         f"Init: refused {target}\nConfig: refused {kb.config_file}\nHook: refused -\n"
+        f"{skill_lines(kb, 'installed')}"
     )
     assert "kb is not on PATH" in result.stderr
     assert not target.exists()

@@ -223,6 +223,18 @@ def instructions_check(problems: dict[str, str | None]) -> Check:
     return Check("instructions", "pass", "each host's global file has the canonical block")
 
 
+def skills_check(findings: Sequence[str], old_link: bool, foreign: bool = False) -> Check:
+    """Whether each host has the packaged skills and the setup command that fixes the findings."""
+    if not findings:
+        return Check("skills", "pass", "both skills match the package for Claude Code and Codex")
+    if foreign:
+        command = "kb setup --replace-old-skills" if old_link else "kb setup"
+        fix = f"move unmanaged skill paths aside, then run {command}"
+    else:
+        fix = "run kb setup --replace-old-skills" if old_link else "run kb setup"
+    return Check("skills", "warn", "; ".join(findings), fix)
+
+
 def allow_rules_check(problems: dict[str, Sequence[str]]) -> Check:
     """Whether each host has every working-agent rule and no broader kb rule."""
     failed = [f"{host}: {'; '.join(items)}" for host, items in problems.items() if items]
