@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from kb import __version__
+
 from .harness import Kb, skill_lines, skill_paths
 
 pytestmark = pytest.mark.skipif(
@@ -46,7 +48,7 @@ def test_setup_installs_both_skills_for_both_hosts_then_reports_unchanged(git_kb
         f"{skill_lines(git_kb, 'installed')}"
     )
     for path in skill_paths(git_kb):
-        assert (path / ".kb-managed").read_text(encoding="utf-8") == "0.1.0\n"
+        assert (path / ".kb-managed").read_text(encoding="utf-8") == f"{__version__}\n"
         assert (path / "SKILL.md").is_file()
 
     second = git_kb("setup", "--kb", str(kb_executable(git_kb)))
