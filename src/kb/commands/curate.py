@@ -165,7 +165,7 @@ def _start_command(words: Sequence[str]) -> int:
         git_directory = lock.git_dir_path(context.root, WHO)
         backend = lock.default_backend(sys.platform)
         synchronize = "--no-sync" not in parsed.switches
-        with lock.write_lock(git_directory, context.root, wait, backend):
+        with lock.write_lock(git_directory, wait, backend):
             return _start(
                 context,
                 git_directory,
@@ -254,7 +254,7 @@ def _complete_command(words: Sequence[str]) -> int:
         context = load(os.environ, sys.platform, Path.home())
         git_directory = lock.git_dir_path(context.root, WHO)
         backend = lock.default_backend(sys.platform)
-        with lock.write_lock(git_directory, context.root, wait, backend):
+        with lock.write_lock(git_directory, wait, backend):
             batch = _read_batch(context.root, parsed.words[0])
             output = _complete(
                 context,
@@ -307,7 +307,7 @@ def _transition_command(words: Sequence[str], spec: Spec, outcome: str) -> int:
         context = load(os.environ, sys.platform, Path.home())
         git_directory = lock.git_dir_path(context.root, WHO)
         backend = lock.default_backend(sys.platform)
-        with lock.write_lock(git_directory, context.root, wait, backend):
+        with lock.write_lock(git_directory, wait, backend):
             batch = _read_batch(context.root, parsed.words[0])
             output = _transition_member(
                 context,
@@ -473,7 +473,7 @@ def _finish_command(words: Sequence[str]) -> int:
         context = load(os.environ, sys.platform, Path.home())
         git_directory = lock.git_dir_path(context.root, WHO)
         backend = lock.default_backend(sys.platform)
-        with lock.write_lock(git_directory, context.root, wait, backend):
+        with lock.write_lock(git_directory, wait, backend):
             return _finish(context.root, git_directory, parsed.words[0], no_push=no_push)
     except lock.LockBusy as busy:
         raise KbError(
@@ -606,8 +606,6 @@ def _worktree_entries(root: Path) -> list[tuple[str, str]]:
         if not record:
             continue
         path = record[3:]
-        if path == ".observe.lock" or path.startswith(".observe.lock/"):
-            continue
         entries.append((record[:2], path))
     return entries
 
@@ -1608,11 +1606,7 @@ def _require_clean_tree(root: Path) -> None:
                 raise KbError(f"{WHO}: Git returned malformed rename status")
             paths.append(os.fsdecode(records[index]))
             index += 1
-        dirty.extend(
-            path
-            for path in paths
-            if path != ".observe.lock" and not path.startswith(".observe.lock/")
-        )
+        dirty.extend(paths)
     if dirty:
         listing = ", ".join(sorted(set(dirty)))
         raise KbError(f"{WHO}: content repository has uncommitted changes: {listing}")

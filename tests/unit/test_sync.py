@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import socket
 import subprocess
-import sys
 from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
 from datetime import UTC, datetime, timedelta
@@ -29,16 +28,6 @@ GIT_ENV = {
     "GIT_COMMITTER_NAME": "Sync Test",
     "GIT_COMMITTER_EMAIL": "sync@example.invalid",
 }
-
-
-class FakeMsvcrt:
-    """The Windows lock operations used by the in-process command simulation."""
-
-    LK_NBLCK = 2
-    LK_UNLCK = 0
-
-    def locking(self, fd: int, mode: int, nbytes: int, /) -> None:
-        pass
 
 
 def git(root: Path, *args: str) -> str:
@@ -136,32 +125,6 @@ def _patch_run_setup(monkeypatch: pytest.MonkeyPatch, root: Path) -> None:
     monkeypatch.setattr(dates, "now", lambda _: NOW)
     monkeypatch.setattr(socket, "gethostname", lambda: "test-host.local")
     monkeypatch.setattr(lock, "git_dir", lambda _: root / ".git")
-
-
-def test_windows_sync_ignores_a_held_legacy_lock(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    root = make_repo(tmp_path / "content")
-    _patch_run_setup(monkeypatch, root)
-    legacy = root / ".observe.lock"
-    legacy.mkdir()
-    (legacy / "pid").write_text("12345\n", encoding="utf-8")
-    selected_platforms: list[str] = []
-
-    def windows_backend(platform: str) -> lock.Backend:
-        selected_platforms.append(platform)
-        return lock.MsvcrtBackend(FakeMsvcrt())
-
-    monkeypatch.setattr(sys, "platform", "win32")
-    monkeypatch.setattr(lock, "default_backend", windows_backend)
-    monkeypatch.setattr(
-        lock, "take_legacy_lock", lambda *args: pytest.fail("Windows tried the legacy lock")
-    )
-    monkeypatch.setattr(sync, "_sync", lambda *args: 0)
-
-    assert sync.run([]) == 0
-    assert selected_platforms == ["win32"]
-    assert (legacy / "pid").read_text(encoding="utf-8") == "12345\n"
 
 
 def test_run_dry_run_dispatches_without_lock(
@@ -1017,12 +980,11 @@ def test_commit_observations_cleans_up_staging_and_paths_on_failure(
 @pytest.mark.parametrize(
     ("status", "stdout", "stderr", "expected"),
     [
-        (" M file\n?? .observe.lock\n?? .observe.lock/pid\n", 0, "", ("file",)),
         ("R  old -> new\n", 0, "", ("new",)),
         ("", 1, "broken", "error"),
     ],
 )
-def test_dirty_paths_handles_changes_renames_lock_and_errors(
+def test_dirty_paths_handles_changes_renames_and_errors(
     monkeypatch: pytest.MonkeyPatch, status: str, stdout: int, stderr: str, expected: object
 ) -> None:
     monkeypatch.setattr(remote, "_git", lambda *args: completed(stdout, status, stderr))

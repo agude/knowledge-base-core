@@ -106,7 +106,7 @@ def _resolve(
     root = context.root
     git = lock.git_dir_path(root, WHO)
     backend = lock.default_backend(sys.platform)
-    with lock.write_lock(git, root, wait, backend):
+    with lock.write_lock(git, wait, backend):
         source_relpath = _question_path(root, question_word)
         source = root / source_relpath
         try:

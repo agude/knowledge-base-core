@@ -137,7 +137,7 @@ def run(words: Sequence[str]) -> int:
         raise SPEC.usage_error() from None
     backend = lock.default_backend(sys.platform)
     try:
-        with lock.write_lock(git_directory, root, wait, backend):
+        with lock.write_lock(git_directory, wait, backend):
             if status:
                 return _status(root, environ, host, now, harvest_since)
             return _sync(root, git_directory, environ, host, now, harvest_since, no_push)

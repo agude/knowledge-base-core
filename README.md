@@ -481,14 +481,10 @@ kb observe --title "Meeting notes" --body - < notes.txt
   prints `observe: content repository is busy (waited <N>s for the lock)`, writes
   nothing, and exits 1.
 
-The write takes two locks, in this order. The kernel lock is an exclusive lock on
-`<git dir>/kb.lock`, which the kernel releases when the process exits. The second
-is the lock that the old scripts in `~/Knowledge/scripts` take: the directory
-`<content>/.observe.lock` with a `pid` file. Taking it lets `kb observe` and those
-scripts exclude each other while both are in use. A `pid` file that names a process
-which is no longer running is stale, and the lock is removed. This second lock is
-POSIX only, and it is removed at cutover, along with the old scripts. Until then,
-`kb observe` waits for a lock that the old scripts hold, up to `KB_LOCK_WAIT`.
+The write takes one lock: an exclusive kernel lock on `<git dir>/kb.lock`, which the
+kernel releases when the process exits. The old scripts in `~/Knowledge/scripts` take
+a different lock, `<content>/.observe.lock`, which `kb` does not take. Do not run those
+scripts while `kb` is writing.
 
 Temporary files for a write live in `<git dir>/kb-tmp` and are removed on every
 path.

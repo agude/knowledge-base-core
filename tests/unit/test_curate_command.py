@@ -1125,9 +1125,9 @@ def test_synchronized_start_takes_the_writer_lock_once(
     real_write_lock = lock.write_lock
 
     @contextlib.contextmanager
-    def counting(git: Path, content: Path, wait: int, backend: lock.Backend) -> Iterator[None]:
+    def counting(git: Path, wait: int, backend: lock.Backend) -> Iterator[None]:
         taken.append(git)
-        with real_write_lock(git, content, wait, backend):
+        with real_write_lock(git, wait, backend):
             yield
 
     monkeypatch.setattr(lock, "write_lock", counting)

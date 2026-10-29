@@ -234,7 +234,7 @@ def _create_layout(target: Path) -> None:
 def _initial_commit(target: Path, environ: Mapping[str, str]) -> None:
     """Stage everything and commit once, under the writer lock, so the installed hook runs."""
     git = lock.git_dir(target, "setup")
-    with lock.write_lock(git, target, _wait(environ), lock.default_backend(sys.platform)):
+    with lock.write_lock(git, _wait(environ), lock.default_backend(sys.platform)):
         _git_ok(target, "add", "--all")
         _git_ok(target, "commit", "-q", "-m", INITIAL_COMMIT)
 
@@ -401,7 +401,7 @@ def _install(
         hook = _hook_file(root)
         script = setup_rules.hook_script(kb_path)
         wait = _wait(environ)
-        with lock.write_lock(git, root, wait, lock.default_backend(sys.platform)):
+        with lock.write_lock(git, wait, lock.default_backend(sys.platform)):
             action = setup_rules.hook_action(existing_hook(hook), script, replace_old)
             return _apply(action, hook, script, git), hook
     except lock.LockBusy as busy:

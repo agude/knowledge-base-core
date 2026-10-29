@@ -412,22 +412,3 @@ def test_kernel_lock_blocks_before_publication(git_kb: Kb) -> None:
     assert result.stderr == "verify: content repository is busy (waited 1s for the lock)\n"
     assert article.read_bytes() == before
     assert not (git_kb.content / ".git" / "kb-tmp").exists()
-    assert not (git_kb.content / ".observe.lock").exists()
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="legacy lock is a POSIX-only protocol")
-def test_held_legacy_lock_blocks_verify_and_is_left_alone(git_kb: Kb) -> None:
-    article = git_kb.content / "knowledge" / "infra" / "nas.md"
-    before = article.read_bytes()
-    legacy = git_kb.content / ".observe.lock"
-    legacy.mkdir()
-    (legacy / "pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
-
-    result = git_kb("verify", "knowledge/infra/nas.md")
-
-    assert result.returncode == 1
-    assert result.stdout == ""
-    assert result.stderr == "verify: content repository is busy (waited 1s for the lock)\n"
-    assert article.read_bytes() == before
-    assert (legacy / "pid").read_text(encoding="utf-8") == f"{os.getpid()}\n"
-    assert not (git_kb.content / ".git" / "kb-tmp").exists()

@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from kb import cli, lock
+from kb import cli
 from kb.commands import observe
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "content"
@@ -35,9 +35,6 @@ GIT_ENV = {
     "GIT_COMMITTER_EMAIL": "committer@example.invalid",
 }
 SECRET_BODY = 'Login notes.\npassword = "hunter2hunter2"\nDone.'
-LEGACY_LOCK_SKIP_REASON = (
-    "legacy lock liveness uses os.kill(pid, 0), which terminates the test process on Windows"
-)
 HOLD_KERNEL_LOCK = (
     "import os, sys\n"
     "fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o600)\n"
@@ -52,16 +49,6 @@ HOLD_KERNEL_LOCK = (
     "print('locked', flush=True)\n"
     "sys.stdin.read()\n"
 )
-
-
-class FakeMsvcrt:
-    """The Windows lock operations used by the in-process command simulation."""
-
-    LK_NBLCK = 2
-    LK_UNLCK = 0
-
-    def locking(self, fd: int, mode: int, nbytes: int, /) -> None:
-        pass
 
 
 class FixedClock:
@@ -353,50 +340,6 @@ def test_a_kernel_lock_held_by_another_descriptor_is_reported_as_busy(
     )
     assert pending(content) == before
     assert kb_tmp(content) == []
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason=LEGACY_LOCK_SKIP_REASON)
-def test_a_live_legacy_lock_is_reported_as_busy_and_left_alone(
-    content: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    lock = content / ".observe.lock"
-    lock.mkdir()
-    (lock / "pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
-    status, out, err = run_kb(capsys, "--title", "Blocked", "--body", "Old script holds it.")
-    assert (status, out, err) == (
-        1,
-        "",
-        "observe: content repository is busy (waited 0s for the lock)\n",
-    )
-    assert (lock / "pid").read_text(encoding="utf-8") == f"{os.getpid()}\n"
-    assert kb_tmp(content) == []
-
-
-def test_windows_observe_ignores_a_held_legacy_lock(
-    content: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    legacy = content / ".observe.lock"
-    legacy.mkdir()
-    (legacy / "pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
-    selected_platforms: list[str] = []
-
-    def windows_backend(platform: str) -> lock.Backend:
-        selected_platforms.append(platform)
-        return lock.MsvcrtBackend(FakeMsvcrt())
-
-    monkeypatch.setattr(sys, "platform", "win32")
-    monkeypatch.setattr(lock, "default_backend", windows_backend)
-    monkeypatch.setattr(
-        lock, "take_legacy_lock", lambda *args: pytest.fail("Windows tried the legacy lock")
-    )
-
-    status, out, err = run_kb(capsys, "--title", "Windows", "--body", "Ignore old lock.")
-
-    assert status == 0
-    assert WROTE.fullmatch(out) is not None
-    assert err == ""
-    assert selected_platforms == ["win32"]
-    assert sorted(entry.name for entry in legacy.iterdir()) == ["pid"]
 
 
 def test_a_taken_name_draws_a_new_suffix(

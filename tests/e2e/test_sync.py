@@ -22,9 +22,6 @@ from .harness import FIXTURE_TRANSCRIPTS, HOLD_KERNEL_LOCK, Kb, run_git
 HOST = socket.gethostname().split(".", 1)[0]
 SINCE = "2026-10-24T00:00:00Z"
 SECRET = "fixture-only-secret-92841"
-LEGACY_LOCK_SKIP_REASON = (
-    "legacy lock liveness uses os.kill(pid, 0), which terminates the test process on Windows"
-)
 
 
 def config(kb: Kb, harvest_since: str | None = SINCE) -> Path:
@@ -166,23 +163,11 @@ def git_refs(kb: Kb) -> str:
     return run_git(kb.content, "for-each-ref", "--format=%(refname) %(objectname)")
 
 
-def start_lock_process(kb: Kb, lock: str) -> subprocess.Popen[str]:
-    """Hold the named cross-process lock until the caller closes stdin."""
-    if lock == "kernel":
-        path = kb.content / ".git" / "kb.lock"
-        script = HOLD_KERNEL_LOCK
-    else:
-        path = kb.content / ".observe.lock"
-        script = (
-            "import os, pathlib, sys\n"
-            "path = pathlib.Path(sys.argv[1])\n"
-            "path.mkdir()\n"
-            "(path / 'pid').write_text(f'{os.getpid()}\\n')\n"
-            "print('locked', flush=True)\n"
-            "sys.stdin.read()\n"
-        )
+def start_lock_process(kb: Kb) -> subprocess.Popen[str]:
+    """Hold the kernel lock until the caller closes stdin."""
+    path = kb.content / ".git" / "kb.lock"
     process = subprocess.Popen(
-        [sys.executable, "-c", script, str(path)],
+        [sys.executable, "-c", HOLD_KERNEL_LOCK, str(path)],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -683,24 +668,10 @@ def test_fork_keeps_shared_prefix_when_original_file_is_missing(remote_git_kb: K
     assert field(fork, "forked_from") is None
 
 
-@pytest.mark.parametrize(
-    "lock",
-    [
-        pytest.param("kernel", id="kernel"),
-        pytest.param(
-            "legacy",
-            id="legacy",
-            marks=pytest.mark.skipif(
-                sys.platform == "win32",
-                reason=LEGACY_LOCK_SKIP_REASON,
-            ),
-        ),
-    ],
-)
 @pytest.mark.parametrize("mode", ["sync", "status"])
-def test_held_write_lock_times_out(lock: str, mode: str, remote_git_kb: Kb) -> None:
+def test_held_write_lock_times_out(mode: str, remote_git_kb: Kb) -> None:
     config(remote_git_kb, harvest_since=None)
-    process = start_lock_process(remote_git_kb, lock)
+    process = start_lock_process(remote_git_kb)
     try:
         args = ("sync",) if mode == "sync" else ("sync", "--status")
         result = remote_git_kb(*args, env={"KB_LOCK_WAIT": "1"})

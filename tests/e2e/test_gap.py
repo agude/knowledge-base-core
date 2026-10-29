@@ -1,6 +1,5 @@
 """End-to-end tests for recording an attributed question with `kb gap`."""
 
-import os
 import re
 import subprocess
 import sys
@@ -225,31 +224,3 @@ def test_kernel_lock_blocks_gap_before_publication(git_kb: Kb) -> None:
         before_questions
     )
     assert list((git_kb.content / ".git" / "kb-tmp").iterdir()) == []
-    assert not (git_kb.content / ".observe.lock").exists()
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="legacy lock is a POSIX-only protocol")
-def test_held_legacy_lock_blocks_gap_and_is_left_alone(git_kb: Kb) -> None:
-    before_questions = sorted(
-        path.name for path in (git_kb.content / "questions/open").glob("*.md")
-    )
-    legacy = git_kb.content / ".observe.lock"
-    legacy.mkdir()
-    (legacy / "pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
-    result = git_kb(
-        "gap",
-        "--title",
-        "Blocked",
-        "--body",
-        "The old writer holds the lock.",
-        "--context",
-        "infra",
-    )
-    assert result.returncode == 1
-    assert result.stdout == ""
-    assert result.stderr == "gap: content repository is busy (waited 1s for the lock)\n"
-    assert sorted(entry.name for entry in legacy.iterdir()) == ["pid"]
-    assert (legacy / "pid").read_text(encoding="utf-8") == f"{os.getpid()}\n"
-    assert sorted(path.name for path in (git_kb.content / "questions/open").glob("*.md")) == (
-        before_questions
-    )

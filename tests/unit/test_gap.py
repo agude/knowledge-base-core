@@ -34,16 +34,6 @@ class FixedClock:
         return datetime(2026, 10, 26, 12, 0, 5, tzinfo=UTC)
 
 
-class FakeMsvcrt:
-    """A Windows lock backend that succeeds without using the host platform's APIs."""
-
-    LK_NBLCK = 2
-    LK_UNLCK = 0
-
-    def locking(self, fd: int, mode: int, nbytes: int, /) -> None:
-        pass
-
-
 class FakeFcntl:
     """A no-contention POSIX lock backend for lock-release checks."""
 
@@ -357,64 +347,6 @@ def test_failed_staging_removes_the_new_question_and_preserves_existing_question
     assert index_lock.read_text(encoding="utf-8") == "held"
 
 
-def test_windows_backend_does_not_touch_a_held_legacy_lock(
-    content: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    before = open_questions(content)
-    legacy = content / ".observe.lock"
-    legacy.mkdir()
-    (legacy / "pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
-    selected: list[str] = []
-
-    def backend(platform: str) -> lock.Backend:
-        selected.append(platform)
-        return lock.MsvcrtBackend(FakeMsvcrt())
-
-    monkeypatch.setattr(sys, "platform", "win32")
-    monkeypatch.setattr(lock, "default_backend", backend)
-    monkeypatch.setattr(
-        lock, "take_legacy_lock", lambda *args: pytest.fail("Windows tried the legacy lock")
-    )
-    status, out, err = run_gap(
-        capsys, "--title", "Windows", "--body", "Ignore old lock.", "--context", "infra"
-    )
-    assert status == 0
-    assert out.startswith("Wrote: questions/open/")
-    assert err == ""
-    assert selected == ["win32"]
-    assert sorted(entry.name for entry in legacy.iterdir()) == ["pid"]
-    assert len(open_questions(content)) == len(before) + 1
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="legacy lock is a POSIX-only protocol")
-def test_held_legacy_lock_is_reported_as_busy_and_left_alone(
-    content: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    legacy = content / ".observe.lock"
-    legacy.mkdir()
-    (legacy / "pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
-    before = open_questions(content)
-    status, out, err = run_gap(
-        capsys,
-        "--title",
-        "Blocked",
-        "--body",
-        "The old writer holds the lock.",
-        "--context",
-        "infra",
-    )
-    assert (status, out, err) == (
-        1,
-        "",
-        "gap: content repository is busy (waited 0s for the lock)\n",
-    )
-    assert open_questions(content) == before
-    assert (legacy / "pid").read_text(encoding="utf-8") == f"{os.getpid()}\n"
-
-
 @pytest.mark.parametrize("interrupted_command", ["add", "commit"])
 def test_interruption_removes_only_the_new_question_and_releases_locks(
     content: Path,
@@ -442,7 +374,6 @@ def test_interruption_removes_only_the_new_question_and_releases_locks(
     assert open_questions(content) == before
     assert git(content, "status", "--porcelain") == "A  questions/open/existing.md\n"
     assert list((content / ".git" / "kb-tmp").iterdir()) == []
-    assert not (content / ".observe.lock").exists()
     backend = lock.FlockBackend(FakeFcntl())
     fd = lock.acquire_kernel(content / ".git" / lock.KERNEL_LOCK, backend, 0)
     backend.unlock(fd)
@@ -486,4 +417,3 @@ def test_rollback_failure_is_reported_and_keeps_the_question_for_recovery(
         question.relative_to(content).as_posix()
     ]
     assert list((content / ".git" / "kb-tmp").iterdir()) == []
-    assert not (content / ".observe.lock").exists()

@@ -54,7 +54,6 @@ def test_run_parses_each_path_once_and_does_not_write_or_use_external_services(
     monkeypatch.setattr(socket, "create_connection", forbidden)
     monkeypatch.setattr(socket.socket, "connect", forbidden)
     monkeypatch.setattr(lock, "acquire_kernel", forbidden)
-    monkeypatch.setattr(lock, "take_legacy_lock", forbidden)
 
     result = lint_command.run(["knowledge/rules/backups.md", "knowledge/rules/backups.md"])
 

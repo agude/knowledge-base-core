@@ -100,7 +100,7 @@ def test_handled_publication_error_cleans_the_temp_file_and_releases_locks(
     scratch = content / ".git" / "kb-tmp"
     assert list(scratch.iterdir()) == []
     assert article.read_bytes() == before
-    with lock.write_lock(content / ".git", content, 0, lock.default_backend(sys.platform)):
+    with lock.write_lock(content / ".git", 0, lock.default_backend(sys.platform)):
         pass
 
 
@@ -124,5 +124,4 @@ def test_interruption_cleans_the_temp_file_and_releases_locks(
     scratch = content / ".git" / "kb-tmp"
     assert list(scratch.iterdir()) == []
     assert article.read_bytes() == before
-    assert not (content / ".observe.lock").exists()
     assert verify.run(["knowledge/article.md"]) == 0

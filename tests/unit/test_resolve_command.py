@@ -45,7 +45,6 @@ def test_failure_after_publication_restores_open_question_and_releases_locks(
     assert source.read_bytes() == original
     assert not (root / "questions" / "resolved" / "question.md").exists()
     assert list((git / "kb-tmp").iterdir()) == []
-    assert not (root / ".observe.lock").exists()
 
     fd = os.open(git / lock.KERNEL_LOCK, os.O_RDWR)
     backend = lock.default_backend(sys.platform)

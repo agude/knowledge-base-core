@@ -154,14 +154,12 @@ def _content(root: Path) -> Check:
 
 
 def _dirty_count(root: Path) -> int:
-    """The changed or untracked paths in the worktree, not counting the old observer lock."""
+    """The changed or untracked paths in the worktree."""
     result = _git(root, "status", "--porcelain", "--untracked-files=all")
     if result.returncode != 0:
         raise KbError(f"cannot inspect working tree: {result.stderr.rstrip()}")
     paths = [line[3:] for line in result.stdout.splitlines()]
-    return sum(
-        1 for path in paths if path != ".observe.lock" and not path.startswith(".observe.lock/")
-    )
+    return len(paths)
 
 
 def _gitattributes(root: Path) -> Check:

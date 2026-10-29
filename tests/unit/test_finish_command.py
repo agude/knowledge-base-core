@@ -219,15 +219,6 @@ def test_finish_refuses_staged_changes_and_unrelated_paths_with_a_count(
     assert "loose-7.txt, and 1 more" in err
 
 
-def test_observer_lock_files_are_not_publication_changes(make_content: Callable[..., Path]) -> None:
-    root = make_content()
-    (root / ".observe.lock").mkdir()
-    (root / ".observe.lock" / "pid").write_text("1\n", encoding="utf-8")
-    (root / "scratch.txt").write_text("scratch\n", encoding="utf-8")
-
-    assert curate._worktree_entries(root) == [("??", "scratch.txt")]
-
-
 def test_a_blocking_finding_refuses_publication_and_writes_nothing(
     make_content: Callable[..., Path], capsys: pytest.CaptureFixture[str]
 ) -> None:

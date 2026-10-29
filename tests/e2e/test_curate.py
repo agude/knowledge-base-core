@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-import os
 import re
 import shlex
 import subprocess
@@ -295,7 +294,7 @@ def test_start_requires_a_clean_index_and_worktree(git_kb: Kb) -> None:
     _failure(dirty_worktree, "uncommitted changes")
 
 
-def test_start_ignores_its_legacy_lock_but_rejects_pending_old_batches(git_kb: Kb) -> None:
+def test_start_rejects_pending_batches(git_kb: Kb) -> None:
     result = git_kb("curate", "start", "--no-sync", "--max-bytes", "10000")
     assert result.returncode == 0, result.stderr
 
@@ -568,7 +567,6 @@ def test_status_is_read_only_and_does_not_require_git_or_valid_lock_configuratio
     assert "States: pending=1" in result.stdout
     assert manifest.stat().st_mtime_ns == manifest_mtime
     assert input_path.stat().st_mtime_ns == input_mtime
-    assert not (kb.content / ".observe.lock").exists()
 
 
 def test_status_accepts_a_deferred_input_archived_by_a_later_batch(kb: Kb) -> None:
@@ -1465,36 +1463,6 @@ def test_kernel_lock_blocks_completion_before_publishing(git_kb: Kb) -> None:
     assert pending.read_bytes() == content
     assert manifest.read_bytes() == before_manifest
     assert not (git_kb.content / "observations/archived" / filename).exists()
-    assert not list((git_kb.content / ".git" / "kb-tmp").glob("*"))
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="legacy lock is a POSIX-only protocol")
-def test_legacy_lock_blocks_completion_and_is_left_alone(git_kb: Kb) -> None:
-    filename = "legacy-locked.md"
-    content = b"---\ntitle: Legacy lock\n---\n\nEvidence.\n"
-    pending = _pending(git_kb, filename)
-    pending.write_bytes(content)
-    manifest = _write_batch(git_kb, "20261028T120000-a1b2c3d4", [_member(filename, content)])
-    legacy = git_kb.content / ".observe.lock"
-    legacy.mkdir()
-    (legacy / "pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
-
-    result = git_kb(
-        "curate",
-        "complete",
-        "20261028T120000-a1b2c3d4",
-        filename,
-        "--disposition",
-        "ephemeral",
-        "--reason",
-        "Temporary",
-    )
-
-    assert result.returncode == 1
-    assert result.stderr == "curate: content repository is busy (waited 1s for the lock)\n"
-    assert pending.read_bytes() == content
-    assert manifest.is_file()
-    assert (legacy / "pid").read_text(encoding="utf-8") == f"{os.getpid()}\n"
     assert not list((git_kb.content / ".git" / "kb-tmp").glob("*"))
 
 

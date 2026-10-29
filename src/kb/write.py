@@ -38,7 +38,7 @@ def publish_and_commit(
         with temporary.open("x", encoding="utf-8") as handle:
             handle.write(text)
         backend = lock.default_backend(platform)
-        with lock.write_lock(git_directory, root, wait, backend):
+        with lock.write_lock(git_directory, wait, backend):
             name = _publish(root, directory, temporary, when, command)
             _commit(root, f"{directory}/{name}", subject, command)
     finally:

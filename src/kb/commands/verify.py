@@ -91,7 +91,7 @@ def _verify(
     root = context.root
     article = root / relpath
     backend = lock.default_backend(sys.platform)
-    with lock.write_lock(git, root, wait, backend):
+    with lock.write_lock(git, wait, backend):
         try:
             original = article.read_bytes()
             original_text = original.decode("utf-8")

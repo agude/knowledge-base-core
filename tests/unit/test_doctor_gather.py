@@ -157,15 +157,6 @@ def test_content_reports_missing_origin_unfetched_and_dirty_states(machine: doct
 
 
 @SKIP
-def test_dirty_count_ignores_the_old_observer_lock(machine: doctor.Context) -> None:
-    root = Path(machine.environ["KB_CONTENT"])
-    (root / ".observe.lock").mkdir()
-    (root / ".observe.lock" / "pid").write_text("1\n", encoding="utf-8")
-
-    assert doctor._dirty_count(root) == 0
-
-
-@SKIP
 def test_the_hook_states_are_each_named(machine: doctor.Context, tmp_path: Path) -> None:
     root = Path(machine.environ["KB_CONTENT"])
     hook = root / ".git" / "hooks" / "pre-commit"

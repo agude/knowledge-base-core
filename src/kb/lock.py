@@ -1,16 +1,11 @@
-"""The write lock: a kernel lock that serializes kb writers, and the old scripts' lock that kb shares.
+"""The write lock: a kernel lock that serializes kb writers.
 
-A write takes two locks. The kernel lock is an exclusive lock on <git dir>/kb.lock.
-The kernel releases it when the process exits, so it needs no stale-lock logic. The
-legacy lock is the directory <content>/.observe.lock that the old scripts take with
-their acquire_lock. kb takes it too, so that kb and the old scripts exclude each other
-until cutover. The legacy lock is POSIX only: the old scripts run only on POSIX, and
-its liveness check, os.kill(pid, 0), terminates the process on Windows.
+A write takes an exclusive lock on <git dir>/kb.lock. The kernel releases it when the
+process exits, so it needs no stale-lock logic.
 """
 
 import importlib
 import os
-import shutil
 import subprocess
 import time
 from collections.abc import Callable, Iterator
@@ -25,7 +20,6 @@ from kb.platform import WINDOWS
 DEFAULT_WAIT = 30
 POLL_SECONDS = 0.1
 KERNEL_LOCK = "kb.lock"
-LEGACY_LOCK = ".observe.lock"
 
 Clock = Callable[[], float]
 Pause = Callable[[float], None]
@@ -63,9 +57,7 @@ class MsvcrtModule(Protocol):
 
 
 class Backend(Protocol):
-    """The platform's exclusive file lock, and whether the legacy lock is taken with it."""
-
-    legacy_lock: bool
+    """The platform's exclusive file lock."""
 
     def try_lock(self, fd: int) -> bool:
         """Take the lock on fd without waiting. False means another process holds it."""
@@ -77,9 +69,7 @@ class Backend(Protocol):
 
 
 class FlockBackend:
-    """The POSIX backend: flock on the lock file's descriptor. It also takes the legacy lock."""
-
-    legacy_lock = True
+    """The POSIX backend: flock on the lock file's descriptor."""
 
     def __init__(self, module: FcntlModule) -> None:
         self._module = module
@@ -96,9 +86,7 @@ class FlockBackend:
 
 
 class MsvcrtBackend:
-    """The Windows backend: msvcrt.locking on byte 0 of the lock file. It takes no legacy lock."""
-
-    legacy_lock = False
+    """The Windows backend: msvcrt.locking on byte 0 of the lock file."""
 
     def __init__(self, module: MsvcrtModule) -> None:
         self._module = module
@@ -201,45 +189,9 @@ def acquire_kernel(
     return fd
 
 
-def take_legacy_lock(
-    content: Path,
-    wait: int,
-    clock: Clock = time.monotonic,
-    pause: Pause = time.sleep,
-) -> None:
-    """Take the old scripts' lock the way their acquire_lock does. Raises LockBusy.
-
-    Deleted at cutover, with the old scripts' lock. A directory whose pid file names a
-    dead process is stale: it is removed and taken at once. Otherwise the call polls
-    every POLL_SECONDS until wait seconds have passed.
-    """
-    lockdir = content / LEGACY_LOCK
-    deadline = clock() + wait
-    while True:
-        try:
-            lockdir.mkdir()
-        except FileExistsError:
-            if _owner_is_dead(lockdir / "pid"):
-                shutil.rmtree(lockdir, ignore_errors=True)
-                if not lockdir.exists():
-                    continue
-            if clock() >= deadline:
-                raise LockBusy(wait) from None
-            pause(POLL_SECONDS)
-            continue
-        (lockdir / "pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
-        return
-
-
-def release_legacy_lock(content: Path) -> None:
-    """Remove the old scripts' lock directory. Deleted at cutover, with take_legacy_lock."""
-    shutil.rmtree(content / LEGACY_LOCK, ignore_errors=True)
-
-
 @contextmanager
 def write_lock(
     git: Path,
-    content: Path,
     wait: int,
     backend: Backend,
     clock: Clock = time.monotonic,
@@ -247,54 +199,14 @@ def write_lock(
 ) -> Iterator[None]:
     """Hold the write lock for the duration of the block.
 
-    Takes the kernel lock in git/kb.lock, then the legacy lock when the backend has one.
-    Releases them in the reverse order on every exit, including an exception. Raises
-    LockBusy when a lock stays held for wait seconds.
+    Takes the kernel lock in git/kb.lock and releases it on every exit, including an
+    exception. Raises LockBusy when the lock stays held for wait seconds.
     """
     fd = acquire_kernel(git / KERNEL_LOCK, backend, wait, clock, pause)
     try:
-        if backend.legacy_lock:
-            take_legacy_lock(content, wait, clock, pause)
-            try:
-                yield
-            finally:
-                release_legacy_lock(content)
-        else:
-            yield
+        yield
     finally:
         try:
             backend.unlock(fd)
         finally:
             os.close(fd)
-
-
-def _owner_is_dead(pidfile: Path) -> bool:
-    """True when the pid file names a process that is not running.
-
-    A missing or empty file names no owner yet, so the lock is not stale. Text that is
-    not a process id names no process.
-    """
-    try:
-        text = pidfile.read_text(encoding="utf-8").strip()
-    except FileNotFoundError:
-        return False
-    if not text:
-        return False
-    if not (text.isascii() and text.isdigit()):
-        return True
-    return not _process_exists(int(text))
-
-
-def _process_exists(pid: int) -> bool:
-    """Whether a process with this id is running, judged by os.kill(pid, 0) on POSIX."""
-    if pid < 1:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OverflowError:
-        return False
-    return True

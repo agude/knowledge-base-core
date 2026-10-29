@@ -217,14 +217,12 @@ def test_fetch_status_counts_both_directions_without_moving_head(
     assert local_head(local) == kept
 
 
-def test_dirty_paths_lists_changes_and_renames_but_not_the_observer_lock(
+def test_dirty_paths_lists_changes_and_renames(
     pair: tuple[Path, Path],
 ) -> None:
     local, _ = pair
     git(local, "mv", "seed.txt", "renamed.txt")
     (local / "new.md").write_text("new\n", encoding="utf-8")
-    (local / ".observe.lock").mkdir()
-    (local / ".observe.lock" / "pid").write_text("1\n", encoding="utf-8")
 
     assert sorted(remote.dirty_paths(local)) == ["new.md", "renamed.txt"]
 

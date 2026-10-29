@@ -39,7 +39,7 @@ class Result:
 
 
 def dirty_paths(root: Path) -> tuple[str, ...]:
-    """Paths changed in the worktree or index, except for the old observer lock."""
+    """Paths changed in the worktree or index."""
     result = _git(root, "status", "--porcelain", "--untracked-files=all")
     if result.returncode != 0:
         detail = result.stderr.rstrip("\n")
@@ -49,8 +49,6 @@ def dirty_paths(root: Path) -> tuple[str, ...]:
         path = line[3:] if len(line) > 3 else line
         if " -> " in path:
             path = path.split(" -> ", 1)[1]
-        if path == ".observe.lock" or path.startswith(".observe.lock/"):
-            continue
         paths.append(path)
     return tuple(paths)
 

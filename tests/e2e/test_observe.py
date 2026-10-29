@@ -6,7 +6,6 @@ the working tree, and the git log, and each fails only because observe does
 not exist yet.
 """
 
-import os
 import re
 import socket
 import subprocess
@@ -21,9 +20,6 @@ USAGE = "Usage: kb observe --title TITLE --body TEXT\n"
 BUSY = "observe: content repository is busy (waited 1s for the lock)\n"
 WROTE = re.compile(r"Wrote: observations/pending/([0-9]{8}T[0-9]{6}-[0-9a-f]{8}\.md)\n")
 CREATED = re.compile(r"^created: (\S+)$", re.MULTILINE)
-LEGACY_LOCK_SKIP_REASON = (
-    "legacy lock liveness uses os.kill(pid, 0), which terminates the test process on Windows"
-)
 USAGE_CASES = [
     pytest.param(["observe", "--body", "Text."], USAGE, id="missing-title"),
     pytest.param(["observe", "--title", "Title"], USAGE, id="missing-body"),
@@ -106,7 +102,6 @@ def assert_observation(
     ]
     assert kb.git("status", "--porcelain") == ""
     assert temp_files(kb) == []
-    assert not (kb.content / ".observe.lock").exists()
     return name
 
 
@@ -177,7 +172,6 @@ def test_usage_errors_exit_one_and_change_nothing(
     assert git_kb.git("rev-parse", "HEAD") == head
     assert git_kb.git("status", "--porcelain") == ""
     assert temp_files(git_kb) == []
-    assert not (git_kb.content / ".observe.lock").exists()
 
 
 def test_secret_in_the_body_is_refused_and_nothing_is_written(git_kb: Kb) -> None:
@@ -196,7 +190,6 @@ def test_secret_in_the_body_is_refused_and_nothing_is_written(git_kb: Kb) -> Non
     assert git_kb.git("rev-parse", "HEAD") == head
     assert git_kb.git("status", "--porcelain") == ""
     assert temp_files(git_kb) == []
-    assert not (git_kb.content / ".observe.lock").exists()
 
 
 def test_staged_work_is_not_swept_into_the_commit(git_kb: Kb) -> None:
@@ -230,7 +223,6 @@ def test_commit_failure_leaves_the_repository_as_it_was(git_kb: Kb) -> None:
     assert git_kb.git("diff", "--cached", "--name-only") == ""
     assert git_kb.git("status", "--porcelain") == ""
     assert temp_files(git_kb) == []
-    assert not (git_kb.content / ".observe.lock").exists()
 
 
 def test_kernel_lock_held_by_another_process_blocks_the_write(git_kb: Kb) -> None:
@@ -260,42 +252,6 @@ def test_kernel_lock_held_by_another_process_blocks_the_write(git_kb: Kb) -> Non
     assert pending_files(git_kb) == before
     assert git_kb.git("rev-parse", "HEAD") == head
     assert temp_files(git_kb) == []
-    assert not (git_kb.content / ".observe.lock").exists()
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason=LEGACY_LOCK_SKIP_REASON)
-def test_legacy_lock_held_by_a_live_process_blocks_the_write_and_is_left_alone(
-    git_kb: Kb,
-) -> None:
-    head = git_kb.git("rev-parse", "HEAD")
-    before = pending_files(git_kb)
-    lock = git_kb.content / ".observe.lock"
-    lock.mkdir()
-    (lock / "pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
-    result = git_kb("observe", "--title", "Blocked", "--body", "The old script holds the lock.")
-    assert result.returncode == 1
-    assert result.stdout == ""
-    assert result.stderr == BUSY
-    assert pending_files(git_kb) == before
-    assert git_kb.git("rev-parse", "HEAD") == head
-    assert temp_files(git_kb) == []
-    assert sorted(entry.name for entry in lock.iterdir()) == ["pid"]
-    assert (lock / "pid").read_text(encoding="utf-8") == f"{os.getpid()}\n"
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason=LEGACY_LOCK_SKIP_REASON)
-def test_legacy_lock_left_by_a_dead_process_is_removed_and_the_write_succeeds(
-    git_kb: Kb,
-) -> None:
-    exited = subprocess.Popen([sys.executable, "-c", "pass"])
-    exited.wait(timeout=30)
-    lock = git_kb.content / ".observe.lock"
-    lock.mkdir()
-    (lock / "pid").write_text(f"{exited.pid}\n", encoding="utf-8")
-    result = git_kb("observe", "--title", "After a crash", "--body", "The old lock was stale.")
-    assert_observation(
-        git_kb, result, "After a crash", "The old lock was stale.", str(git_kb.home.resolve())
-    )
 
 
 def test_help_lists_observe_and_observe_help_exits_zero(kb: Kb) -> None:
