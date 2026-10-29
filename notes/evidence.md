@@ -1066,12 +1066,16 @@ Open items:
   (roadmap link), `21faebe` (dirac baseline and Codex runtime results),
   `964d997` (safe capture switch), `2edbcb8` (packaged skills), and `4da0541`
   (managed skill installation and doctor check).
-- Dotfiles commit `0940ed7691298bebd16b749ff1a35a1e167e2251` is on the isolated
+- Dotfiles commit `3f74b0822ff38451dd0be96e1127800da928cd09` is on the isolated
   `kb-cutover` worktree, one commit above base
-  `70751e74b90569a1002c70860fcd0130633c1da6`. It changes 16 files with 91
-  insertions and 245 deletions. It installs the generated instruction and
-  allow-rule text, removes the Codex session shims, and adds the kb rules and
-  sync timer units. The dotfiles checks passed; `main` was not merged or pushed.
+  `70751e74b90569a1002c70860fcd0130633c1da6`. It changes 21 files with 89
+  insertions and 620 deletions. It installs the generated instruction and
+  allow-rule text, deletes the Claude and Codex session-capture shims and
+  their tests, and adds the kb rules and sync timer units. It also adds the
+  rules to `llm/claude/settings.work.json` and documents the existing
+  `PreToolUse/040.skill-guard.sh` hook in the dotfiles `AGENTS.md`. It
+  replaces `0940ed7`, which kept the four Claude shims and skipped them in
+  the installer; the cutover rehearsal was rerun against the replacement. The dotfiles checks passed; `main` was not merged or pushed.
 
 ### Measurements and setup behavior
 
