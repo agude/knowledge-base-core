@@ -1142,3 +1142,70 @@ Open items:
 - No machine is recorded as moved. Native Windows behavior, adoption on other
   machines, first `kb curate` use, the one-time `ttl` pass, and retirement of
   the old tooling remain open.
+
+## dirac cutover preparation (2026-10-28)
+
+Section 6.1 of plan.md, run on dirac. No cutover step, dotfiles mutation, or
+host configuration change was made.
+
+### Release
+
+- `just release minor` ran `just check` and passed, then bumped 0.1.0 to 0.2.0.
+- Release commit: `e2b8ca06b690e32498a085fc0f218ac243ee564b` (`Release v0.2.0`,
+  changes `pyproject.toml` and `uv.lock` only).
+- Tag: `v0.2.0` (annotated, object `d553d888a4dbaab5662c3fc2426f7765c34bacff`).
+- Not pushed.
+- The post-release `just check` failed one e2e test that hard-coded the
+  `.kb-managed` marker as `0.1.0`. The release recipe checks before the bump,
+  so it did not catch this. The test now reads `kb.__version__`; the fix is a
+  test-only commit after the tag, and the packaged wheel is unchanged.
+
+### Install
+
+- `uv tool install --reinstall .` from the tagged checkout replaced
+  knowledge-base 0.1.0 with 0.2.0.
+- `which kb` is `~/.local/bin/kb`; `kb --version` prints `kb 0.2.0`.
+
+### Doctor baseline
+
+- Exit status 1.
+- States: 3 PASS (version, config, curation), 9 WARN (content, gitattributes,
+  hook, scheduler, capture, instructions, allow-rules, legacy, skills),
+  1 FAIL (sync: `No record`).
+- Legacy old-tooling registrations: 14.
+- Content unpublished commits: 64. The plan's 56 is a dated example, not a
+  fixed count.
+- Deviation from the expected baseline: none in states; the only difference is
+  the unpublished commit count.
+
+### Host versions
+
+- Claude Code 2.1.312 and Codex CLI 0.165.0. Both match the Part A probe, so
+  the probe does not need repeating.
+
+### Cutover script constants
+
+- VERSION `0.2.0` matches the installed kb.
+- CLAUDE_VERSION and CODEX_VERSION match the host versions above.
+- DOTFILES_BASE matches `main` (`70751e74b90569a1002c70860fcd0130633c1da6`).
+- DOTFILES_CUTOVER matches `kb-cutover` (`3f74b0822ff38451dd0be96e1127800da928cd09`).
+- `main..kb-cutover` has 1 commit; the dotfiles working tree is clean.
+- SKILL_HASHES match the SHA-256 of `src/kb/data/skills/<name>/SKILL.md` for
+  `knowledge-base` and `curate`.
+
+### Codex rules-file loading
+
+- Resolved from the Codex source at tag `rust-v0.165.0`,
+  `codex-rs/core/src/exec_policy.rs`, `collect_policy_files`. Codex reads
+  every `*.rules` entry in `rules/` under each active config layer, so the
+  name `kb.rules` is accepted. It keeps only entries whose directory-entry
+  file type `is_file()`. A directory entry's file type does not follow
+  symbolic links, so a symlinked `.rules` file is skipped. `main` has the
+  same check.
+- The `kb-cutover` dotfiles commit installs `~/.codex/rules/kb.rules` as a
+  symbolic link into the dotfiles. Codex 0.165.0 would not load it, and the
+  seven working-agent commands would still prompt in Codex. The Part A probe
+  used a regular rules file, and the rehearsal did not start Codex, so
+  neither covered the installed form.
+- This blocks the cutover until the dotfiles branch installs a regular file
+  or another form that Codex loads, and the rehearsal is rerun.
