@@ -721,7 +721,6 @@ just sync           # Install the locked development environment.
 just hooks-install  # Install the pre-commit hook, which runs `just lint`.
 just check          # Run lint, type-check, and test.
 just eval           # Score retrieval against the question sets under tests/fixtures.
-just test-compat    # Run the observe compatibility tests against ~/Knowledge.
 ```
 
 Run `just` to list every recipe.

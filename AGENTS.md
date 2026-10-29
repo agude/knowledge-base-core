@@ -22,7 +22,6 @@ CI pass.
 | `just check` | Runs lint, type-check, and test. Run it before every commit. |
 | `just build package-check` | Builds the package, installs the wheel in a clean environment, and smoke-tests it. |
 | `just lock` | Updates `uv.lock` after a dependency change. |
-| `just test-compat` | Runs the observe compatibility tests against the old tooling in `~/Knowledge`. |
 | `just release <bump>` | Bumps the version, commits, and tags. Does not push. |
 
 ## Rules

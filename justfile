@@ -34,10 +34,6 @@ type-check:
 test *args:
     uv run --locked pytest {{ args }}
 
-# Run the observe compatibility tests against the old tooling checkout in ~/Knowledge.
-test-compat:
-    KB_OLD_TOOLING="$HOME/Knowledge" uv run --locked pytest --no-cov tests/e2e/test_observe_compat.py
-
 # Run every check that CI runs on the source tree.
 check: lint type-check test
 
