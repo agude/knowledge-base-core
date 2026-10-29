@@ -70,9 +70,7 @@ def test_a_refused_hook_skips_the_commit_and_removes_what_init_created(
 ) -> None:
     hook = tmp_path / "new" / ".git" / "hooks" / "pre-commit"
     monkeypatch.setattr(setup, "_kb_path", lambda given: "/opt/kb")
-    monkeypatch.setattr(
-        setup, "_install", lambda root, kb, replace, environ, failures: ("refused", hook)
-    )
+    monkeypatch.setattr(setup, "_install", lambda root, kb, environ, failures: ("refused", hook))
     monkeypatch.setattr(setup, "_initial_commit", lambda *args: pytest.fail("committed"))
 
     failures: list[str] = []
@@ -89,9 +87,7 @@ def test_a_failed_initial_commit_refuses_and_removes_the_repository(
 ) -> None:
     hook = tmp_path / "new" / ".git" / "hooks" / "pre-commit"
     monkeypatch.setattr(setup, "_kb_path", lambda given: "/opt/kb")
-    monkeypatch.setattr(
-        setup, "_install", lambda root, kb, replace, environ, failures: ("installed", hook)
-    )
+    monkeypatch.setattr(setup, "_install", lambda root, kb, environ, failures: ("installed", hook))
 
     def refuse(*args: object) -> None:
         raise KbError("git commit failed: nothing to commit")
@@ -114,9 +110,7 @@ def test_a_busy_lock_during_the_initial_commit_is_reported(
 ) -> None:
     hook = tmp_path / "new" / ".git" / "hooks" / "pre-commit"
     monkeypatch.setattr(setup, "_kb_path", lambda given: "/opt/kb")
-    monkeypatch.setattr(
-        setup, "_install", lambda root, kb, replace, environ, failures: ("installed", hook)
-    )
+    monkeypatch.setattr(setup, "_install", lambda root, kb, environ, failures: ("installed", hook))
 
     def busy(*args: object) -> None:
         raise lock.LockBusy(2)
@@ -138,9 +132,7 @@ def test_a_push_failure_keeps_the_created_repository_and_names_the_recovery(
 ) -> None:
     hook = tmp_path / "new" / ".git" / "hooks" / "pre-commit"
     monkeypatch.setattr(setup, "_kb_path", lambda given: "/opt/kb")
-    monkeypatch.setattr(
-        setup, "_install", lambda root, kb, replace, environ, failures: ("installed", hook)
-    )
+    monkeypatch.setattr(setup, "_install", lambda root, kb, environ, failures: ("installed", hook))
     monkeypatch.setattr(setup, "_initial_commit", lambda *args: None)
     failures: list[str] = []
 
@@ -160,9 +152,7 @@ def test_a_refusal_in_an_existing_empty_directory_leaves_it_empty(
     target = tmp_path / "empty"
     target.mkdir()
     monkeypatch.setattr(setup, "_kb_path", lambda given: "/opt/kb")
-    monkeypatch.setattr(
-        setup, "_install", lambda root, kb, replace, environ, failures: ("refused", None)
-    )
+    monkeypatch.setattr(setup, "_install", lambda root, kb, environ, failures: ("refused", None))
 
     state = setup._initialize(target, None, None, {}, [])
 

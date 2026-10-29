@@ -182,10 +182,9 @@ def _hook(root: Path) -> Check:
         raise KbError(f"cannot locate the hooks directory: {result.stderr.rstrip()}")
     hook = Path(result.stdout.strip()) / "pre-commit"
     found = existing_hook(hook)
-    old_link = found.kind == "link" and setup_rules.is_old_hook_target(found.link_target)
     managed = found.kind == "file" and setup_rules.is_managed(found.data)
     problem = _kb_problem(found.data) if managed else None
-    return diagnosis.hook_check(found.kind, old_link, managed, problem)
+    return diagnosis.hook_check(found.kind, managed, problem)
 
 
 def _kb_problem(script: bytes) -> str | None:

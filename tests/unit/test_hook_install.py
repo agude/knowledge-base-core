@@ -1,4 +1,4 @@
-"""The hook script, the hook action for each state of the hook path, and the old-link rule."""
+"""The hook script and the hook action for each state of the hook path."""
 
 import pytest
 
@@ -7,7 +7,6 @@ from kb.errors import KbError
 
 KB = "/opt/tools/kb"
 SCRIPT = setup_rules.hook_script(KB)
-OLD_TARGET = "/home/agude/Knowledge/scripts/hooks/pre-commit"
 Action = setup_rules.HookAction
 
 
@@ -32,61 +31,39 @@ def test_a_kb_path_the_script_cannot_quote_is_refused(path: str) -> None:
 
 
 def test_a_missing_hook_is_installed() -> None:
-    assert setup_rules.hook_action(setup_rules.ExistingHook("absent"), SCRIPT, False) is (
-        Action.INSTALL
-    )
+    assert setup_rules.hook_action(setup_rules.ExistingHook("absent"), SCRIPT) is Action.INSTALL
 
 
 def test_a_managed_hook_with_the_same_bytes_is_unchanged() -> None:
     existing = setup_rules.ExistingHook("file", data=SCRIPT.encode("utf-8"))
 
-    assert setup_rules.hook_action(existing, SCRIPT, False) is Action.UNCHANGED
+    assert setup_rules.hook_action(existing, SCRIPT) is Action.UNCHANGED
 
 
 def test_a_managed_hook_with_other_bytes_is_updated() -> None:
     old = f"#!/bin/sh\n{setup_rules.HOOK_MARKER}\nexec '/old/kb' hook pre-commit \"$@\"\n"
     existing = setup_rules.ExistingHook("file", data=old.encode("utf-8"))
 
-    assert setup_rules.hook_action(existing, SCRIPT, False) is Action.UPDATE
+    assert setup_rules.hook_action(existing, SCRIPT) is Action.UPDATE
 
 
 @pytest.mark.parametrize("data", [b"", b"#!/bin/sh\nexec something\n", b"#!/bin/sh\n\xff\n"])
 def test_a_file_that_kb_did_not_write_is_foreign(data: bytes) -> None:
     existing = setup_rules.ExistingHook("file", data=data)
 
-    assert setup_rules.hook_action(existing, SCRIPT, True) is Action.REFUSE_FOREIGN
+    assert setup_rules.hook_action(existing, SCRIPT) is Action.REFUSE_FOREIGN
 
 
 def test_a_directory_or_other_kind_at_the_hook_path_is_foreign() -> None:
-    assert setup_rules.hook_action(setup_rules.ExistingHook("other"), SCRIPT, True) is (
+    assert setup_rules.hook_action(setup_rules.ExistingHook("other"), SCRIPT) is (
         Action.REFUSE_FOREIGN
     )
 
 
-def test_the_old_tooling_link_is_refused_without_the_flag_and_replaced_with_it() -> None:
-    link = setup_rules.ExistingHook("link", link_target=OLD_TARGET)
-
-    assert setup_rules.hook_action(link, SCRIPT, False) is Action.REFUSE_OLD_LINK
-    assert setup_rules.hook_action(link, SCRIPT, True) is Action.REPLACE_OLD_LINK
-
-
-def test_a_link_to_any_other_target_is_foreign_even_with_the_flag() -> None:
+def test_a_symbolic_link_at_the_hook_path_is_foreign_whatever_it_targets() -> None:
     link = setup_rules.ExistingHook("link", link_target="/elsewhere/pre-commit")
 
-    assert setup_rules.hook_action(link, SCRIPT, True) is Action.REFUSE_FOREIGN
-
-
-@pytest.mark.parametrize(
-    ("target", "expected"),
-    [
-        (OLD_TARGET, True),
-        ("../../Knowledge/scripts/hooks/pre-commit", True),
-        ("/x/scripts/hooks/pre-commit-other", False),
-        ("/x/hooks/pre-commit", False),
-    ],
-)
-def test_the_old_target_is_matched_by_its_last_three_parts(target: str, expected: bool) -> None:
-    assert setup_rules.is_old_hook_target(target) is expected
+    assert setup_rules.hook_action(link, SCRIPT) is Action.REFUSE_FOREIGN
 
 
 @pytest.mark.parametrize(

@@ -40,7 +40,7 @@ INITIAL_COMMIT = "Initialize knowledge base content"
 SPEC = Spec(
     usage=(
         "setup [--content PATH | --init PATH [--origin URL]] [--kb PATH] "
-        "[--replace-old-hook] [--replace-old-skills] [--enable-capture]\n"
+        "[--replace-old-skills] [--enable-capture]\n"
         "       setup --print {instructions|allow-claude|allow-codex}"
     ),
     summary=(
@@ -49,7 +49,7 @@ SPEC = Spec(
         "text that the dotfiles install."
     ),
     valued=frozenset({"--content", "--init", "--origin", "--kb", "--print"}),
-    switches=frozenset({"--replace-old-hook", "--replace-old-skills", "--enable-capture"}),
+    switches=frozenset({"--replace-old-skills", "--enable-capture"}),
 )
 
 
@@ -127,9 +127,7 @@ def _configure(parsed: args.Parsed, environ: Mapping[str, str]) -> int:
             config_state = "refused"
         else:
             config_state = _set_config(configuration, root, failures)
-        hook_state, hook = _install(
-            root, kb_argument, "--replace-old-hook" in parsed.switches, environ, failures
-        )
+        hook_state, hook = _install(root, kb_argument, environ, failures)
     if init_state is not None:
         sys.stdout.write(f"Init: {init_state} {init_target}\n")
     sys.stdout.write(f"Config: {config_state} {configuration}\n")
@@ -171,7 +169,7 @@ def _initialize(
     try:
         _create_layout(target)
         _git_ok(target, "init", "-q", "-b", "main")
-        hook_state, hook = _install(target, kb_argument, False, environ, failures)
+        hook_state, hook = _install(target, kb_argument, environ, failures)
         if hook_state == "refused":
             raise _Abandoned
         _initial_commit(target, environ)
@@ -387,7 +385,6 @@ def _enable_capture(
 def _install(
     root: Path | None,
     kb_argument: str | None,
-    replace_old: bool,
     environ: Mapping[str, str],
     failures: list[str],
 ) -> tuple[str, Path | None]:
@@ -402,7 +399,7 @@ def _install(
         script = setup_rules.hook_script(kb_path)
         wait = _wait(environ)
         with lock.write_lock(git, wait, lock.default_backend(sys.platform)):
-            action = setup_rules.hook_action(existing_hook(hook), script, replace_old)
+            action = setup_rules.hook_action(existing_hook(hook), script)
             return _apply(action, hook, script, git), hook
     except lock.LockBusy as busy:
         failures.append(f"setup: content repository is busy (waited {busy.waited}s for the lock)")
@@ -473,11 +470,6 @@ def _apply(action: setup_rules.HookAction, hook: Path, script: str, git: Path) -
     """Carry out a hook action and return its state. Refusals raise KbError."""
     if action is setup_rules.HookAction.UNCHANGED:
         return "unchanged"
-    if action is setup_rules.HookAction.REFUSE_OLD_LINK:
-        raise KbError(
-            f"{hook} is a symlink to the old tooling's hook; run again with --replace-old-hook "
-            "to replace the link. Its target is not changed."
-        )
     if action is setup_rules.HookAction.REFUSE_FOREIGN:
         raise KbError(
             f"{hook} exists and kb did not install it; it is unchanged. "

@@ -76,21 +76,20 @@ def test_the_gitattributes_check_requires_text_auto_and_eol_lf() -> None:
 
 
 @pytest.mark.parametrize(
-    ("kind", "old_link", "managed", "problem", "state", "message"),
+    ("kind", "managed", "problem", "state", "message"),
     [
-        ("absent", False, False, None, "fail", "absent"),
-        ("link", True, False, None, "warn", "a symbolic link to the old tooling's hook"),
-        ("link", False, False, None, "fail", "not installed by kb"),
-        ("other", False, False, None, "fail", "not installed by kb"),
-        ("file", False, False, None, "fail", "not installed by kb"),
-        ("file", False, True, "kb path is missing: /x", "fail", "kb path is missing: /x"),
-        ("file", False, True, None, "pass", "installed by kb setup; its kb runs --version"),
+        ("absent", False, None, "fail", "absent"),
+        ("link", False, None, "fail", "not installed by kb"),
+        ("other", False, None, "fail", "not installed by kb"),
+        ("file", False, None, "fail", "not installed by kb"),
+        ("file", True, "kb path is missing: /x", "fail", "kb path is missing: /x"),
+        ("file", True, None, "pass", "installed by kb setup; its kb runs --version"),
     ],
 )
 def test_the_hook_check_states(
-    kind: str, old_link: bool, managed: bool, problem: str | None, state: str, message: str
+    kind: str, managed: bool, problem: str | None, state: str, message: str
 ) -> None:
-    check = diagnosis.hook_check(kind, old_link, managed, problem)
+    check = diagnosis.hook_check(kind, managed, problem)
 
     assert (check.state, check.message) == (state, message)
 

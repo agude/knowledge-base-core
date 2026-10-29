@@ -164,13 +164,13 @@ def test_the_hook_states_are_each_named(machine: doctor.Context, tmp_path: Path)
 
     assert by_name(doctor.gather(machine))["hook"].message == "not installed by kb"
 
-    old = tmp_path / "Knowledge" / "scripts" / "hooks" / "pre-commit"
-    old.parent.mkdir(parents=True)
-    old.write_text("old\n", encoding="utf-8")
+    target = tmp_path / "elsewhere" / "pre-commit"
+    target.parent.mkdir(parents=True)
+    target.write_text("other\n", encoding="utf-8")
     hook.unlink()
-    hook.symlink_to(old)
+    hook.symlink_to(target)
 
-    assert by_name(doctor.gather(machine))["hook"].state == "warn"
+    assert by_name(doctor.gather(machine))["hook"].message == "not installed by kb"
 
     hook.unlink()
     assert by_name(doctor.gather(machine))["hook"].message == "absent"

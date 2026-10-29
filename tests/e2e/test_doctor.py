@@ -173,16 +173,6 @@ def _dirty(kb: Kb) -> dict[str, str | None]:
     return {}
 
 
-def _old_hook_link(kb: Kb) -> dict[str, str | None]:
-    hook = kb.content / ".git" / "hooks" / "pre-commit"
-    old = kb.home / "Knowledge" / "scripts" / "hooks" / "pre-commit"
-    old.parent.mkdir(parents=True, exist_ok=True)
-    old.write_text("#!/bin/sh\n", encoding="utf-8")
-    hook.unlink()
-    hook.symlink_to(old)
-    return {}
-
-
 def _timer_off(kb: Kb) -> dict[str, str | None]:
     return systemctl(kb, enabled="disabled", active="inactive")
 
@@ -237,7 +227,6 @@ REMOVALS: list[tuple[str, Mutation, str, int]] = [
     ("attributes differ", _attributes, "WARN gitattributes: text=auto, eol=unspecified", 0),
     ("no origin", _no_origin, "FAIL content: no origin remote", 1),
     ("worktree dirty", _dirty, "WARN content: 1 changed path(s) in the worktree", 0),
-    ("old hook link", _old_hook_link, "WARN hook: a symbolic link to the old tooling's hook", 0),
     ("timer disabled", _timer_off, "WARN scheduler: kb-sync.timer is disabled and inactive", 0),
     ("capture off", _capture_off, "WARN capture: Capture disabled (harvest_since unset)", 0),
     ("no instruction block", _instructions_missing, "WARN instructions: claude: no kb block", 0),

@@ -97,17 +97,10 @@ def gitattributes_check(text: str, eol: str) -> Check:
     )
 
 
-def hook_check(kind: str, old_link: bool, managed: bool, kb_problem: str | None) -> Check:
+def hook_check(kind: str, managed: bool, kb_problem: str | None) -> Check:
     """Whether the pre-commit hook is kb's, and whether the kb it names runs."""
     if kind == "absent":
         return Check("hook", "fail", "absent", "run kb setup")
-    if kind == "link" and old_link:
-        return Check(
-            "hook",
-            "warn",
-            "a symbolic link to the old tooling's hook",
-            "run kb setup --replace-old-hook",
-        )
     if kind in {"link", "other"} or (kind == "file" and not managed):
         return Check(
             "hook",

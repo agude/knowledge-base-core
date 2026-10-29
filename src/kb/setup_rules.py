@@ -27,7 +27,6 @@ CODEX_RULES_HEADER = (
     " Codex skips symbolic links."
 )
 HOOK_MARKER = "# Installed by kb setup. Do not edit; run kb setup again to update."
-OLD_HOOK_SUFFIX = ("scripts", "hooks", "pre-commit")
 UNQUOTABLE = ("'", "\r", "\n", "\0")
 VERSION_OUTPUT = re.compile(r"kb [0-9][0-9A-Za-z.+-]*\n?")
 CONTENT_LINE = re.compile(r'[ \t]*content[ \t]*=[ \t]*"(?:[^"\\\r\n]|\\.)*"[ \t]*(?:#[^\r\n]*)?')
@@ -40,8 +39,6 @@ class HookAction(Enum):
     INSTALL = "install"
     UNCHANGED = "unchanged"
     UPDATE = "update"
-    REPLACE_OLD_LINK = "replace-old-link"
-    REFUSE_OLD_LINK = "refuse-old-link"
     REFUSE_FOREIGN = "refuse-foreign"
 
 
@@ -104,25 +101,16 @@ def hook_script(kb_path: str) -> str:
     return f"#!/bin/sh\n{HOOK_MARKER}\nexec '{kb_path}' hook pre-commit \"$@\"\n"
 
 
-def is_old_hook_target(target: str) -> bool:
-    """Whether a symbolic link's target is the old tooling's pre-commit hook."""
-    return Path(target).parts[-3:] == OLD_HOOK_SUFFIX
-
-
 def is_managed(data: bytes) -> bool:
     """Whether a hook file was installed by kb setup: its second line is the marker."""
     lines = data.decode("utf-8", errors="replace").splitlines()
     return len(lines) >= 2 and lines[1] == HOOK_MARKER
 
 
-def hook_action(existing: ExistingHook, script: str, replace_old: bool) -> HookAction:
+def hook_action(existing: ExistingHook, script: str) -> HookAction:
     """The action for the hook path, given what occupies it and the wanted script."""
     if existing.kind == "absent":
         return HookAction.INSTALL
-    if existing.kind == "link":
-        if not is_old_hook_target(existing.link_target):
-            return HookAction.REFUSE_FOREIGN
-        return HookAction.REPLACE_OLD_LINK if replace_old else HookAction.REFUSE_OLD_LINK
     if existing.kind == "file" and is_managed(existing.data):
         same = existing.data == script.encode("utf-8")
         return HookAction.UNCHANGED if same else HookAction.UPDATE

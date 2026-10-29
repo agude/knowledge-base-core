@@ -100,27 +100,18 @@ def test_a_foreign_hook_is_refused_and_left_alone_while_the_config_is_written(gi
     assert hook_of(git_kb).read_text(encoding="utf-8") == foreign
 
 
-def test_an_old_tooling_link_is_refused_without_the_flag_and_replaced_with_it(
-    git_kb: Kb,
-) -> None:
-    old = git_kb.home / "Knowledge" / "scripts" / "hooks" / "pre-commit"
-    old.parent.mkdir(parents=True)
-    old.write_text("#!/bin/sh\necho old\n", encoding="utf-8")
-    old.chmod(0o755)
-    hook_of(git_kb).symlink_to(old)
+def test_a_symlink_at_the_hook_path_is_refused_and_its_target_is_left_alone(git_kb: Kb) -> None:
+    target = git_kb.home / "elsewhere" / "pre-commit"
+    target.parent.mkdir(parents=True)
+    target.write_text("#!/bin/sh\necho other\n", encoding="utf-8")
+    hook_of(git_kb).symlink_to(target)
 
     refused = setup_for(git_kb)
 
     assert refused.returncode == 1
-    assert "--replace-old-hook" in refused.stderr
+    assert f"setup: {hook_of(git_kb)} exists and kb did not install it" in refused.stderr
     assert hook_of(git_kb).is_symlink()
-
-    replaced = setup_for(git_kb, "--replace-old-hook")
-
-    assert replaced.returncode == 0, replaced.stderr
-    assert f"Hook: updated {hook_of(git_kb)}\n" in replaced.stdout
-    assert not hook_of(git_kb).is_symlink()
-    assert old.read_text(encoding="utf-8") == "#!/bin/sh\necho old\n"
+    assert target.read_text(encoding="utf-8") == "#!/bin/sh\necho other\n"
 
 
 def test_the_installed_hook_runs_on_a_real_commit_and_stamps_the_article(git_kb: Kb) -> None:

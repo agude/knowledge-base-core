@@ -201,16 +201,14 @@ def test_run_prints_each_check_with_its_fix_and_exits_by_failure(
 ) -> None:
     checks = [
         Check("version", "pass", "kb 0.1.0"),
-        Check("hook", "warn", "a symbolic link", "run kb setup --replace-old-hook"),
+        Check("hook", "warn", "a symbolic link", "run kb setup"),
     ]
     monkeypatch.setattr(doctor, "gather", lambda ctx: checks)
     monkeypatch.setenv("KB_NOW", "2026-10-26T12:00:00Z")
 
     assert doctor.run([]) == 0
     assert capsys.readouterr().out == (
-        "PASS version: kb 0.1.0\n"
-        "WARN hook: a symbolic link\n"
-        "  fix: run kb setup --replace-old-hook\n"
+        "PASS version: kb 0.1.0\nWARN hook: a symbolic link\n  fix: run kb setup\n"
     )
 
     monkeypatch.setattr(

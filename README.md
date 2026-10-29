@@ -599,7 +599,7 @@ repository. It prints one line per resource: `Config:`, `Hook:`, and `Skill:`
 it refused any resource, and a refusal does not stop the other resources.
 
 ```text
-kb setup [--content PATH] [--kb PATH] [--replace-old-hook] [--replace-old-skills] [--enable-capture]
+kb setup [--content PATH] [--kb PATH] [--replace-old-skills] [--enable-capture]
 kb setup --init PATH [--origin URL] [--kb PATH]
 kb setup --print {instructions|allow-claude|allow-codex}
 ```
@@ -619,10 +619,8 @@ kb setup --print {instructions|allow-claude|allow-codex}
 - The hook is a POSIX `sh` script. Setup writes it through the Git directory's
   `kb-tmp`, under the writer lock, and it honors `core.hooksPath`. Setup
   rewrites its own script when the bytes differ, for example after `kb` moves.
-- A hook that kb did not write is refused and left unchanged. A symbolic link
-  to the old tooling's hook is refused unless `--replace-old-hook` is given.
-  With the flag, setup replaces only the link, and the link's target is not
-  changed.
+- A hook that kb did not write, including a symbolic link, is refused and left
+  unchanged.
 - Setup copies the packaged `knowledge-base` and `curate` skills into
   `$CLAUDE_CONFIG_DIR/skills/` (default `~/.claude/skills/`) and
   `~/.agents/skills/`. A `.kb-managed` marker records
@@ -693,7 +691,7 @@ gather its facts reports why, and the other checks still run.
 | `config` | the content root resolves | | there is no content setting, the file does not parse, or the root is not a directory |
 | `content` | a Git repository on a branch, with `origin`, a clean tree, and level with the last fetched `origin` | the tree is dirty, or the branch is ahead or behind | it is not a repository, HEAD is detached, or there is no `origin` |
 | `gitattributes` | `* text=auto eol=lf` is in effect | the attributes differ | |
-| `hook` | kb installed it, and its `kb` runs `--version` | a symbolic link to the old tooling's hook | the hook is absent or foreign, or its `kb` is missing |
+| `hook` | kb installed it, and its `kb` runs `--version` | | the hook is absent or foreign, or its `kb` is missing |
 | `curation` | no unsettled batch | a batch is unsettled, or committed but not published | |
 | `sync` | the last exchange was within 60 minutes | the last run ended `dirty` or `error`, or the exchange is older | there is no record |
 | `scheduler` | on Linux, `kb-sync.timer` is enabled and active | it is not enabled or not active; elsewhere, `not checked on PLATFORM` | |

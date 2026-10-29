@@ -170,31 +170,10 @@ def test_applying_an_unchanged_or_updated_hook(tmp_path: Path) -> None:
     assert hook.read_text(encoding="utf-8") == script
 
 
-@SKIP_LINKS
-def test_replacing_an_old_link_leaves_its_target_unchanged(tmp_path: Path) -> None:
-    git = tmp_path / ".git"
-    git.mkdir()
-    (git / "hooks").mkdir()
-    old = tmp_path / "Knowledge" / "scripts" / "hooks" / "pre-commit"
-    old.parent.mkdir(parents=True)
-    old.write_text("old tooling\n", encoding="utf-8")
-    hook = git / "hooks" / "pre-commit"
-    hook.symlink_to(old)
-    script = setup_rules.hook_script("/opt/kb")
-
-    assert setup._apply(setup_rules.HookAction.REPLACE_OLD_LINK, hook, script, git) == "updated"
-
-    assert not hook.is_symlink()
-    assert hook.read_text(encoding="utf-8") == script
-    assert old.read_text(encoding="utf-8") == "old tooling\n"
-
-
-def test_the_refusals_name_the_flag_or_the_foreign_path(tmp_path: Path) -> None:
+def test_a_foreign_hook_is_refused_with_its_path(tmp_path: Path) -> None:
     hook = tmp_path / "pre-commit"
     script = setup_rules.hook_script("/opt/kb")
 
-    with pytest.raises(KbError, match="--replace-old-hook"):
-        setup._apply(setup_rules.HookAction.REFUSE_OLD_LINK, hook, script, tmp_path)
     with pytest.raises(KbError, match="did not install it"):
         setup._apply(setup_rules.HookAction.REFUSE_FOREIGN, hook, script, tmp_path)
 
