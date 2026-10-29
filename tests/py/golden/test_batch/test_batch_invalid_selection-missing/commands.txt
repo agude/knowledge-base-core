@@ -1,3 +1,0 @@
-$ batch start --files a.md missing.md
-exit 1
-Error: pending observation not found: missing.md

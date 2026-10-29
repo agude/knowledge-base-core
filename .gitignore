@@ -1,20 +1,21 @@
-content/
-.observe.lock
-.extract.lock
-.claude/settings.local.json
+# Python
+__pycache__/
+*.py[cod]
 
-node_modules/
+# Environments and build output
+.venv/
+build/
+dist/
+
+# Tool caches and reports
+.coverage
+.coverage.*
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+coverage.xml
+htmlcov/
 
 # Used for temporary work
 plan.md
-plan-memory-system.md
-plan2.md
-audit-followups.md
-
-# Python
-__pycache__/
-.venv/
-.pytest_cache/
-.ruff_cache/
-# Interpreter path recorded by scripts/install (docs/python-port.md).
-.python-interpreter
+notes/

@@ -1,2 +1,0 @@
-adapters/codex/session-prompt: exit 1 stdout='{}\n' stderr='session buffer: cannot create session directory <ROOT>/blocked\nsession buffer: cannot create session directory <ROOT>/blocked\n'
-adapters/codex/session-stop: exit 1 stdout='{}\n' stderr='session buffer: cannot create session directory <ROOT>/blocked\nsession buffer: cannot create session directory <ROOT>/blocked\n'

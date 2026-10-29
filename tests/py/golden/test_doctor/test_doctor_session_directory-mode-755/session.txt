@@ -1,1 +1,0 @@
-FAIL [capture] session directory must be mode 700: <ROOT>/run/knowledge-sessions (mode 755)

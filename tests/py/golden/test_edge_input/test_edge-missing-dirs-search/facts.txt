@@ -1,2 +1,0 @@
-stdout present
-knowledge/a.md | Section

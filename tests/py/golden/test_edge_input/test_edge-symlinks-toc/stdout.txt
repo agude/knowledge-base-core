@@ -1,4 +1,0 @@
-
-[knowledge/real.md]
-Real
-  1. Section

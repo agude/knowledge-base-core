@@ -1,4 +1,0 @@
-### Caching
-
-TTL and cache behavior.
-

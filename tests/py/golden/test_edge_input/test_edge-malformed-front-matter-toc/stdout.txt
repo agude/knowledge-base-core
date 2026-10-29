@@ -1,8 +1,0 @@
-
-[knowledge/no-front.md]
-Bare
-  1. Section
-
-[knowledge/open-front.md]
-Heading
-  1. Section

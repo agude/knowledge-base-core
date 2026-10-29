@@ -1,8 +1,0 @@
-Metadata: path=knowledge/h.md; corpus=curated article; locator=1 "Closed With Hashes" (H2)
-Freshness: curated article; verified=unknown; ttl=60d; freshness=unknown
-Section metadata: section-status=current; section-scope=article
-Provenance: scope=article; refs=none (article)
----
-## Closed With Hashes ##
-
-body here

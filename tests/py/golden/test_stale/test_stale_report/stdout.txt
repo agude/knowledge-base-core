@@ -1,6 +1,0 @@
-    61 days  knowledge/month.md  (verified: 2026-08-23, ttl 60d)
-  [no verified]  knowledge/nodate.md
-  2487 days  knowledge/old.md  (verified: 2020-01-01, ttl 60d)
-   400 days  knowledge/year.md  (verified: 2025-09-18, ttl 60d)
-
-3 stale, 1 missing date.

@@ -1,3 +1,0 @@
-  warning  knowledge/oversized-h2.md:9  H2 is 63 lines (max 50): Big Section
-
-1 file(s): 0 error(s), 1 warning(s)

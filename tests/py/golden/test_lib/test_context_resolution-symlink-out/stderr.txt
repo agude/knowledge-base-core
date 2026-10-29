@@ -1,2 +1,0 @@
-Refusing path outside the knowledge base: knowledge/sneaky.md
-Not found: knowledge/sneaky.md

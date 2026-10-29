@@ -1,2 +1,0 @@
-PASS [capture] stdin capture and JSON round-trip smoke test passed
-PASS [capture] session directory is owned by the current user and mode 700: <ROOT>/run/knowledge-sessions

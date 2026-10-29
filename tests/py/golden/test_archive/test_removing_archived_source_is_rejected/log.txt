@@ -1,7 +1,0 @@
-<COMMIT-1> Test <test@test.com> Seed archived evidence
-
-A	knowledge/legacy.md
-A	observations/archived/evidence.md
-<COMMIT-2> Test <test@test.com> init
-
-A	.gitkeep

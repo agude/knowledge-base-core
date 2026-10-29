@@ -1,8 +1,0 @@
-
-[knowledge/multi.md]
-Multi
-  1. First
-     1.1. A
-     1.2. B
-  2. Second
-     2.1. C

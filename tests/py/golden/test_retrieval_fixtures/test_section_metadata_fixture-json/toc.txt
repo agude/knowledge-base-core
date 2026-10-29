@@ -1,7 +1,0 @@
-file knowledge/metadata.md
-line Section Metadata Fixture
-heading 1 Current guidance
-heading 2 Historical guidance
-heading 2.1 Historical detail
-heading 3 Duplicate heading
-heading 4 Duplicate heading

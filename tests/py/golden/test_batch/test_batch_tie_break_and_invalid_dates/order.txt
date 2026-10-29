@@ -1,4 +1,0 @@
-filename	original_sha256	status	disposition	destination
-a-equal.md	4ba791e405a56dfa4eb7ef06a8d16791519c3e4a9e0494aa64f3674b7ce6a882	pending		
-z-equal.md	c644a6fcc75ad49d2dc3228482ddb3c32acf7dcaad90fa959904456a9bfe85f8	pending		
-0-invalid.md	69b8bffd3a3047cbd6e34ae289f6eb9e29daa2e78c7b0acad195b7483d305649	pending		

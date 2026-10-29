@@ -1,2 +1,0 @@
-.gitkeep
-observations/archived/<OBS-1>.md

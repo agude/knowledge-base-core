@@ -1,4 +1,0 @@
-$ archive --batch <BATCH-1>.tsv --disposition duplicate outsider.md --no-commit
-exit 1
-Not a member of batch: outsider.md
-Nothing archived.

@@ -1,7 +1,0 @@
-$ search --text-only --max-bytes 200 needle
-exit 0
---- stdout
-knowledge/budget-two.md | Evidence | budget needle with a long enough result line to require truncation.
-[output truncated: complete records omitted; increase --max-bytes]
---- stderr
-search: output budget used 172/200 bytes; omitted stdout records

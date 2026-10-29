@@ -1,6 +1,0 @@
-  knowledge/home/                          3
-    remodel/                               2
-  knowledge/shell/                         1
-  knowledge/ (loose files)                 1
-
-  5 articles. Drill in with: toc --path <area>

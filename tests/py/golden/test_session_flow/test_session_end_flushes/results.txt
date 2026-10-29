@@ -1,1 +1,0 @@
-adapters/claude/session-end: exit 0 stdout='Wrote: observations/pending/<OBS-1>.md\n' stderr=''

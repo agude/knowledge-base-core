@@ -1,3 +1,0 @@
-  error    knowledge/backward-link.md:2  superseded section must not declare supersedes; put the link on the newer section
-
-1 file(s): 1 error(s), 0 warning(s)

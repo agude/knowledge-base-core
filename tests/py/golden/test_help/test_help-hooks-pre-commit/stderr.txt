@@ -1,6 +1,0 @@
-<git fatal>
-<git error>
-<git usage>
-<git error>
-<git usage>
-pre-commit: could not inspect staged link-target paths.

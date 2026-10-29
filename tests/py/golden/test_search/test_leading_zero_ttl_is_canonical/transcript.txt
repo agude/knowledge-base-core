@@ -1,5 +1,0 @@
-$ search --json evidence
-exit 0
---- stdout
-{"results":[{"path":"knowledge/decimal-ttl.md","corpus":"curated article","title":"Decimal TTL","match_count":1,"locator":{"section":"Service","number":"1","line":7},"freshness":{"field":"verified","value":"2026-10-04","ttl":"08","ttl_days":8,"status":"stale","age_days":11},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":{"available":true,"locator":"1","scope":"section","field_scopes":{ "verified":"article", "ttl":"section", "status":"article" },"verified":"2026-10-04","ttl":"08","status":"current","sources":[],"valid":true},"text":"Body evidence.","routing":false,"query_mode":"literal","query":null,"query_terms":["evidence"],"alias_matches":[],"match_mode":"strict","relaxed":false}],"query_mode":"literal","query":null,"query_terms":["evidence"],"alias_matches":[],"match_mode":"strict","relaxed":false,"total_files":1,"total_lines":1,"returned":1,"truncated":false}
---- stderr

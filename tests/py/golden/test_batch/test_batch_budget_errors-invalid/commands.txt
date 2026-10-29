@@ -1,3 +1,0 @@
-$ batch start --max-bytes nope
-exit 1
-Error: --max-bytes takes a non-negative number

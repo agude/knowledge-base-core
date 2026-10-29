@@ -1,2 +1,0 @@
-stdout present
-knowledge/tail.md | Section

@@ -1,4 +1,0 @@
-file knowledge/recipes.md
-line Shell Recipes
-heading 1 Dangling symlinks
-heading 2 Second Section

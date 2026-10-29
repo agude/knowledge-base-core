@@ -1,0 +1,4 @@
+{"type":"user","uuid":"resumed-user-1","sessionId":"resumed","timestamp":"2026-10-24T08:00:00Z","message":{"role":"user","content":"Start the resumed fixture."}}
+{"type":"assistant","uuid":"resumed-assistant-1","sessionId":"resumed","timestamp":"2026-10-24T08:01:00Z","message":{"role":"assistant","content":[{"type":"text","text":"First day's answer."}]}}
+{"type":"user","uuid":"resumed-user-2","sessionId":"resumed","timestamp":"2026-10-25T08:00:00Z","message":{"role":"user","content":"Continue the resumed fixture."}}
+{"type":"assistant","uuid":"resumed-assistant-2","sessionId":"resumed","timestamp":"2026-10-25T08:01:00Z","message":{"role":"assistant","content":[{"type":"text","text":"Second day's answer."}]}}

@@ -1,1 +1,0 @@
-Error: --number takes a section number such as 2 or 2.1

@@ -1,5 +1,0 @@
-summary 1 4 0
-error knowledge/broken.md:6
-error knowledge/broken.md:13
-error knowledge/broken.md:13
-error knowledge/broken.md:14

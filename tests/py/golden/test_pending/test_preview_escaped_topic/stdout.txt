@@ -1,9 +1,0 @@
-Batch-selectable queue preview
-Batch-selectable items: 1
-Oldest pending age: 194 day(s) (2026-04-12; escaped.md)
-Observation items: 1 (106 B; 106 bytes)
-Transcript items: 0 (0 B; 0 bytes)
-Input volume: 106 B (106 bytes)
-Topic hints (hints only; no LLM):
-  Team "Core" (1 pending item(s))
-Metadata warnings: none

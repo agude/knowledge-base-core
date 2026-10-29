@@ -1,6 +1,0 @@
-
-[knowledge/code.md]
-Code
-  1. One
-heading after indented code
-  2. Two

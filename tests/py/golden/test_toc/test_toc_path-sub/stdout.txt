@@ -1,4 +1,0 @@
-
-[knowledge/sub/topic.md]
-Sub Topic
-  1. Section One

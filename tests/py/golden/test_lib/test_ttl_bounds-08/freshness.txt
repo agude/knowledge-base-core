@@ -1,8 +1,0 @@
-{
-  "field": "verified",
-  "value": "2026-10-04",
-  "ttl": "08",
-  "ttl_days": 8,
-  "status": "stale",
-  "age_days": 19
-}

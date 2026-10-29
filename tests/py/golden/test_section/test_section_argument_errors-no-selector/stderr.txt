@@ -1,1 +1,0 @@
-Error: provide --number N, --heading TEXT, --top, or --title

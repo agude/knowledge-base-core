@@ -1,5 +1,0 @@
----
-title: "Why \"quoted\" and back\\slash?"
-source: curator
-created: <TIMESTAMP>
----

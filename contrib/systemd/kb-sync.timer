@@ -1,0 +1,10 @@
+[Unit]
+Description=Synchronize the knowledge base every 15 minutes
+
+[Timer]
+OnCalendar=*-*-* *:0/15:00
+Persistent=true
+Unit=kb-sync.service
+
+[Install]
+WantedBy=timers.target

@@ -1,3 +1,0 @@
-file knowledge/unclosed.md
-line Unclosed
-heading 1 One

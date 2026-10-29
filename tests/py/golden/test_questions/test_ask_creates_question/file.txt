@@ -1,5 +1,0 @@
----
-title: "New question?"
-source: session
-created: <TIMESTAMP>
----

@@ -1,7 +1,0 @@
----
-title: "say \"hello\" path\\to\\file"
-source: session
-created: <TIMESTAMP>
----
-
-B

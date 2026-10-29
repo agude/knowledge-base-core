@@ -1,3 +1,0 @@
-  error    knowledge/conflicting.md:1  section metadata invalid: conflicting values for field 'status': 'current' and 'superseded'
-
-1 file(s): 1 error(s), 0 warning(s)

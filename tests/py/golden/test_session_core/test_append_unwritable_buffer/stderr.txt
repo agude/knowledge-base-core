@@ -1,2 +1,0 @@
-<KB>/scripts/session-append: line 117: <ROOT>/run/knowledge-sessions/buffer.jsonl: Permission denied
-session-append: could not write <ROOT>/run/knowledge-sessions/buffer.jsonl

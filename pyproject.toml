@@ -1,39 +1,60 @@
 [project]
-name = "knowledge-base-core"
-version = "0.1.0"
-description = "Infrastructure for a personal knowledge base: scripts, skills, and tests."
+name = "knowledge-base"
+version = "0.2.1"
+description = "A knowledge base that LLM agent sessions read, search, and add to."
 readme = "README.md"
 requires-python = ">=3.11"
+license = "CC0-1.0"
+license-files = ["LICENSE.md"]
 authors = [{ name = "Alexander Gude" }]
-# The runtime uses the standard library only. See docs/python-port.md.
-dependencies = []
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "Typing :: Typed",
+]
+dependencies = [
+    "detect-secrets>=1.5.0",
+]
+
+[project.scripts]
+kb = "kb.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14"]
+build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "hypothesis>=6.140",
+    "actionlint-py>=1.7.12",
+    "mypy>=2.4",
+    "pre-commit>=4.6",
     "pytest>=9.1",
-    "pytest-xdist>=3.8",
+    "pytest-cov>=7.1",
     "ruff>=0.17.0",
+    "zizmor>=1.30",
 ]
 
 [tool.uv]
-# Not an installable package yet; the kb package arrives in step 3.
-package = false
 # Ignore releases younger than a week, so a compromised upload has time to be
-# noticed and yanked before it reaches the lock.
+# noticed and yanked before it reaches the lock. Dependabot's cooldown matches.
 exclude-newer = "7 days"
+# Dependabot uses uv 0.12.18 to update the lock on Python 3.11.
+# Use uv 0.13 or newer to download the final release of Python 3.15.
 required-version = ">=0.12.18"
+
+[tool.uv.build-backend]
+# Explicit, so the distribution name can differ from the import name.
+module-name = "kb"
 
 [tool.ruff]
 # Match requires-python.
 target-version = "py311"
 line-length = 100
-
-[tool.ruff.per-file-target-version]
-# Run before the interpreter's version is checked, so an old interpreter
-# must be able to parse them.
-"kb/__init__.py" = "py39"
-"kb/_bootstrap.py" = "py39"
 
 [tool.ruff.lint]
 select = [
@@ -53,19 +74,13 @@ ignore = [
     "E501", # line too long (handled by the formatter)
 ]
 
-[tool.pytest]
-testpaths = ["tests/py"]
-pythonpath = ["tests/py"]
-addopts = ["--strict-markers", "-p", "no:cacheprovider"]
-markers = [
-    "harness: tests of the harness itself; they never run an implementation",
-    "data: checks of committed fixture data; they never run an implementation",
-    "invocation: start-up of the Python executables; independent of KB_IMPL",
-    "static: source checks of kb/; independent of KB_IMPL",
-    "null_ok(reason): the test passes under the null0 control, for the stated reason",
-    "audit(entry): pinned behavior that looks wrong or accidental; see tests/py/audit.md",
-    "bats(file, name): the bats test this pytest test ports",
-]
+[tool.mypy]
+python_version = "3.11"
+strict = true
 
-[tool.ruff.lint.isort]
-known-first-party = ["kb", "kbtest"]
+[tool.pytest]
+testpaths = ["tests"]
+addopts = ["--cov=kb", "--cov-report=term-missing", "--cov-fail-under=90"]
+
+[tool.coverage.run]
+branch = true

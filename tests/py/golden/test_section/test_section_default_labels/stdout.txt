@@ -1,8 +1,0 @@
-Metadata: path=knowledge/old.md; corpus=curated article; locator=1 "Details" (H2)
-Freshness: curated article; verified=2020-01-01; ttl=60d; freshness=stale
-Section metadata: section-status=current; section-scope=article
-Provenance: scope=article; refs=observations/archived/evidence.md (article)
----
-## Details
-
-Historical details.

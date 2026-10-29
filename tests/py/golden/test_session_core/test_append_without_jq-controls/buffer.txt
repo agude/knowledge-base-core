@@ -1,1 +1,0 @@
-{"role":"user","message":"line 1\nline 2\t\"\\\u0001","timestamp":<EPOCH>}

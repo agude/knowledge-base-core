@@ -1,5 +1,0 @@
-$ search --query where is the production tunnel --json
-exit 0
---- stdout
-{"results":[{"path":"knowledge/network.md","corpus":"curated article","title":"WireGuard","match_count":0,"locator":{"section":"alias","number":null,"command":"--alias","line":0},"freshness":{"field":"verified","value":null,"ttl":"default","ttl_days":60,"status":"unknown","age_days":null},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":null,"text":"production tunnel","routing":true,"alias":"production tunnel","query_mode":"question","query":"where is the production tunnel","query_terms":["production","tunnel"],"alias_matches":["production tunnel"],"match_mode":"strict","relaxed":false}],"query_mode":"question","query":"where is the production tunnel","query_terms":["production","tunnel"],"alias_matches":["production tunnel"],"match_mode":"strict","relaxed":false,"total_files":1,"total_lines":1,"returned":1,"truncated":false}
---- stderr

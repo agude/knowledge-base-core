@@ -1,4 +1,0 @@
-$ batch status ../x.tsv
-exit 1
-Error: invalid batch id: ../x.tsv
-Error: batch not found: 

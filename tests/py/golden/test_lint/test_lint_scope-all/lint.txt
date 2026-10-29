@@ -1,4 +1,0 @@
-summary 2 3 0
-error knowledge/bad/broken.md:1
-error knowledge/bad/broken.md:1
-error knowledge/bad/broken.md:1

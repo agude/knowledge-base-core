@@ -1,3 +1,0 @@
-$ batch start --files ../a.md
-exit 1
-Error: not a pending filename: ../a.md

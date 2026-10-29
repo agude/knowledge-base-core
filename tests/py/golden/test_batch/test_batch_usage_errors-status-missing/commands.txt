@@ -1,3 +1,0 @@
-$ batch status missing.tsv
-exit 1
-Error: batch not found: missing.tsv

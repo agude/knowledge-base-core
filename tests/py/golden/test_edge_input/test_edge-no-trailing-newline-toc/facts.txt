@@ -1,4 +1,0 @@
-stdout present
-file knowledge/tail.md
-line Tail
-heading 1 Section

@@ -1,5 +1,0 @@
-  error    knowledge/bad.md:13  second H1 (one article, one H1): Two
-
-2 file(s): 1 error(s), 0 warning(s)
-
-pre-commit: lint errors — commit rejected, nothing modified.

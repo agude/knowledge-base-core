@@ -1,2 +1,0 @@
-Invalid retrieval fixture: case 'missing-path' expected locator section not found: knowledge/operations.md | Missing
-  Heading not found: 'Missing'

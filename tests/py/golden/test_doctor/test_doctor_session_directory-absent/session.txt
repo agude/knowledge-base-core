@@ -1,1 +1,0 @@
-WARN [capture] session directory does not exist yet: <ROOT>/run/knowledge-sessions

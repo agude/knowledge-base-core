@@ -1,3 +1,0 @@
-  error    knowledge/bad-verified.md:1  verified is not a YYYY-MM-DD date: last Tuesday
-
-1 file(s): 1 error(s), 0 warning(s)

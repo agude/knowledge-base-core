@@ -1,4 +1,0 @@
-
-[knowledge/unclosed.md]
-Unclosed
-  1. One

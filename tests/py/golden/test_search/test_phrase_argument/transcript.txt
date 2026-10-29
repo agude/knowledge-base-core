@@ -1,5 +1,0 @@
-$ search synology nas
-exit 0
---- stdout
-knowledge/phrase.md | Info | A Synology NAS lives here. [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
---- stderr

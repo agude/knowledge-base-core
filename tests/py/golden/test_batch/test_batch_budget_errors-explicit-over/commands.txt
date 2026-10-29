@@ -1,3 +1,0 @@
-$ batch start --files a.md --max-bytes 0
-exit 1
-Error: explicit selection is 78 bytes, over --max-bytes 0

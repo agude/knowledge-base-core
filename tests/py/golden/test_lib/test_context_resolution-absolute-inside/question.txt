@@ -1,6 +1,0 @@
----
-title: "Q?"
-source: session
-context: knowledge/topic.md
-created: <TIMESTAMP>
----

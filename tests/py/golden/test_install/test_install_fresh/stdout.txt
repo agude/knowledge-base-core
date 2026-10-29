@@ -1,6 +1,0 @@
-Installing skills...
-  <ROOT>/home/.agents/skills/curate
-  <ROOT>/home/.agents/skills/knowledge-base
-Installing content repo git hooks...
-  pre-commit
-Done.

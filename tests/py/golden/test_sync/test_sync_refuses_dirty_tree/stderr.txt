@@ -1,2 +1,0 @@
-Uncommitted changes in <CONTENT> — commit or stash first:
-?? knowledge/wip.md

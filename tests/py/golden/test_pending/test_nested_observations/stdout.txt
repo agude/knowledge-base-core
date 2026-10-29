@@ -1,9 +1,0 @@
-Batch-selectable queue preview
-Batch-selectable items: 1
-Oldest pending age: 147 day(s) (2026-04-12; top-level.md)
-Observation items: 1 (91 B; 91 bytes)
-Transcript items: 0 (0 B; 0 bytes)
-Input volume: 91 B (91 bytes)
-Topic hints (hints only; no LLM):
-  none available
-Metadata warnings: none

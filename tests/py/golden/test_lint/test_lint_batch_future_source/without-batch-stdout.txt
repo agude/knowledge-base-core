@@ -1,3 +1,0 @@
-  error    knowledge/pending-source.md:6  missing local source reference: observations/archived/selected.md
-
-1 file(s): 1 error(s), 0 warning(s)

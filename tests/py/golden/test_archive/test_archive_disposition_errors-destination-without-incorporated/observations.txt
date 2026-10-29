@@ -1,3 +1,0 @@
-archived/
-pending/
-pending/a.md

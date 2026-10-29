@@ -1,4 +1,0 @@
-stdout present
-knowledge/no-front.md no verified
-knowledge/open-front.md no verified
-totals 0 stale, 2 missing date

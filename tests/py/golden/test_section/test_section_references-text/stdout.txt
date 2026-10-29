@@ -1,7 +1,0 @@
-observations/evidence-1.md
-observations/evidence-2.md
-observations/evidence-3.md
-observations/evidence-4.md
-observations/evidence-5.md
-observations/evidence-6.md
-observations/evidence-7.md

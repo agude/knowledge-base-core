@@ -1,5 +1,0 @@
-archived/
-archived/a.md
-archived/b.md
-archived/c.md
-pending/

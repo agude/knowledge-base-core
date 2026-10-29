@@ -1,7 +1,0 @@
-Add
-
-A	knowledge/link.md
-A	real.md
-init
-
-A	.gitkeep

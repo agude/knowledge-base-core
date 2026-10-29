@@ -1,5 +1,0 @@
-  error    knowledge/legacy.md:6  missing local source reference: observations/archived/evidence.md
-
-1 file(s): 1 error(s), 0 warning(s)
-
-pre-commit: lint errors — commit rejected, nothing modified.

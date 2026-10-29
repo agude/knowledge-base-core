@@ -1,1 +1,0 @@
-Option --require requires an argument

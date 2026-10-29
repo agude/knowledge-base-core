@@ -1,5 +1,0 @@
-  error    knowledge/no-front-matter.md:1  frontmatter missing title
-  error    knowledge/no-front-matter.md:1  frontmatter missing updated
-  error    knowledge/no-front-matter.md:1  frontmatter missing verified
-
-1 file(s): 3 error(s), 0 warning(s)

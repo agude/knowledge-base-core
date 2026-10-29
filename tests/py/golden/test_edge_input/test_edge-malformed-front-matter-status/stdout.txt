@@ -1,9 +1,0 @@
-Knowledge Base: <KB>
-Content: <CONTENT>
-
-  Knowledge articles:    2
-  Pending observations:  1
-  Archived observations: 0
-
-  Last knowledge update: never
-  Last observation:      never

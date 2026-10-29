@@ -1,0 +1,2 @@
+* text=auto eol=lf
+tests/fixtures/content/knowledge/rules/crlf-line-endings.md -text

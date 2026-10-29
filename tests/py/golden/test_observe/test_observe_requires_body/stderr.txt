@@ -1,1 +1,0 @@
-Error: --body is required (use --body - to read stdin)

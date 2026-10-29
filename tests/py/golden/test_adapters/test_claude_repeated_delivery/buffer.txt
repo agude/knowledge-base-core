@@ -1,4 +1,0 @@
-{"role":"user","message":"Repeated prompt","timestamp":<EPOCH>}
-{"role":"user","message":"Repeated prompt","timestamp":<EPOCH>}
-{"role":"assistant","message":"Repeated reply","timestamp":<EPOCH>}
-{"role":"assistant","message":"Repeated reply","timestamp":<EPOCH>}

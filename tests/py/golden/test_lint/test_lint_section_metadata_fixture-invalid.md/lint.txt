@@ -1,3 +1,0 @@
-summary 1 2 0
-error knowledge/invalid.md:1
-error knowledge/invalid.md:2

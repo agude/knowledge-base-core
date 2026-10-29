@@ -1,9 +1,0 @@
-<COMMIT-1> Test <test@test.com> Curate: archive
-
-R100	observations/pending/<OBS-1>.md	observations/archived/<OBS-1>.md
-<COMMIT-2> Test <test@test.com> Observe: Obs
-
-A	observations/pending/<OBS-1>.md
-<COMMIT-3> Test <test@test.com> init
-
-A	.gitkeep

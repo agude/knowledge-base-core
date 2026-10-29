@@ -1,2 +1,0 @@
-Usage: session-append (--file PATH | --session-id ID) --role user|assistant --message TEXT|-
-Use --message - to read the exact message, including trailing newlines, from stdin.

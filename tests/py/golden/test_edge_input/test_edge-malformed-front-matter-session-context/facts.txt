@@ -1,5 +1,0 @@
-stdout present
-instructions verbatim
-area knowledge/ (loose files) 2
-total 2
-state 2 articles | 1 pending | 2 stale | 1 open question(s)

@@ -1,8 +1,0 @@
-$ archive --batch <BATCH-1>.tsv --disposition duplicate a.md --no-commit
-exit 0
-Archived: observations/pending/a.md
-
-$ archive --batch <BATCH-1>.tsv --disposition ephemeral a.md --no-commit
-exit 1
-Already completed or deferred: a.md
-Nothing archived.

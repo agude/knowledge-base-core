@@ -1,3 +1,0 @@
-1 pending observation(s):
-
-  say "hello" path\to\file        <TIMESTAMP>  [<OBS-1>.md]

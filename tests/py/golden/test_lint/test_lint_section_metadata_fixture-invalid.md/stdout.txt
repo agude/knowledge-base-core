@@ -1,4 +1,0 @@
-  error    knowledge/invalid.md:1  effective date 2026-10-04 is after verified date 2026-10-03
-  error    knowledge/invalid.md:2  missing local source reference: observations/archived/missing.md
-
-1 file(s): 2 error(s), 0 warning(s)

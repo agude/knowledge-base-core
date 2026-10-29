@@ -1,6 +1,0 @@
-Alternate
-
-A	knowledge/net.md
-init
-
-A	.gitkeep

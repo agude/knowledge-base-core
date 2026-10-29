@@ -1,3 +1,0 @@
-$ batch defer x.tsv
-exit 1
-Error: usage: batch defer BATCH_ID FILENAME

@@ -1,8 +1,0 @@
-$ search --text-only --limit 0 --per-file 0 --max-bytes 281 matrix-needle
-exit 0
---- stdout
-knowledge/matrix-1.md | Part 1 | matrix-needle result 1 part 1 with enough text for a record.
-knowledge/matrix-2.md | Part 1 | matrix-needle result 2 part 1 with enough text for a record.
-[output truncated: complete records omitted; increase --max-bytes]
---- stderr
-search: output budget used 255/281 bytes; omitted stdout records

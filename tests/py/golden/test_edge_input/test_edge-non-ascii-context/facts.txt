@@ -1,5 +1,0 @@
-stdout present
-topic files=1
-  Résumé 日本
-Source documents=0
-Pending observations=0

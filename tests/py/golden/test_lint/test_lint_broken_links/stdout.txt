@@ -1,6 +1,0 @@
-  error    knowledge/broken.md:6  missing local source reference: observations/archived/moved.md
-  error    knowledge/broken.md:13  missing local Markdown link target: missing.md
-  error    knowledge/broken.md:13  missing local Markdown link anchor '#not-a-heading': broken.md#not-a-heading
-  error    knowledge/broken.md:14  missing local Markdown link target: moved.md
-
-1 file(s): 4 error(s), 0 warning(s)

@@ -1,8 +1,0 @@
-
-batch - Create and inspect a curation batch.
-
-Usage:
-  batch start [--max-bytes N]
-  batch start --files FILENAME [FILENAME ...] [--max-bytes N]
-  batch status BATCH_ID
-  batch defer BATCH_ID FILENAME

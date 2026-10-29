@@ -1,3 +1,0 @@
-  warning  knowledge/metadata.md:32  duplicate H2 text: Duplicate heading
-
-1 file(s): 0 error(s), 1 warning(s)

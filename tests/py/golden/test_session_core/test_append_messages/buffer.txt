@@ -1,3 +1,0 @@
-{"role":"user","message":"Hello world","timestamp":<EPOCH>}
-{"role":"assistant","message":"Hi there","timestamp":<EPOCH>}
-{"role":"user","message":"Q2","timestamp":<EPOCH>}

@@ -1,2 +1,0 @@
-adapters/claude/session-prompt: exit 1 stdout='' stderr='session buffer: cannot create session directory <ROOT>/blocked\nsession buffer: cannot create session directory <ROOT>/blocked\n'
-adapters/claude/session-stop: exit 1 stdout='' stderr='session buffer: cannot create session directory <ROOT>/blocked\nsession buffer: cannot create session directory <ROOT>/blocked\n'

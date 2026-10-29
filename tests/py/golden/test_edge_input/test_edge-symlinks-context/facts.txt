@@ -1,5 +1,0 @@
-stdout present
-topic files=1
-  Real
-Source documents=0
-Pending observations=0

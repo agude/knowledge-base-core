@@ -1,9 +1,0 @@
-$ archive --batch <BATCH-1>.tsv --disposition duplicate z-excluded.md --no-commit
-exit 1
-Not a member of batch: z-excluded.md
-Nothing archived.
-
-$ archive --batch <BATCH-1>.tsv --disposition duplicate arrived.md --no-commit
-exit 1
-Not a member of batch: arrived.md
-Nothing archived.

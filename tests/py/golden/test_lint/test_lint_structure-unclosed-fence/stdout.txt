@@ -1,3 +1,0 @@
-  error    knowledge/unclosed-fence.md:12  unclosed code fence (hides later headings from toc and section)
-
-1 file(s): 1 error(s), 0 warning(s)

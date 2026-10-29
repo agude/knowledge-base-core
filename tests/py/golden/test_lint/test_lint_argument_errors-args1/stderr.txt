@@ -1,1 +1,0 @@
-Error: --max-lines takes a number

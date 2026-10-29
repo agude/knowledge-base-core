@@ -1,3 +1,0 @@
-<ROOT>/home/.agents/skills/curate -> <KB>/skills/curate
-<ROOT>/home/.agents/skills/knowledge-base -> <KB>/skills/knowledge-base
-<CONTENT>/.git/hooks/pre-commit -> <KB>/scripts/hooks/pre-commit

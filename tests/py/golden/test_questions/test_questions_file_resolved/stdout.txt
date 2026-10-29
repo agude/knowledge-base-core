@@ -1,5 +1,0 @@
----
-title: "Done question"
-source: test
-created: <TIMESTAMP>
----

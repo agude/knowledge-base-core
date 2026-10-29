@@ -1,1 +1,0 @@
-{"role":"assistant","message":"A reply","timestamp":<EPOCH>}

@@ -1,3 +1,0 @@
-  error    knowledge/unclosed.md:1  section metadata invalid: malformed field 'Historical guidance.'; unclosed section metadata comment
-
-1 file(s): 1 error(s), 0 warning(s)

@@ -1,6 +1,0 @@
-{
-  "hookSpecificOutput": {
-    "additionalContext": "instructions verbatim\ntotal 0\nstate 0 articles | 0 pending | 0 stale | 0 open question(s)\n",
-    "hookEventName": "SessionStart"
-  }
-}

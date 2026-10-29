@@ -1,2 +1,0 @@
-{"role":"user","message":"Hello","timestamp":<EPOCH>}
-{"role":"assistant","message":"Hi there","timestamp":<EPOCH>}

@@ -1,3 +1,0 @@
-{"role": "user", "message": "Q1"}
-{"role": "assistant", "message": "A1"}
-{"role": "user", "message": "Q2"}

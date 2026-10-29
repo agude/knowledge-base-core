@@ -1,5 +1,0 @@
-$ search --limit 1 team message
-exit 0
---- stdout
-knowledge/corrections.md | Unresolved conflict | The ownership roster and a contemporaneous team message disagree about the [section-number=3] [curated article; verified=2026-09-05; ttl=60d; freshness=fresh; refs=observations/archived/old-claim.md, observations/archived/new-claim.md (article); conflict=unresolved; section-status=current; section-scope=article]
---- stderr

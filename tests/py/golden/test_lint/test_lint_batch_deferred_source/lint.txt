@@ -1,2 +1,0 @@
-summary 1 1 0
-error knowledge/deferred-source.md:6

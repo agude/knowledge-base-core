@@ -1,4 +1,0 @@
-FAIL [curation] content root does not exist: <ROOT>/missing
-FAIL [curation] content pre-commit hook is not installed: <ROOT>/missing/.git/hooks/pre-commit
-FAIL [curation] skill is not installed: <ROOT>/home/.agents/skills/knowledge-base
-FAIL [curation] skill is not installed: <ROOT>/home/.agents/skills/curate

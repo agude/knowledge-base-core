@@ -1,1 +1,0 @@
-session-flush: interrupted, keeping <ROOT>/run/knowledge-sessions/buffer.jsonl

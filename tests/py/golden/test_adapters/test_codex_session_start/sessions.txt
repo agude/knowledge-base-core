@@ -1,2 +1,0 @@
-session-<ID>.initialized
-session-<ID>.jsonl

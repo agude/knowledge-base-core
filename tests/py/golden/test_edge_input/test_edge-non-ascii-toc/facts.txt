@@ -1,4 +1,0 @@
-stdout present
-file knowledge/résumé.md
-line Résumé 日本
-heading 1 Section

@@ -1,2 +1,0 @@
-adapters/codex/session-end: exit 1 stdout='{}\n' stderr=''
-adapters/codex/session-end: exit 0 stdout='{}\n' stderr=''

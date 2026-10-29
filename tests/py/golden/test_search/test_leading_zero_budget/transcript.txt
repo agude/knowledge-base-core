@@ -1,5 +1,0 @@
-$ search --json --max-bytes 01000 needle
-exit 0
---- stdout
-{"results":[{"path":"knowledge/budget.md","corpus":"curated article","title":"","match_count":1,"locator":{"section":"top","number":null,"command":"--top","line":3},"freshness":{"field":"verified","value":null,"ttl":"default","ttl_days":60,"status":"unknown","age_days":null},"conflict":{"status":"none"},"provenance":{"scope":"article","label":"article-level references","references":[],"reference_count":0,"references_truncated":false},"section_metadata":null,"text":"needle","routing":false,"query_mode":"literal","query":null,"query_terms":["needle"],"alias_matches":[],"match_mode":"strict","relaxed":false}],"query_mode":"literal","query":null,"query_terms":["needle"],"alias_matches":[],"match_mode":"strict","relaxed":false,"total_files":1,"total_lines":1,"returned":1,"truncated":false,"omitted_results":0,"max_bytes":1000}
---- stderr

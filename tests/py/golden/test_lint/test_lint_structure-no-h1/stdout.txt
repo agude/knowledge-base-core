@@ -1,3 +1,0 @@
-  error    knowledge/no-h1.md:1  no H1 (toc has no title for this file)
-
-1 file(s): 1 error(s), 0 warning(s)

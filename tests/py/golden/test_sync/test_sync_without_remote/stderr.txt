@@ -1,1 +1,0 @@
-No 'origin' remote on <CONTENT> — nothing to sync.

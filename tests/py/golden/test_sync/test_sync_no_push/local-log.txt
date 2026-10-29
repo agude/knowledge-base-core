@@ -1,3 +1,0 @@
-Test Observe: Local
-Other Observe: from another machine
-Test init

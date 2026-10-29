@@ -1,4 +1,0 @@
-2 pending observation(s):
-
-  Nested observation              2025-01-01T00:00:00Z  [hidden.md]
-  Top-level observation           2026-04-12T00:00:00Z  [top-level.md]

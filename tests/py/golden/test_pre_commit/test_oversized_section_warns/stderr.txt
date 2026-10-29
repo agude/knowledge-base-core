@@ -1,4 +1,0 @@
-  warning  knowledge/long.md:9  H2 is 63 lines (max 50): Big
-
-1 file(s): 0 error(s), 1 warning(s)
-pre-commit: stamped updated: <TODAY> on 1 article(s)

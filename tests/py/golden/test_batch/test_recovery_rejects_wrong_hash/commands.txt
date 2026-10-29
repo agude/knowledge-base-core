@@ -1,4 +1,0 @@
-$ archive --batch <BATCH-1>.tsv --disposition duplicate a.md --no-commit
-exit 1
-Archive cannot be recovered: membership, pending state, disposition, destination, or original hash does not match.
-Nothing archived.

@@ -1,4 +1,0 @@
-### Client Hello
-
-SYN packet.
-

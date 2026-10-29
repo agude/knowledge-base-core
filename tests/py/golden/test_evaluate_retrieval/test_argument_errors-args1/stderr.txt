@@ -1,1 +1,0 @@
-Option --fixture requires an argument

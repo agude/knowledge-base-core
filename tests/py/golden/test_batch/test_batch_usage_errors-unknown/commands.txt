@@ -1,3 +1,0 @@
-$ batch bogus
-exit 1
-Error: usage: batch {start|status BATCH_ID|defer BATCH_ID FILENAME}

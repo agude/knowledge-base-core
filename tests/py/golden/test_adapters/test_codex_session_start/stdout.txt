@@ -1,6 +1,0 @@
-{
-  "hookSpecificOutput": {
-    "hookEventName": "SessionStart",
-    "additionalContext": "<KB AGENTS.md verbatim>\n\n## Topic areas (auto-generated)\n\n\n  0 articles. Drill in with: toc --path <area>\n\nState: 0 articles | 0 pending | 0 stale | 0 open question(s)"
-  }
-}

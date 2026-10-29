@@ -1,3 +1,0 @@
-$ batch start --max-bytes 0
-exit 1
-Error: no pending observations fit --max-bytes 0

@@ -1,3 +1,0 @@
-stdout present
-knowledge/no-front.md | Section
-observations/pending/<OBS-1>.md | top

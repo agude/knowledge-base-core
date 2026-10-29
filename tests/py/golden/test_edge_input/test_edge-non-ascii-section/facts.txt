@@ -1,6 +1,0 @@
-stdout present
-## Section
-
-needle café 雪
-
-

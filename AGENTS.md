@@ -1,64 +1,68 @@
-# Knowledge Base
+# AGENTS.md
 
-Previously learned facts about this user's work: business logic, institutional
-history, technical stack, people and ownership, and durable preferences. The
-knowledge base is located at `$KNOWLEDGE_BASE`.
+Guidance for coding agents that work in this repository.
 
-**Search it before starting any task.** Team ownership, system behavior,
-domain rules, data tables, and process details are often already here.
+## Project
 
-```bash
-$KNOWLEDGE_BASE/scripts/search <term> [term ...]   # start here
-$KNOWLEDGE_BASE/scripts/toc --path knowledge/<area>  # titles in one area
-$KNOWLEDGE_BASE/scripts/section --file <path> --number N   # extract a section
-$KNOWLEDGE_BASE/scripts/observe --title "..." --body "..." # record an observation
-```
+knowledge-base is a Python package with the import name `kb`
+and a `src/` layout. It supports Python 3.11 and newer.
 
-Load the minimum: scan the index, then pull only the section you need. Do not
-read whole articles.
+## Commands
 
-Invoke the `knowledge-base` skill for the full script reference, lookup
-workflow, and freshness rules. Invoke the `curate` skill to process pending
-observations into articles.
+Use the `just` recipes. CI calls the same recipes, so a local pass predicts a
+CI pass.
 
-## Observations
-
-Observation triggers live here because a session has to notice them
-spontaneously; it cannot load a skill first.
-
-```bash
-$KNOWLEDGE_BASE/scripts/observe --title "<one-line summary>" --body "<details>"
-```
-
-- **Capture immediately.** Do not wait until the task is done.
-- **One observation per concept.** Three things learned means three calls.
-- **Be specific.** Record exact commands, error messages, versions, and
-  attribution when relevant.
-- Skip ephemeral state and anything already in the knowledge base.
-
-`KNOWLEDGE_OBSERVE=0` disables automatic observation capture. Explicit
-observation commands remain available when the session is configured to allow
-them.
-
-## Freshness
-
-Articles carry `verified` and `ttl` metadata. Past the relevant TTL, verify
-claims against live sources before acting on them. `scripts/stale` lists
-articles needing re-verification.
-
-## Where this ends
-
-Split by audience. **Here**: durable facts a future session needs to work.
-**`~/Wiki`**: material the user would sit down and read. **`~/Documents`**:
-artifacts such as PDFs, scans, receipts, and project documents. Interaction
-style belongs in auto-memory; durable system, domain, and people facts belong
-here.
+| Recipe | Effect |
+| --- | --- |
+| `just sync` | Installs the locked environment. |
+| `just lint` | Runs ruff, ruff format in check mode, actionlint, and zizmor. Read-only. |
+| `just format` | Applies ruff format and the safe ruff fixes. |
+| `just type-check` | Runs mypy in strict mode. |
+| `just test` | Runs pytest with a 90% branch-coverage floor. |
+| `just check` | Runs lint, type-check, and test. Run it before every commit. |
+| `just build package-check` | Builds the package, installs the wheel in a clean environment, and smoke-tests it. |
+| `just lock` | Updates `uv.lock` after a dependency change. |
+| `just release <bump>` | Bumps the version, commits, and tags. Does not push. |
 
 ## Rules
 
-- **Use the scripts, not direct file I/O**, for reading and recording.
-- **Do NOT edit `content/knowledge/` directly.** Those articles are the
-  curator's; the `curate` skill is the only writer.
-- `content/AGENTS.md`, when present, adds project-specific policy and takes
-  precedence over this file. `content/CLAUDE.md` remains a compatibility name
-  and is also accepted.
+- Use uv for every Python operation. Add dependencies with `uv add` or
+  `uv add --dev`, and commit `uv.lock`.
+- `exclude-newer = "7 days"` in `pyproject.toml` hides releases younger than
+  a week. Do not remove it to get a newer release; wait for the release to
+  age.
+- The version exists only in `pyproject.toml`. Change it with
+  `just release`. Code reads it with `importlib.metadata.version()`.
+- Workflows call `just` recipes and nothing else, apart from setup steps. To
+  change what CI does, change a recipe.
+- Actions are pinned to a full commit SHA with a `# vX.Y.Z` comment, every
+  checkout sets `persist-credentials: false`, and each workflow starts from
+  `permissions: {}`. zizmor enforces this in `just lint`.
+- Dependabot does not update these pins, so bump them by hand:
+  - `just-version` in every workflow.
+  - The uv `version` in the CI lint job. It matches the uv in Dependabot's
+    updater, so the lint job proves that Dependabot can update `uv.lock`.
+    Raise it, and `required-version` in `pyproject.toml`, only after a
+    Dependabot job log shows a newer uv.
+- Each test-matrix leg sets `UV_PYTHON`. Without it, uv follows
+  `.python-version` and every leg tests the same interpreter.
+- A Python version in the test matrix is a support claim. Keep the matrix,
+  the classifiers, `requires-python`, ruff's `target-version`, and mypy's
+  `python_version` consistent.
+- The pre-commit hook runs `just lint` and changes nothing. If it fails, run
+  `just format`, then commit again.
+- A writing command takes its locks through `kb/lock.py`, and it checks the
+  agent's text with the secrets check in `kb/secrets.py` before anything is
+  written. Only `kb/secrets.py` may import `detect_secrets`.
+- Transcript JSON is read only by the host parser modules in `kb/hosts/`; each
+  parser produces the neutral session model.
+
+## Evaluation
+
+- `just eval` exits 0 before any ranking change is committed.
+- Never add code to make one evaluation case pass. A ranking change is general,
+  and its commit reports its effect on every set, including the live set.
+- When a case fails because its label is wrong, fix the label and say why in
+  the commit. Do not change code to match a wrong label.
+- Do not exempt a failing case from the criterion. Report it to the user.
+- A lexicon entry must change a stem; the test enforces it.

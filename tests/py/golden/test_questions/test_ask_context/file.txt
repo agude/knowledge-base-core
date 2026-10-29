@@ -1,6 +1,0 @@
----
-title: "About topic?"
-source: session
-context: knowledge/topic.md
-created: <TIMESTAMP>
----

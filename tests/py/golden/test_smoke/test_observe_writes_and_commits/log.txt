@@ -1,6 +1,0 @@
-<COMMIT-1> Observe: Smoke
-
-observations/pending/<OBS-1>.md
-<COMMIT-2> init
-
-.gitkeep

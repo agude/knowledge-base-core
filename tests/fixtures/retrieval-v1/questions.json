@@ -1,0 +1,367 @@
+{
+  "format": "kb-retrieval-questions",
+  "version": 1,
+  "description": "Synthetic retrieval questions covering lexical and evidence-recovery behavior.",
+  "cases": [
+    {
+      "id": "exact-command-01",
+      "category": "exact_command_or_name",
+      "query": "systemctl restart kb-api",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/operations.md#1"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "exact-command-02",
+      "category": "exact_command_or_name",
+      "query": "scripts/search --json --limit 5",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/operations.md#1"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "exact-command-03",
+      "category": "exact_command_or_name",
+      "query": "--no-push",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/operations.md#1"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "exact-command-04",
+      "category": "exact_command_or_name",
+      "query": "music-tagger --rename",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/tooling.md#1"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "exact-command-05",
+      "category": "exact_command_or_name",
+      "query": "KB_CONTENT_DIR",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/tooling.md#2"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "exact-command-06",
+      "category": "exact_command_or_name",
+      "query": "wg-kb-prod",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/network.md#1"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "exact-command-07",
+      "category": "exact_command_or_name",
+      "query": "Aurora",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/tooling.md#3"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "exact-command-08",
+      "category": "exact_command_or_name",
+      "query": "/srv/backups/kb",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/operations.md#3"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "paraphrase-01",
+      "category": "paraphrase",
+      "query": "how do I restart the api",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/operations.md#1"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "paraphrase-02",
+      "category": "paraphrase",
+      "query": "where are the backups kept",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/operations.md#3"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "paraphrase-03",
+      "category": "paraphrase",
+      "query": "what starts before plex",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/operations.md#2"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "paraphrase-04",
+      "category": "paraphrase",
+      "query": "rename music tracks",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/tooling.md#1"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "paraphrase-05",
+      "category": "paraphrase",
+      "query": "configure the knowledge root",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/tooling.md#2"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "paraphrase-06",
+      "category": "paraphrase",
+      "query": "production tunnel peer",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/network.md#1"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "paraphrase-07",
+      "category": "paraphrase",
+      "query": "who is on call",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/people.md#1"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "paraphrase-08",
+      "category": "paraphrase",
+      "query": "how long are backups retained",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/storage.md#2"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "cross-article-01",
+      "category": "cross_article",
+      "query": "media services startup order",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/operations.md#2",
+        "knowledge/media.md#1"
+      ],
+      "requires_all": true
+    },
+    {
+      "id": "cross-article-02",
+      "category": "cross_article",
+      "query": "encrypted backup recovery",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/operations.md#3",
+        "knowledge/people.md#2"
+      ],
+      "requires_all": true
+    },
+    {
+      "id": "cross-article-03",
+      "category": "cross_article",
+      "query": "current deploy target",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/operations.md#4",
+        "knowledge/temporal.md#1"
+      ],
+      "requires_all": true
+    },
+    {
+      "id": "cross-article-04",
+      "category": "cross_article",
+      "query": "pager owner",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/people.md#3",
+        "knowledge/legacy.md#1"
+      ],
+      "requires_all": true
+    },
+    {
+      "id": "cross-article-05",
+      "category": "cross_article",
+      "query": "current backup retention 35 days",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/storage.md#2",
+        "knowledge/temporal.md#9"
+      ],
+      "requires_all": true
+    },
+    {
+      "id": "cross-article-06",
+      "category": "cross_article",
+      "query": "configure internal DNS resolver",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/operations.md#5",
+        "knowledge/network.md#2"
+      ],
+      "requires_all": true
+    },
+    {
+      "id": "changed-fact-01",
+      "category": "changed_fact",
+      "query": "deploy target kb-api-v2 as of 2026-09-01",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/temporal.md#1"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "changed-fact-02",
+      "category": "changed_fact",
+      "query": "current API hostname api.internal.example",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/temporal.md#3"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "changed-fact-03",
+      "category": "changed_fact",
+      "query": "current backup retention keeps snapshots 35 days",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/storage.md#2"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "changed-fact-04",
+      "category": "changed_fact",
+      "query": "current queue policy allows 200 records",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/temporal.md#5"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "changed-fact-05",
+      "category": "changed_fact",
+      "query": "current rollout label is green",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/temporal.md#7"
+      ],
+      "requires_all": false
+    },
+    {
+      "id": "conflict-01",
+      "category": "conflicting_evidence",
+      "query": "pager owner",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/people.md#3",
+        "knowledge/legacy.md#1"
+      ],
+      "requires_all": true
+    },
+    {
+      "id": "conflict-02",
+      "category": "conflicting_evidence",
+      "query": "canonical backup destination",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/storage.md#4",
+        "knowledge/conflicts.md#1"
+      ],
+      "requires_all": true
+    },
+    {
+      "id": "conflict-03",
+      "category": "conflicting_evidence",
+      "query": "service owner Morgan Lee",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/people.md#4",
+        "knowledge/conflicts.md#2"
+      ],
+      "requires_all": true
+    },
+    {
+      "id": "conflict-04",
+      "category": "conflicting_evidence",
+      "query": "retention policy records 35 days",
+      "unanswerable": false,
+      "expected": [
+        "knowledge/storage.md#2",
+        "knowledge/conflicts.md#3"
+      ],
+      "requires_all": true
+    },
+    {
+      "id": "absent-01",
+      "category": "absent_answer",
+      "query": "quantum orchard scheduler",
+      "unanswerable": true,
+      "expected": [],
+      "requires_all": false
+    },
+    {
+      "id": "absent-02",
+      "category": "recorded_absence",
+      "query": "blue comet retention",
+      "unanswerable": false,
+      "expected": ["knowledge/legacy.md#2"],
+      "requires_all": false
+    },
+    {
+      "id": "absent-03",
+      "category": "absent_answer",
+      "query": "unicorn database owner",
+      "unanswerable": true,
+      "expected": [],
+      "requires_all": false
+    },
+    {
+      "id": "absent-04",
+      "category": "absent_answer",
+      "query": "mars telemetry key",
+      "unanswerable": true,
+      "expected": [],
+      "requires_all": false
+    },
+    {
+      "id": "absent-05",
+      "category": "absent_answer",
+      "query": "saffron hyperdrive command",
+      "unanswerable": true,
+      "expected": [],
+      "requires_all": false
+    }
+  ]
+}

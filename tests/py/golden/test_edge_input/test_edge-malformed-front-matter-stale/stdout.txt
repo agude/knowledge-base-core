@@ -1,4 +1,0 @@
-  [no verified]  knowledge/no-front.md
-  [no verified]  knowledge/open-front.md
-
-0 stale, 2 missing date.

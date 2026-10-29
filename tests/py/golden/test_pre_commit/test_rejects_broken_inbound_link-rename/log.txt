@@ -1,7 +1,0 @@
-Add linked articles
-
-A	knowledge/a.md
-A	knowledge/b.md
-init
-
-A	.gitkeep

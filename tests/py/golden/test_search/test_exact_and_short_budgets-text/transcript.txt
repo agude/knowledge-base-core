@@ -1,8 +1,0 @@
-$ search --limit 0 --per-file 0 --max-bytes 734 matrix-needle
-exit 0
---- stdout
-knowledge/matrix-1.md | Part 1 | matrix-needle result 1 part 1 with enough text for a record. [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
-knowledge/matrix-2.md | Part 1 | matrix-needle result 2 part 1 with enough text for a record. [section-number=1] [curated article; verified=unknown; ttl=60d; freshness=unknown; refs=none (article); section-status=current; section-scope=article]
-[output truncated: complete records omitted; increase --max-bytes]
---- stderr
-search: output budget used 557/734 bytes; omitted stdout records

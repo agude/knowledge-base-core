@@ -1,3 +1,0 @@
-  error    knowledge/missing-title.md:1  frontmatter missing title
-
-1 file(s): 1 error(s), 0 warning(s)

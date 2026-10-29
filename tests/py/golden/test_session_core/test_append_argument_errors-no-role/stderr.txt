@@ -1,1 +1,0 @@
-session-append: --role is required

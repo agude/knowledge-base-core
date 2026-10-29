@@ -1,3 +1,0 @@
-dir 700
-buffer 600 size 0
-marker absent

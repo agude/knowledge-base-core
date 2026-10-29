@@ -1,0 +1,7 @@
+[Unit]
+Description=Synchronize the knowledge base
+
+[Service]
+Type=oneshot
+# Replace %h/.local/bin/kb with the installed path to kb.
+ExecStart=%h/.local/bin/kb sync

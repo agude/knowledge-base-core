@@ -1,9 +1,0 @@
-<KB AGENTS.md verbatim>
-
-## Topic areas (auto-generated)
-
-  knowledge/with space/                    1
-
-  1 articles. Drill in with: toc --path <area>
-
-State: 1 articles | 0 pending | 0 stale | 0 open question(s)

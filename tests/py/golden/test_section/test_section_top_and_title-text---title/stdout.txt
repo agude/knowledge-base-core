@@ -1,5 +1,0 @@
-Metadata: path=knowledge/top.md; corpus=curated article; locator=--title "A quoted title"
-Freshness: curated article; verified=unknown; ttl=60d; freshness=unknown
-Provenance: scope=article; refs=none (article)
----
-A quoted title

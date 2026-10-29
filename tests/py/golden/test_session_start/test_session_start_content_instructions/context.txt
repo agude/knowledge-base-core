@@ -1,4 +1,0 @@
-instructions verbatim
-total 0
-state 0 articles | 0 pending | 0 stale | 0 open question(s)
-line # Project Rules

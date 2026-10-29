@@ -1,1 +1,0 @@
-{"results":[],"query_mode":"literal","query":null,"query_terms":["needle"],"alias_matches":[],"match_mode":"strict","relaxed":false,"total_files":0,"total_lines":0,"returned":0,"truncated":false}

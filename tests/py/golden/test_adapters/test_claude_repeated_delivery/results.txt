@@ -1,4 +1,0 @@
-adapters/claude/session-prompt: exit 0 stdout='' stderr=''
-adapters/claude/session-prompt: exit 0 stdout='' stderr=''
-adapters/claude/session-stop: exit 0 stdout='' stderr=''
-adapters/claude/session-stop: exit 0 stdout='' stderr=''

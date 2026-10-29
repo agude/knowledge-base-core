@@ -1,6 +1,0 @@
-<COMMIT-1> Test <test@test.com> add obs
-
-A	observations/pending/a.md
-<COMMIT-2> Test <test@test.com> init
-
-A	.gitkeep

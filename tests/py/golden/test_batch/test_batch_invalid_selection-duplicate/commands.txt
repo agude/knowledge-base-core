@@ -1,3 +1,0 @@
-$ batch start --files a.md a.md
-exit 1
-Error: duplicate filename: a.md

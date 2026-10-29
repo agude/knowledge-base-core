@@ -1,3 +1,0 @@
-open/
-open/<OBS-1>.md
-resolved/

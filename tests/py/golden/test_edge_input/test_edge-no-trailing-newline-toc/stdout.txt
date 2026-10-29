@@ -1,4 +1,0 @@
-
-[knowledge/tail.md]
-Tail
-  1. Section

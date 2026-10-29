@@ -1,5 +1,0 @@
-
-[knowledge/tilde.md]
-Tilde
-  1. One
-  2. Two

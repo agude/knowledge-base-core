@@ -1,6 +1,0 @@
-
-[knowledge/networking.md]
-Networking
-  1. DNS Resolution
-  2. TCP Handshake
-  3. TLS
