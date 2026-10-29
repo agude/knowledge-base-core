@@ -36,47 +36,6 @@ def enable_capture(kb: Kb) -> subprocess.CompletedProcess[str]:
     return kb("setup", "--enable-capture", "--kb", str(kb_executable(kb)))
 
 
-@pytest.mark.parametrize("event", ["SessionStart", "UserPromptSubmit", "Stop", "SessionEnd"])
-def test_each_old_coat_tree_capture_hook_blocks_enable_without_editing_config(
-    git_kb: Kb, event: str
-) -> None:
-    prepared = setup_content(git_kb)
-    assert prepared.returncode == 0, prepared.stderr
-    original = git_kb.config_file.read_bytes()
-    hooks = git_kb.home / "xdg" / "coat-tree" / "hooks.d" / event
-    hooks.mkdir(parents=True)
-    target = git_kb.home / "Knowledge" / "scripts" / "hooks" / event
-    target.parent.mkdir(parents=True)
-    target.write_text("old hook\n", encoding="utf-8")
-    (hooks / "010.knowledge.sh").symlink_to(target)
-
-    result = enable_capture(git_kb)
-
-    assert result.returncode == 1
-    assert f"coat-tree {event}/010.knowledge.sh -> {target}" in result.stderr
-    assert "Capture: refused" in result.stdout
-    assert git_kb.config_file.read_bytes() == original
-
-
-def test_a_codex_capture_hook_blocks_enable_without_editing_config(git_kb: Kb) -> None:
-    prepared = setup_content(git_kb)
-    assert prepared.returncode == 0, prepared.stderr
-    original = git_kb.config_file.read_bytes()
-    script = git_kb.codex_home / "knowledge-hook.sh"
-    script.parent.mkdir(parents=True, exist_ok=True)
-    script.write_text("#!/bin/sh\nexec knowledge capture\n", encoding="utf-8")
-    (git_kb.codex_home / "hooks.json").write_text(
-        json.dumps({"hooks": {"SessionStart": [{"hooks": [{"command": f"bash {script}"}]}]}}),
-        encoding="utf-8",
-    )
-
-    result = enable_capture(git_kb)
-
-    assert result.returncode == 1
-    assert f"Codex SessionStart hook: bash {script}" in result.stderr
-    assert git_kb.config_file.read_bytes() == original
-
-
 def test_enable_and_second_enable_report_the_same_cutoff(git_kb: Kb) -> None:
     prepared = setup_content(git_kb)
     assert prepared.returncode == 0, prepared.stderr

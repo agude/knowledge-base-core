@@ -639,9 +639,7 @@ kb setup --print {instructions|allow-claude|allow-codex}
   A failed push keeps the local repository, exits 1, and prints the
   `git push --set-upstream origin main` command that recovers. `kb sync` cannot
   make the first push, because it fetches `origin/main` first.
-- `--enable-capture` refuses while an old capture registration remains in the
-  four coat-tree lifecycle hooks or Codex lifecycle hooks. After those hooks
-  are removed, it writes top-level `harvest_since` at the current UTC second
+- `--enable-capture` writes top-level `harvest_since` at the current UTC second
   when the setting is unset; an existing cutoff stays unchanged. It does not
   run `kb sync` or enable the timer. Setup never enables the timer or edits host
   settings or instruction files.

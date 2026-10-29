@@ -16,7 +16,7 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC
 from pathlib import Path
 
-from kb import __version__, args, config, dates, lock, registrations, setup_rules, skills
+from kb import __version__, args, config, dates, lock, setup_rules, skills
 from kb.args import Spec
 from kb.errors import KbError
 from kb.platform import config_file
@@ -340,21 +340,7 @@ def _install_skills(environ: Mapping[str, str], failures: list[str]) -> list[tup
 def _enable_capture(
     configuration: Path, environ: Mapping[str, str], failures: list[str]
 ) -> tuple[str, str]:
-    """Set the transcript cutoff only after every old capture registration is removed."""
-    home = Path.home()
-    config_home = Path(environ.get("XDG_CONFIG_HOME") or home / ".config").expanduser()
-    codex_home = Path(environ.get("CODEX_HOME") or home / ".codex").expanduser()
-    try:
-        findings = registrations.capture_findings(config_home, codex_home)
-    except (KbError, OSError, UnicodeError) as error:
-        failures.append(f"setup: cannot check old capture registrations: {error}")
-        return "refused", str(configuration)
-    if findings:
-        failures.extend(
-            f"setup: remove the old capture registration before enabling capture: {finding}"
-            for finding in findings
-        )
-        return "refused", str(configuration)
+    """Set the transcript cutoff in the configuration file, if it is unset."""
     try:
         now = dates.now(environ).replace(microsecond=0)
         state, text = config.write_config(
