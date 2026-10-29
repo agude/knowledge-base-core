@@ -91,14 +91,16 @@ def test_claude_allow_reads_only_a_list_of_strings(tmp_path: Path) -> None:
     assert doctor._claude_allow(settings) is None
 
 
-def test_codex_rules_concatenate_the_rules_files(tmp_path: Path) -> None:
-    assert doctor._codex_rules(tmp_path / "absent") is None
+def test_codex_rules_concatenate_regular_files_and_name_linked_ones(tmp_path: Path) -> None:
+    assert doctor._codex_rules(tmp_path / "absent") == (None, ())
     (tmp_path / "empty").mkdir()
-    assert doctor._codex_rules(tmp_path / "empty") is None
+    assert doctor._codex_rules(tmp_path / "empty") == (None, ())
     rules = tmp_path / "rules"
     rules.mkdir()
     (rules / "a.rules").write_text('prefix_rule(pattern = ["kb"])\n', encoding="utf-8")
-    assert doctor._codex_rules(rules) == 'prefix_rule(pattern = ["kb"])\n'
+    assert doctor._codex_rules(rules) == ('prefix_rule(pattern = ["kb"])\n', ())
+    (rules / "b.rules").symlink_to(rules / "a.rules")
+    assert doctor._codex_rules(rules) == ('prefix_rule(pattern = ["kb"])\n', ("b.rules",))
 
 
 @pytest.mark.parametrize(

@@ -211,6 +211,10 @@ def test_claude_rules_missing_broader_and_colon_form() -> None:
 
 def test_codex_rules_missing_broader_and_decision_aware() -> None:
     assert diagnosis.codex_allow_problems(None) == ("no rules files",)
+    assert diagnosis.codex_allow_problems(None, ("kb.rules",)) == (
+        "kb.rules is a symbolic link, which Codex skips",
+        "no rules files",
+    )
     complete = setup_rules.allow_codex()
     assert diagnosis.codex_allow_problems(complete) == ()
     prompted = complete.replace('"gap"], decision = "allow"', '"gap"], decision = "prompt"')

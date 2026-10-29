@@ -22,7 +22,10 @@ POLICY_PLACEHOLDER = "{content_policy}"
 MAX_BLOCK_LINES = 12
 WORKING_COMMANDS = ("recall", "read", "map", "questions", "evidence", "observe", "gap")
 ITEMS = ("instructions", "allow-claude", "allow-codex")
-CODEX_RULES_HEADER = "# kb working-agent commands. Install under $CODEX_HOME/rules/."
+CODEX_RULES_HEADER = (
+    "# kb working-agent commands. Install as a regular file under $CODEX_HOME/rules/;"
+    " Codex skips symbolic links."
+)
 HOOK_MARKER = "# Installed by kb setup. Do not edit; run kb setup again to update."
 OLD_HOOK_SUFFIX = ("scripts", "hooks", "pre-commit")
 UNQUOTABLE = ("'", "\r", "\n", "\0")

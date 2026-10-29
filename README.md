@@ -666,7 +666,8 @@ dotfiles install this text.
 - `allow-claude` writes a settings fragment with `permissions.allow` set to
   `Bash(kb COMMAND *)` for each working-agent command.
 - `allow-codex` writes a rules file with one `prefix_rule` per working-agent
-  command, each with `decision = "allow"`. Install it under `$CODEX_HOME/rules/`.
+  command, each with `decision = "allow"`. Install it as a regular file under
+  `$CODEX_HOME/rules/`. Codex 0.165.0 skips a symlinked rules file.
 
 The working-agent commands are `recall`, `read`, `map`, `questions`,
 `evidence`, `observe`, and `gap`. No rule approves another `kb` command or a
@@ -678,7 +679,8 @@ The dotfiles install the instruction block in each host's global file:
 `CLAUDE.md` under `CLAUDE_CONFIG_DIR` (default `~/.claude`), and `AGENTS.md`
 under `CODEX_HOME` (default `~/.codex`). They install the Claude rules in the
 `permissions.allow` list of `settings.json` in the same directory, and the
-Codex rules in `rules/kb.rules` under `CODEX_HOME`. They install the timer
+Codex rules as a copied regular file, `rules/kb.rules`, under `CODEX_HOME`.
+They install the timer
 units in `~/.config/systemd/user/`, as the install section below describes.
 
 ### `kb doctor`
@@ -702,7 +704,7 @@ gather its facts reports why, and the other checks still run.
 | `capture` | `harvest_since` is set, the transcript roots are readable, and no ready transcript is older than 20 days | capture is disabled, a root is unreadable, or old ready transcripts exist | |
 | `instructions` | each host's global file has the canonical block | a block is missing or differs | |
 | `skills` | both packaged skills at both host destinations match the package | a skill is missing, differs, or links into the old tooling | |
-| `allow-rules` | each host has every working-agent rule and no broader `kb` rule | a rule is missing, or a broader rule exists | |
+| `allow-rules` | each host has every working-agent rule and no broader `kb` rule | a rule is missing, a broader rule exists, or a Codex rules file is a symbolic link | |
 | `legacy` | no old-tooling registration | the old tooling's registrations are named | |
 
 - `capture` reports Claude Code's `cleanupPeriodDays`, which defaults to 30.

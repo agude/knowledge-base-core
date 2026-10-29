@@ -284,6 +284,21 @@ def test_instructions_and_allow_rules_name_each_host_problem(machine: doctor.Con
 
 
 @SKIP
+def test_allow_rules_ignore_a_symlinked_codex_rules_file(
+    machine: doctor.Context, tmp_path: Path
+) -> None:
+    rules = Path(machine.environ["CODEX_HOME"]) / "rules"
+    linked_source = tmp_path / "linked.rules"
+    linked_source.write_text(setup_rules.allow_codex(), encoding="utf-8")
+    (rules / "kb.rules").unlink()
+    (rules / "kb.rules").symlink_to(linked_source)
+    check = by_name(doctor.gather(machine))["allow-rules"]
+
+    assert check.state == "warn"
+    assert check.message == "codex: kb.rules is a symbolic link, which Codex skips; no rules files"
+
+
+@SKIP
 def test_legacy_names_a_content_hook_link_into_the_old_tooling(
     machine: doctor.Context, tmp_path: Path
 ) -> None:

@@ -348,7 +348,7 @@ def _allow_rules(context: Context) -> Check:
             "claude": diagnosis.claude_allow_problems(
                 _claude_allow(claude_store / "settings.json")
             ),
-            "codex": diagnosis.codex_allow_problems(_codex_rules(codex_store / "rules")),
+            "codex": diagnosis.codex_allow_problems(*_codex_rules(codex_store / "rules")),
         }
     )
 
@@ -429,14 +429,20 @@ def _claude_allow(settings: Path) -> list[str] | None:
     return [rule for rule in allow if isinstance(rule, str)]
 
 
-def _codex_rules(directory: Path) -> str | None:
-    """The text of every Codex rules file in a directory, or None when there is none."""
+def _codex_rules(directory: Path) -> tuple[str | None, tuple[str, ...]]:
+    """The text of the rules files Codex loads from a directory, and the symlinked ones it skips.
+
+    Codex 0.165.0 loads only regular `*.rules` files and does not follow symbolic links. The
+    text is None when no regular rules file exists.
+    """
     if not directory.is_dir():
-        return None
-    files = sorted(directory.glob("*.rules"))
-    if not files:
-        return None
-    return "\n".join(_read_text(path) or "" for path in files)
+        return None, ()
+    candidates = sorted(directory.glob("*.rules"))
+    linked = tuple(path.name for path in candidates if path.is_symlink())
+    loaded = [path for path in candidates if path.is_file() and not path.is_symlink()]
+    if not loaded:
+        return None, linked
+    return "\n".join(_read_text(path) or "" for path in loaded), linked
 
 
 def _json_object(path: Path) -> dict[str, object]:

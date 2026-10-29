@@ -292,10 +292,15 @@ def claude_allow_problems(rules: Sequence[str] | None) -> tuple[str, ...]:
     return tuple(problems)
 
 
-def codex_allow_problems(text: str | None) -> tuple[str, ...]:
-    """Missing working-agent prefix rules and broader kb allow rules in Codex rules files."""
+def codex_allow_problems(text: str | None, linked: Sequence[str] = ()) -> tuple[str, ...]:
+    """Missing working-agent prefix rules and broader kb allow rules in Codex rules files.
+
+    text holds the regular rules files that Codex loads. linked names the symlinked rules
+    files, which Codex skips.
+    """
+    skipped = tuple(f"{name} is a symbolic link, which Codex skips" for name in linked)
     if text is None:
-        return ("no rules files",)
+        return (*skipped, "no rules files")
     allowed: set[tuple[str, ...]] = set()
     for chunk in text.split("prefix_rule(")[1:]:
         pattern = PATTERN.search(chunk)
@@ -304,7 +309,10 @@ def codex_allow_problems(text: str | None) -> tuple[str, ...]:
         decision = DECISION.search(chunk)
         if (decision.group(1) if decision else "allow") == "allow":
             allowed.add(tuple(QUOTED.findall(pattern.group(1))))
-    problems = [f"missing kb {command}" for command in WORKING if ("kb", command) not in allowed]
+    problems = [*skipped]
+    problems.extend(
+        f"missing kb {command}" for command in WORKING if ("kb", command) not in allowed
+    )
     problems.extend(
         f"broader {' '.join(tokens)}"
         for tokens in sorted(allowed)
