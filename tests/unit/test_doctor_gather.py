@@ -252,6 +252,19 @@ def test_capture_without_a_harvest_cutoff_reports_it_and_no_root_reports_the_pro
 
 
 @SKIP
+def test_a_host_file_without_the_policy_line_passes_the_instructions_check(
+    machine: doctor.Context,
+) -> None:
+    bare = setup_rules.instruction_block_without_policy()
+    claude = Path(machine.environ["CLAUDE_CONFIG_DIR"])
+    codex = Path(machine.environ["CODEX_HOME"])
+    (claude / "CLAUDE.md").write_text(bare, encoding="utf-8")
+    (codex / "AGENTS.md").write_text(bare, encoding="utf-8")
+
+    assert by_name(doctor.gather(machine))["instructions"].state == "pass"
+
+
+@SKIP
 def test_instructions_and_allow_rules_name_each_host_problem(machine: doctor.Context) -> None:
     claude = Path(machine.environ["CLAUDE_CONFIG_DIR"])
     (claude / "CLAUDE.md").write_text("notes\n", encoding="utf-8")

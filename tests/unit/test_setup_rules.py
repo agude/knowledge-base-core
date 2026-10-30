@@ -58,6 +58,16 @@ def test_the_claude_fragment_allows_exactly_the_working_commands() -> None:
     assert fragment == {"permissions": {"allow": [f"Bash(kb {word} *)" for word in WORKING]}}
 
 
+def test_the_block_without_policy_is_the_canonical_block_minus_its_policy_clause() -> None:
+    block = setup_rules.instruction_block(BLOCK_CONTENT)
+    bare = setup_rules.instruction_block_without_policy()
+
+    assert "Content policy" not in bare
+    assert bare == block.replace(" Content policy: @/data/content/AGENTS.md", "")
+    assert bare.splitlines()[0] == setup_rules.BEGIN_MARKER
+    assert bare.splitlines()[-1] == setup_rules.END_MARKER
+
+
 def test_the_codex_rules_allow_exactly_the_working_commands() -> None:
     lines = setup_rules.allow_codex().splitlines()
 

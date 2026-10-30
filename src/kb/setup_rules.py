@@ -19,6 +19,7 @@ from kb.errors import KbError
 BEGIN_MARKER = "<!-- kb:begin -->"
 END_MARKER = "<!-- kb:end -->"
 POLICY_PLACEHOLDER = "{content_policy}"
+POLICY_CLAUSE = " Content policy: " + POLICY_PLACEHOLDER
 MAX_BLOCK_LINES = 12
 WORKING_COMMANDS = ("recall", "read", "map", "questions", "evidence", "observe", "gap")
 ITEMS = ("instructions", "allow-claude", "allow-codex")
@@ -53,8 +54,17 @@ class ExistingHook:
 
 def instruction_block(content_root: str) -> str:
     """The canonical block, with its content policy line rendered from content_root."""
-    template = resources.files("kb").joinpath("data/instructions.md").read_text(encoding="utf-8")
-    return template.replace(POLICY_PLACEHOLDER, policy_import(content_root))
+    return _instruction_template().replace(POLICY_PLACEHOLDER, policy_import(content_root))
+
+
+def instruction_block_without_policy() -> str:
+    """The canonical block without its content policy clause."""
+    return _instruction_template().replace(POLICY_CLAUSE, "")
+
+
+def _instruction_template() -> str:
+    """The packaged instruction block, with its content policy placeholder."""
+    return resources.files("kb").joinpath("data/instructions.md").read_text(encoding="utf-8")
 
 
 def policy_import(content_root: str) -> str:

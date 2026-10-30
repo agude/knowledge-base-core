@@ -691,7 +691,7 @@ gather its facts reports why, and the other checks still run.
 | `sync` | the last exchange was within 60 minutes | the last run ended `dirty` or `error`, or the exchange is older | there is no record |
 | `scheduler` | on Linux, `kb-sync.timer` is enabled and active | it is not enabled or not active; elsewhere, `not checked on PLATFORM` | |
 | `capture` | `harvest_since` is set, the transcript roots are readable, and no ready transcript is older than 20 days | capture is disabled, a root is unreadable, or old ready transcripts exist | |
-| `instructions` | each host's global file has the canonical block | a block is missing or differs | |
+| `instructions` | each host's global file has the canonical block, with or without its content policy line | a block is missing or differs | |
 | `skills` | both packaged skills at both host destinations match the package | a skill is missing, differs, or is unmanaged | |
 | `allow-rules` | each host has every working-agent rule and no broader `kb` rule | a rule is missing, a broader rule exists, or a Codex rules file is a symbolic link | |
 

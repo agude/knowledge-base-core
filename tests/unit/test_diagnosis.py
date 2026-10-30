@@ -187,6 +187,19 @@ def test_the_canonical_block_is_found_inside_a_larger_file() -> None:
     assert diagnosis.instruction_problem(surrounding, CANONICAL) is None
 
 
+def test_a_block_without_the_policy_line_is_accepted_only_as_the_named_form() -> None:
+    bare = setup_rules.instruction_block_without_policy()
+    wrong_root = CANONICAL.replace("/data/content/AGENTS.md", "/other/AGENTS.md")
+
+    assert diagnosis.instruction_problem(bare, CANONICAL, bare) is None
+    assert diagnosis.instruction_problem(bare, CANONICAL) == (
+        "block differs from the canonical block"
+    )
+    assert diagnosis.instruction_problem(wrong_root, CANONICAL, bare) == (
+        "block differs from the canonical block"
+    )
+
+
 def test_claude_rules_missing_broader_and_colon_form() -> None:
     assert diagnosis.claude_allow_problems(None) == ("no permissions.allow list",)
     assert diagnosis.claude_allow_problems(CLAUDE_RULES) == ()

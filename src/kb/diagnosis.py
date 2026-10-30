@@ -239,8 +239,10 @@ def allow_rules_check(problems: dict[str, Sequence[str]]) -> Check:
     )
 
 
-def instruction_problem(text: str | None, canonical: str) -> str | None:
-    """What is wrong with a host's global file, or None when it holds the canonical block."""
+def instruction_problem(
+    text: str | None, canonical: str, without_policy: str | None = None
+) -> str | None:
+    """What is wrong with a host's global file, or None when its block is an accepted form."""
     if text is None:
         return "no global file"
     lines = text.splitlines()
@@ -252,7 +254,9 @@ def instruction_problem(text: str | None, canonical: str) -> str | None:
         return "kb block has no end marker"
     stop = lines.index(end, start)
     block = "\n".join(lines[start : stop + 1]) + "\n"
-    return None if block == canonical else "block differs from the canonical block"
+    if block in (canonical, without_policy):
+        return None
+    return "block differs from the canonical block"
 
 
 def claude_allow_problems(rules: Sequence[str] | None) -> tuple[str, ...]:

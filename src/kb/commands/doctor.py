@@ -287,18 +287,23 @@ def _claude_retention(store: Path) -> str:
 
 
 def _instructions(context: Context, root: Path | None) -> Check:
-    """Whether each host's global file contains the canonical block for this content root."""
+    """Whether each host's global file has the canonical block, policy line optional."""
     if root is None:
         raise KbError("no content root, so the canonical block cannot be rendered")
     canonical = setup_rules.instruction_block(str(root))
+    without_policy = setup_rules.instruction_block_without_policy()
     claude_file = (
         _store(context.environ, "CLAUDE_CONFIG_DIR", context.home / ".claude") / "CLAUDE.md"
     )
     codex_file = _store(context.environ, "CODEX_HOME", context.home / ".codex") / "AGENTS.md"
     return diagnosis.instructions_check(
         {
-            "claude": diagnosis.instruction_problem(_read_text(claude_file), canonical),
-            "codex": diagnosis.instruction_problem(_read_text(codex_file), canonical),
+            "claude": diagnosis.instruction_problem(
+                _read_text(claude_file), canonical, without_policy
+            ),
+            "codex": diagnosis.instruction_problem(
+                _read_text(codex_file), canonical, without_policy
+            ),
         }
     )
 
