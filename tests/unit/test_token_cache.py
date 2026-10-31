@@ -480,3 +480,46 @@ def test_a_content_root_inside_another_repository_gets_no_cache(tmp_path: Path) 
     report = token_cache.refresh(inner)
     assert report.written is False
     assert not (outer / ".git" / "kb").exists()
+
+
+def test_status_reports_missing_stale_and_current(repo: Path) -> None:
+    target = token_cache.cache_file(repo)
+    assert target is not None
+    assert token_cache.status(repo).state == "missing"
+
+    token_cache.load(repo, paths(repo))
+    current = token_cache.status(repo)
+    assert current == token_cache.CacheStatus(target, 3, target.stat().st_size, "current")
+
+    write(repo, "questions/open/nas.md", "Changed length.\n")
+    assert token_cache.status(repo).state == "stale"
+    token_cache.refresh(repo)
+    assert token_cache.status(repo).state == "current"
+
+    (repo / "questions/open/nas.md").unlink()
+    assert token_cache.status(repo).state == "stale"
+
+
+def test_status_is_stale_when_the_cache_file_is_unusable(repo: Path) -> None:
+    token_cache.load(repo, paths(repo))
+    target = token_cache.cache_file(repo)
+    assert target is not None
+    target.write_bytes(b"not a pickle")
+    assert token_cache.status(repo) == token_cache.CacheStatus(target, 0, 12, "stale")
+
+
+def test_status_outside_a_worktree_is_none(tmp_path: Path) -> None:
+    plain = tmp_path / "plain"
+    write(plain, "observations/pending/20261001T090000-nas.md", observation("NAS", "Restart it."))
+    assert token_cache.status(plain) == token_cache.CacheStatus(None, 0, 0, "none")
+
+
+def test_an_empty_repository_still_gets_a_current_cache(tmp_path: Path) -> None:
+    root = make_repo(tmp_path / "content")
+    assert token_cache.refresh(root).written is True
+    assert token_cache.status(root).state == "current"
+
+
+def test_an_entry_whose_file_is_gone_is_not_on_disk(tmp_path: Path) -> None:
+    entry = token_cache._build(model.parse("gone.md", "# Gone\n"), 1, 2, "digest")
+    assert token_cache._on_disk(tmp_path, entry) is False

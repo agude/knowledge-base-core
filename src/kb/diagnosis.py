@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
-from kb import setup_rules
+from kb import setup_rules, token_cache
 from kb.sync_state import SyncState
 
 State = Literal["pass", "warn", "fail"]
@@ -143,6 +143,24 @@ def sync_check(state: SyncState | None, problem: str | None, now: datetime) -> C
             "run kb sync; then check the scheduler",
         )
     return Check("sync", "pass", f"last exchange {_stamp(state.last_exchange)}")
+
+
+def cache_check(cache: token_cache.CacheStatus) -> Check:
+    """Where the token cache is, its size, and whether it matches the evidence files on disk."""
+    if cache.state == "none":
+        return Check("cache", "pass", "not used: content is not a git worktree of its own")
+    if cache.state == "missing":
+        return Check("cache", "warn", f"missing: {cache.path}", "run kb sync")
+    if cache.state == "stale":
+        return Check(
+            "cache",
+            "warn",
+            f"stale: {cache.path}, {cache.entries} entries, {cache.size} bytes",
+            "run kb sync",
+        )
+    return Check(
+        "cache", "pass", f"{cache.path}: {cache.entries} entries, {cache.size} bytes, current"
+    )
 
 
 def scheduler_check(platform: str, answers: Sequence[str] | None, problem: str | None) -> Check:

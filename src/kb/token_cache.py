@@ -21,7 +21,7 @@ from datetime import datetime
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from kb import corpus, evidence, lock, model, search
 
@@ -122,6 +122,47 @@ def refresh(root: Path) -> RefreshReport:
     return report
 
 
+@dataclass(frozen=True)
+class CacheStatus:
+    """The cache file's state, read without tokenizing anything.
+
+    state is "none" when the content root has no cache location, "missing" when no cache
+    file exists, "stale" when the file cannot be used or does not list the evidence files
+    as they are on disk, and "current" otherwise. entries and size describe the file.
+    """
+
+    path: Path | None
+    entries: int
+    size: int
+    state: Literal["none", "missing", "stale", "current"]
+
+
+def status(root: Path) -> CacheStatus:
+    """The state of the cache file. Compares names and stat fields only, never bytes."""
+    target = cache_file(root)
+    if target is None:
+        return CacheStatus(None, 0, 0, "none")
+    try:
+        size = target.stat().st_size
+    except OSError:
+        return CacheStatus(target, 0, 0, "missing")
+    stored = _read(target, fingerprint())
+    if stored is None:
+        return CacheStatus(target, 0, size, "stale")
+    listed = evidence_paths(root)
+    current = set(stored) == set(listed) and all(_on_disk(root, stored[path]) for path in listed)
+    return CacheStatus(target, len(stored), size, "current" if current else "stale")
+
+
+def _on_disk(root: Path, entry: Entry) -> bool:
+    """Whether the file still has the modification time and size that its entry records."""
+    try:
+        status_result = (root / entry.path).stat()
+    except OSError:
+        return False
+    return entry.mtime_ns == status_result.st_mtime_ns and entry.size == status_result.st_size
+
+
 def evidence_paths(root: Path) -> list[str]:
     """The content-relative paths of every evidence file, sorted."""
     return sorted(
@@ -184,7 +225,8 @@ def _update(
     shared = corpus.Documents(root) if documents is None else documents
     target = cache_file(root)
     version = fingerprint()
-    stored = (_read(target, version) if target is not None else None) or {}
+    loaded = _read(target, version) if target is not None else None
+    stored = loaded or {}
     merged = dict(stored)
     entries: dict[str, Entry] = {}
     refreshed = restated = removed = 0
@@ -219,7 +261,9 @@ def _update(
             removed += 1
 
     written = False
-    if target is not None and (refreshed or restated or removed):
+    # A missing or unusable file is replaced even when no evidence file changed, so an
+    # empty content repository still gets a cache that reports as current.
+    if target is not None and (refreshed or restated or removed or loaded is None):
         written = _write(target, version, merged)
     return entries, RefreshReport(refreshed, restated, removed, written)
 

@@ -157,6 +157,7 @@ def test_gather_reports_every_check_when_nothing_is_configured(tmp_path: Path) -
         "hook",
         "curation",
         "sync",
+        "cache",
         "scheduler",
         "capture",
         "instructions",
@@ -166,9 +167,9 @@ def test_gather_reports_every_check_when_nothing_is_configured(tmp_path: Path) -
     assert checks[2] == Check(
         "content", "fail", "no content root; see the config check", diagnosis.CONFIG_FIX
     )
-    assert checks[9].state == "warn"
-    assert checks[9].message.startswith("cannot check: no content root")
-    assert checks[10] == Check(
+    assert checks[10].state == "warn"
+    assert checks[10].message.startswith("cannot check: no content root")
+    assert checks[11] == Check(
         "skills",
         "warn",
         "Claude Code knowledge-base is missing; Claude Code curate is missing; "

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from kb import setup_rules, skills, sync_state
+from kb import setup_rules, skills, sync_state, token_cache
 from kb.commands import doctor
 from kb.diagnosis import Check
 from kb.sync_state import SyncState
@@ -117,6 +117,7 @@ def by_name(checks: list[Check]) -> dict[str, Check]:
 
 
 def test_a_configured_machine_passes_every_gathered_check(machine: doctor.Context) -> None:
+    token_cache.refresh(Path(machine.environ["KB_CONTENT"]))
     checks = by_name(doctor.gather(machine))
 
     assert {name: check.state for name, check in checks.items()} == dict.fromkeys(
@@ -128,6 +129,7 @@ def test_a_configured_machine_passes_every_gathered_check(machine: doctor.Contex
             "hook",
             "curation",
             "sync",
+            "cache",
             "scheduler",
             "capture",
             "instructions",
@@ -301,3 +303,33 @@ def test_scheduler_and_curation_gather_through_their_commands(machine: doctor.Co
     assert checks["scheduler"].message == "kb-sync.timer is enabled and active"
     assert checks["curation"].message == "no unsettled batch"
     assert doctor._stdout(("sh", "-c", "echo hi")) == "hi"
+
+
+def test_the_cache_check_names_each_state(machine: doctor.Context) -> None:
+    root = Path(machine.environ["KB_CONTENT"])
+    missing = doctor._cache(root)
+    assert (missing.state, missing.message.split(":")[0], missing.fix) == (
+        "warn",
+        "missing",
+        "run kb sync",
+    )
+
+    token_cache.refresh(root)
+    current = doctor._cache(root)
+    assert (current.state, current.message.endswith("current")) == ("pass", True)
+
+    write = root / "observations" / "pending" / "20261026T120000-new.md"
+    write.parent.mkdir(parents=True)
+    write.write_text("---\ntitle: New\n---\n\nNew note.\n", encoding="utf-8")
+    stale = doctor._cache(root)
+    assert (stale.state, stale.message.split(":")[0], stale.fix) == (
+        "warn",
+        "stale",
+        "run kb sync",
+    )
+
+
+def test_a_content_root_that_is_not_a_worktree_has_no_cache_to_check(tmp_path: Path) -> None:
+    check = doctor._cache(tmp_path)
+    assert (check.name, check.state) == ("cache", "pass")
+    assert check.message.startswith("not used: content is not a git worktree")

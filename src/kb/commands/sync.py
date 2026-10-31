@@ -24,6 +24,7 @@ from kb import (
     remote,
     secrets,
     sync_state,
+    token_cache,
 )
 from kb.args import Spec
 from kb.config import content_root
@@ -261,7 +262,18 @@ def _integrate(
         sys.stdout.write(f"{action}\n")
     for message in sync_errors:
         sys.stderr.write(f"{message}\n")
+    _refresh_cache(root)
     return False, [*errors, *sync_errors]
+
+
+def _refresh_cache(root: Path) -> None:
+    """Bring the token cache up to date after the exchange. A failure is a warning only."""
+    try:
+        report = token_cache.refresh(root)
+    except (KbError, OSError, UnicodeError) as error:
+        sys.stderr.write(f"sync: warning: cannot refresh the token cache: {error}\n")
+        return
+    sys.stdout.write(f"Cache: {report.refreshed} refreshed, {report.removed} removed\n")
 
 
 def _record_outcome(git_directory: Path, now: datetime, outcome: str, failure: str | None) -> None:

@@ -28,6 +28,7 @@ from kb import (
     setup_rules,
     skills,
     sync_state,
+    token_cache,
 )
 from kb.args import Spec
 from kb.commands import curate, sync
@@ -101,6 +102,7 @@ def gather(context: Context) -> list[Check]:
             lambda found: diagnosis.curation_check(curate.doctor_findings(found)),
         ),
         with_root("sync", "warn", lambda found: _sync(found, context)),
+        with_root("cache", "warn", _cache),
         _guarded("scheduler", "warn", lambda: _scheduler(context)),
         _guarded("capture", "warn", lambda: _capture(context, root)),
         _guarded("instructions", "warn", lambda: _instructions(context, root)),
@@ -222,6 +224,11 @@ def _sync(root: Path, context: Context) -> Check:
     except KbError as error:
         return diagnosis.sync_check(None, str(error), context.now)
     return diagnosis.sync_check(state, None, context.now)
+
+
+def _cache(root: Path) -> Check:
+    """The token cache: its path, size, and whether it matches the evidence files on disk."""
+    return diagnosis.cache_check(token_cache.status(root))
 
 
 def _scheduler(context: Context) -> Check:

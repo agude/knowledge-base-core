@@ -26,6 +26,7 @@ CHECKS = (
     "hook",
     "curation",
     "sync",
+    "cache",
     "scheduler",
     "capture",
     "instructions",
