@@ -4,6 +4,7 @@ Every function here takes values and returns values. The caller reads the
 files, builds the units, and formats the output.
 """
 
+import functools
 import math
 import re
 from collections.abc import Sequence
@@ -210,10 +211,13 @@ class _Profile:
     length: float
 
 
+@functools.cache
 def _stem(token: str) -> str:
     """The stem of a plain English word, after the derivation lexicon.
 
-    Flags, paths, numeric identifiers, and dates are returned unchanged.
+    Flags, paths, numeric identifiers, and dates are returned unchanged. The
+    result depends only on the token, and transcripts repeat most words many
+    times, so the cache removes most of the stemming work.
     """
     if not (token.isascii() and token.isalpha()):
         return token
