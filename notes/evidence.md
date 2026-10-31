@@ -1298,3 +1298,9 @@ remote. No push was made.
   bytes, current.
 - A recall run after the sync built zero evidence entries. The count was
   taken by wrapping `token_cache._build`, the only place a file is tokenized.
+
+The ten queries used for the output checks in commits 3 and 5 are not in the
+repository. They are: curator cadence; nas restart; traefik; backup disk;
+codex rules; dotfiles cutover; transcript harvest; sync schedule; stale
+article ttl; observation pending. Each was run as `kb evidence QUERY`,
+`kb evidence QUERY --kind transcript`, and `kb recall QUERY`.
