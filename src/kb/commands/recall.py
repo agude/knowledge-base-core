@@ -25,6 +25,7 @@ PENDING = "observations/pending"
 ARCHIVED = "observations/archived"
 OPEN_QUESTIONS = "questions/open"
 ALL_QUESTIONS = (OPEN_QUESTIONS, "questions/resolved")
+SESSION_DIRECTORIES = (PENDING, ARCHIVED)
 SPEC = Spec(
     usage="recall QUERY... [--limit N] [--in PATH]",
     summary=(
@@ -87,19 +88,7 @@ def answer(context: Context, words: Sequence[str], limit: int, scope: str | None
             f"  {document.path}#{candidate.fragment} | {candidate.heading}"
             for document, candidate in follow
         )
-    uncurated = _matching_evidence(
-        context,
-        words,
-        scope,
-        (PENDING, OPEN_QUESTIONS),
-        FOLLOW_UP,
-        documents,
-    )
-    questions = matching_open_questions(context, words, scope, candidates=uncurated)
-    question_paths = {item.path for item in questions}
-    uncurated = [
-        item for item in uncurated if item.kind != "open-question" or item.path in question_paths
-    ]
+    uncurated = _uncurated(context, words, scope, documents)
     if uncurated:
         tail.append("Uncurated (pending, not yet verified):")
         tail.extend(evidence.format_rows(uncurated))
@@ -243,6 +232,61 @@ def _matching_evidence(
         limit,
         shared.read,
     )
+
+
+def _uncurated(
+    context: Context,
+    words: Sequence[str],
+    scope: str | None,
+    documents: corpus.Documents,
+) -> list[evidence.Item]:
+    """The rows under Uncurated for a query: pending evidence and open questions."""
+    items = _matching_evidence(
+        context,
+        words,
+        scope,
+        (PENDING, OPEN_QUESTIONS),
+        FOLLOW_UP,
+        documents,
+    )
+    questions = matching_open_questions(context, words, scope, candidates=items)
+    question_paths = {item.path for item in questions}
+    return [item for item in items if item.kind != "open-question" or item.path in question_paths]
+
+
+def session_rows(
+    context: Context,
+    words: Sequence[str],
+    scope: str | None,
+    documents: corpus.Documents,
+    limit: int,
+) -> list[evidence.Item]:
+    """The best transcript rows for a query, from pending and archived harvests."""
+    terms = search.query_terms(words)
+    if not terms:
+        return []
+    return evidence.select(
+        _evidence(context.root, scope, SESSION_DIRECTORIES, documents),
+        terms,
+        "transcript",
+        None,
+        None,
+        limit,
+        documents.read,
+    )
+
+
+def from_sessions(
+    context: Context,
+    words: Sequence[str],
+    scope: str | None,
+    documents: corpus.Documents,
+    limit: int,
+) -> list[evidence.Item]:
+    """Session rows that Uncurated does not already show, for the From sessions block."""
+    shown = {item.path for item in _uncurated(context, words, scope, documents)}
+    rows = session_rows(context, words, scope, documents, limit + len(shown))
+    return [row for row in rows if row.path not in shown][:limit]
 
 
 def _scope(context: Context, value: str | None) -> str | None:
