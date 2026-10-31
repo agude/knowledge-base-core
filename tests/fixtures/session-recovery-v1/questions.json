@@ -1,0 +1,57 @@
+{
+  "format": "kb-retrieval-questions",
+  "version": 1,
+  "modes": ["sessions", "combined"],
+  "description": "Synthetic session-recovery cases. Recovery: the answer exists only in a transcript. Current-state: a later transcript replaces an earlier answer. Unanswerable: no transcript answers the query; one transcript matches only inside an injected INSTRUCTIONS block.",
+  "cases": [
+    {
+      "id": "recovery-01",
+      "category": "recovery",
+      "query": "exit node advertise flag",
+      "unanswerable": false,
+      "expected": ["observations/archived/20261003T100000-c0ffee01.md#2"],
+      "requires_all": false
+    },
+    {
+      "id": "recovery-02",
+      "category": "recovery",
+      "query": "upload queue drain reboot",
+      "unanswerable": false,
+      "expected": ["observations/archived/20261005T100000-9a1b2c3d.md#5"],
+      "requires_all": false
+    },
+    {
+      "id": "recovery-03",
+      "category": "recovery",
+      "query": "guest network password",
+      "unanswerable": false,
+      "expected": ["observations/archived/20261012T100000-wifi0001.md#4"],
+      "requires_all": false
+    },
+    {
+      "id": "current-01",
+      "category": "current_state",
+      "query": "backup retention days",
+      "unanswerable": false,
+      "expected": ["observations/archived/20261015T100000-5b9e4f12.md#4"],
+      "superseded": ["observations/archived/20261001T100000-7d31a0c2.md#3"],
+      "requires_all": false
+    },
+    {
+      "id": "unanswerable-01",
+      "category": "unanswerable",
+      "query": "zigzag cipher rotation",
+      "unanswerable": true,
+      "expected": [],
+      "requires_all": false
+    },
+    {
+      "id": "unanswerable-02",
+      "category": "unanswerable",
+      "query": "kubernetes autoscaler",
+      "unanswerable": true,
+      "expected": [],
+      "requires_all": false
+    }
+  ]
+}
