@@ -1243,3 +1243,19 @@ commit and release named in the Part A closeout and the preparation section.
 - Live `kb doctor` on 0.2.1: exit 1 with 3 PASS, 9 WARN, and 1 FAIL
   (`sync: No record`), the expected pre-cutover baseline; 14 legacy
   registrations.
+
+## Session retrieval commit 1: memoized stemming (2026-10-31)
+
+Scratch copy of the content repository at `66f6f7d`, with `KB_CONTENT` set to
+it. Each case had one warm-up and three timed runs. Medians exclude the
+warm-up; peak RSS is the maximum of the three timed runs.
+
+| Command case | Before median | After median | Before peak RSS | After peak RSS | Gate |
+|---|---:|---:|---:|---:|---|
+| `kb evidence curator cadence --kind transcript` | 35.85 s | 13.05 s | 318,412 KiB | 149,120 KiB | <= 15 s |
+| Curated-hit `kb recall "curator cadence"` | 23.09 s | 8.35 s | 205,496 KiB | 92,396 KiB | <= 9 s |
+| No-match `kb recall zzqxvmissingterm` | 40.37 s | 13.02 s | 324,676 KiB | 151,300 KiB | none |
+
+The plan's "today" figures (38.7 s, 22.0 s) came from a different content
+revision; the "before" column here is measured on the copy used for "after".
+`just eval` output matched the pre-change output byte for byte.
