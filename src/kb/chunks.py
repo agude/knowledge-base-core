@@ -26,7 +26,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from kb import evidence
-from kb.model import Document
+from kb.model import Document, fence_closes, fence_opening
 
 MERGE_THRESHOLD = 1024
 SPLIT_THRESHOLD = 4000
@@ -38,7 +38,7 @@ _INJECTED = re.compile(
     r"<INSTRUCTIONS>.*?</INSTRUCTIONS>|<system-reminder>.*?</system-reminder>", re.DOTALL
 )
 _AGENTS_PREFIX = "# AGENTS.md instructions for"
-_FENCE = re.compile(r"\s*(?:`{3,}|~{3,})")
+_TEXT_STORAGE_OPEN = re.compile(r"(~{4,})text")
 
 
 @dataclass(frozen=True)
@@ -51,11 +51,7 @@ class Chunk:
 
 @dataclass(frozen=True)
 class _Message:
-    """A message: its number, its role, its first raw line, and its prose lines.
-
-    head is read from the raw file. A line such as "# AGENTS.md instructions" is a heading
-    to the model, so it is not in the prose.
-    """
+    """A message's number, role, first content line, and text, including authored headings."""
 
     number: int
     role: str
@@ -77,34 +73,37 @@ def _messages(document: Document) -> list[_Message] | None:
     """The messages of a transcript, or None when it has neither kind of message heading."""
     sections = evidence.message_sections(document)
     if sections is not None:
-        return [
-            _Message(
-                item.number,
-                item.role,
-                _head(document.lines[item.section.start + 1 : item.section.end]),
-                document.prose(item.section.start, item.section.end),
+        messages: list[_Message] = []
+        for item in sections:
+            content = _unwrap_text_storage(
+                _message_lines(document, item.section.start + 1, item.section.end)
             )
-            for item in sections
-        ]
+            messages.append(_Message(item.number, item.role, _head(content), content))
+        return messages
     return _legacy_messages(document)
 
 
 def _legacy_messages(document: Document) -> list[_Message] | None:
     """The "### user" and "### assistant" messages of a legacy transcript, in order.
 
-    A legacy message runs from its heading to the next heading of any level. The model
-    keeps no section for an H3 without an H2 above it, so the heading lines are read here.
+    The model keeps no section for an H3 without an H2 above it, so the heading lines
+    are read here. Other headings remain part of the current message.
     """
     lines = document.lines
     headings = sorted(document.heading_lines)
     found: list[_Message] = []
-    for position, index in enumerate(headings):
+    message_headings = [
+        index
+        for index in headings
+        if lines[index].strip().startswith("### ") and lines[index].strip()[4:] in LEGACY_ROLES
+    ]
+    for position, index in enumerate(message_headings):
         heading = lines[index].strip()
-        if not heading.startswith("### ") or heading[4:] not in LEGACY_ROLES:
-            continue
-        end = headings[position + 1] if position + 1 < len(headings) else len(lines)
+        end = message_headings[position + 1] if position + 1 < len(message_headings) else len(lines)
         head = _head(lines[index + 1 : end])
-        found.append(_Message(NO_MESSAGE, heading[4:], head, document.prose(index + 1, end)))
+        found.append(
+            _Message(NO_MESSAGE, heading[4:], head, _message_lines(document, index + 1, end))
+        )
     return found or None
 
 
@@ -118,6 +117,42 @@ def _clean_message(message: _Message) -> _Message | None:
 def _head(raw: Sequence[str]) -> str:
     """The first non-blank raw line, stripped, or an empty string."""
     return next((line.strip() for line in raw if line.strip()), "")
+
+
+def _message_lines(document: Document, start: int, end: int) -> tuple[str, ...]:
+    """Keep message headings and prose, excluding parser metadata comments."""
+    return tuple(
+        line
+        for index, line in enumerate(document.lines[start:end], start)
+        if index not in document.comment_lines
+    )
+
+
+def _unwrap_text_storage(lines: Sequence[str]) -> tuple[str, ...]:
+    """Unwrap text storage blocks and retain command and authored code fences."""
+    unwrapped: list[str] = []
+    index = 0
+    while index < len(lines):
+        opening = fence_opening(lines[index])
+        if opening is None:
+            unwrapped.append(lines[index])
+            index += 1
+            continue
+
+        marker, length = opening
+        end = index + 1
+        while end < len(lines) and not fence_closes(lines[end], marker, length):
+            end += 1
+        if end == len(lines):
+            unwrapped.extend(lines[index:])
+            break
+
+        if marker == "~" and _TEXT_STORAGE_OPEN.fullmatch(lines[index]):
+            unwrapped.extend(lines[index + 1 : end])
+        else:
+            unwrapped.extend(lines[index : end + 1])
+        index = end + 1
+    return tuple(unwrapped)
 
 
 def _clean(lines: Sequence[str]) -> tuple[str, ...]:
@@ -167,11 +202,18 @@ def _split(lines: Sequence[str]) -> list[tuple[str, ...]]:
     pieces: list[tuple[str, ...]] = []
     current: list[str] = []
     size = 0
-    fenced = False
+    marker: str | None = None
+    marker_length = 0
     for line in lines:
-        if _FENCE.match(line):
-            fenced = not fenced
-        if not fenced and not line.strip() and size >= SPLIT_TARGET:
+        if marker is not None:
+            closes = fence_closes(line, marker, marker_length)
+            if closes:
+                marker = None
+        else:
+            opening = fence_opening(line)
+            if opening is not None:
+                marker, marker_length = opening
+        if marker is None and not line.strip() and size >= SPLIT_TARGET:
             pieces.append(_trim(current))
             current = []
             size = 0

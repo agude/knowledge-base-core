@@ -1,7 +1,13 @@
 """Tests for the transcript chunker: merging, splitting, message kinds, and injected text."""
 
+from datetime import UTC, datetime
+
+import pytest
+
 from kb import chunks
 from kb.model import Document, parse
+from kb.transcript_observation import render
+from kb.transcripts import Message, Session
 
 FRONT = (
     "---\n"
@@ -82,6 +88,61 @@ def test_a_piece_never_splits_inside_a_code_fence() -> None:
     assert any(line.startswith("code 2 ") for line in fenced_pieces[0].lines)
 
 
+def test_rendered_storage_fences_are_unwrapped_before_message_cleaning_and_splitting() -> None:
+    timestamp = datetime(2026, 10, 20, tzinfo=UTC)
+    messages = (
+        Message("m1", timestamp, "user", "# AGENTS.md instructions for /repo\n\nDiscard this."),
+        Message(
+            "m2",
+            timestamp,
+            "assistant",
+            "# Keep this heading\n\ninline ~~~~~ marker\n\n"
+            + "\n\n".join("prose " + "x" * 998 for _ in range(5))
+            + "\n\n```python\nprint('authored')\n```",
+            ("printf 'preserve this command'\n",),
+        ),
+    )
+    session = Session("claude-code", "session", "/repo", None, None, messages, timestamp, True)
+    rendered = render(session, messages, 1, "host", timestamp)
+
+    found = chunks.chunks(parse("observations/archived/rendered.md", rendered))
+    text = "\n".join(text_of(chunk) for chunk in found)
+
+    assert len(found) > 1
+    assert "AGENTS.md" not in text and "Discard this." not in text
+    assert "# Keep this heading" in text
+    assert "prose " in text
+    assert "inline ~~~~~ marker" in text
+    assert "```python\nprint('authored')\n```" in text
+    assert "~~~~text" not in text
+    assert "~~~~sh" in text and "preserve this command" in text
+
+
+@pytest.mark.parametrize(
+    ("marker", "shorter", "different"), (("~", "~~~", "```"), ("`", "```", "~~~"))
+)
+def test_fence_tracker_requires_a_valid_matching_closer(
+    marker: str, shorter: str, different: str
+) -> None:
+    fence = marker * 4
+    block = [
+        f"{fence}lang",
+        "prefix " + "p" * 2100,
+        shorter,
+        different,
+        f"{fence} trailing text",
+        "",
+        "middle " + "x" * 2100,
+        fence,
+    ]
+    found = chunks.chunks(addressable(["before " + "p" * 1500 + "\n\n" + "\n".join(block)]))
+
+    containing = [chunk for chunk in found if f"{fence}lang" in chunk.lines]
+    assert len(containing) == 1
+    assert "middle " + "x" * 2100 in text_of(containing[0])
+    assert "prefix " + "p" * 2100 in text_of(containing[0])
+
+
 def test_a_fenced_block_longer_than_the_target_stays_whole() -> None:
     block = ["```", "first", "", *(["middle " * 100, ""] * 8), "last", "```"]
     text = "before text\n\n" + "\n".join(block) + "\n\nafter text"
@@ -153,7 +214,7 @@ def test_a_chunk_number_is_the_number_of_its_first_message() -> None:
     assert "b" * 10 in text_of(found[1]) and "c" * 1100 in text_of(found[1])
 
 
-def test_other_headings_in_a_legacy_file_do_not_start_messages() -> None:
+def test_legacy_message_keeps_prose_beneath_other_headings() -> None:
     document = parse(
         "observations/archived/l.md",
         "---\ntitle: Legacy\n---\n\n# Title\n\n### user\n\nQ?\n\n## Notes\n\nSide note.\n",
@@ -162,7 +223,8 @@ def test_other_headings_in_a_legacy_file_do_not_start_messages() -> None:
 
     assert [chunk.number for chunk in found] == [chunks.NO_MESSAGE]
     assert "Q?" in text_of(found[0])
-    assert "Side note." not in text_of(found[0])
+    assert "## Notes" in text_of(found[0])
+    assert "Side note." in text_of(found[0])
 
 
 def test_blank_lines_left_by_removed_text_are_trimmed_at_both_ends() -> None:
