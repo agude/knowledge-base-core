@@ -1324,3 +1324,70 @@ that does.
   code commit `3335c2a`. The content revision behind that run is not
   recorded. The current `~/Knowledge` HEAD is `1c05bfb`.
 - The file's mtime is 2026-10-26 14:00. The 40-case set is dated 2026-10-27.
+
+## Session retrieval: 6a harness and baseline (2026-10-31)
+
+`kb.evaluate` gained `--mode sessions|combined` in `977fd8b`. Sessions rows
+come from `recall.session_rows`. Combined rows come from
+`recall.from_sessions` (`bb169ab`), which leaves out any row that Uncurated
+already shows. Curated mode is unchanged: `just eval` matched its earlier
+output byte for byte, and the two curated sets matched on explicit paths.
+
+### Fixture baseline: session-recovery-v1 (whole-file rows)
+
+Six synthetic cases: three recovery, one current-state, two unanswerable.
+The numbers check the harness. They do not measure retrieval quality.
+
+| Measure | Sessions | Combined |
+|---|---|---|
+| Curated rows with an expected locator in the top 3 | - | 0 of 4 (0%) |
+| Session rows with an expected locator in the top 3 | 4 of 4 (100%) | 4 of 4 (100%) |
+| Added by the session block | - | 4 of 4 (100%) |
+| Session false positives (unanswerable with a row) | 1 of 2 (50%) | 1 of 2 (50%) |
+| Current-state cases with the current answer above the superseded one | 1 of 1 | 1 of 1 |
+| Superseded claims shown | 1 | 1 |
+| Session characters per query | 170 | 151 |
+| Acceptance | not met (unanswerable-01) | not met (unanswerable-01) |
+
+`unanswerable-01` matches only inside an `<INSTRUCTIONS>` block. Commit 5c
+removes that text before indexing, so this false positive is the failure
+5c must fix.
+
+### Ten recorded queries (whole-file session rows, live content)
+
+Run through `recall.session_rows` on `/home/agude/Knowledge`, HEAD `1c05bfb`.
+Top three rows each. No labels, so no scores.
+
+- curator cadence: `pending/20261031T163000-11ab7a5b.md#24`,
+  `pending/20261031T180001-c5ec48dd.md#123`, `archived/20260410T133417-89cb.md`
+- nas restart: `archived/20260813T010858-f86c.md`,
+  `archived/20261014T134048-7d7990c9.md`, `archived/20260711T231155-249a.md`
+- traefik: `pending/20261031T180001-c5ec48dd.md#75`
+- backup disk: `archived/20260714T020908-bcd2.md`,
+  `archived/20261015T053659-bd6f5e36.md`, `pending/20261026T225533-aaa7123d.md`
+- codex rules: `pending/20261029T030217-c652ddeb.md`,
+  `archived/20261009T022346-ff70227b.md`, `archived/20260819T172546-805ad273.md`
+- dotfiles cutover: `pending/20261029T030217-c652ddeb.md`,
+  `pending/20261028T225249-155c788e.md`, `pending/20261029T224500-eb17fc9e.md#131`
+- transcript harvest: `archived/20260529T012325-572e.md`,
+  `pending/20261027T185110-902acaff.md`, `pending/20261027T185033-28faa7ad.md`
+- sync schedule: `pending/20261027T174313-bf965675.md`,
+  `pending/20261026T225533-aaa7123d.md`, `pending/20261028T181303-e43f489f.md`
+- stale article ttl: `pending/20261027T174313-bf965675.md`,
+  `archived/20260905T222944-c0eb932f.md`, `pending/20261025T020639-5d2d7603.md`
+- observation pending: `archived/20260905T153638-604ad3d6.md`,
+  `archived/20260411T054929-110c.md`, `archived/20260412T220946-01c3.md`
+
+Two patterns in these rows. Probe commands echo the query words, so the
+transcripts of this work rank for their own queries (`curator cadence`,
+`traefik`). Some transcripts have no message number, so their locator is
+the file alone.
+
+### Not measured
+
+- The live set in sessions and combined modes. The 20 live labels name
+  curated sections only, so every session row misses. Each live question
+  needs transcript labels, checked independently.
+- Acceptance limits for added coverage, false positives, superseded claims,
+  and output size. Fix them before the candidate is measured. This needs a
+  decision.
