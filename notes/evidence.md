@@ -1304,3 +1304,23 @@ repository. They are: curator cadence; nas restart; traefik; backup disk;
 codex rules; dotfiles cutover; transcript harvest; sync schedule; stale
 article ttl; observation pending. Each was run as `kb evidence QUERY`,
 `kb evidence QUERY --kind transcript`, and `kb recall QUERY`.
+
+## Session retrieval: live question set provenance (2026-10-31)
+
+The 40-case set named in the 2026-10-27 session notes (26 answerable, 14
+unanswerable, labels in `notes/eval-live-labels.md`) is not on disk. Neither
+its labels file nor `notes/eval-live.md` survives. This is the only copy
+that does.
+
+- File: `notes/eval-live.json`. Private and ignored by git. Not committed.
+- sha256: `7605398d22024bb72651d73b64e4a6f66b2c21a0d00b035f5043aaf974c6c6bc`.
+  Identical in every copy under the scratchpad of session `1ed3966f`.
+- Format: `kb-retrieval-questions` version 1. 20 cases, all answerable, ids
+  `live-01` to `live-20`. Its description reads "written from section
+  headings".
+- Labels: not independently checked. Every expected locator names a curated
+  article section. None names a transcript.
+- Results recorded on 2026-10-26: 20 of 20 answerable cases in the top 3, at
+  code commit `3335c2a`. The content revision behind that run is not
+  recorded. The current `~/Knowledge` HEAD is `1c05bfb`.
+- The file's mtime is 2026-10-26 14:00. The 40-case set is dated 2026-10-27.
