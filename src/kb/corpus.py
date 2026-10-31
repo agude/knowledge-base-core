@@ -76,11 +76,18 @@ def resolve_path(root: Path, path: str, who: str) -> str | None:
     return None
 
 
+def decode_text(data: bytes) -> str:
+    """The text of a file's bytes: UTF-8 with a leading byte-order mark removed.
+
+    Bad bytes become U+FFFD, so every file decodes.
+    """
+    return data.decode("utf-8", errors="replace").removeprefix("﻿")
+
+
 def read_document(root: Path, relpath: str) -> model.Document:
     """Parse one file. Bytes are decoded as UTF-8, and bad bytes become U+FFFD."""
     try:
         data = (root / relpath).read_bytes()
     except OSError as error:
         raise KbError(f"kb: cannot read {relpath}: {error.strerror}") from error
-    text = data.decode("utf-8", errors="replace").removeprefix("﻿")
-    return model.parse(relpath, text)
+    return model.parse(relpath, decode_text(data))

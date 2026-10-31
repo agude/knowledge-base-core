@@ -111,8 +111,20 @@ def evidence_kind(path: str, document: Document) -> str:
     return "observation"
 
 
-def addressable_messages(document: Document) -> tuple[Message, ...] | None:
-    """The transcript's messages when its complete addressability contract is valid."""
+@dataclass(frozen=True)
+class MessageSection:
+    """One validated message section: its number, its H2 section, and its timestamp."""
+
+    number: int
+    section: Section
+    timestamp: datetime
+
+
+def message_sections(document: Document) -> tuple[MessageSection, ...] | None:
+    """The validated message sections of a transcript, or None when its contract is not valid.
+
+    H2 keys are numbered in order, so a section's key is the string of its number.
+    """
     if document.scalar("source") != "session-transcript":
         return None
     if not all(
@@ -133,7 +145,7 @@ def addressable_messages(document: Document) -> tuple[Message, ...] | None:
     if not sections:
         return None
 
-    messages: list[Message] = []
+    found: list[MessageSection] = []
     for number, section in enumerate(sections, start=1):
         match = _MESSAGE_HEADING.fullmatch(section.heading)
         if match is None or int(match.group(1)) != number:
@@ -141,12 +153,23 @@ def addressable_messages(document: Document) -> tuple[Message, ...] | None:
         timestamp = _timestamp(match.group(3))
         if timestamp is None or not started <= timestamp <= ended:
             return None
-        body = document.prose(section.start, section.end)
+        found.append(MessageSection(number=number, section=section, timestamp=timestamp))
+    return tuple(found)
+
+
+def addressable_messages(document: Document) -> tuple[Message, ...] | None:
+    """The transcript's messages when its complete addressability contract is valid."""
+    sections = message_sections(document)
+    if sections is None:
+        return None
+    messages: list[Message] = []
+    for item in sections:
+        body = document.prose(item.section.start, item.section.end)
         messages.append(
             Message(
-                number=number,
-                section=section,
-                timestamp=timestamp,
+                number=item.number,
+                section=item.section,
+                timestamp=item.timestamp,
                 body=body,
                 unit=search.make_unit("", (), (), body),
             )
