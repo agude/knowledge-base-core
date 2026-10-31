@@ -1,0 +1,401 @@
+"""The token cache: each evidence file's search tokens, kept in the content repository's git directory.
+
+kb evidence and kb recall rank every evidence file on each query, and tokenizing the
+harvested transcripts takes most of the time. This module keeps the tokens of each file
+and reuses them while the file's bytes are unchanged.
+
+The cache is one pickle of plain tuples, strings, and numbers, so it holds no kb classes.
+It lives in the git directory of each worktree, is never committed or synced, and can be
+deleted at any time. An unreadable or stale cache is rebuilt.
+"""
+
+import hashlib
+import os
+import pickle
+import subprocess
+import sys
+import tempfile
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, replace
+from datetime import datetime
+from importlib import resources
+from importlib.resources.abc import Traversable
+from pathlib import Path
+from typing import Any
+
+from kb import corpus, evidence, lock, model, search
+
+FORMAT = 1
+CACHE_DIRECTORY = "kb"
+CACHE_FILE = "tokens.pickle"
+LOCK_FILE = "tokens.lock"
+EVIDENCE_DIRECTORIES = (
+    "observations/pending",
+    "observations/archived",
+    "questions/open",
+    "questions/resolved",
+)
+# The modules whose code decides what an entry holds. An edit to any of them rebuilds the
+# cache. Each file is hashed whole, so a change to the tokens or to the message contract
+# cannot go unnoticed.
+FINGERPRINT_MODULES = (
+    "derivations.py",
+    "evidence.py",
+    "model.py",
+    "search.py",
+    "stem.py",
+    "token_cache.py",
+)
+# The front matter fields that the ranking path and its filters read.
+SCALAR_FIELDS = (
+    "title",
+    "source",
+    "created",
+    "context",
+    "project",
+    "session",
+    "part",
+    "first_message",
+    "last_message",
+    "started",
+    "ended",
+)
+
+# A search.Unit as plain tuples: title, aliases, headings, body, and the sorted phrases.
+UnitTokens = tuple[
+    tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]
+]
+# One addressable message: its number, its UTC timestamp in ISO form, and its body tokens.
+MessageTokens = tuple[int, str, tuple[str, ...]]
+_STORED_FIELDS = 7
+_STORED_UNIT_FIELDS = 5
+_STORED_MESSAGE_FIELDS = 3
+
+
+@dataclass(frozen=True)
+class Entry:
+    """The cached tokens of one evidence file.
+
+    messages is empty unless the file is an addressable transcript. The stat fields are
+    the file's modification time and size, and digest is the SHA-256 of its bytes.
+    """
+
+    path: str
+    mtime_ns: int
+    size: int
+    digest: str
+    scalars: dict[str, str]
+    file_unit: UnitTokens
+    messages: tuple[MessageTokens, ...]
+
+
+@dataclass(frozen=True)
+class RefreshReport:
+    """What one update did.
+
+    refreshed counts files tokenized again, restated counts files whose bytes did not
+    change, removed counts entries dropped for files that are gone, and written tells
+    whether the cache file was replaced.
+    """
+
+    refreshed: int
+    restated: int
+    removed: int
+    written: bool
+
+
+def load(root: Path, paths: Sequence[str]) -> dict[str, Entry]:
+    """Entries for paths, refreshing stale ones. Never raises on a bad cache."""
+    entries, _ = _update(root, paths, prune=False)
+    return entries
+
+
+def refresh(root: Path) -> RefreshReport:
+    """Bring the whole evidence tier up to date. Used by kb sync and kb doctor."""
+    _, report = _update(root, evidence_paths(root), prune=True)
+    return report
+
+
+def evidence_paths(root: Path) -> list[str]:
+    """The content-relative paths of every evidence file, sorted."""
+    return sorted(
+        {
+            path
+            for directory in EVIDENCE_DIRECTORIES
+            for path in corpus.markdown_files(root, directory)
+        }
+    )
+
+
+def unit(tokens: UnitTokens) -> search.Unit:
+    """The search unit that a stored file unit describes."""
+    title, aliases, headings, body, phrases = tokens
+    return search.Unit(
+        title=title,
+        aliases=aliases,
+        headings=headings,
+        body=body,
+        phrases=frozenset(phrases),
+    )
+
+
+def message_unit(message: MessageTokens) -> search.Unit:
+    """The search unit of a stored message: its body only, as evidence builds it."""
+    return search.Unit(title=(), aliases=(), headings=(), body=message[2], phrases=frozenset())
+
+
+def cache_file(root: Path) -> Path | None:
+    """The cache file in the git directory of root's worktree, or None outside a git repository."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    git_dir = (root / result.stdout.rstrip("\r\n")).resolve()
+    return git_dir / CACHE_DIRECTORY / CACHE_FILE
+
+
+def fingerprint(package: Traversable | None = None) -> str:
+    """The SHA-256 of the source bytes of the modules that decide what an entry holds."""
+    source = resources.files("kb") if package is None else package
+    digest = hashlib.sha256()
+    for name in FINGERPRINT_MODULES:
+        digest.update(name.encode("ascii") + b"\0")
+        digest.update(source.joinpath(name).read_bytes())
+    return digest.hexdigest()
+
+
+def _update(
+    root: Path, paths: Iterable[str], prune: bool
+) -> tuple[dict[str, Entry], RefreshReport]:
+    """Entries for paths, with stale ones retokenized, and the cache written if it changed.
+
+    Without prune, entries for other paths stay in the cache. With prune, every entry
+    outside paths is dropped.
+    """
+    wanted = sorted(set(paths))
+    target = cache_file(root)
+    version = fingerprint()
+    stored = (_read(target, version) if target is not None else None) or {}
+    merged = dict(stored)
+    entries: dict[str, Entry] = {}
+    refreshed = restated = removed = 0
+
+    for relpath in wanted:
+        path = root / relpath
+        try:
+            status = path.stat()
+        except OSError:
+            continue
+        old = stored.get(relpath)
+        if old is not None and old.mtime_ns == status.st_mtime_ns and old.size == status.st_size:
+            entries[relpath] = old
+            continue
+        try:
+            data = path.read_bytes()
+        except OSError:
+            continue
+        digest = hashlib.sha256(data).hexdigest()
+        if old is not None and old.digest == digest:
+            entry = replace(old, mtime_ns=status.st_mtime_ns, size=status.st_size)
+            restated += 1
+        else:
+            entry = _build(
+                relpath,
+                status.st_mtime_ns,
+                status.st_size,
+                digest,
+                corpus.decode_text(data),
+            )
+            refreshed += 1
+        entries[relpath] = merged[relpath] = entry
+
+    if prune:
+        for relpath in sorted(set(merged) - set(wanted)):
+            del merged[relpath]
+            removed += 1
+
+    written = False
+    if target is not None and (refreshed or restated or removed):
+        written = _write(target, version, merged)
+    return entries, RefreshReport(refreshed, restated, removed, written)
+
+
+def _build(relpath: str, mtime_ns: int, size: int, digest: str, text: str) -> Entry:
+    """Tokenize one file once. The file unit and the message bodies come from the same lines."""
+    document = model.parse(relpath, text)
+    lines = document.lines
+    kept = {
+        index: search.index_tokens(lines[index])
+        for index in range(document.body_start, len(lines))
+        if index not in document.heading_lines and index not in document.comment_lines
+    }
+    title = search.index_tokens(document.title or "")
+    body = tuple(token for tokens in kept.values() for token in tokens)
+    file_unit: UnitTokens = (
+        title,
+        (),
+        (),
+        body,
+        (" ".join(title),) if title else (),
+    )
+    messages = tuple(
+        (
+            item.number,
+            item.timestamp.isoformat(),
+            tuple(
+                token
+                for index in range(item.section.start, item.section.end)
+                for token in kept.get(index, ())
+            ),
+        )
+        for item in evidence.message_sections(document) or ()
+    )
+    scalars = {
+        name: value for name in SCALAR_FIELDS if (value := document.scalar(name)) is not None
+    }
+    return Entry(relpath, mtime_ns, size, digest, scalars, file_unit, messages)
+
+
+def _read(target: Path, version: str) -> dict[str, Entry] | None:
+    """The stored entries, or None when the file is missing, unreadable, or for another version."""
+    try:
+        with target.open("rb") as handle:
+            data = pickle.load(handle)
+        if data["format"] != FORMAT or data["fingerprint"] != version:
+            return None
+        entries: dict[str, Entry] = {}
+        for key, value in data["entries"].items():
+            entry = _from_tuple(value)
+            if entry.path != key:
+                raise ValueError(key)
+            entries[key] = entry
+        return entries
+    except Exception:
+        return None
+
+
+def _write(target: Path, version: str, entries: dict[str, Entry]) -> bool:
+    """Replace the cache file atomically. Returns False when another writer holds the lock."""
+    directory = target.parent
+    backend = lock.default_backend(sys.platform)
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        descriptor = lock.acquire_kernel(directory / LOCK_FILE, backend, 0)
+    except lock.LockBusy:
+        return False
+    except OSError as error:
+        return _warn(target, error)
+    try:
+        _replace_file(target, version, entries)
+    except OSError as error:
+        return _warn(target, error)
+    finally:
+        backend.unlock(descriptor)
+        os.close(descriptor)
+    return True
+
+
+def _replace_file(target: Path, version: str, entries: dict[str, Entry]) -> None:
+    payload = {
+        "format": FORMAT,
+        "fingerprint": version,
+        "entries": {path: _to_tuple(entry) for path, entry in entries.items()},
+    }
+    descriptor, name = tempfile.mkstemp(dir=target.parent, prefix=".tokens-", suffix=".tmp")
+    temporary = Path(name)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            pickle.dump(payload, handle, protocol=5)
+        temporary.replace(target)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def _warn(target: Path, error: OSError) -> bool:
+    """Print the one-line warning for a cache that could not be written. Always returns False."""
+    sys.stderr.write(f"kb: token cache not written to {target}: {error.strerror or error}\n")
+    return False
+
+
+def _to_tuple(entry: Entry) -> tuple[object, ...]:
+    return (
+        entry.path,
+        entry.mtime_ns,
+        entry.size,
+        entry.digest,
+        tuple(sorted(entry.scalars.items())),
+        entry.file_unit,
+        entry.messages,
+    )
+
+
+def _from_tuple(value: object) -> Entry:
+    """The entry that a stored tuple holds. Raises TypeError or ValueError on the wrong shape."""
+    parts = _tuple(value)
+    if len(parts) != _STORED_FIELDS:
+        raise TypeError("entry")
+    path, mtime_ns, size, digest, pairs, file_unit, messages = parts
+    if not (
+        isinstance(path, str)
+        and isinstance(mtime_ns, int)
+        and isinstance(size, int)
+        and isinstance(digest, str)
+    ):
+        raise TypeError("entry fields")
+    scalars: dict[str, str] = {}
+    for pair in _tuple(pairs):
+        name, text = _tuple(pair)
+        if not (isinstance(name, str) and isinstance(text, str)):
+            raise TypeError("scalar")
+        scalars[name] = text
+    return Entry(
+        path=path,
+        mtime_ns=mtime_ns,
+        size=size,
+        digest=digest,
+        scalars=scalars,
+        file_unit=_unit(file_unit),
+        messages=tuple(_message(item) for item in _tuple(messages)),
+    )
+
+
+def _unit(value: object) -> UnitTokens:
+    parts = _tuple(value)
+    if len(parts) != _STORED_UNIT_FIELDS:
+        raise TypeError("unit")
+    title, aliases, headings, body, phrases = (_strings(part) for part in parts)
+    return title, aliases, headings, body, phrases
+
+
+def _message(value: object) -> MessageTokens:
+    parts = _tuple(value)
+    if len(parts) != _STORED_MESSAGE_FIELDS:
+        raise TypeError("message")
+    number, timestamp, body = parts
+    if not isinstance(number, int) or not isinstance(timestamp, str):
+        raise TypeError("message fields")
+    datetime.fromisoformat(timestamp)
+    return number, timestamp, _strings(body)
+
+
+def _tuple(value: object) -> tuple[Any, ...]:
+    if not isinstance(value, tuple):
+        raise TypeError("expected a tuple")
+    return value
+
+
+def _strings(value: object) -> tuple[str, ...]:
+    items = _tuple(value)
+    if not all(isinstance(item, str) for item in items):
+        raise TypeError("expected strings")
+    return items
