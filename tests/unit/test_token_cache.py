@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from kb import corpus, evidence, lock, model, search, token_cache
+from kb import chunks, corpus, evidence, lock, model, search, token_cache
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 TRANSCRIPT = (
@@ -325,25 +325,38 @@ def test_an_unreadable_cache_is_rebuilt_from_the_files(repo: Path, kind: str) ->
     assert sorted(stored(repo)) == paths(repo)
 
 
+def _replaced(index: int, value: object) -> Callable[[tuple[Any, ...]], tuple[Any, ...]]:
+    """A function that replaces one field of a stored entry tuple."""
+
+    def mutate(entry: tuple[Any, ...]) -> tuple[Any, ...]:
+        return (*entry[:index], value, *entry[index + 1 :])
+
+    return mutate
+
+
 @pytest.mark.parametrize(
     "mutate",
     [
         lambda t: t[:-1],
-        lambda t: (1, *t[1:]),
-        lambda t: (t[0], "mtime", *t[2:]),
-        lambda t: (t[0], t[1], "size", *t[3:]),
-        lambda t: (*t[:3], 4, *t[4:]),
-        lambda t: (*t[:4], "pairs", *t[5:]),
-        lambda t: (*t[:4], ((("a", "b", "c"),)), *t[5:]),
-        lambda t: (*t[:4], ((("title", 1),)), *t[5:]),
-        lambda t: (*t[:5], (1, 2), *t[6:]),
-        lambda t: (*t[:5], ((1,), (), (), (), ()), *t[6:]),
-        lambda t: (*t[:6], ((1, 2),)),
-        lambda t: (*t[:6], ("not a tuple",)),
-        lambda t: (*t[:6], ((("1", "2026-10-01T09:00:00+00:00", ())),)),
-        lambda t: (*t[:6], (((1, 5, ())),)),
-        lambda t: (*t[:6], ((1, "2026-10-01T09:00:00+00:00", (1,)),)),
-        lambda t: (*t[:6], ((1, "not a time", ()),)),
+        _replaced(0, 1),
+        _replaced(1, "mtime"),
+        _replaced(2, "size"),
+        _replaced(3, 4),
+        _replaced(4, "pairs"),
+        _replaced(4, (("a", "b", "c"),)),
+        _replaced(4, (("title", 1),)),
+        _replaced(5, (1, 2)),
+        _replaced(5, ((1,), (), (), (), ())),
+        _replaced(6, ((1, 2),)),
+        _replaced(6, ("not a tuple",)),
+        _replaced(6, (("1", "2026-10-01T09:00:00+00:00", ()),)),
+        _replaced(6, ((1, 5, ()),)),
+        _replaced(6, ((1, "2026-10-01T09:00:00+00:00", (1,)),)),
+        _replaced(6, ((1, "not a time", ()),)),
+        _replaced(7, ((1,),)),
+        _replaced(7, ("not a tuple",)),
+        _replaced(7, ((("0", ()),))),
+        _replaced(7, ((0, (1,)),)),
     ],
 )
 def test_a_stored_entry_of_the_wrong_shape_is_refused(
@@ -523,3 +536,24 @@ def test_an_empty_repository_still_gets_a_current_cache(tmp_path: Path) -> None:
 def test_an_entry_whose_file_is_gone_is_not_on_disk(tmp_path: Path) -> None:
     entry = token_cache._build(model.parse("gone.md", "# Gone\n"), 1, 2, "digest")
     assert token_cache._on_disk(tmp_path, entry) is False
+
+
+def test_chunk_tokens_match_the_search_units_of_the_chunks(repo: Path) -> None:
+    transcript = repo / "observations/archived/20261001T100000-traefik.md"
+    document = corpus.read_document(repo, "observations/archived/20261001T100000-traefik.md")
+    entry = token_cache.load(repo, [transcript.relative_to(repo).as_posix()])[
+        transcript.relative_to(repo).as_posix()
+    ]
+    expected = [
+        (chunk.number, search.make_unit("", (), (), list(chunk.lines)).body)
+        for chunk in chunks.chunks(document)
+    ]
+    assert list(entry.chunks) == expected
+    assert entry.chunks
+
+
+def test_only_transcripts_carry_chunks(repo: Path) -> None:
+    loaded = token_cache.load(repo, paths(repo))
+    assert loaded["observations/pending/20261001T090000-nas.md"].chunks == ()
+    assert loaded["questions/open/nas.md"].chunks == ()
+    assert loaded["observations/archived/20261001T100000-traefik.md"].chunks

@@ -23,9 +23,9 @@ from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Any, Literal
 
-from kb import corpus, evidence, lock, model, search
+from kb import chunks, corpus, evidence, lock, model, search
 
-FORMAT = 1
+FORMAT = 2
 CACHE_DIRECTORY = "kb"
 CACHE_FILE = "tokens.pickle"
 LOCK_FILE = "tokens.lock"
@@ -39,6 +39,7 @@ EVIDENCE_DIRECTORIES = (
 # cache. Each file is hashed whole, so a change to the tokens or to the message contract
 # cannot go unnoticed.
 FINGERPRINT_MODULES = (
+    "chunks.py",
     "derivations.py",
     "evidence.py",
     "model.py",
@@ -67,17 +68,21 @@ UnitTokens = tuple[
 ]
 # One addressable message: its number, its UTC timestamp in ISO form, and its body tokens.
 MessageTokens = tuple[int, str, tuple[str, ...]]
-_STORED_FIELDS = 7
+# One chunk: the number of its first message (0 for none), and its body tokens.
+ChunkTokens = tuple[int, tuple[str, ...]]
+_STORED_FIELDS = 8
 _STORED_UNIT_FIELDS = 5
 _STORED_MESSAGE_FIELDS = 3
+_STORED_CHUNK_FIELDS = 2
 
 
 @dataclass(frozen=True)
 class Entry:
     """The cached tokens of one evidence file.
 
-    messages is empty unless the file is an addressable transcript. The stat fields are
-    the file's modification time and size, and digest is the SHA-256 of its bytes.
+    messages is empty unless the file is an addressable transcript. chunks is empty unless
+    the file is a transcript. The stat fields are the file's modification time and size,
+    and digest is the SHA-256 of its bytes.
     """
 
     path: str
@@ -87,6 +92,7 @@ class Entry:
     scalars: dict[str, str]
     file_unit: UnitTokens
     messages: tuple[MessageTokens, ...]
+    chunks: tuple[ChunkTokens, ...]
 
 
 @dataclass(frozen=True)
@@ -301,7 +307,25 @@ def _build(document: model.Document, mtime_ns: int, size: int, digest: str) -> E
     scalars = {
         name: value for name in SCALAR_FIELDS if (value := document.scalar(name)) is not None
     }
-    return Entry(relpath, mtime_ns, size, digest, scalars, file_unit, messages)
+    transcript = evidence.evidence_kind(relpath, document.scalar("source")) == "transcript"
+    transcript_chunks: tuple[ChunkTokens, ...] = ()
+    if transcript:
+        # Most chunk lines are unchanged file lines, so their tokens are reused. Only the
+        # lines that injected-text removal changed are tokenized again.
+        known = {lines[index]: tokens for index, tokens in kept.items()}
+
+        def tokens_of(line: str) -> tuple[str, ...]:
+            tokens = known.get(line)
+            if tokens is None:
+                tokens = search.index_tokens(line)
+                known[line] = tokens
+            return tokens
+
+        transcript_chunks = tuple(
+            (chunk.number, tuple(token for line in chunk.lines for token in tokens_of(line)))
+            for chunk in chunks.chunks(document)
+        )
+    return Entry(relpath, mtime_ns, size, digest, scalars, file_unit, messages, transcript_chunks)
 
 
 def _read(target: Path, version: str) -> dict[str, Entry] | None:
@@ -375,6 +399,7 @@ def _to_tuple(entry: Entry) -> tuple[object, ...]:
         tuple(sorted(entry.scalars.items())),
         entry.file_unit,
         entry.messages,
+        entry.chunks,
     )
 
 
@@ -383,7 +408,7 @@ def _from_tuple(value: object) -> Entry:
     parts = _tuple(value)
     if len(parts) != _STORED_FIELDS:
         raise TypeError("entry")
-    path, mtime_ns, size, digest, pairs, file_unit, messages = parts
+    path, mtime_ns, size, digest, pairs, file_unit, messages, chunk_items = parts
     if not (
         isinstance(path, str)
         and isinstance(mtime_ns, int)
@@ -405,6 +430,7 @@ def _from_tuple(value: object) -> Entry:
         scalars=scalars,
         file_unit=_unit(file_unit),
         messages=tuple(_message(item) for item in _tuple(messages)),
+        chunks=tuple(_chunk(item) for item in _tuple(chunk_items)),
     )
 
 
@@ -414,6 +440,16 @@ def _unit(value: object) -> UnitTokens:
         raise TypeError("unit")
     title, aliases, headings, body, phrases = (_strings(part) for part in parts)
     return title, aliases, headings, body, phrases
+
+
+def _chunk(value: object) -> ChunkTokens:
+    parts = _tuple(value)
+    if len(parts) != _STORED_CHUNK_FIELDS:
+        raise TypeError("chunk")
+    number, body = parts
+    if not isinstance(number, int):
+        raise TypeError("chunk number")
+    return number, _strings(body)
 
 
 def _message(value: object) -> MessageTokens:
