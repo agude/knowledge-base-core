@@ -145,9 +145,10 @@ def message_unit(message: "MessageTokens") -> search.Unit:
 
 @dataclass(frozen=True)
 class MessageSection:
-    """One validated message section: its number, its H2 section, and its timestamp."""
+    """One validated message section: its number, its role, its H2 section, and its timestamp."""
 
     number: int
+    role: str
     section: Section
     timestamp: datetime
 
@@ -185,7 +186,9 @@ def message_sections(document: Document) -> tuple[MessageSection, ...] | None:
         timestamp = _timestamp(match.group(3))
         if timestamp is None or not started <= timestamp <= ended:
             return None
-        found.append(MessageSection(number=number, section=section, timestamp=timestamp))
+        found.append(
+            MessageSection(number=number, role=match.group(2), section=section, timestamp=timestamp)
+        )
     return tuple(found)
 
 
