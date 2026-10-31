@@ -104,15 +104,21 @@ class RefreshReport:
     written: bool
 
 
-def load(root: Path, paths: Sequence[str]) -> dict[str, Entry]:
-    """Entries for paths, refreshing stale ones. Never raises on a bad cache."""
-    entries, _ = _update(root, paths, prune=False)
+def load(
+    root: Path, paths: Sequence[str], documents: corpus.Documents | None = None
+) -> dict[str, Entry]:
+    """Entries for paths, refreshing stale ones. Never raises on a bad cache.
+
+    A stale file is parsed through documents, so a caller that reads the same files
+    afterwards parses each one once. Without documents, a private set is used.
+    """
+    entries, _ = _update(root, paths, prune=False, documents=documents)
     return entries
 
 
 def refresh(root: Path) -> RefreshReport:
     """Bring the whole evidence tier up to date. Used by kb sync and kb doctor."""
-    _, report = _update(root, evidence_paths(root), prune=True)
+    _, report = _update(root, evidence_paths(root), prune=True, documents=None)
     return report
 
 
@@ -127,28 +133,15 @@ def evidence_paths(root: Path) -> list[str]:
     )
 
 
-def unit(tokens: UnitTokens) -> search.Unit:
-    """The search unit that a stored file unit describes."""
-    title, aliases, headings, body, phrases = tokens
-    return search.Unit(
-        title=title,
-        aliases=aliases,
-        headings=headings,
-        body=body,
-        phrases=frozenset(phrases),
-    )
-
-
-def message_unit(message: MessageTokens) -> search.Unit:
-    """The search unit of a stored message: its body only, as evidence builds it."""
-    return search.Unit(title=(), aliases=(), headings=(), body=message[2], phrases=frozenset())
-
-
 def cache_file(root: Path) -> Path | None:
-    """The cache file in the git directory of root's worktree, or None outside a git repository."""
+    """The cache file in the git directory of root's worktree.
+
+    None when root is not the top of a git worktree of its own. A content root inside
+    another repository, such as a fixture, gets no cache and writes nothing there.
+    """
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "--git-dir"],
+            ["git", "rev-parse", "--show-toplevel", "--git-dir"],
             cwd=root,
             capture_output=True,
             text=True,
@@ -157,10 +150,13 @@ def cache_file(root: Path) -> Path | None:
         )
     except OSError:
         return None
-    if result.returncode != 0:
+    lines = result.stdout.splitlines()
+    if result.returncode != 0 or len(lines) != 2:
         return None
-    git_dir = (root / result.stdout.rstrip("\r\n")).resolve()
-    return git_dir / CACHE_DIRECTORY / CACHE_FILE
+    toplevel, git = lines
+    if Path(toplevel).resolve() != root.resolve():
+        return None
+    return (root / git).resolve() / CACHE_DIRECTORY / CACHE_FILE
 
 
 def fingerprint(package: Traversable | None = None) -> str:
@@ -174,7 +170,10 @@ def fingerprint(package: Traversable | None = None) -> str:
 
 
 def _update(
-    root: Path, paths: Iterable[str], prune: bool
+    root: Path,
+    paths: Iterable[str],
+    prune: bool,
+    documents: corpus.Documents | None,
 ) -> tuple[dict[str, Entry], RefreshReport]:
     """Entries for paths, with stale ones retokenized, and the cache written if it changed.
 
@@ -182,6 +181,7 @@ def _update(
     outside paths is dropped.
     """
     wanted = sorted(set(paths))
+    shared = corpus.Documents(root) if documents is None else documents
     target = cache_file(root)
     version = fingerprint()
     stored = (_read(target, version) if target is not None else None) or {}
@@ -208,13 +208,8 @@ def _update(
             entry = replace(old, mtime_ns=status.st_mtime_ns, size=status.st_size)
             restated += 1
         else:
-            entry = _build(
-                relpath,
-                status.st_mtime_ns,
-                status.st_size,
-                digest,
-                corpus.decode_text(data),
-            )
+            document = shared.parse(relpath, corpus.decode_text(data))
+            entry = _build(document, status.st_mtime_ns, status.st_size, digest)
             refreshed += 1
         entries[relpath] = merged[relpath] = entry
 
@@ -229,9 +224,9 @@ def _update(
     return entries, RefreshReport(refreshed, restated, removed, written)
 
 
-def _build(relpath: str, mtime_ns: int, size: int, digest: str, text: str) -> Entry:
-    """Tokenize one file once. The file unit and the message bodies come from the same lines."""
-    document = model.parse(relpath, text)
+def _build(document: model.Document, mtime_ns: int, size: int, digest: str) -> Entry:
+    """Tokenize one parsed file once. The file unit and the message bodies share its lines."""
+    relpath = document.path
     lines = document.lines
     kept = {
         index: search.index_tokens(lines[index])

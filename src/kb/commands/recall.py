@@ -11,7 +11,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from kb import areas, args, corpus, evidence, freshness, locators, search
+from kb import areas, args, corpus, evidence, freshness, locators, search, token_cache
 from kb.args import Spec
 from kb.context import Context, load
 from kb.errors import KbError
@@ -55,7 +55,8 @@ def run(words: Sequence[str]) -> int:
 
 
 def answer(context: Context, words: Sequence[str], limit: int, scope: str | None) -> str:
-    """The text of the answer to a query."""
+    """The text of the answer to a query. Each file is parsed at most once for the answer."""
+    documents = corpus.Documents(context.root)
     results = _ranked(context.root, words, scope)
     if not results:
         items = _matching_evidence(
@@ -64,6 +65,7 @@ def answer(context: Context, words: Sequence[str], limit: int, scope: str | None
             scope,
             (PENDING, ARCHIVED, *ALL_QUESTIONS),
             FOLLOW_UP,
+            documents,
         )
         questions = matching_open_questions(context, words, scope, candidates=items)
         question_paths = {item.path for item in questions}
@@ -91,6 +93,7 @@ def answer(context: Context, words: Sequence[str], limit: int, scope: str | None
         scope,
         (PENDING, OPEN_QUESTIONS),
         FOLLOW_UP,
+        documents,
     )
     questions = matching_open_questions(context, words, scope, candidates=uncurated)
     question_paths = {item.path for item in questions}
@@ -224,13 +227,21 @@ def _matching_evidence(
     scope: str | None,
     directories: Sequence[str],
     limit: int,
+    documents: corpus.Documents | None = None,
 ) -> list[evidence.Item]:
     """Select the evidence rows recall uses for a query and its scope."""
     terms = search.query_terms(words)
     if not terms:
         return []
+    shared = corpus.Documents(context.root) if documents is None else documents
     return evidence.select(
-        _evidence(context.root, scope, directories), terms, None, None, None, limit
+        _evidence(context.root, scope, directories, shared),
+        terms,
+        None,
+        None,
+        None,
+        limit,
+        shared.read,
     )
 
 
@@ -257,8 +268,12 @@ def _curated(root: Path, scope: str | None) -> list[Document]:
 
 
 def _evidence(
-    root: Path, scope: str | None, directories: Sequence[str]
-) -> list[tuple[str, Document]]:
+    root: Path,
+    scope: str | None,
+    directories: Sequence[str],
+    documents: corpus.Documents,
+) -> list[token_cache.Entry]:
+    """The cache entries of the evidence files in scope, in path order."""
     match_context = scope is not None and areas.is_area_path(scope)
     paths = sorted(
         {
@@ -268,21 +283,22 @@ def _evidence(
             if _in_scope(path, scope) or (match_context and path.startswith("questions/"))
         }
     )
-    documents = [(path, corpus.read_document(root, path)) for path in paths]
+    loaded = token_cache.load(root, paths, documents)
+    entries = [loaded[path] for path in paths if path in loaded]
     if not match_context:
-        return documents
+        return entries
 
     scope_area = areas.canonical_area(root, scope)
-    selected: list[tuple[str, Document]] = []
-    for path, document in documents:
-        if not path.startswith("questions/"):
-            selected.append((path, document))
+    selected: list[token_cache.Entry] = []
+    for entry in entries:
+        if not entry.path.startswith("questions/"):
+            selected.append(entry)
             continue
-        context_area = areas.canonical_area(root, document.scalar("context"))
+        context_area = areas.canonical_area(root, entry.scalars.get("context"))
         if (
             scope_area is not None
             and context_area is not None
             and areas.overlaps(context_area, scope_area)
         ):
-            selected.append((path, document))
+            selected.append(entry)
     return selected

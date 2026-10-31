@@ -1,18 +1,23 @@
 """Pure selection and message-addressability rules for evidence search."""
 
+import shutil
 import socket
 import subprocess
 import sys
+from collections.abc import Sequence
 from datetime import date
 from io import StringIO
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from kb import corpus, evidence, lock, search
+from kb import corpus, evidence, lock, model, search, token_cache
 from kb.commands import evidence as evidence_command
 from kb.context import Context
 from kb.model import Document, parse
+
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 TRANSCRIPT_FRONT = (
     "title: Transcript fixture\n"
@@ -89,26 +94,39 @@ def test_incomplete_or_malformed_transcripts_use_file_level_handling(
     assert evidence.addressable_messages(transcript(front, headings)) is None
 
 
+def cached(tmp_path: Path, files: dict[str, str]) -> tuple[Path, list[token_cache.Entry]]:
+    """Write files under a fresh content root, and return its root and their cache entries."""
+    root = tmp_path / "content"
+    for relpath, text in files.items():
+        target = root / relpath
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+    loaded = token_cache.load(root, sorted(files))
+    return root, [loaded[relpath] for relpath in sorted(files)]
+
+
 def test_transcript_source_is_overridden_by_question_storage_kind() -> None:
     document = parse(
         "questions/open/gap.md",
         "---\ntitle: Gap\nsource: session-transcript\n---\n\nQuestion body.\n",
     )
-    assert evidence.evidence_kind(document.path, document) == "open-question"
+    assert evidence.evidence_kind(document.path, document.scalar("source")) == "open-question"
 
 
-def test_file_ties_sort_by_path_after_date_and_score() -> None:
-    query = search.query_terms(("backup", "disk"))
+def test_file_ties_sort_by_path_after_date_and_score(tmp_path: Path) -> None:
     contents = "---\ntitle: Backup disk\ncreated: 2026-10-20\n---\n\nBackup disk inventory.\n"
-    later_path = parse("observations/archived/z.md", contents)
-    earlier_path = parse("observations/archived/a.md", contents)
+    root, entries = cached(
+        tmp_path,
+        {"observations/archived/z.md": contents, "observations/archived/a.md": contents},
+    )
     items = evidence.select(
-        [(later_path.path, later_path), (earlier_path.path, earlier_path)],
-        query,
+        list(reversed(entries)),
+        search.query_terms(("backup", "disk")),
         None,
         None,
         None,
         5,
+        corpus.Documents(root).read,
     )
     assert [item.path for item in items] == [
         "observations/archived/a.md",
@@ -116,18 +134,23 @@ def test_file_ties_sort_by_path_after_date_and_score() -> None:
     ]
 
 
-def test_malformed_transcript_remains_a_file_level_result() -> None:
-    document = transcript(TRANSCRIPT_FRONT.replace("part: 1\n", "part: 0\n"))
+def test_malformed_transcript_remains_a_file_level_result(tmp_path: Path) -> None:
+    text = transcript(TRANSCRIPT_FRONT.replace("part: 1\n", "part: 0\n")).lines
+    root, entries = cached(
+        tmp_path, {"observations/archived/transcript.md": "\n".join(text) + "\n"}
+    )
     items = evidence.select(
-        [(document.path, document)],
+        entries,
         search.query_terms(("message", "body")),
         None,
         None,
         None,
         5,
+        corpus.Documents(root).read,
     )
     assert len(items) == 1
-    assert items[0].path == document.path
+    assert items[0].path == "observations/archived/transcript.md"
+    assert items[0].message_number is None
 
 
 def unexpected_external_call(*_args: object, **_kwargs: object) -> None:
@@ -135,10 +158,13 @@ def unexpected_external_call(*_args: object, **_kwargs: object) -> None:
     pytest.fail("read-only evidence command made an external call")
 
 
-def test_command_parses_each_selected_document_once_and_stays_read_only(
-    monkeypatch: pytest.MonkeyPatch,
+def test_command_parses_each_document_once_and_only_when_needed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    root = Path(__file__).resolve().parents[1] / "fixtures" / "content"
+    """A cold run parses each stale file once. A warm run parses only the printed files."""
+    root = tmp_path / "content"
+    shutil.copytree(FIXTURES / "content", root)
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
     context = Context(root=root, today=date(2026, 10, 26))
     monkeypatch.setattr(evidence_command, "load", lambda *_args: context)
     expected_paths = sorted(
@@ -146,22 +172,42 @@ def test_command_parses_each_selected_document_once_and_stays_read_only(
         for directory in evidence_command.ALL_DIRECTORIES
         for path in corpus.markdown_files(root, directory)
     )
-    original_read = corpus.read_document
-    parsed_paths: list[str] = []
+    parsed: list[str] = []
+    original_parse = model.parse
 
-    def track_read(content_root: Path, path: str) -> Document:
-        parsed_paths.append(path)
-        return original_read(content_root, path)
+    def counting_parse(path: str, text: str) -> Document:
+        parsed.append(path)
+        return original_parse(path, text)
 
-    monkeypatch.setattr(corpus, "read_document", track_read)
-    monkeypatch.setattr(subprocess, "run", unexpected_external_call)
+    real_run = subprocess.run
+
+    def git_for_the_cache_only(
+        args: Sequence[str], **kwargs: Any
+    ) -> subprocess.CompletedProcess[str]:
+        # The cache asks git where the worktree is. Every other process is refused.
+        if list(args[:2]) != ["git", "rev-parse"]:
+            pytest.fail("read-only evidence command ran another process")
+        return real_run(list(args), **kwargs)
+
+    monkeypatch.setattr(model, "parse", counting_parse)
+    monkeypatch.setattr(subprocess, "run", git_for_the_cache_only)
     monkeypatch.setattr(socket, "socket", unexpected_external_call)
     monkeypatch.setattr(lock, "write_lock", unexpected_external_call)
-    output = StringIO()
-    monkeypatch.setattr(sys, "stdout", output)
     before = {path: (root / path).read_bytes() for path in expected_paths}
 
-    assert evidence_command.run(("backup", "disk")) == 0
-    assert parsed_paths == expected_paths
-    assert len(parsed_paths) == len(set(parsed_paths))
+    def run_and_print() -> list[str]:
+        output = StringIO()
+        monkeypatch.setattr(sys, "stdout", output)
+        parsed.clear()
+        assert evidence_command.run(("backup", "disk")) == 0
+        rows = output.getvalue().splitlines()[1:-1]
+        return [row.split(" | ")[0].strip().partition("#")[0] for row in rows]
+
+    run_and_print()
+    assert len(parsed) == len(set(parsed))
+    assert set(parsed) <= set(expected_paths)
+
+    printed = run_and_print()
+    assert printed
+    assert sorted(parsed) == sorted(set(printed))
     assert {path: (root / path).read_bytes() for path in expected_paths} == before

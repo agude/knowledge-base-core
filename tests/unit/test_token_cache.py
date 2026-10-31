@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from kb import corpus, evidence, lock, search, token_cache
+from kb import corpus, evidence, lock, model, search, token_cache
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 TRANSCRIPT = (
@@ -123,12 +123,12 @@ def test_entries_hold_the_units_that_evidence_builds_for_every_fixture_file(repo
     for relpath in names:
         document = corpus.read_document(repo, relpath)
         entry = entries[relpath]
-        assert token_cache.unit(entry.file_unit) == search.evidence_unit(document)
+        assert evidence.file_unit(entry) == search.evidence_unit(document)
         expected = evidence.addressable_messages(document) or ()
         assert [number for number, _, _ in entry.messages] == [m.number for m in expected]
         for stored_message, message in zip(entry.messages, expected, strict=True):
             assert stored_message[1] == message.timestamp.isoformat()
-            assert token_cache.message_unit(stored_message) == message.unit
+            assert evidence.message_unit(stored_message) == message.unit
         messages_seen += len(expected)
         for name in token_cache.SCALAR_FIELDS:
             value = document.scalar(name)
@@ -164,7 +164,7 @@ def test_an_edited_file_is_tokenized_again_and_no_other_file_is(repo: Path) -> N
     after = stored(repo)
     changed = "observations/pending/20261001T090000-nas.md"
     assert after[changed].file_unit != before[changed].file_unit
-    assert "traefik" in token_cache.unit(after[changed].file_unit).body
+    assert "traefik" in evidence.file_unit(after[changed]).body
     for relpath in after:
         if relpath != changed:
             assert after[relpath] == before[relpath]
@@ -309,7 +309,7 @@ def corrupt_payloads(version: str) -> dict[str, Callable[[Path], None]]:
 
 
 def _valid_entry(path: str) -> tuple[object, ...]:
-    entry = token_cache._build(path, 1, 2, "digest", "# NAS\n\nRestart it.\n")
+    entry = token_cache._build(model.parse(path, "# NAS\n\nRestart it.\n"), 1, 2, "digest")
     return token_cache._to_tuple(entry)
 
 
@@ -356,7 +356,7 @@ def test_a_stored_entry_of_the_wrong_shape_is_refused(
 
 
 def test_a_stored_entry_round_trips_through_its_tuple() -> None:
-    entry = token_cache._build("nas.md", 1, 2, "digest", TRANSCRIPT)
+    entry = token_cache._build(model.parse("nas.md", TRANSCRIPT), 1, 2, "digest")
     assert token_cache._from_tuple(token_cache._to_tuple(entry)) == entry
 
 
@@ -469,3 +469,14 @@ def test_outside_a_git_repository_nothing_is_cached_or_written(tmp_path: Path) -
 
 def test_a_missing_content_root_has_no_cache(tmp_path: Path) -> None:
     assert token_cache.cache_file(tmp_path / "absent") is None
+
+
+def test_a_content_root_inside_another_repository_gets_no_cache(tmp_path: Path) -> None:
+    outer = make_repo(tmp_path / "outer")
+    inner = outer / "content"
+    write(inner, "observations/pending/20261001T090000-nas.md", observation("NAS", "Restart it."))
+    assert token_cache.cache_file(inner) is None
+    assert token_cache.cache_file(outer) == (outer / ".git" / "kb" / "tokens.pickle").resolve()
+    report = token_cache.refresh(inner)
+    assert report.written is False
+    assert not (outer / ".git" / "kb").exists()

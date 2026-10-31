@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from kb import corpus, evidence, search
+from kb import corpus, evidence, search, token_cache
 from kb.commands import recall
 from kb.context import Context
 from kb.errors import KbError
@@ -277,22 +277,27 @@ def test_scoped_recall_does_not_read_excluded_evidence(
     assert len(read_paths) == len(set(read_paths))
 
 
-def test_ranked_evidence_is_newest_first_among_equal_scores() -> None:
-    older = parse(
-        "observations/pending/a.md",
-        "---\ntitle: alpha beta\ncreated: 2026-01-01T00:00:00Z\n---\nText.\n",
-    )
-    newer = parse(
-        "observations/pending/b.md",
-        "---\ntitle: alpha beta\ncreated: 2026-02-01T00:00:00Z\n---\nText.\n",
+def cached(tmp_path: Path, files: dict[str, str]) -> tuple[Path, list[token_cache.Entry]]:
+    """Write files under a fresh content root, and return its root and their cache entries."""
+    root = tmp_path / "content"
+    for relpath, text in files.items():
+        target = root / relpath
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+    loaded = token_cache.load(root, sorted(files))
+    return root, [loaded[relpath] for relpath in sorted(files)]
+
+
+def test_ranked_evidence_is_newest_first_among_equal_scores(tmp_path: Path) -> None:
+    root, entries = cached(
+        tmp_path,
+        {
+            "observations/pending/a.md": "---\ntitle: alpha beta\ncreated: 2026-01-01T00:00:00Z\n---\nText.\n",
+            "observations/pending/b.md": "---\ntitle: alpha beta\ncreated: 2026-02-01T00:00:00Z\n---\nText.\n",
+        },
     )
     items = evidence.select(
-        [("observations/pending/a.md", older), ("observations/pending/b.md", newer)],
-        ["alpha", "beta"],
-        None,
-        None,
-        None,
-        5,
+        entries, ["alpha", "beta"], None, None, None, 5, corpus.Documents(root).read
     )
     assert [item.path for item in items] == [
         "observations/pending/b.md",
@@ -300,32 +305,41 @@ def test_ranked_evidence_is_newest_first_among_equal_scores() -> None:
     ]
 
 
-def test_kind_and_date_follow_the_file_and_its_front_matter() -> None:
-    transcript = parse(
-        "observations/archived/t.md",
-        "---\nsource: session-transcript\ncreated: 2026-03-04T05:06:07Z\n---\n",
+def test_kind_and_date_follow_the_file_and_its_front_matter(tmp_path: Path) -> None:
+    _, entries = cached(
+        tmp_path,
+        {
+            "observations/archived/t.md": "---\nsource: session-transcript\ncreated: 2026-03-04T05:06:07Z\n---\n",
+            "observations/archived/u.md": "---\ncreated: not a date\n---\n",
+            "questions/resolved/q.md": "",
+        },
     )
-    assert evidence.evidence_kind("observations/archived/t.md", transcript) == "transcript"
-    assert evidence.created_date(transcript) == date(2026, 3, 4)
-    untagged = parse("observations/archived/u.md", "---\ncreated: not a date\n---\n")
-    assert evidence.evidence_kind("observations/archived/u.md", untagged) == "observation"
-    assert evidence.created_date(untagged) is None
-    question = parse("questions/resolved/q.md", "")
-    assert evidence.evidence_kind("questions/resolved/q.md", question) == "resolved-question"
+    transcript, untagged, question = entries
+    assert evidence.evidence_kind(transcript.path, transcript.scalars.get("source")) == "transcript"
+    assert evidence.created_date_of(transcript.scalars.get("created")) == date(2026, 3, 4)
+    assert evidence.evidence_kind(untagged.path, untagged.scalars.get("source")) == "observation"
+    assert evidence.created_date_of(untagged.scalars.get("created")) is None
+    assert (
+        evidence.evidence_kind(question.path, question.scalars.get("source")) == "resolved-question"
+    )
+    assert evidence.created_date(
+        parse("observations/archived/u.md", "---\ncreated: 2026-03-04\n---\n")
+    ) == date(2026, 3, 4)
 
 
-def test_transcript_text_is_an_excerpt_and_other_text_is_the_title() -> None:
-    transcript = parse(
-        "observations/archived/t.md",
-        "---\ntitle: Session\nsource: session-transcript\n---\nThe outage ended.\n",
+def test_transcript_text_is_an_excerpt_and_other_text_is_the_title(tmp_path: Path) -> None:
+    root, entries = cached(
+        tmp_path,
+        {
+            "observations/archived/t.md": "---\ntitle: Session\nsource: session-transcript\n---\nThe outage ended.\n",
+            "observations/archived/n.md": "---\ntitle: " + "T" * 100 + " alpha\n---\n",
+        },
     )
+    note, transcript = entries
+    reader = corpus.Documents(root).read
     transcript_item = evidence.select(
-        [(transcript.path, transcript)], search.query_terms(("outage",)), None, None, None, 5
+        [transcript], search.query_terms(("outage",)), None, None, None, 5, reader
     )[0]
     assert transcript_item.text == "The outage ended."
-    note = parse(
-        "observations/archived/n.md",
-        "---\ntitle: " + "T" * 100 + " alpha\n---\n",
-    )
-    note_item = evidence.select([(note.path, note)], ["alpha"], None, None, None, 5)[0]
+    note_item = evidence.select([note], ["alpha"], None, None, None, 5, reader)[0]
     assert note_item.text == "T" * 69 + "..."

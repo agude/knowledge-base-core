@@ -6,11 +6,10 @@ from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 
-from kb import args, corpus, dates, evidence, search
+from kb import args, corpus, dates, evidence, search, token_cache
 from kb.args import Spec
 from kb.context import Context, load
 from kb.errors import KbError
-from kb.model import Document
 
 WHO = "evidence"
 ALL_DIRECTORIES = (
@@ -58,12 +57,21 @@ def run(words: Sequence[str]) -> int:
 
     try:
         context = load(os.environ, sys.platform, Path.home())
-        documents = _documents(context, kind_filter)
+        documents = corpus.Documents(context.root)
+        entries = _entries(context, kind_filter, documents)
     except KbError as error:
         raise KbError(f"{WHO}: {error}") from error
 
     terms = search.query_terms(parsed.words)
-    items = evidence.select(documents, terms, kind_filter, since, until, limit)
+    items = evidence.select(
+        entries,
+        terms,
+        kind_filter,
+        since,
+        until,
+        limit,
+        documents.read,
+    )
     sys.stdout.write(evidence.format_results(" ".join(parsed.words), items))
     return 0
 
@@ -78,8 +86,10 @@ def _date(value: str | None, option: str) -> date | None:
     return parsed
 
 
-def _documents(context: Context, kind_filter: str | None) -> list[tuple[str, Document]]:
-    """Read each selected Markdown document once, in content-relative path order."""
+def _entries(
+    context: Context, kind_filter: str | None, documents: corpus.Documents
+) -> list[token_cache.Entry]:
+    """The cache entries of the selected evidence files, in content-relative path order."""
     directories = ALL_DIRECTORIES if kind_filter is None else DIRECTORIES_BY_KIND[kind_filter]
     paths = sorted(
         {
@@ -88,4 +98,5 @@ def _documents(context: Context, kind_filter: str | None) -> list[tuple[str, Doc
             for path in corpus.markdown_files(context.root, directory)
         }
     )
-    return [(path, corpus.read_document(context.root, path)) for path in paths]
+    loaded = token_cache.load(context.root, paths, documents)
+    return [loaded[path] for path in paths if path in loaded]

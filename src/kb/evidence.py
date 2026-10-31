@@ -1,12 +1,16 @@
 """Select and format matching observations, transcripts, and questions."""
 
 import re
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
+from typing import TYPE_CHECKING
 
 from kb import dates, locators, search
 from kb.model import Document, Section
+
+if TYPE_CHECKING:
+    from kb.token_cache import Entry, MessageTokens
 
 KINDS = ("observation", "transcript", "open-question", "resolved-question")
 TITLE_WIDTH = 72
@@ -27,13 +31,16 @@ class Message:
 
 @dataclass(frozen=True)
 class Candidate:
-    """One searchable evidence file and any addressable harvested messages."""
+    """One searchable evidence file, its cache entry, and its addressable messages.
+
+    messages is None unless the file is an addressable transcript with at least one message.
+    """
 
     path: str
-    document: Document
+    entry: "Entry"
     kind: str
     created: date | None
-    messages: tuple[Message, ...] | None
+    messages: "tuple[MessageTokens, ...] | None"
 
 
 @dataclass(frozen=True)
@@ -49,66 +56,91 @@ class Item:
 
 
 def select(
-    documents: Sequence[tuple[str, Document]],
+    entries: Sequence["Entry"],
     terms: Sequence[str],
     kind_filter: str | None,
     since: date | None,
     until: date | None,
     limit: int,
+    read: Callable[[str], Document],
 ) -> list[Item]:
-    """Rank eligible files, then select a qualifying message when one is addressable."""
+    """Rank eligible files, then select a qualifying message when one is addressable.
+
+    Ranking uses the cached tokens alone. A document is read only for each row that is
+    printed, to build its excerpt.
+    """
     candidates: list[Candidate] = []
-    matching_messages: dict[str, tuple[tuple[Message, float], ...]] = {}
+    matching_messages: dict[str, tuple[tuple[MessageTokens, float], ...]] = {}
     has_date_bound = since is not None or until is not None
 
-    for path, document in documents:
-        kind = evidence_kind(path, document)
+    for entry in entries:
+        kind = evidence_kind(entry.path, entry.scalars.get("source"))
         if kind_filter is not None and kind != kind_filter:
             continue
 
-        created = created_date(document)
-        messages = addressable_messages(document) if kind == "transcript" else None
+        created = created_date_of(entry.scalars.get("created"))
+        messages = entry.messages if kind == "transcript" and entry.messages else None
         if messages is None:
             if has_date_bound and not _within(created, since, until):
                 continue
         else:
-            eligible_messages = tuple(
+            eligible = tuple(
                 message
                 for message in messages
-                if not has_date_bound or _within(message.timestamp.date(), since, until)
+                if not has_date_bound or _within(_message_date(message), since, until)
             )
-            message_hits = search.rank([message.unit for message in eligible_messages], terms)
+            message_hits = search.rank([message_unit(message) for message in eligible], terms)
             if has_date_bound and not message_hits:
                 continue
-            matching_messages[path] = tuple(
-                (eligible_messages[hit.index], hit.score) for hit in message_hits
+            matching_messages[entry.path] = tuple(
+                (eligible[hit.index], hit.score) for hit in message_hits
             )
 
-        candidates.append(Candidate(path, document, kind, created, messages))
+        candidates.append(Candidate(entry.path, entry, kind, created, messages))
 
-    file_hits = search.rank([search.evidence_unit(item.document) for item in candidates], terms)
+    file_hits = search.rank([file_unit(candidate.entry) for candidate in candidates], terms)
     items = [
-        _item(
+        _row(
             candidates[hit.index],
             hit.score,
             matching_messages.get(candidates[hit.index].path, ()),
-            terms,
         )
         for hit in file_hits
     ]
     items.sort(key=_sort_key)
-    return items[:limit]
+    by_path = {candidate.path: candidate for candidate in candidates}
+    return [
+        replace(item, text=_excerpt_for(by_path[item.path.partition("#")[0]], item, terms, read))
+        for item in items[:limit]
+    ]
 
 
-def evidence_kind(path: str, document: Document) -> str:
-    """The evidence kind from its storage area and transcript source marker."""
+def evidence_kind(path: str, source: str | None) -> str:
+    """The evidence kind from its storage area and its transcript source marker."""
     if path.startswith("questions/open/"):
         return "open-question"
     if path.startswith("questions/resolved/"):
         return "resolved-question"
-    if document.scalar("source") == "session-transcript":
+    if source == "session-transcript":
         return "transcript"
     return "observation"
+
+
+def file_unit(entry: "Entry") -> search.Unit:
+    """The search unit of an evidence file, built from its cached tokens."""
+    title, aliases, headings, body, phrases = entry.file_unit
+    return search.Unit(
+        title=title,
+        aliases=aliases,
+        headings=headings,
+        body=body,
+        phrases=frozenset(phrases),
+    )
+
+
+def message_unit(message: "MessageTokens") -> search.Unit:
+    """The search unit of a cached message: its body only, as addressable_messages builds it."""
+    return search.Unit(title=(), aliases=(), headings=(), body=message[2], phrases=frozenset())
 
 
 @dataclass(frozen=True)
@@ -179,8 +211,12 @@ def addressable_messages(document: Document) -> tuple[Message, ...] | None:
 
 def created_date(document: Document) -> date | None:
     """The valid date portion of an evidence file's created value."""
-    created = document.scalar("created") or ""
-    return dates.parse_date(created[:10])
+    return created_date_of(document.scalar("created"))
+
+
+def created_date_of(created: str | None) -> date | None:
+    """The valid date portion of a created value."""
+    return dates.parse_date((created or "")[:10])
 
 
 def format_results(query: str, items: Sequence[Item]) -> str:
@@ -203,35 +239,47 @@ def format_rows(items: Sequence[Item]) -> list[str]:
     ]
 
 
-def _item(
+def _row(
     candidate: Candidate,
     score: float,
-    matched_messages: Sequence[tuple[Message, float]],
-    terms: Sequence[str],
+    matched_messages: Sequence[tuple["MessageTokens", float]],
 ) -> Item:
-    """Choose a message locator or keep the evidence file locator."""
+    """One row without its excerpt: the best message when one matched, else the file."""
     if candidate.messages is not None and matched_messages:
         message, _message_score = min(
             matched_messages,
-            key=lambda match: (-match[1], match[0].number),
+            key=lambda match: (-match[1], match[0][0]),
         )
         return Item(
-            path=f"{candidate.path}#{message.section.key}",
-            date=message.timestamp.date(),
+            path=f"{candidate.path}#{message[0]}",
+            date=_message_date(message),
             kind=candidate.kind,
-            text=search.excerpt(message.body, terms),
+            text="",
             score=score,
-            message_number=message.number,
+            message_number=message[0],
         )
+    return Item(candidate.path, candidate.created, candidate.kind, "", score, None)
 
+
+def _excerpt_for(
+    candidate: Candidate, item: Item, terms: Sequence[str], read: Callable[[str], Document]
+) -> str:
+    """The excerpt of a printed row, read from its document."""
+    document = read(candidate.path)
+    if item.message_number is not None:
+        section = document.section(str(item.message_number))
+        if section is None:
+            raise ValueError(f"{candidate.path} has no message {item.message_number}")
+        return search.excerpt(document.prose(section.start, section.end), terms)
     if candidate.kind == "transcript":
-        body = _excerpt_lines(
-            candidate.document.prose(candidate.document.body_start, len(candidate.document.lines))
-        )
-        text = search.excerpt(body, terms)
-    else:
-        text = search.clip(locators.display_title(candidate.document), TITLE_WIDTH)
-    return Item(candidate.path, candidate.created, candidate.kind, text, score, None)
+        body = _excerpt_lines(document.prose(document.body_start, len(document.lines)))
+        return search.excerpt(body, terms)
+    return search.clip(locators.display_title(document), TITLE_WIDTH)
+
+
+def _message_date(message: "MessageTokens") -> date:
+    """The UTC date of a cached message timestamp."""
+    return datetime.fromisoformat(message[1]).date()
 
 
 def _timestamp(value: str | None) -> datetime | None:

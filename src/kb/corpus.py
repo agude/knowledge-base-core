@@ -91,3 +91,27 @@ def read_document(root: Path, relpath: str) -> model.Document:
     except OSError as error:
         raise KbError(f"kb: cannot read {relpath}: {error.strerror}") from error
     return model.parse(relpath, decode_text(data))
+
+
+class Documents:
+    """The parsed documents of one content root, each file parsed at most once.
+
+    A command shares one Documents between its cache loads and its excerpts, so a file
+    that several blocks print is parsed once.
+    """
+
+    def __init__(self, root: Path) -> None:
+        self._root = root
+        self._parsed: dict[str, model.Document] = {}
+
+    def read(self, relpath: str) -> model.Document:
+        """The document at relpath, read from the repository on first use."""
+        if relpath not in self._parsed:
+            self._parsed[relpath] = read_document(self._root, relpath)
+        return self._parsed[relpath]
+
+    def parse(self, relpath: str, text: str) -> model.Document:
+        """The document at relpath, parsed from text on first use. text is the file's content."""
+        if relpath not in self._parsed:
+            self._parsed[relpath] = model.parse(relpath, text)
+        return self._parsed[relpath]
