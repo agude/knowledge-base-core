@@ -1285,3 +1285,16 @@ or answer.
 The cache is written only when the content root is the top of its own git
 worktree. A content root inside another repository gets no cache and writes
 nothing there.
+
+## Session retrieval commit 4: cache refresh in sync and doctor (2026-10-31)
+
+Scratch copy of the content repository, with its `origin` set to a scratch
+bare clone so that `kb sync --no-push` could run without touching the real
+remote. No push was made.
+
+- `kb sync --no-push` on a cold cache printed `Cache: 2851 refreshed, 0
+  removed`.
+- `kb doctor` then reported `PASS cache` with 2851 entries and 22,305,323
+  bytes, current.
+- A recall run after the sync built zero evidence entries. The count was
+  taken by wrapping `token_cache._build`, the only place a file is tokenized.
