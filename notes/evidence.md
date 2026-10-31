@@ -1259,3 +1259,29 @@ warm-up; peak RSS is the maximum of the three timed runs.
 The plan's "today" figures (38.7 s, 22.0 s) came from a different content
 revision; the "before" column here is measured on the copy used for "after".
 `just eval` output matched the pre-change output byte for byte.
+
+## Session retrieval commit 3: ranking from the token cache (2026-10-31)
+
+Scratch copy of the content repository at `66f6f7d`, `KB_CONTENT` set to it.
+The cache was removed before the cold run. Warm cases had one warm-up and
+three timed runs; the median and the maximum peak RSS are reported.
+
+| Command case | Median elapsed | Maximum peak RSS | Gate |
+|---|---:|---:|---|
+| Cold `kb evidence curator cadence --kind transcript` (single run) | 10.46 s | 160,756 KiB | <= 15 s |
+| Warm `kb evidence curator cadence --kind transcript` | 0.90 s | 75,664 KiB | <= 2 s |
+| Warm curated-hit `kb recall "curator cadence"` | 1.18 s | 77,864 KiB | <= 3 s |
+| Warm no-match `kb recall zzqxvmissingterm` | 1.36 s | 77,788 KiB | <= 5 s |
+
+Output check: ten queries, each run as `kb evidence`, `kb evidence --kind
+transcript`, and `kb recall`, 30 outputs in all. Every output matched the
+output from the commit before this one, byte for byte. `just eval` matched
+its earlier output byte for byte.
+
+The contract test requires each file to be parsed once per answer. Cache
+builds and excerpt reads therefore share one `corpus.Documents` per command
+or answer.
+
+The cache is written only when the content root is the top of its own git
+worktree. A content root inside another repository gets no cache and writes
+nothing there.
