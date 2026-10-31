@@ -1388,6 +1388,21 @@ the file alone.
 - The live set in sessions and combined modes. The 20 live labels name
   curated sections only, so every session row misses. Each live question
   needs transcript labels, checked independently.
-- Acceptance limits for added coverage, false positives, superseded claims,
-  and output size. Fix them before the candidate is measured. This needs a
-  decision.
+- Acceptance limits: none. The plan's numeric limits were removed on
+  2026-10-31, so no limit gates the candidate.
+
+### Mining for a live set (2026-10-31)
+
+Standalone user questions with an exchange in the harvested transcripts: 17
+of 262. Seven are standalone enough to use as queries: rollback window,
+dag and delete, RAG over raw sessions, marshal versus pickle versus shelve,
+the sync interaction, chunking by heading or file, and curation losing
+information. The rest depend on the conversation before them.
+
+The 17 exchanges are all in the same session as their question. A session
+score on them measures the question echo, not recovery.
+
+Real agent queries in the session logs: 26, after removing probes and
+benchmark runs. No unanswerable or current-state case was found in the
+corpus. The candidate lists are in `notes/mining-2026-10-31.md`, which
+git ignores.
