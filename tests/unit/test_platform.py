@@ -1,4 +1,4 @@
-"""Tests for the config file location on each platform."""
+"""Tests for the config file location and the scheduler query on each platform."""
 
 from pathlib import Path
 
@@ -36,3 +36,23 @@ def test_windows_without_localappdata_falls_back_under_home() -> None:
     assert platform.config_file({}, platform.WINDOWS, HOME) == (
         HOME / "AppData" / "Local" / "kb" / "config.toml"
     )
+
+
+def test_linux_asks_systemd_about_the_timer() -> None:
+    commands = platform.scheduler_commands(platform.LINUX)
+    assert commands == (
+        ("systemctl", "--user", "is-enabled", "kb-sync.timer"),
+        ("systemctl", "--user", "is-active", "kb-sync.timer"),
+    )
+
+
+def test_windows_asks_task_scheduler_for_the_task_state() -> None:
+    commands = platform.scheduler_commands(platform.WINDOWS)
+    assert commands is not None
+    ((program, *arguments),) = commands
+    assert program == "powershell.exe"
+    assert arguments[-1] == "(Get-ScheduledTask -TaskName 'kb-sync' -ErrorAction Stop).State"
+
+
+def test_other_platforms_have_no_scheduler_query() -> None:
+    assert platform.scheduler_commands("darwin") is None

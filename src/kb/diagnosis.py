@@ -16,6 +16,9 @@ State = Literal["pass", "warn", "fail"]
 SYNC_MAX_AGE = timedelta(minutes=60)
 TRANSCRIPT_MAX_AGE = timedelta(days=20)
 TIMER = "kb-sync.timer"
+TASK = "kb-sync"
+# Task Scheduler states in which the task will run on its triggers.
+TASK_ENABLED = frozenset(("Ready", "Running", "Queued"))
 WORKING = setup_rules.WORKING_COMMANDS
 EXPECTED_CLAUDE = frozenset(setup_rules.claude_rules())
 CLAUDE_KB_PREFIXES = tuple(f"{tool}(kb" for tool in setup_rules.CLAUDE_SHELL_TOOLS)
@@ -142,18 +145,23 @@ def sync_check(state: SyncState | None, problem: str | None, now: datetime) -> C
     return Check("sync", "pass", f"last exchange {_stamp(state.last_exchange)}")
 
 
-def scheduler_check(
-    platform: str, enabled: str | None, active: str | None, problem: str | None
-) -> Check:
-    """Whether the timer that runs kb sync is enabled and active. Only Linux is checked."""
+def scheduler_check(platform: str, answers: Sequence[str] | None, problem: str | None) -> Check:
+    """Whether the job that runs kb sync is scheduled, from the answers to scheduler_commands.
+
+    Linux answers whether kb-sync.timer is enabled and active. Windows answers the kb-sync
+    task's state. Other platforms are not checked.
+    """
+    if platform == "win32":
+        return _task_check(answers, problem)
     if platform != "linux":
         return Check(
             "scheduler", "warn", f"not checked on {platform}", "check the scheduler by hand"
         )
-    if problem is not None:
+    if problem is not None or answers is None:
         return Check(
             "scheduler", "warn", f"cannot query systemctl: {problem}", "check the timer by hand"
         )
+    enabled, active = answers
     if enabled == "enabled" and active == "active":
         return Check("scheduler", "pass", f"{TIMER} is enabled and active")
     return Check(
@@ -161,6 +169,33 @@ def scheduler_check(
         "warn",
         f"{TIMER} is {enabled or 'unknown'} and {active or 'unknown'}",
         f"enable and start {TIMER} for this user",
+    )
+
+
+def _task_check(answers: Sequence[str] | None, problem: str | None) -> Check:
+    """Whether the Windows kb-sync task is registered and enabled."""
+    if problem is not None or answers is None:
+        return Check(
+            "scheduler",
+            "warn",
+            f"cannot query Task Scheduler: {problem}",
+            "check the kb-sync task by hand",
+        )
+    (state,) = answers
+    if state in TASK_ENABLED:
+        return Check("scheduler", "pass", f"{TASK} task is {state.lower()}")
+    if not state:
+        return Check(
+            "scheduler",
+            "warn",
+            f"{TASK} task is not registered",
+            "run contrib/windows/register-kb-sync.ps1",
+        )
+    return Check(
+        "scheduler",
+        "warn",
+        f"{TASK} task is {state.lower()}",
+        f"enable it: Enable-ScheduledTask -TaskName {TASK}",
     )
 
 

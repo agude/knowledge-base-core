@@ -587,6 +587,23 @@ The service defaults to `%h/.local/bin/kb`. Edit `ExecStart` in the copied
 service file if `kb` is installed elsewhere. The timer runs every 15 minutes
 and catches up after the machine was off.
 
+#### Register the Windows task
+
+`contrib/windows/register-kb-sync.ps1` registers a Task Scheduler task named
+`kb-sync` that runs `kb sync` every 15 minutes. `kb` does not run it. Run it in
+a normal PowerShell window after installing and configuring `kb`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File contrib\windows\register-kb-sync.ps1
+```
+
+The script uses the `kb` on `PATH`; pass `-Kb PATH` to use another. The task
+runs only while you are signed in, so it sees your mapped drives and Git
+credentials, and `conhost --headless` keeps a console window from opening. A
+run missed while the machine was off starts when it is next available. Running
+the script again replaces the task. Remove it with
+`Unregister-ScheduledTask -TaskName kb-sync`.
+
 ## Setup and diagnosis
 
 ### `kb setup`
@@ -691,7 +708,7 @@ gather its facts reports why, and the other checks still run.
 | `hook` | kb installed it, and its `kb` runs `--version` | | the hook is absent or foreign, or its `kb` is missing |
 | `curation` | no unsettled batch | a batch is unsettled, or committed but not published | |
 | `sync` | the last exchange was within 60 minutes | the last run ended `dirty` or `error`, or the exchange is older | there is no record |
-| `scheduler` | on Linux, `kb-sync.timer` is enabled and active | it is not enabled or not active; elsewhere, `not checked on PLATFORM` | |
+| `scheduler` | on Linux, `kb-sync.timer` is enabled and active; on Windows, the `kb-sync` task is ready or running | it is not enabled or not active, the task is missing or disabled, or the platform is not checked | |
 | `capture` | `harvest_since` is set, the transcript roots are readable, and no ready transcript is older than 20 days | capture is disabled, a root is unreadable, or old ready transcripts exist | |
 | `instructions` | each host's global file has the canonical block, with or without its content policy line | a block is missing or differs | |
 | `skills` | both packaged skills at both host destinations match the package | a skill is missing, differs, or is unmanaged | |
@@ -701,7 +718,50 @@ gather its facts reports why, and the other checks still run.
   Codex retention is reported as `unknown`, because its configuration documents
   no retention setting.
 - `scheduler` asks `systemctl --user` whether `kb-sync.timer` is enabled and
-  active. A missing `systemctl` produces a warning.
+  active. On Windows it asks Task Scheduler, through `powershell.exe`, for the
+  `kb-sync` task's state. A missing `systemctl` or `powershell.exe` produces a
+  warning, and macOS reports `not checked on darwin`.
+
+## Windows
+
+`kb` runs on Windows with Git for Windows and uv. Install both, then install
+`kb` with Python 3.14:
+
+```powershell
+winget install --id Git.Git -e
+winget install --id astral-sh.uv -e
+uv tool install --python 3.14 PATH\TO\knowledge-base-core
+uv tool update-shell
+```
+
+Open a new window so `PATH` includes `%USERPROFILE%\.local\bin`, then run
+`kb setup --content PATH` and `kb doctor`. `detect-secrets` needs PyYAML, which
+has no Windows wheel for Python 3.15 yet, so uv would build it and that needs
+the Microsoft C++ Build Tools. Python 3.11 through 3.14 install from wheels.
+
+- Run `uv` and `kb setup` in a normal terminal, not inside the Claude desktop
+  app. The app is a packaged Windows app, and Windows redirects what its
+  processes write under `AppData` into the app's private storage. uv's Python
+  and tools, and `kb`'s `%LOCALAPPDATA%\kb\config.toml`, would land where
+  other programs cannot see them. Agents in the app can still read files that
+  were written outside it.
+- Write paths in a hand-edited `config.toml` with `/`, or in a literal string:
+  `content = 'C:\Users\me\Knowledge'`. In a basic string, each backslash
+  must be doubled. `kb setup` writes the escaped form.
+- Git for Windows sets `core.autocrlf=true` system-wide. A content repository
+  made by `kb setup --init` has `* text=auto eol=lf`, which overrides it, and
+  `kb doctor` checks it. `kb` writes LF and stores CRLF from standard input as
+  LF.
+- The pre-commit hook is a POSIX `sh` script. Git for Windows runs it with its
+  own `sh`.
+- `kb setup --print allow-claude` includes `PowerShell(kb COMMAND *)` rules,
+  because Claude Code on Windows runs commands through either its Bash or its
+  PowerShell tool.
+- Register the sync task as described in
+  [Register the Windows task](#register-the-windows-task).
+- A cloned `knowledge-base-core` keeps `.python-version` at 3.15; pass
+  `--python 3.14` to `uv sync` and `uv run` on Windows. Tests that create
+  symbolic links are skipped unless Developer Mode is on.
 
 ## Development
 

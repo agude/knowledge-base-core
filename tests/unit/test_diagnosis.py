@@ -126,16 +126,49 @@ def test_the_sync_check_covers_every_record_state() -> None:
     assert (fresh.state, fresh.message) == ("pass", "last exchange 2026-10-26T12:00:00Z")
 
 
-def test_the_scheduler_is_checked_only_on_linux() -> None:
-    assert diagnosis.scheduler_check("linux", "enabled", "active", None).state == "pass"
-    windows = diagnosis.scheduler_check("win32", None, None, None)
-    assert (windows.state, windows.message) == ("warn", "not checked on win32")
-    darwin = diagnosis.scheduler_check("darwin", None, None, None)
-    assert darwin.message == "not checked on darwin"
-    missing = diagnosis.scheduler_check("linux", None, None, "no systemctl")
+def test_the_scheduler_is_checked_on_linux_and_windows() -> None:
+    assert diagnosis.scheduler_check("linux", ("enabled", "active"), None).state == "pass"
+    darwin = diagnosis.scheduler_check("darwin", None, None)
+    assert (darwin.state, darwin.message) == ("warn", "not checked on darwin")
+    missing = diagnosis.scheduler_check("linux", None, "no systemctl")
     assert (missing.state, missing.message) == ("warn", "cannot query systemctl: no systemctl")
-    inactive = diagnosis.scheduler_check("linux", "disabled", "inactive", None)
+    inactive = diagnosis.scheduler_check("linux", ("disabled", "inactive"), None)
     assert inactive.message == "kb-sync.timer is disabled and inactive"
+
+
+@pytest.mark.parametrize(
+    ("answers", "problem", "state", "message", "fix"),
+    [
+        (("Ready",), None, "pass", "kb-sync task is ready", None),
+        (("Running",), None, "pass", "kb-sync task is running", None),
+        (
+            ("",),
+            None,
+            "warn",
+            "kb-sync task is not registered",
+            "run contrib/windows/register-kb-sync.ps1",
+        ),
+        (
+            ("Disabled",),
+            None,
+            "warn",
+            "kb-sync task is disabled",
+            "enable it: Enable-ScheduledTask -TaskName kb-sync",
+        ),
+        (
+            None,
+            "no powershell.exe",
+            "warn",
+            "cannot query Task Scheduler: no powershell.exe",
+            "check the kb-sync task by hand",
+        ),
+    ],
+)
+def test_the_windows_scheduler_reads_the_kb_sync_task_state(
+    answers: tuple[str, ...] | None, problem: str | None, state: str, message: str, fix: str | None
+) -> None:
+    check = diagnosis.scheduler_check("win32", answers, problem)
+    assert (check.state, check.message, check.fix) == (state, message, fix)
 
 
 def test_the_capture_check_covers_each_warning_and_the_pass() -> None:

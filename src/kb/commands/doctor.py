@@ -225,17 +225,15 @@ def _sync(root: Path, context: Context) -> Check:
 
 
 def _scheduler(context: Context) -> Check:
-    """Whether the user's timer that runs kb sync is enabled and active, where kb checks it."""
+    """Whether the user's scheduled kb sync is enabled, where kb checks it."""
     commands = scheduler_commands(context.platform)
     if commands is None:
-        return diagnosis.scheduler_check(context.platform, None, None, None)
-    enabled_command, active_command = commands
+        return diagnosis.scheduler_check(context.platform, None, None)
     try:
-        enabled = _stdout(enabled_command)
-        active = _stdout(active_command)
+        answers = tuple(_stdout(command) for command in commands)
     except (OSError, subprocess.SubprocessError) as error:
-        return diagnosis.scheduler_check(context.platform, None, None, str(error))
-    return diagnosis.scheduler_check(context.platform, enabled, active, None)
+        return diagnosis.scheduler_check(context.platform, None, str(error))
+    return diagnosis.scheduler_check(context.platform, answers, None)
 
 
 def _capture(context: Context, root: Path | None) -> Check:
