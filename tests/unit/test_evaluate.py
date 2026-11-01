@@ -152,7 +152,7 @@ def test_main_scores_the_named_set_and_its_content(capsys: pytest.CaptureFixture
     questions = FIXTURES / "retrieval-question-v1" / "questions.json"
     assert evaluate.main([str(questions)]) == 0
     out = capsys.readouterr().out
-    assert out.startswith(f"{questions}\n")
+    assert out.startswith(f"{questions.as_posix()}\n")
     assert "answerable with an expected locator in the top 3: 8 of 8 (100%)" in out
 
 
@@ -199,7 +199,7 @@ def test_main_reads_sys_argv_by_default(
     questions = FIXTURES / "retrieval-question-v1" / "questions.json"
     monkeypatch.setattr(sys, "argv", ["evaluate", str(questions)])
     assert evaluate.main() == 0
-    assert capsys.readouterr().out.startswith(f"{questions}\n")
+    assert capsys.readouterr().out.startswith(f"{questions.as_posix()}\n")
 
 
 @pytest.mark.filterwarnings("ignore:.*found in sys.modules:RuntimeWarning")

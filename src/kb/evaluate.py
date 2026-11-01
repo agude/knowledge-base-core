@@ -167,7 +167,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         for questions, content in _sets(words):
             outcomes = run_cases(content.resolve(), load_cases(questions))
-            sys.stdout.write(report(str(questions), outcomes))
+            sys.stdout.write(report(questions.as_posix(), outcomes))
             sys.stdout.write(verdict(outcomes) + "\n\n")
             if unmet(outcomes):
                 status = 1

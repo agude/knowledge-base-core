@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from kb import cli
+from kb import cli, observation
 from kb.commands import observe
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "content"
@@ -241,7 +241,7 @@ def test_success_writes_one_file_and_commits_it(
         "---\n"
         'title: "DNS caching"\n'
         "source: session\n"
-        f'project: "{home}"\n'
+        f'project: "{observation.escape(str(home))}"\n'
         f'host: "{host}"\n'
         "created: 2026-10-26T12:00:05Z\n"
         "---\n"
@@ -272,7 +272,7 @@ def test_project_is_the_top_of_the_repository_the_process_is_in(
     name = WROTE.fullmatch(out)
     assert name is not None
     text = (content / "observations" / "pending" / name.group(1)).read_text(encoding="utf-8")
-    assert f'project: "{work.resolve()}"\n' in text
+    assert f'project: "{observation.escape(str(work.resolve()))}"\n' in text
 
 
 def test_a_secret_is_refused_and_nothing_is_written(

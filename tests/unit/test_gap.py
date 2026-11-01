@@ -2,6 +2,7 @@
 
 import io
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -11,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from kb import cli, lock, write
+from kb import cli, lock, observation, write
 from kb.commands import gap
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "content"
@@ -195,7 +196,7 @@ def test_os_error_from_the_scratch_directory_uses_the_gap_prefix(
     scratch.write_text("not a directory", encoding="utf-8")
     status, out, err = run_gap(capsys, "--title", "Title", "--body", "Body", "--context", "infra")
     assert (status, out) == (1, "")
-    assert err.startswith("gap: [Errno ")
+    assert re.match(r"gap: \[(Errno|WinError) \d+\]", err)
     assert scratch.read_text(encoding="utf-8") == "not a directory"
 
 
@@ -260,7 +261,7 @@ def test_success_writes_exact_bytes_commits_one_path_and_reads_back(
         'title: "Say \\"hi\\" \\\\ café"\n'
         'context: "knowledge/infra/nas.md"\n'
         "source: session\n"
-        f'project: "{home}"\n'
+        f'project: "{observation.escape(str(home))}"\n'
         'host: "test-host"\n'
         "created: 2026-10-26T12:00:05Z\n"
         "---\n"

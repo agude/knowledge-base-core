@@ -58,7 +58,8 @@ def project() -> str:
         check=False,
     )
     if top.returncode == 0:
-        return top.stdout.removesuffix("\n")
+        # Git prints C:/ paths on Windows; Path gives them the native separator.
+        return str(Path(top.stdout.removesuffix("\n")))
     return str(here)
 
 
