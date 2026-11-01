@@ -254,7 +254,8 @@ fixes, closeout, and outstanding Windows criteria. Phase 2 now provides
 open questions and qualifying transcript message locators. Linux checks and
 real-content read-only validation are recorded in `notes/evidence.md`.
 Message locators remain fixture-validated because the real store has no
-addressable transcripts. The first native run of the Windows CI job remains.
+addressable transcripts. The Windows CI job has run natively; phase 6 tracks
+the Windows work.
 Harvesting has not been enabled on any machine, and installed host allow
 rules have not been updated. Phase 3 now includes local batch selection,
 next-item context, outcomes, and archive recovery, as well as `kb lint`,
@@ -283,8 +284,7 @@ fresh post-fix validation used revision
 acceptance checks with source tool-result references, cleanup proof, and
 continuation cut are in `notes/evidence.md`. The README documents sync and
 harvesting, `contrib/systemd/` contains the Linux timer files, and CI defines
-the Windows test job. The job's first native run remains the only outstanding
-phase 1 item.
+the Windows test job, which has run natively. No phase 1 item is outstanding.
 
 Enabling capture on a machine belongs to rollout, with an explicit boundary
 against the old capture hooks.
@@ -310,9 +310,8 @@ contracts belong in the short-term plan for this phase.
 Phase 2 is implemented in `kb gap`, `kb questions`, and `kb evidence`, with
 matching open questions in recall. The README describes the command
 contracts, real-content limits, and read/write distinction. The Linux checks
-and closeout measurements are recorded in `notes/evidence.md`. Native
-Windows CI remains unrun, and installed host allow rules remain rollout
-work. Phase 3 has built local batch selection, next-item context, outcomes,
+and closeout measurements are recorded in `notes/evidence.md`. Installed
+host allow rules remain rollout work. Phase 3 has built local batch selection, next-item context, outcomes,
 and archive recovery, alongside `kb lint`, `kb verify`, and `kb resolve`.
 Synchronized start, the finishing commit and push, the content pre-commit
 hook, and the one-time `ttl` assignment pass remain outstanding. The
@@ -429,6 +428,26 @@ Measure Claude Code and Codex transcript locations and shapes on Windows
 before changing the parsers. `agent-session-backup` schedules itself only on
 Linux and macOS; a Windows machine needs its own backup schedule. Add the Task Scheduler entry and the Windows
 checks in `kb doctor`. Verify the complete cycle on a Windows machine.
+
+Status on 2026-11-01, on the `dev-windows` branch:
+
+- `kb` is installed with `uv tool install --python 3.14` on a Windows 10
+  machine, with a content clone, the hook, skills, instruction blocks, and
+  allow rules for both hosts. `kb doctor` passes everything except the
+  scheduler and capture checks.
+- Files that kb writes keep LF, standard input stores CRLF as LF, and the
+  `project` field uses one separator style.
+- `kb setup --print allow-claude` adds `PowerShell(kb COMMAND *)` rules, and
+  doctor checks them.
+- `contrib/windows/register-kb-sync.ps1` registers the `kb-sync` task, and
+  doctor reads its state. The task has not been registered on a machine yet.
+- The Windows CI job is back in the workflow. Its first native run on
+  `dev-windows` had one failure, a POSIX mode check, and 89.55% coverage; both
+  are addressed on the branch. The e2e setup, hook, and doctor tests now run
+  on Windows, except the doctor cases that would query the real Task
+  Scheduler.
+- Remaining: measure the Windows transcript shapes, enable capture, schedule
+  the session backup, register the task, and verify the complete cycle.
 
 ### 7. Extend hosts and platforms
 
