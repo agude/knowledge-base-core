@@ -17,6 +17,8 @@ from kb.transcripts import (
 
 APP: App = "claude-code"
 SYSTEM_REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL)
+# The tools whose input is a shell command. Claude Code on Windows has both.
+SHELL_TOOLS = frozenset(("Bash", "PowerShell"))
 
 
 def parse(text: str, session_id: str, parent_session: str | None = None) -> Session:
@@ -93,7 +95,7 @@ def _message(record: Mapping[str, object]) -> tuple[Message | None, bool]:
 
 
 def _content(value: object, role: Role) -> tuple[list[str], list[str]]:
-    """Extract user or assistant text blocks and Claude Bash command inputs."""
+    """Extract user or assistant text blocks and Claude Bash and PowerShell command inputs."""
     if role == "user" and isinstance(value, str):
         return [value], []
     if not isinstance(value, list):
@@ -107,15 +109,15 @@ def _content(value: object, role: Role) -> tuple[list[str], list[str]]:
         block_text = block.get("text")
         if block_type == "text" and isinstance(block_text, str):
             texts.append(block_text)
-        elif role == "assistant" and block_type == "tool_use" and block.get("name") == "Bash":
-            command = _bash_command(block.get("input"))
+        elif role == "assistant" and block_type == "tool_use" and block.get("name") in SHELL_TOOLS:
+            command = _shell_command(block.get("input"))
             if command is not None:
                 commands.append(command)
     return texts, commands
 
 
-def _bash_command(value: object) -> str | None:
-    """A Claude Bash tool input's command, when it is a string."""
+def _shell_command(value: object) -> str | None:
+    """A Claude shell tool input's command, when it is a string."""
     if not isinstance(value, Mapping):
         return None
     command = value.get("command")

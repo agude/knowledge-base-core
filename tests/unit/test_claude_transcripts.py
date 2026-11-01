@@ -115,7 +115,7 @@ def test_user_string_and_text_blocks_are_kept_but_non_text_blocks_are_skipped() 
     ]
 
 
-def test_assistant_keeps_text_blocks_and_only_bash_commands() -> None:
+def test_assistant_keeps_text_blocks_and_only_shell_commands() -> None:
     content = [
         {"type": "thinking", "thinking": "Do not keep."},
         {"type": "text", "text": "Answer."},
@@ -123,12 +123,14 @@ def test_assistant_keeps_text_blocks_and_only_bash_commands() -> None:
         {"type": "tool_use", "name": "Bash", "input": {"command": "printf ok"}},
         {"type": "tool_use", "name": "Bash", "input": "bad-shape"},
         {"type": "tool_use", "name": "Bash", "input": {"command": 4}},
+        {"type": "tool_use", "name": "PowerShell", "input": {"command": "Get-ChildItem"}},
+        {"type": "tool_use", "name": "PowerShell", "input": {"command": None}},
     ]
 
     session = claude.parse(record("assistant", content) + "\n", "commands")
 
     assert session.messages[0].text == "Answer."
-    assert session.messages[0].commands == ("printf ok",)
+    assert session.messages[0].commands == ("printf ok", "Get-ChildItem")
 
 
 def test_message_without_text_or_command_is_skipped() -> None:
