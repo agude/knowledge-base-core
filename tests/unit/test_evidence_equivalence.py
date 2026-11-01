@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from kb import corpus, evidence, locators, search, token_cache
+from kb import chunks, corpus, evidence, locators, search, token_cache
 from kb.model import Document, parse
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
@@ -131,10 +131,16 @@ def _reference_item(
             message_number=message.number,
         )
     if candidate.kind == "transcript":
-        body = evidence._excerpt_lines(
-            candidate.document.prose(candidate.document.body_start, len(candidate.document.lines))
-        )
-        text = search.excerpt(body, terms)
+        found = chunks.best(candidate.document, terms)
+        if found is not None:
+            text = search.excerpt(evidence._excerpt_lines(found.lines), terms)
+        else:
+            body = evidence._excerpt_lines(
+                candidate.document.prose(
+                    candidate.document.body_start, len(candidate.document.lines)
+                )
+            )
+            text = search.excerpt(body, terms)
     else:
         text = search.clip(locators.display_title(candidate.document), evidence.TITLE_WIDTH)
     return evidence.Item(candidate.path, candidate.created, candidate.kind, text, score, None)

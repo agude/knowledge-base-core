@@ -3,10 +3,10 @@
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from kb import dates, locators, search
+from kb import addressing, chunks, dates, locators, search
 from kb.model import Document, Section
 
 if TYPE_CHECKING:
@@ -15,7 +15,6 @@ if TYPE_CHECKING:
 KINDS = ("observation", "transcript", "open-question", "resolved-question")
 TITLE_WIDTH = 72
 READ_WITH = "Read with: kb read <locator>"
-_MESSAGE_HEADING = re.compile(r"([0-9]+)\. (user|assistant), (.+)")
 
 
 @dataclass(frozen=True)
@@ -143,58 +142,9 @@ def message_unit(message: "MessageTokens") -> search.Unit:
     return search.Unit(title=(), aliases=(), headings=(), body=message[2], phrases=frozenset())
 
 
-@dataclass(frozen=True)
-class MessageSection:
-    """One validated message section: its number, its role, its H2 section, and its timestamp."""
-
-    number: int
-    role: str
-    section: Section
-    timestamp: datetime
-
-
-def message_sections(document: Document) -> tuple[MessageSection, ...] | None:
-    """The validated message sections of a transcript, or None when its contract is not valid.
-
-    H2 keys are numbered in order, so a section's key is the string of its number.
-    """
-    if document.scalar("source") != "session-transcript":
-        return None
-    if not all(
-        _nonempty(document.scalar(field)) for field in ("session", "first_message", "last_message")
-    ):
-        return None
-
-    part = document.scalar("part") or ""
-    if not part.isascii() or not part.isdigit() or int(part) < 1:
-        return None
-
-    started = _timestamp(document.scalar("started"))
-    ended = _timestamp(document.scalar("ended"))
-    if started is None or ended is None or started > ended:
-        return None
-
-    sections = [section for section in document.sections if section.level == 2]
-    if not sections:
-        return None
-
-    found: list[MessageSection] = []
-    for number, section in enumerate(sections, start=1):
-        match = _MESSAGE_HEADING.fullmatch(section.heading)
-        if match is None or int(match.group(1)) != number:
-            return None
-        timestamp = _timestamp(match.group(3))
-        if timestamp is None or not started <= timestamp <= ended:
-            return None
-        found.append(
-            MessageSection(number=number, role=match.group(2), section=section, timestamp=timestamp)
-        )
-    return tuple(found)
-
-
 def addressable_messages(document: Document) -> tuple[Message, ...] | None:
     """The transcript's messages when its complete addressability contract is valid."""
-    sections = message_sections(document)
+    sections = addressing.message_sections(document)
     if sections is None:
         return None
     messages: list[Message] = []
@@ -267,7 +217,11 @@ def _row(
 def _excerpt_for(
     candidate: Candidate, item: Item, terms: Sequence[str], read: Callable[[str], Document]
 ) -> str:
-    """The excerpt of a printed row, read from its document."""
+    """The excerpt of a printed row, read from its document.
+
+    A row for a message shows that message. A file-level transcript shows its best chunk,
+    or its whole body when no chunk holds a query term.
+    """
     document = read(candidate.path)
     if item.message_number is not None:
         section = document.section(str(item.message_number))
@@ -275,6 +229,9 @@ def _excerpt_for(
             raise ValueError(f"{candidate.path} has no message {item.message_number}")
         return search.excerpt(document.prose(section.start, section.end), terms)
     if candidate.kind == "transcript":
+        found = chunks.best(document, terms)
+        if found is not None:
+            return search.excerpt(_excerpt_lines(found.lines), terms)
         body = _excerpt_lines(document.prose(document.body_start, len(document.lines)))
         return search.excerpt(body, terms)
     return search.clip(locators.display_title(document), TITLE_WIDTH)
@@ -285,27 +242,9 @@ def _message_date(message: "MessageTokens") -> date:
     return datetime.fromisoformat(message[1]).date()
 
 
-def _timestamp(value: str | None) -> datetime | None:
-    """A timezone-aware ISO timestamp normalized to UTC."""
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        return None
-    return parsed.astimezone(UTC)
-
-
 def _excerpt_lines(lines: Sequence[str]) -> tuple[str, ...]:
     """Drop Markdown fence markers while retaining fenced text and shell commands."""
     return tuple(line for line in lines if re.match(r"\s*(?:`{3,}|~{3,})", line) is None)
-
-
-def _nonempty(value: str | None) -> bool:
-    """Whether a metadata field contains non-whitespace text."""
-    return value is not None and bool(value.strip())
 
 
 def _within(value: date | None, since: date | None, until: date | None) -> bool:

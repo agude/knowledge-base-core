@@ -23,7 +23,7 @@ from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Any, Literal
 
-from kb import chunks, corpus, evidence, lock, model, search
+from kb import addressing, chunks, corpus, evidence, lock, model, search
 
 FORMAT = 2
 CACHE_DIRECTORY = "kb"
@@ -302,7 +302,7 @@ def _build(document: model.Document, mtime_ns: int, size: int, digest: str) -> E
                 for token in kept.get(index, ())
             ),
         )
-        for item in evidence.message_sections(document) or ()
+        for item in addressing.message_sections(document) or ()
     )
     scalars = {
         name: value for name in SCALAR_FIELDS if (value := document.scalar(name)) is not None

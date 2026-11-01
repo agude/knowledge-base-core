@@ -25,7 +25,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from kb import evidence
+from kb import addressing, search
 from kb.model import Document, fence_closes, fence_opening
 
 MERGE_THRESHOLD = 1024
@@ -69,9 +69,36 @@ def chunks(document: Document) -> tuple[Chunk, ...]:
     return tuple(_assemble(cleaned))
 
 
+def best(document: Document, terms: Sequence[str]) -> Chunk | None:
+    """The chunk that shows the query best, or None when no chunk holds a query term.
+
+    A chunk with more distinct query terms wins. Ties go to the higher BM25 score among the
+    file's chunks, and then to the earlier chunk. This chooses only what a row shows. It
+    never changes which files rank.
+    """
+    found = chunks(document)
+    if not found:
+        return None
+    bodies = [search.index_tokens("\n".join(chunk.lines)) for chunk in found]
+    units = [
+        search.Unit(title=(), aliases=(), headings=(), body=body, phrases=frozenset())
+        for body in bodies
+    ]
+    scores = {hit.index: hit.score for hit in search.rank(units, terms)}
+    wanted = set(terms)
+
+    def key(index: int) -> tuple[int, float, int]:
+        return (len(wanted & set(bodies[index])), scores.get(index, 0.0), -index)
+
+    winner = max(range(len(found)), key=key)
+    if not wanted & set(bodies[winner]):
+        return None
+    return found[winner]
+
+
 def _messages(document: Document) -> list[_Message] | None:
     """The messages of a transcript, or None when it has neither kind of message heading."""
-    sections = evidence.message_sections(document)
+    sections = addressing.message_sections(document)
     if sections is not None:
         messages: list[_Message] = []
         for item in sections:

@@ -134,6 +134,32 @@ def test_file_ties_sort_by_path_after_date_and_score(tmp_path: Path) -> None:
     ]
 
 
+def test_a_file_level_legacy_transcript_shows_the_chunk_with_the_most_terms(
+    tmp_path: Path,
+) -> None:
+    filler = "padding " * 150
+    contents = (
+        "---\ntitle: Legacy\nsource: session-transcript\ncreated: 2026-10-21\n---\n\n"
+        f"### user\n\nalpha here. {filler}\n\n"
+        "### assistant\n\nalpha and beta together.\n"
+    )
+    root, entries = cached(tmp_path, {"observations/archived/l.md": contents})
+
+    items = evidence.select(
+        entries,
+        search.query_terms(("alpha", "beta")),
+        "transcript",
+        None,
+        None,
+        5,
+        corpus.Documents(root).read,
+    )
+
+    assert [item.path for item in items] == ["observations/archived/l.md"]
+    assert items[0].date == date(2026, 10, 21)
+    assert "beta" in items[0].text
+
+
 def test_malformed_transcript_remains_a_file_level_result(tmp_path: Path) -> None:
     text = transcript(TRANSCRIPT_FRONT.replace("part: 1\n", "part: 0\n")).lines
     root, entries = cached(

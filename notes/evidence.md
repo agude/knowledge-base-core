@@ -1385,9 +1385,8 @@ the file alone.
 
 ### Not measured
 
-- The live set in sessions and combined modes. The 20 live labels name
-  curated sections only, so every session row misses. Each live question
-  needs transcript labels, checked independently.
+- Transcript labels for six live cases (`live-03`, `05`, `14`, `15`, `16`,
+  `19`). Their labels name no transcript. See the live baseline below.
 - Acceptance limits: none. The plan's numeric limits were removed on
   2026-10-31, so no limit gates the candidate.
 
@@ -1406,3 +1405,118 @@ Real agent queries in the session logs: 26, after removing probes and
 benchmark runs. No unanswerable or current-state case was found in the
 corpus. The candidate lists are in `notes/mining-2026-10-31.md`, which
 git ignores.
+
+## Session retrieval: live baseline (2026-10-31)
+
+Identity:
+
+- Set: `notes/eval-live.json`, sha256
+  `5555b5038759d4b96345dce93248a86a8b3680d86f97b43914f8635a49871f7c`. The
+  provenance section above records `7605398d...`, so the file changed after
+  that record. Fourteen cases gained one transcript locator each: `live-01`,
+  `02`, `04`, `06` to `13`, `17`, `18`, and `20`. Each added locator equals
+  the `transcript_locator` in `notes/eval-live-qa.json`. No other field
+  changed. `live-03`, `05`, `14`, `15`, `16`, and `19` keep curated-only
+  labels.
+- Content: `/home/agude/Knowledge` at `12c5f09`, clean. The 2026-10-26 run
+  used `1c05bfb`.
+- Code: `dev-cache` at `fe7ceac`, clean.
+- Run: `kb.evaluate --mode sessions` and `--mode combined` on the set and the
+  content root. Whole-file rows, top 3.
+
+Results:
+
+| Measure | Sessions | Combined |
+|---|---|---|
+| Curated rows with an expected locator in the top 3 | - | 20 of 20 (100%) |
+| Session rows with an expected locator in the top 3 | 13 of 20 (65%) | 13 of 20 (65%) |
+| Added by the session block | - | 0 of 20 (0%) |
+| Session false positives | n/a, no unanswerable live case | n/a |
+| Session characters per query | 481 | 481 |
+| Acceptance | not met: `live-03`, `05`, `13`, `14`, `15`, `16`, `19` | met, curated criterion |
+
+Session rank for the 13 cases with a session hit: rank 1 for `live-01`, `02`,
+`04`, `07`, `08`, `09`, `10`, `11`, and `17`; rank 2 for `live-06`, `12`, and
+`20`; rank 3 for `live-18`.
+
+Misses:
+
+- `live-03`, `05`, `14`, `15`, `16`, `19`: label gap. Their labels name no
+  transcript, so sessions mode cannot pass them. They are not marked
+  unanswerable. The local stores `~/.claude/projects` and `~/.codex/sessions`
+  hold sessions from 2026-08 to 2026-10 only, so the March sessions behind
+  these cases are not there either.
+- `live-13`: ranking miss. Its QA-verified transcript,
+  `observations/archived/20260620T052754-69bf.md`, is not in the top 10
+  session rows for `smb mount credentials file`. The pool is 10 rows.
+
+Reading:
+
+- The live set is curation-saturated. Curated top 3 holds all 20 cases, so the
+  session block adds nothing here. The set measures session rank for answers
+  curation already covers. It cannot measure recovery of facts that curation
+  dropped. `session-recovery-v1` and the 6b audit measure recovery.
+
+Ten recorded queries at `12c5f09`, sessions mode, top 3. Paths are under
+`observations/`:
+
+- curator cadence: `pending/20261031T163000-11ab7a5b.md#24`,
+  `pending/20261031T180001-c5ec48dd.md#123`, `archived/20260410T133417-89cb.md`
+- nas restart: `archived/20260813T010858-f86c.md`,
+  `archived/20261014T134048-7d7990c9.md`, `archived/20260711T231155-249a.md`
+- traefik: `pending/20261031T180001-c5ec48dd.md#75`,
+  `pending/20261031T224501-5ba2c949.md#108`
+- backup disk: `archived/20260714T020908-bcd2.md`,
+  `archived/20261015T053659-bd6f5e36.md`, `pending/20261026T225533-aaa7123d.md`
+- codex rules: `pending/20261029T030217-c652ddeb.md`,
+  `archived/20261009T022346-ff70227b.md`, `archived/20260819T172546-805ad273.md`
+- dotfiles cutover: `pending/20261029T030217-c652ddeb.md`,
+  `pending/20261028T225249-155c788e.md`,
+  `pending/20261029T143001-e3d0ebb8.md#68`
+- transcript harvest: `pending/20261027T185110-902acaff.md`,
+  `pending/20261027T185033-28faa7ad.md`, `archived/20260529T012325-572e.md`
+- sync schedule: `pending/20261027T174313-bf965675.md`,
+  `pending/20261026T225533-aaa7123d.md`, `pending/20261028T181303-e43f489f.md`
+- stale article ttl: `pending/20261027T174313-bf965675.md`,
+  `archived/20260905T222944-c0eb932f.md`, `pending/20261025T020639-5d2d7603.md`
+- observation pending: `archived/20260905T153638-604ad3d6.md`,
+  `archived/20260412T220946-01c3.md`, `archived/20260411T054929-110c.md`
+
+Against `1c05bfb`, the traefik list gained a second row, and the
+dotfiles cutover third row changed from `pending/20261029T224500-eb17fc9e.md#131`
+to `pending/20261029T143001-e3d0ebb8.md#68`. Two other lists kept their files
+in a different order. The rest match. The content changed between the two
+revisions, so use this list as the 5c baseline.
+
+Not measured:
+
+- The six label gaps above.
+- The Windows CI leg for commit 2.
+- The construction-loss audit (6b).
+
+## Session retrieval 5c-i: legacy excerpts from the best chunk (2026-10-31)
+
+Built: a file-level transcript row takes its excerpt from its best chunk, through
+`chunks.best`. Legacy files have no message locator, so this changes only their
+excerpt text. Message rows keep the matched-message locator and excerpt. The
+addressable contract moved to `kb/addressing.py`, so `chunks.py` no longer imports
+`evidence.py`.
+
+Tried first, and reverted: chunk-first-message locators and dates. On the fixture
+they moved the four recovery answers from `#2`, `#5`, `#4`, and `#4` to `#1`, so
+all four labels failed. The 6a labels name the answering message.
+
+Checks, all on content `611db6a`, which is the Knowledge HEAD during this work:
+
+- File order and scores: 72 snapshots of `evidence.select` (live queries, ten
+  recorded queries, fixture queries; unbounded, and bounded to 2026-07-01
+  through 2026-10-31) match an archived copy of `HEAD` exactly.
+- `just eval`: output byte-identical to the pre-change run.
+- Live set, sessions mode: each case has the same rank as before. 13 of 20
+  have a transcript hit. Session characters per query 487 to 483.
+- Fixture, sessions and combined modes: output identical to the pre-change run.
+  `unanswerable-01` still fails, as 5c-ii must fix it.
+
+Content revision: Knowledge HEAD moved from `12c5f09` to `611db6a` during this
+work. The live and ten-query baselines above at `12c5f09` are therefore stale for
+absolute values. Rankings compare within one revision only.

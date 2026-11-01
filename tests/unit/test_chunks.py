@@ -240,3 +240,26 @@ def test_blank_lines_left_by_removed_text_are_trimmed_at_both_ends() -> None:
     assert text_of(found[0]).startswith("\n") is False
     assert text_of(found[0]).splitlines()[0] == "Hello there."
     assert text_of(found[0]).endswith("Goodbye.")
+
+
+def test_best_chunk_has_the_most_distinct_query_terms() -> None:
+    filler = "x " * 600
+    document = addressable([filler + "alpha", filler + "beta gamma"])
+
+    best = chunks.best(document, ("beta", "gamma"))
+
+    assert best is not None
+    assert best.number == 2
+
+
+def test_best_chunk_is_none_when_no_chunk_holds_a_query_term() -> None:
+    filler = "x " * 600
+    document = addressable([filler + "alpha", filler + "beta"])
+
+    assert chunks.best(document, ("zebra",)) is None
+
+
+def test_best_chunk_is_none_when_injected_text_leaves_no_message() -> None:
+    document = addressable(["# AGENTS.md instructions for the project"])
+
+    assert chunks.best(document, ("project",)) is None
