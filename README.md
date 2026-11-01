@@ -128,10 +128,11 @@ The question stores `title`, `context`, `source: session`, `project`, `host`,
 and `created` fields in that order.
 
 All three options are required. Title and body follow the same rules as
-`kb observe`; `--body -` reads UTF-8 text from standard input and stores CRLF
-line endings as LF. `--context` is the best-known area that lacks knowledge. No
-`kb map` call is required, and the area need not exist. Bare names resolve under `knowledge/`; content-relative
-paths and unique filenames are accepted under `knowledge/` or `sources/`. Paths
+`kb observe`; `--body -` reads UTF-8 text from standard input, drops a leading
+byte-order mark, and stores CRLF line endings as LF. `--context` is the
+best-known area that lacks knowledge. No `kb map` call is required, and the area
+need not exist. Bare names resolve under `knowledge/`; content-relative paths
+and unique filenames are accepted under `knowledge/` or `sources/`. Paths
 use `/` separators, and the writer rejects blank, absolute or drive-letter,
 traversal, fragmented, or control-character contexts. A missing or deleted path
 is kept as a normalized literal; a shorthand is stored under `knowledge/`. The
@@ -238,8 +239,9 @@ one of `--destination` and `--obsolete`. An answered question's destination
 must be a locator that `kb read` resolves under `knowledge/`, including a
 valid section fragment. The command stores its canonical content-relative
 locator. `--obsolete` marks a question that no longer needs an answer and does
-not store a destination. `--answer -` reads UTF-8 text from standard input and
-stores CRLF line endings as LF; the answer must contain non-whitespace text.
+not store a destination. `--answer -` reads UTF-8 text from standard input,
+drops a leading byte-order mark, and stores CRLF line endings as LF; the answer
+must contain non-whitespace text.
 
 The resolved copy keeps the open question's filename under
 `questions/resolved/`. It preserves the original text and appends `resolved`
@@ -464,8 +466,8 @@ kb observe --title "Meeting notes" --body - < notes.txt
 ```
 
 - `--title` is one line and must contain text. `--body` must contain text. `-`
-  reads the body from standard input to its end; CRLF line endings are stored
-  as LF.
+  reads the body from standard input to its end; a leading byte-order mark is
+  dropped and CRLF line endings are stored as LF.
 - On success, stdout is `Wrote: observations/pending/<file>` and the exit status
   is 0. A usage error prints the usage line and exits 1. Any other failure prints
   nothing to stdout, prints a message that begins `observe:` to stderr, and exits 1.
@@ -742,6 +744,22 @@ Open a new window so `PATH` includes `%USERPROFILE%\.local\bin`, then run
 has no Windows wheel for Python 3.15 yet, so uv would build it and that needs
 the Microsoft C++ Build Tools. Python 3.11 through 3.14 install from wheels.
 
+- `kb observe`, `kb gap`, and harvesting commit to the content repository, so
+  Git needs an identity. A fresh Git for Windows install has none:
+
+  ```powershell
+  git config --global user.name "Your Name"
+  git config --global user.email "you@example.com"
+  ```
+
+- Git refuses a repository on a network share owned by another account, such
+  as an `origin` on a NAS, with "detected dubious ownership". Trust each such
+  repository by the UNC path that Git prints:
+
+  ```powershell
+  git config --global --add safe.directory '%(prefix)///server/share/content.git'
+  ```
+
 - Run `uv` and `kb setup` in a normal terminal, not inside the Claude desktop
   app. The app is a packaged Windows app, and Windows redirects what its
   processes write under `AppData` into the app's private storage. uv's Python
@@ -753,8 +771,8 @@ the Microsoft C++ Build Tools. Python 3.11 through 3.14 install from wheels.
   must be doubled. `kb setup` writes the escaped form.
 - Git for Windows sets `core.autocrlf=true` system-wide. A content repository
   made by `kb setup --init` has `* text=auto eol=lf`, which overrides it, and
-  `kb doctor` checks it. `kb` writes LF and stores CRLF from standard input as
-  LF.
+  `kb doctor` checks it. `kb` writes LF, stores CRLF from standard input as
+  LF, and drops the byte-order mark that Windows PowerShell adds to piped UTF-8.
 - The pre-commit hook is a POSIX `sh` script. Git for Windows runs it with its
   own `sh`.
 - `kb setup --print allow-claude` includes `PowerShell(kb COMMAND *)` rules,

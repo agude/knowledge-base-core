@@ -26,12 +26,13 @@ def check_title(title: str) -> None:
 
 
 def read_text(data: bytes) -> str:
-    """Standard input as text: UTF-8, with CRLF line endings stored as LF.
+    """Standard input as text: UTF-8 without a leading byte-order mark, and CRLF stored as LF.
 
-    Content files use LF, and Windows shells pipe CRLF. Raises UnicodeDecodeError
-    for bytes that are not UTF-8.
+    Content files use LF and no byte-order mark. Windows shells pipe CRLF, and Windows
+    PowerShell starts UTF-8 output with a byte-order mark. Raises UnicodeDecodeError for
+    bytes that are not UTF-8.
     """
-    return data.decode("utf-8").replace("\r\n", "\n")
+    return data.decode("utf-8-sig").replace("\r\n", "\n")
 
 
 def check_body(body: str) -> None:

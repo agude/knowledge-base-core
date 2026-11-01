@@ -145,6 +145,8 @@ def test_refusal_keeps_the_order_of_the_findings() -> None:
         (b"one\r\ntwo\r\n", "one\ntwo\n"),
         (b"one\rtwo", "one\rtwo"),
         ("café\r\n".encode(), "café\n"),
+        (b"\xef\xbb\xbfone\r\ntwo", "one\ntwo"),
+        (b"one \xef\xbb\xbftwo", "one ﻿two"),
     ],
 )
 def test_read_text_decodes_utf8_and_stores_crlf_as_lf(data: bytes, text: str) -> None:
