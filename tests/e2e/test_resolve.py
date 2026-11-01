@@ -1,5 +1,6 @@
 """End-to-end tests for resolving open questions."""
 
+import sys
 from pathlib import Path
 from subprocess import CompletedProcess
 
@@ -199,7 +200,7 @@ def test_refuses_existing_resolved_copy_without_changing_either_file(git_kb: Kb)
     assert resolved.read_bytes() == before_resolved
 
 
-def test_secret_refusals_name_the_destination_or_answer_line(git_kb: Kb) -> None:
+def test_secret_refusal_names_the_answer_line(git_kb: Kb) -> None:
     question = _question(git_kb)
     before = question.read_bytes()
     secret = 'password = "hunter2hunter2"'
@@ -208,6 +209,11 @@ def test_secret_refusals_name_the_destination_or_answer_line(git_kb: Kb) -> None
     assert "resolve: remove or redact it, then run kb resolve again" in answer.stderr
     assert question.read_bytes() == before
 
+
+@pytest.mark.skipif(sys.platform == "win32", reason='Windows file names cannot contain "')
+def test_secret_refusal_names_the_destination(git_kb: Kb) -> None:
+    question = _question(git_kb)
+    before = question.read_bytes()
     destination_file = _question(git_kb, 'knowledge/password = "hunter2hunter2".md')
     destination_file.write_text("# Secret path target\n", encoding="utf-8")
     destination = git_kb(

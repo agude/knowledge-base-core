@@ -31,9 +31,9 @@ def _make_repo(root: Path, observations: dict[str, str] | None = None) -> Path:
     pending.mkdir(parents=True)
     (root / "knowledge").mkdir()
     (root / "questions" / "open").mkdir(parents=True)
-    (root / ".fixture").write_text("Synthetic content repository.\n", encoding="utf-8")
+    (root / ".fixture").write_text("Synthetic content repository.\n", encoding="utf-8", newline="")
     for filename, text in (observations or {}).items():
-        (pending / filename).write_text(text, encoding="utf-8")
+        (pending / filename).write_text(text, encoding="utf-8", newline="")
     git_commands = [
         ["git", "init", "-q", "-b", "main"],
         ["git", "config", "user.name", "Test Author"],
@@ -102,7 +102,7 @@ def _completion_fixture(
     batch = curation.make_batch(RUN, datetime(2026, 10, 28, tzinfo=UTC), 100, [member])
     batches = root / "observations" / "batches"
     batches.mkdir()
-    (batches / f"{RUN}.json").write_text(curation.render_batch(batch), encoding="utf-8")
+    (batches / f"{RUN}.json").write_text(curation.render_batch(batch), encoding="utf-8", newline="")
     return root, content, batch
 
 
@@ -112,6 +112,7 @@ def _write_destination(root: Path) -> Path:
     destination.write_text(
         "---\ntitle: Topic\n---\n# Topic\n\n## 1. First section\n\nA curated fact.\n",
         encoding="utf-8",
+        newline="",
     )
     return destination
 
@@ -131,9 +132,10 @@ def test_start_snapshots_selection_and_reports_related_stale_knowledge(
         "---\ntitle: Special topic\nupdated: 2020-01-01\nverified: 2020-01-01\n"
         "ttl: 1\n---\n# Special topic\n\nExisting fact.\n",
         encoding="utf-8",
+        newline="",
     )
     question = root / "questions" / "open" / "question.md"
-    question.write_text("---\ntitle: Open question\ncontext: infra\n---\n\nQuestion.\n")
+    question.write_text("---\ntitle: Open question\ncontext: infra\n---\n\nQuestion.\n", newline="")
     _commit_repo(root, "knowledge/topic.md", "questions/open/question.md")
     monkeypatch.setattr(
         dates,
@@ -299,7 +301,7 @@ def test_status_does_not_write_call_git_lock_scan_secrets_or_network(
         "20261028T120000-a1b2c3d4", datetime(2026, 10, 28, 12, tzinfo=UTC), 100, [member]
     )
     manifest = batches_directory / f"{batch.id}.json"
-    manifest.write_text(curation.render_batch(batch), encoding="utf-8")
+    manifest.write_text(curation.render_batch(batch), encoding="utf-8", newline="")
     before = {path: path.stat().st_mtime_ns for path in (source, manifest)}
 
     def unexpected(*_args: object, **_kwargs: object) -> None:
@@ -330,6 +332,7 @@ def test_next_is_read_only_and_does_not_call_git_lock_or_network(
         "---\ntitle: A focused synthetic title\nverified: 2026-10-20\n---\n"
         "# A focused synthetic title\n\nA matching fact.\n",
         encoding="utf-8",
+        newline="",
     )
     _commit_repo(root, "knowledge/context.md")
     context = _context(root)
@@ -338,7 +341,7 @@ def test_next_is_read_only_and_does_not_call_git_lock_or_network(
     batch = curation.make_batch(RUN, datetime(2026, 10, 28, tzinfo=UTC), 100, [member])
     manifest = root / "observations" / "batches" / f"{RUN}.json"
     (manifest.parent).mkdir(parents=True, exist_ok=True)
-    manifest.write_text(curation.render_batch(batch), encoding="utf-8")
+    manifest.write_text(curation.render_batch(batch), encoding="utf-8", newline="")
     before = {path: path.stat().st_mtime_ns for path in (pending, article, manifest)}
     head = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True
@@ -394,7 +397,7 @@ def test_complete_failure_stages_recover_in_a_new_process(
     )
     batch = curation.make_batch(RUN, datetime(2026, 10, 28, tzinfo=UTC), 100, [member])
     manifest = batches / f"{RUN}.json"
-    manifest.write_text(curation.render_batch(batch), encoding="utf-8")
+    manifest.write_text(curation.render_batch(batch), encoding="utf-8", newline="")
     context = _context(root)
     head = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True
@@ -515,7 +518,7 @@ def test_complete_scans_supplied_text_and_cleans_secret_scan_files(
     )
     batch = curation.make_batch(RUN, datetime(2026, 10, 28, tzinfo=UTC), 1000, [member])
     manifest = batches / f"{RUN}.json"
-    manifest.write_text(curation.render_batch(batch), encoding="utf-8")
+    manifest.write_text(curation.render_batch(batch), encoding="utf-8", newline="")
     scan_directory = tmp_path / "secret-scan"
     scan_directory.mkdir()
     monkeypatch.setattr(tempfile, "gettempdir", lambda: scan_directory)
@@ -614,7 +617,7 @@ def test_complete_resumes_when_expected_archive_is_already_published(
     )
     intent_batch = curation.replace_member(batch, intent)
     manifest = root / "observations" / "batches" / f"{RUN}.json"
-    manifest.write_text(curation.render_batch(intent_batch), encoding="utf-8")
+    manifest.write_text(curation.render_batch(intent_batch), encoding="utf-8", newline="")
     archived_path = root / "observations" / "archived" / member.filename
     archived_path.parent.mkdir()
     archived_path.write_bytes(archived)
@@ -673,7 +676,7 @@ def test_requested_destinations_canonicalizes_aliases_and_checks_containment(
     assert destinations == (curation.Destination("knowledge/topic.md#1", "1. First section"),)
 
     outside = tmp_path / "outside.md"
-    outside.write_text("---\ntitle: Outside\n---\n# Outside\n", encoding="utf-8")
+    outside.write_text("---\ntitle: Outside\n---\n# Outside\n", encoding="utf-8", newline="")
     escaped = root / "knowledge" / "escaped.md"
     escaped.symlink_to(outside)
     with pytest.raises(KbError, match="outside the content repository"):
@@ -755,7 +758,7 @@ def test_complete_rejects_conflicting_retries_and_preserves_recovery_commands(
     )
     intent_batch = curation.replace_member(batch, intent)
     manifest = root / "observations" / "batches" / f"{RUN}.json"
-    manifest.write_text(curation.render_batch(intent_batch), encoding="utf-8")
+    manifest.write_text(curation.render_batch(intent_batch), encoding="utf-8", newline="")
     with pytest.raises(KbError, match="resume with: kb curate complete"):
         curate._complete(
             _context(root), root / ".git", intent_batch, "item.md", "ephemeral", [], ""
@@ -799,10 +802,11 @@ def test_complete_archiving_intent_refuses_destination_heading_drift(tmp_path: P
     )
     intent_batch = curation.replace_member(batch, intent)
     manifest = root / "observations" / "batches" / f"{RUN}.json"
-    manifest.write_text(curation.render_batch(intent_batch), encoding="utf-8")
+    manifest.write_text(curation.render_batch(intent_batch), encoding="utf-8", newline="")
     destination.write_text(
         "---\ntitle: Topic\n---\n# Topic\n\n## 1. Renamed section\n\nA curated fact.\n",
         encoding="utf-8",
+        newline="",
     )
 
     with pytest.raises(KbError, match="destination heading changed since the archive intent"):
@@ -838,6 +842,7 @@ def test_resume_archive_detects_heading_drift_and_completed_file_conflicts(tmp_p
     destination.write_text(
         "---\ntitle: Topic\n---\n# Topic\n\n## 1. Renamed section\n\nA curated fact.\n",
         encoding="utf-8",
+        newline="",
     )
     with pytest.raises(KbError, match="destination heading changed"):
         curate._resume_archive(_context(root), root / ".git", batch, intent)
@@ -845,6 +850,7 @@ def test_resume_archive_detects_heading_drift_and_completed_file_conflicts(tmp_p
     destination.write_text(
         "---\ntitle: Topic\n---\n# Topic\n\n## 1. First section\n\nA curated fact.\n",
         encoding="utf-8",
+        newline="",
     )
     completed = curation.finish_archive(intent)
     complete_batch = curation.replace_member(batch, completed)
@@ -853,7 +859,7 @@ def test_resume_archive_detects_heading_drift_and_completed_file_conflicts(tmp_p
     archive_path.parent.mkdir()
     archive_path.write_bytes(b"changed archive")
     manifest = root / "observations" / "batches" / f"{RUN}.json"
-    manifest.write_text(curation.render_batch(complete_batch), encoding="utf-8")
+    manifest.write_text(curation.render_batch(complete_batch), encoding="utf-8", newline="")
     with pytest.raises(KbError, match="archive is missing or changed"):
         curate._complete(
             _context(root),
@@ -876,6 +882,7 @@ def test_inbound_reference_resolver_ignores_external_paths_and_reports_local_pat
         "---\ntitle: Inbound\n---\n\n[external](https://example.invalid/a.md)\n"
         "[pending](../observations/pending/item.md#1)\n",
         encoding="utf-8",
+        newline="",
     )
 
     with pytest.raises(KbError, match="references still target the pending observation"):
@@ -885,6 +892,7 @@ def test_inbound_reference_resolver_ignores_external_paths_and_reports_local_pat
         "---\ntitle: Inbound\n---\n\n[external](https://example.invalid/a.md)\n"
         "[absolute](/observations/pending/item.md)\n[drive](C:\\observations\\pending\\item.md)\n",
         encoding="utf-8",
+        newline="",
     )
     curate._refuse_inbound_pending_references(root, "item.md")
 
@@ -997,7 +1005,7 @@ def test_transition_commands_run_under_shared_lock_and_handle_usage_and_busy(
     batch = curation.make_batch(RUN, datetime(2026, 10, 28, tzinfo=UTC), 1000, members)
     batches = root / "observations" / "batches"
     batches.mkdir()
-    (batches / f"{RUN}.json").write_text(curation.render_batch(batch), encoding="utf-8")
+    (batches / f"{RUN}.json").write_text(curation.render_batch(batch), encoding="utf-8", newline="")
     context = _context(root)
     git_directory = root / ".git"
     monkeypatch.setattr(curate, "load", lambda *_args: context)
@@ -1009,7 +1017,7 @@ def test_transition_commands_run_under_shared_lock_and_handle_usage_and_busy(
     assert curate._defer_command([RUN, "keep.md", "--reason", "Need more evidence"]) == 0
     assert capsys.readouterr().out == f"Deferred: keep.md in batch {RUN}\n"
     changed_path = root / "observations" / "pending" / "changed.md"
-    changed_path.write_text("modified by another writer", encoding="utf-8")
+    changed_path.write_text("modified by another writer", encoding="utf-8", newline="")
     assert curate._drop_command([RUN, "changed.md", "--reason", "Input changed"]) == 0
     assert capsys.readouterr().out == f"Dropped: changed.md in batch {RUN}\n"
     assert changed_path.read_text(encoding="utf-8") == "modified by another writer"

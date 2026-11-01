@@ -56,7 +56,7 @@ def test_instructions_use_the_environment_content_path_without_requiring_it_to_e
 
     assert setup.run(["--print", "instructions"]) == 0
 
-    assert f"Content policy: @{content}/AGENTS.md" in capsys.readouterr().out
+    assert f"Content policy: @{content.as_posix()}/AGENTS.md" in capsys.readouterr().out
     assert not content.exists()
 
 
@@ -65,11 +65,11 @@ def test_instructions_use_the_configured_content_path(
 ) -> None:
     config = isolated / "xdg" / "kb" / "config.toml"
     config.parent.mkdir(parents=True)
-    config.write_text(f'content = "{isolated / "configured"}"\n', encoding="utf-8")
+    config.write_text(f"content = '{isolated / 'configured'}'\n", encoding="utf-8")
 
     assert setup.run(["--print", "instructions"]) == 0
 
-    assert f"@{isolated / 'configured'}/AGENTS.md" in capsys.readouterr().out
+    assert f"@{(isolated / 'configured').as_posix()}/AGENTS.md" in capsys.readouterr().out
 
 
 def test_instructions_without_any_content_path_are_refused(isolated: Path) -> None:

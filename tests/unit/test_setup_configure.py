@@ -97,7 +97,8 @@ def test_an_updated_config_keeps_its_mode_and_its_other_lines(tmp_path: Path) ->
     assert config.read_text(encoding="utf-8") == (
         'content = "/new"\nharvest_since = 2026-10-24T00:00:00Z\n'
     )
-    assert stat.S_IMODE(config.stat().st_mode) == 0o600
+    if sys.platform != "win32":  # Windows has no POSIX file modes
+        assert stat.S_IMODE(config.stat().st_mode) == 0o600
 
 
 @SKIP_LINKS
@@ -151,7 +152,8 @@ def test_applying_an_install_writes_the_script_executable_through_kb_tmp(tmp_pat
     assert setup._apply(setup_rules.HookAction.INSTALL, hook, script, git) == "installed"
 
     assert hook.read_text(encoding="utf-8") == script
-    assert stat.S_IMODE(hook.stat().st_mode) & 0o111
+    if sys.platform != "win32":  # Git for Windows runs a hook without an executable bit
+        assert stat.S_IMODE(hook.stat().st_mode) & 0o111
     assert list((git / "kb-tmp").iterdir()) == []
 
 
