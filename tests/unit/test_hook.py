@@ -4,6 +4,7 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -169,7 +170,8 @@ def test_a_symbolic_link_article_keeps_its_link_and_the_target_mode(
     assert hook.pre_commit(root, NOW) == 0
 
     assert link.is_symlink()
-    assert stat.S_IMODE(target.stat().st_mode) == 0o640
+    if sys.platform != "win32":  # Windows has no POSIX file modes
+        assert stat.S_IMODE(target.stat().st_mode) == 0o640
     assert f"updated: {TODAY}" in target.read_text(encoding="utf-8")
 
 

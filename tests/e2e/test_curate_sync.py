@@ -5,12 +5,9 @@ import json
 import os
 import re
 import shutil
-import sys
 from datetime import datetime
 from pathlib import Path
 from subprocess import CompletedProcess
-
-import pytest
 
 from .harness import FIXTURE_TRANSCRIPTS, Kb, run_git
 
@@ -129,7 +126,6 @@ def test_synchronized_start_refuses_a_rebase_conflict_and_keeps_local_commits(
     assert _manifest_count(remote_git_kb) == 0
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="the rejecting hook is a POSIX script")
 def test_synchronized_start_refuses_a_rejected_push_and_keeps_the_commit(
     remote_git_kb: Kb,
 ) -> None:

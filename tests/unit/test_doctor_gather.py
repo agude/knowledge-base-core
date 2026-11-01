@@ -18,7 +18,6 @@ from kb.diagnosis import Check
 from kb.sync_state import SyncState
 
 NOW = datetime(2026, 10, 26, 12, tzinfo=UTC)
-SKIP = pytest.mark.skipif(sys.platform == "win32", reason="the gatherers use POSIX tools here")
 
 
 def git(root: Path, *words: str) -> str:
@@ -61,7 +60,10 @@ def machine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> doctor.Context:
     git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
     git(root, "remote", "add", "origin", str(origin))
     git(root, "push", "-q", "--set-upstream", "origin", "main")
-    kb = fake_tool(tmp_path / "bin", "kb", '#!/bin/sh\necho "kb 0.1.0"\n')
+    if sys.platform == "win32":
+        kb = fake_tool(tmp_path / "bin", "kb.cmd", "@echo kb 0.1.0\n")
+    else:
+        kb = fake_tool(tmp_path / "bin", "kb", '#!/bin/sh\necho "kb 0.1.0"\n')
     hook = root / ".git" / "hooks" / "pre-commit"
     hook.write_text(setup_rules.hook_script(str(kb)), encoding="utf-8")
     hook.chmod(0o755)
@@ -80,14 +82,21 @@ def machine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> doctor.Context:
             skills.install(directory / name, skills.package_files(name), "0.1.0")
     configuration = tmp_path / "config.toml"
     configuration.write_text(
-        f'content = "{root}"\nharvest_since = 2026-10-24T00:00:00Z\n', encoding="utf-8"
+        f'content = "{root.as_posix()}"\nharvest_since = 2026-10-24T00:00:00Z\n', encoding="utf-8"
     )
-    systemctl = fake_tool(
-        tmp_path / "systemd",
-        "systemctl",
-        '#!/bin/sh\ncase "$2" in\n  is-enabled) echo enabled ;;\n  is-active) echo active ;;\nesac\n',
-    )
-    monkeypatch.setenv("PATH", f"{systemctl.parent}{os.pathsep}{os.environ.get('PATH', '')}")
+    if sys.platform == "win32":
+        # Windows runs no sh script by name, so the systemctl answers come from Python.
+        answers = tuple(
+            (sys.executable, "-c", f"print('{word}')") for word in ("enabled", "active")
+        )
+        monkeypatch.setattr(doctor, "scheduler_commands", lambda platform: answers)
+    else:
+        systemctl = fake_tool(
+            tmp_path / "systemd",
+            "systemctl",
+            '#!/bin/sh\ncase "$2" in\n  is-enabled) echo enabled ;;\n  is-active) echo active ;;\nesac\n',
+        )
+        monkeypatch.setenv("PATH", f"{systemctl.parent}{os.pathsep}{os.environ.get('PATH', '')}")
     environ = {
         "KB_CONTENT": str(root),
         "CLAUDE_CONFIG_DIR": str(claude),
@@ -107,7 +116,6 @@ def by_name(checks: list[Check]) -> dict[str, Check]:
     return {check.name: check for check in checks}
 
 
-@SKIP
 def test_a_configured_machine_passes_every_gathered_check(machine: doctor.Context) -> None:
     checks = by_name(doctor.gather(machine))
 
@@ -130,7 +138,6 @@ def test_a_configured_machine_passes_every_gathered_check(machine: doctor.Contex
     )
 
 
-@SKIP
 def test_content_reports_missing_origin_unfetched_and_dirty_states(machine: doctor.Context) -> None:
     root = Path(machine.environ["KB_CONTENT"])
     (root / "scratch.txt").write_text("x\n", encoding="utf-8")
@@ -150,7 +157,6 @@ def test_content_reports_missing_origin_unfetched_and_dirty_states(machine: doct
     assert (gone.state, gone.message) == ("fail", "no origin remote")
 
 
-@SKIP
 def test_the_hook_states_are_each_named(machine: doctor.Context, tmp_path: Path) -> None:
     root = Path(machine.environ["KB_CONTENT"])
     hook = root / ".git" / "hooks" / "pre-commit"
@@ -171,7 +177,6 @@ def test_the_hook_states_are_each_named(machine: doctor.Context, tmp_path: Path)
     assert by_name(doctor.gather(machine))["hook"].message == "absent"
 
 
-@SKIP
 def test_a_managed_hook_whose_kb_is_missing_fails(machine: doctor.Context, tmp_path: Path) -> None:
     root = Path(machine.environ["KB_CONTENT"])
     hook = root / ".git" / "hooks" / "pre-commit"
@@ -184,7 +189,6 @@ def test_a_managed_hook_whose_kb_is_missing_fails(machine: doctor.Context, tmp_p
     assert check.message == f"kb path is missing: {tmp_path / 'gone'}"
 
 
-@SKIP
 def test_gitattributes_and_sync_report_their_states(machine: doctor.Context) -> None:
     root = Path(machine.environ["KB_CONTENT"])
     (root / ".gitattributes").write_text("* text=auto\n", encoding="utf-8")
@@ -196,7 +200,6 @@ def test_gitattributes_and_sync_report_their_states(machine: doctor.Context) -> 
     assert by_name(doctor.gather(machine))["sync"].message == "No record"
 
 
-@SKIP
 def test_capture_passes_and_names_an_unreadable_transcript_root(
     machine: doctor.Context, tmp_path: Path
 ) -> None:
@@ -222,19 +225,18 @@ def test_capture_passes_and_names_an_unreadable_transcript_root(
         locked.chmod(0o755)
 
 
-@SKIP
 def test_capture_without_a_harvest_cutoff_reports_it_and_no_root_reports_the_problem(
     machine: doctor.Context,
 ) -> None:
     machine.configuration.write_text(
-        f'content = "{machine.environ["KB_CONTENT"]}"\n', encoding="utf-8"
+        f'content = "{Path(machine.environ["KB_CONTENT"]).as_posix()}"\n', encoding="utf-8"
     )
     off = by_name(doctor.gather(machine))["capture"]
 
     assert off.message == "Capture disabled (harvest_since unset)"
 
     machine.configuration.write_text(
-        f'content = "{machine.environ["KB_CONTENT"]}"\nharvest_since = 2026-10-24T00:00:00Z\n',
+        f'content = "{Path(machine.environ["KB_CONTENT"]).as_posix()}"\nharvest_since = 2026-10-24T00:00:00Z\n',
         encoding="utf-8",
     )
     no_root = doctor._capture(
@@ -251,7 +253,6 @@ def test_capture_without_a_harvest_cutoff_reports_it_and_no_root_reports_the_pro
     assert no_root.message == "cannot check capture: no content root to read HEAD from"
 
 
-@SKIP
 def test_a_host_file_without_the_policy_line_passes_the_instructions_check(
     machine: doctor.Context,
 ) -> None:
@@ -264,7 +265,6 @@ def test_a_host_file_without_the_policy_line_passes_the_instructions_check(
     assert by_name(doctor.gather(machine))["instructions"].state == "pass"
 
 
-@SKIP
 def test_instructions_and_allow_rules_name_each_host_problem(machine: doctor.Context) -> None:
     claude = Path(machine.environ["CLAUDE_CONFIG_DIR"])
     (claude / "CLAUDE.md").write_text("notes\n", encoding="utf-8")
@@ -281,7 +281,6 @@ def test_instructions_and_allow_rules_name_each_host_problem(machine: doctor.Con
     assert broken.message.startswith("cannot check: cannot read")
 
 
-@SKIP
 def test_allow_rules_ignore_a_symlinked_codex_rules_file(
     machine: doctor.Context, tmp_path: Path
 ) -> None:
@@ -296,7 +295,6 @@ def test_allow_rules_ignore_a_symlinked_codex_rules_file(
     assert check.message == "codex: kb.rules is a symbolic link, which Codex skips; no rules files"
 
 
-@SKIP
 def test_scheduler_and_curation_gather_through_their_commands(machine: doctor.Context) -> None:
     checks = by_name(doctor.gather(machine))
 

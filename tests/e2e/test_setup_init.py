@@ -4,16 +4,10 @@ The installed hook is a POSIX shell script, so these tests run only where Git ru
 """
 
 import subprocess
-import sys
 from pathlib import Path
 
-import pytest
+from .harness import Kb, kb_executable, run_git, skill_lines, toml_path
 
-from .harness import Kb, run_git, skill_lines
-
-pytestmark = pytest.mark.skipif(
-    sys.platform == "win32", reason="the installed pre-commit hook is a POSIX shell script"
-)
 LAYOUT = (
     "knowledge",
     "sources",
@@ -27,11 +21,7 @@ LAYOUT = (
 
 def shim(kb: Kb) -> Path:
     """A kb executable that runs this interpreter's kb, at a path that an install would use."""
-    path = kb.home / "bin" / "kb"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f'#!/bin/sh\nexec "{sys.executable}" -m kb "$@"\n', encoding="utf-8")
-    path.chmod(0o755)
-    return path
+    return kb_executable(kb.home / "bin")
 
 
 def without_content_override(kb: Kb) -> dict[str, str | None]:
@@ -57,7 +47,7 @@ def test_init_creates_the_layout_the_hook_the_config_and_one_commit_on_main(kb: 
     assert "rules for agents" in (target / "AGENTS.md").read_text(encoding="utf-8")
     assert run_git(target, "rev-parse", "--abbrev-ref", "HEAD") == "main\n"
     assert run_git(target, "log", "--format=%s") == "Initialize knowledge base content\n"
-    assert kb.config_file.read_text(encoding="utf-8") == f'content = "{target.as_posix()}"\n'
+    assert kb.config_file.read_text(encoding="utf-8") == f"content = {toml_path(target)}\n"
 
 
 def test_the_installed_hook_refuses_an_invalid_article_after_init(kb: Kb) -> None:
