@@ -76,7 +76,7 @@ def _answer(values: dict[str, str]) -> str:
     if supplied is None:
         raise SPEC.usage_error()
     try:
-        answer = sys.stdin.buffer.read().decode("utf-8") if supplied == "-" else supplied
+        answer = observation.read_text(sys.stdin.buffer.read()) if supplied == "-" else supplied
     except UnicodeDecodeError as error:
         raise KbError(f"{WHO}: standard input is not UTF-8: {error.reason}") from error
     try:

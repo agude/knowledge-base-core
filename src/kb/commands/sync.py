@@ -759,7 +759,7 @@ def _publish(root: Path, scan_directory: Path, text: str, now: datetime) -> str:
     pending = root / PENDING
     pending.mkdir(parents=True, exist_ok=True)
     try:
-        with temporary.open("x", encoding="utf-8") as handle:
+        with temporary.open("x", encoding="utf-8", newline="") as handle:
             handle.write(text)
         for _ in range(MAX_NAME_TRIES):
             name = observation.file_name(now, os.urandom(4).hex())

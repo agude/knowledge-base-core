@@ -136,3 +136,21 @@ def test_refusal_keeps_the_order_of_the_findings() -> None:
         "observe: refused: possible secret (AWS Access Key) at body line 5",
         "observe: remove or redact it, then run kb observe again",
     ]
+
+
+@pytest.mark.parametrize(
+    ("data", "text"),
+    [
+        (b"one\ntwo\n", "one\ntwo\n"),
+        (b"one\r\ntwo\r\n", "one\ntwo\n"),
+        (b"one\rtwo", "one\rtwo"),
+        ("café\r\n".encode(), "café\n"),
+    ],
+)
+def test_read_text_decodes_utf8_and_stores_crlf_as_lf(data: bytes, text: str) -> None:
+    assert observation.read_text(data) == text
+
+
+def test_read_text_refuses_bytes_that_are_not_utf8() -> None:
+    with pytest.raises(UnicodeDecodeError):
+        observation.read_text(b"\xff")

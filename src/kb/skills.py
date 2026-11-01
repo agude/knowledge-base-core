@@ -68,7 +68,7 @@ def install(path: Path, wanted: Mapping[str, bytes], version: str) -> SkillState
             destination = temporary / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(data)
-        (temporary / MARKER).write_text(f"{version}\n", encoding="utf-8")
+        (temporary / MARKER).write_bytes(f"{version}\n".encode())
         if action is SkillAction.UPDATE:
             path.replace(backup)
             old_moved = True

@@ -103,7 +103,7 @@ def write(git_directory: Path, state: SyncState) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = scratch / f"sync-state-{os.urandom(4).hex()}.json"
     try:
-        with temporary.open("x", encoding="utf-8") as handle:
+        with temporary.open("x", encoding="utf-8", newline="") as handle:
             handle.write(render(state))
         temporary.replace(destination)
     finally:

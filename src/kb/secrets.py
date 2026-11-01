@@ -21,7 +21,7 @@ def findings(directory: Path, text: str) -> list[tuple[str, int]]:
 
     path = directory / f"scan-{os.urandom(4).hex()}.md"
     try:
-        with path.open("x", encoding="utf-8") as handle:
+        with path.open("x", encoding="utf-8", newline="") as handle:
             handle.write(text)
         with default_settings():
             return [(secret.type, secret.line_number) for secret in scan_file(str(path))]
