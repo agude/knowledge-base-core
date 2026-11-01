@@ -8,9 +8,11 @@
 # Remove the task with: Unregister-ScheduledTask -TaskName kb-sync
 #
 # The task runs only while you are signed in, so it sees your mapped drives and Git
-# credentials. conhost --headless runs kb without opening a console window. A run that
-# was missed while the machine was off starts when it is next available, like the
-# systemd timer's Persistent=true.
+# credentials, and only while a network connection is up. Task Scheduler checks for any
+# network, not the content repository's origin, so a run away from it still fails and
+# kb sync records the failure. conhost --headless runs kb without opening a console
+# window. A run that was missed while the machine was off starts when it is next
+# available, like the systemd timer's Persistent=true.
 
 param(
     [string]$Kb = (Get-Command kb -ErrorAction Stop).Source
@@ -30,6 +32,7 @@ $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
     -RepetitionInterval (New-TimeSpan -Minutes 15)
 $settings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
+    -RunOnlyIfNetworkAvailable `
     -MultipleInstances IgnoreNew `
     -ExecutionTimeLimit (New-TimeSpan -Minutes 10) `
     -AllowStartIfOnBatteries `

@@ -599,8 +599,11 @@ powershell -ExecutionPolicy Bypass -File contrib\windows\register-kb-sync.ps1
 
 The script uses the `kb` on `PATH`; pass `-Kb PATH` to use another. The task
 runs only while you are signed in, so it sees your mapped drives and Git
-credentials, and `conhost --headless` keeps a console window from opening. A
-run missed while the machine was off starts when it is next available. Running
+credentials, and only while a network connection is up. Task Scheduler checks
+for any network, not for `origin`, so a run away from `origin` still fails and
+`kb sync` records the failure. `conhost --headless` keeps a console window from
+opening. A run missed while the machine was off starts when it is next
+available. Running
 the script again replaces the task. Remove it with
 `Unregister-ScheduledTask -TaskName kb-sync`.
 
