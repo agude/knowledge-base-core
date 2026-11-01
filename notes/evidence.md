@@ -1520,3 +1520,100 @@ Checks, all on content `611db6a`, which is the Knowledge HEAD during this work:
 Content revision: Knowledge HEAD moved from `12c5f09` to `611db6a` during this
 work. The live and ten-query baselines above at `12c5f09` are therefore stale for
 absolute values. Rankings compare within one revision only.
+
+## Session retrieval: 6a re-baseline at Knowledge dc9cdcc (2026-10-31)
+
+Identity:
+
+- Content: `/home/agude/Knowledge`, `main` at `dc9cdcc`, clean. The 5c-i
+  record used `611db6a`; the `12c5f09` values above are stale.
+- Live set: `notes/eval-live.json`, sha256 `5555b503...`, unchanged since the
+  6a live baseline.
+- Code before 5c-ii: `dev-cache` at `2793bb0`, clean.
+
+Before (code `2793bb0`), whole-file rows, top 3:
+
+| Measure | Sessions | Combined |
+|---|---|---|
+| Live: curated rows with an expected locator in the top 3 | - | 20 of 20 (100%) |
+| Live: session rows with an expected locator in the top 3 | 13 of 20 (65%) | 13 of 20 (65%) |
+| Live: session characters per query | 483 | 478 |
+| Fixture: session rows with an expected locator in the top 3 | 4 of 4 (100%) | 4 of 4 (100%) |
+| Fixture: session false positives | 1 of 2 (50%) | 1 of 2 (50%) |
+| Fixture: session characters per query | 170 | 151 |
+| Fixture acceptance | not met (unanswerable-01) | not met (unanswerable-01) |
+
+Live misses: `live-03`, `05`, `14`, `15`, `16`, `19` (label gaps, unchanged) and
+`live-13` (ranking miss, unchanged).
+
+Ten recorded queries, sessions mode, top 3 (`kb evidence QUERY --kind transcript`
+on `KB_CONTENT=/home/agude/Knowledge`):
+
+- curator cadence: `pending/20261031T163000-11ab7a5b.md#24`,
+  `pending/20261031T180001-c5ec48dd.md#123`, `archived/20260410T133417-89cb.md`
+- nas restart: `archived/20260813T010858-f86c.md`,
+  `archived/20261014T134048-7d7990c9.md`, `archived/20260711T231155-249a.md`
+- traefik: `pending/20261031T180001-c5ec48dd.md#75`,
+  `pending/20261031T224501-5ba2c949.md#108`
+- backup disk: `archived/20260714T020908-bcd2.md`,
+  `archived/20261015T053659-bd6f5e36.md`, `pending/20261026T225533-aaa7123d.md`
+- codex rules: `pending/20261029T030217-c652ddeb.md`,
+  `archived/20261009T022346-ff70227b.md`, `archived/20260819T172546-805ad273.md`
+- dotfiles cutover: `pending/20261029T030217-c652ddeb.md`,
+  `pending/20261028T225249-155c788e.md`, `pending/20261029T143001-e3d0ebb8.md#68`
+- transcript harvest: `pending/20261027T185110-902acaff.md`,
+  `pending/20261027T185033-28faa7ad.md`, `archived/20260529T012325-572e.md`
+- sync schedule: `pending/20261027T174313-bf965675.md`,
+  `pending/20261026T225533-aaa7123d.md`, `pending/20261028T181303-e43f489f.md`
+- stale article ttl: `pending/20261027T174313-bf965675.md`,
+  `archived/20260905T222944-c0eb932f.md`, `pending/20261025T020639-5d2d7603.md`
+- observation pending: `archived/20260905T153638-604ad3d6.md`,
+  `archived/20260412T220946-01c3.md`, `archived/20260411T054929-110c.md`
+
+## Session retrieval 5c-ii: injected text removed from token sources (2026-10-31)
+
+Built, not accepted. This is the injected-text part of 5c-ii. Chunk scoring,
+the date-bounded chunk contract, and chunk metadata are not built.
+
+- `chunks.visible(document)` returns the document with each AGENTS.md
+  instruction message and each `<INSTRUCTIONS>` or `<system-reminder>` span
+  replaced by blank lines. Line numbers, sections, and the message contract are
+  unchanged.
+- `token_cache._build` tokenizes transcripts from that view: the file unit and
+  the message units. Other evidence kinds are tokenized as stored.
+- Chunk tokens already excluded injected text, so they do not change.
+- `FORMAT` is unchanged. The fingerprint covers `chunks.py`, so existing caches
+  rebuild on first use.
+- Scope: 124 of 1,633 transcripts in `~/Knowledge` have text removed.
+
+Results at `dc9cdcc`, after the change, top 3:
+
+| Measure | Sessions | Combined |
+|---|---|---|
+| Live: session rows with an expected locator in the top 3 | 13 of 20 (65%) | 13 of 20 (65%) |
+| Live: session characters per query | 483 (was 483) | 478 (was 478) |
+| Live: per-case ranks | identical to before | - |
+| Fixture: session false positives | 0 of 2 (0%) (was 1 of 2) | 0 of 2 (0%) (was 1 of 2) |
+| Fixture: session characters per query | 145 (was 170) | 126 (was 151) |
+| Fixture: `unanswerable-01` | pass, 0 rows | pass, 0 rows |
+
+Fixture acceptance now meets the existing criterion in both modes. Live
+acceptance is still not met: the six label gaps and `live-13` are unchanged.
+
+Ten recorded queries after the change. Eight top-3 lists are identical. Two
+changed:
+
+- stale article ttl: `archived/20260905T222944-c0eb932f.md` left the top 3.
+  `archived/20260905T153638-604ad3d6.md` entered at rank 3. The file
+  `c0eb932f` contains no injected text, and its tokens are unchanged. The
+  change comes from the corpus-wide BM25 terms (average length and document
+  frequency) after 124 other transcripts lost injected text.
+- transcript harvest: `archived/20260529T012325-572e.md` moved to rank 2, and
+  `pending/20261027T185033-28faa7ad.md` moved to rank 3. The same cause applies:
+  both files' text is unchanged.
+
+Checks: `just check` passed with 1,740 tests and 91.56% coverage. `just eval`
+exited 0, and the curated sets pass as before. New tests: visible-view removal
+of injected spans and AGENTS messages with line numbers kept, legacy removal,
+no-op on clean text, and a transcript entry that holds no injected token. The
+fixture acceptance test now expects 0 and "acceptance: met".

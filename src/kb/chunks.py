@@ -10,7 +10,8 @@ Rules:
   legacy "### user" or "### assistant" section. A file with neither is one chunk, which
   holds its whole body.
 - Injected text is removed first: spans inside <INSTRUCTIONS> and <system-reminder>, and
-  user messages that start with "# AGENTS.md instructions for". Stored files never change.
+  user messages that start with "# AGENTS.md instructions for". The same removal shapes
+  the token sources through visible(). Stored files never change.
 - A chunk starts at a message and takes the following messages until it reaches
   MERGE_THRESHOLD characters. A chunk never crosses a file, and a long message is never
   merged.
@@ -23,7 +24,7 @@ file. The thresholds are module constants. Changing one changes ranking.
 
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from kb import addressing, search
 from kb.model import Document, fence_closes, fence_opening
@@ -51,12 +52,17 @@ class Chunk:
 
 @dataclass(frozen=True)
 class _Message:
-    """A message's number, role, first content line, and text, including authored headings."""
+    """A message's number, role, first content line, and text, including authored headings.
+
+    start and end are the raw line range of the content, end excluded.
+    """
 
     number: int
     role: str
     head: str
     lines: tuple[str, ...]
+    start: int
+    end: int
 
 
 def chunks(document: Document) -> tuple[Chunk, ...]:
@@ -67,6 +73,22 @@ def chunks(document: Document) -> tuple[Chunk, ...]:
         return (Chunk(NO_MESSAGE, _clean(body)),)
     cleaned = [item for item in map(_clean_message, messages) if item is not None]
     return tuple(_assemble(cleaned))
+
+
+def visible(document: Document) -> Document:
+    """The document with injected text blanked. Token sources read this view.
+
+    Each AGENTS.md instruction message and each <INSTRUCTIONS> or <system-reminder> span is
+    replaced by blank lines, so every line keeps its number and the sections and message
+    contract are unchanged. A match inside injected text therefore cannot rank a file.
+    Stored files never change.
+    """
+    lines = list(document.lines)
+    for message in _messages(document) or ():
+        if message.role == "user" and message.head.startswith(_AGENTS_PREFIX):
+            lines[message.start : message.end] = [""] * (message.end - message.start)
+    text = _INJECTED.sub(lambda match: "\n" * match.group(0).count("\n"), "\n".join(lines))
+    return replace(document, lines=tuple(text.split("\n")))
 
 
 def best(document: Document, terms: Sequence[str]) -> Chunk | None:
@@ -102,10 +124,9 @@ def _messages(document: Document) -> list[_Message] | None:
     if sections is not None:
         messages: list[_Message] = []
         for item in sections:
-            content = _unwrap_text_storage(
-                _message_lines(document, item.section.start + 1, item.section.end)
-            )
-            messages.append(_Message(item.number, item.role, _head(content), content))
+            start, end = item.section.start + 1, item.section.end
+            content = _unwrap_text_storage(_message_lines(document, start, end))
+            messages.append(_Message(item.number, item.role, _head(content), content, start, end))
         return messages
     return _legacy_messages(document)
 
@@ -129,7 +150,14 @@ def _legacy_messages(document: Document) -> list[_Message] | None:
         end = message_headings[position + 1] if position + 1 < len(message_headings) else len(lines)
         head = _head(lines[index + 1 : end])
         found.append(
-            _Message(NO_MESSAGE, heading[4:], head, _message_lines(document, index + 1, end))
+            _Message(
+                NO_MESSAGE,
+                heading[4:],
+                head,
+                _message_lines(document, index + 1, end),
+                index + 1,
+                end,
+            )
         )
     return found or None
 
@@ -138,7 +166,7 @@ def _clean_message(message: _Message) -> _Message | None:
     """The message without injected text, or None for an AGENTS.md instruction message."""
     if message.role == "user" and message.head.startswith(_AGENTS_PREFIX):
         return None
-    return _Message(message.number, message.role, message.head, _clean(message.lines))
+    return replace(message, lines=_clean(message.lines))
 
 
 def _head(raw: Sequence[str]) -> str:

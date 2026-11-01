@@ -35,6 +35,39 @@ TRANSCRIPT = (
     "\n"
     "The NAS restarted first.\n"
 )
+INJECTED = (
+    "---\n"
+    "title: Session transcript: kitchen\n"
+    "source: session-transcript\n"
+    "session: kitchen-session\n"
+    "part: 1\n"
+    "first_message: kitchen-1\n"
+    "last_message: kitchen-3\n"
+    "started: 2026-10-02T10:00:00Z\n"
+    "ended: 2026-10-02T10:20:00Z\n"
+    "created: 2026-10-02T10:20:00Z\n"
+    "---\n"
+    "\n"
+    "## 1. user, 2026-10-02T10:00:00Z\n"
+    "\n"
+    "~~~~text\n"
+    "Inventory the kitchen.\n"
+    "~~~~\n"
+    "\n"
+    "## 2. user, 2026-10-02T10:05:00Z\n"
+    "\n"
+    "~~~~text\n"
+    "<INSTRUCTIONS>Rotate the zigzag cipher key.</INSTRUCTIONS>\n"
+    "~~~~\n"
+    "\n"
+    "## 3. user, 2026-10-02T10:10:00Z\n"
+    "\n"
+    "~~~~text\n"
+    "# AGENTS.md instructions for /repo\n"
+    "\n"
+    "Rotate the zigzag cipher key too.\n"
+    "~~~~\n"
+)
 
 
 def observation(title: str, body: str) -> str:
@@ -123,6 +156,8 @@ def test_entries_hold_the_units_that_evidence_builds_for_every_fixture_file(repo
     for relpath in names:
         document = corpus.read_document(repo, relpath)
         entry = entries[relpath]
+        if evidence.evidence_kind(relpath, document.scalar("source")) == "transcript":
+            document = chunks.visible(document)
         assert evidence.file_unit(entry) == search.evidence_unit(document)
         expected = evidence.addressable_messages(document) or ()
         assert [number for number, _, _ in entry.messages] == [m.number for m in expected]
@@ -536,6 +571,20 @@ def test_an_empty_repository_still_gets_a_current_cache(tmp_path: Path) -> None:
 def test_an_entry_whose_file_is_gone_is_not_on_disk(tmp_path: Path) -> None:
     entry = token_cache._build(model.parse("gone.md", "# Gone\n"), 1, 2, "digest")
     assert token_cache._on_disk(tmp_path, entry) is False
+
+
+def test_injected_text_is_not_tokenized_into_a_transcript_entry(repo: Path) -> None:
+    relpath = "observations/archived/20261002T100000-kitchen.md"
+    write(repo, relpath, INJECTED)
+    entry = token_cache.load(repo, [relpath])[relpath]
+
+    secret = set(search.index_tokens("zigzag cipher"))
+    assert secret
+    assert not secret & set(entry.file_unit[3])
+    assert not any(secret & set(body) for _, _, body in entry.messages)
+    assert not any(secret & set(body) for _, body in entry.chunks)
+    assert set(search.index_tokens("kitchen")) <= set(entry.file_unit[3])
+    assert [number for number, _, _ in entry.messages] == [1, 2, 3]
 
 
 def test_chunk_tokens_match_the_search_units_of_the_chunks(repo: Path) -> None:

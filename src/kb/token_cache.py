@@ -275,13 +275,19 @@ def _update(
 
 
 def _build(document: model.Document, mtime_ns: int, size: int, digest: str) -> Entry:
-    """Tokenize one parsed file once. The file unit and the message bodies share its lines."""
+    """Tokenize one parsed file once. The file unit and the message bodies share its lines.
+
+    A transcript is tokenized from chunks.visible, so injected text cannot match. Other
+    evidence is tokenized as stored.
+    """
     relpath = document.path
-    lines = document.lines
+    transcript = evidence.evidence_kind(relpath, document.scalar("source")) == "transcript"
+    view = chunks.visible(document) if transcript else document
+    lines = view.lines
     kept = {
         index: search.index_tokens(lines[index])
-        for index in range(document.body_start, len(lines))
-        if index not in document.heading_lines and index not in document.comment_lines
+        for index in range(view.body_start, len(lines))
+        if index not in view.heading_lines and index not in view.comment_lines
     }
     title = search.index_tokens(document.title or "")
     body = tuple(token for tokens in kept.values() for token in tokens)
@@ -302,12 +308,11 @@ def _build(document: model.Document, mtime_ns: int, size: int, digest: str) -> E
                 for token in kept.get(index, ())
             ),
         )
-        for item in addressing.message_sections(document) or ()
+        for item in addressing.message_sections(view) or ()
     )
     scalars = {
         name: value for name in SCALAR_FIELDS if (value := document.scalar(name)) is not None
     }
-    transcript = evidence.evidence_kind(relpath, document.scalar("source")) == "transcript"
     transcript_chunks: tuple[ChunkTokens, ...] = ()
     if transcript:
         # Most chunk lines are unchanged file lines, so their tokens are reused. Only the

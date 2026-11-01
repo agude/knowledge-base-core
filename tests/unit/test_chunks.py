@@ -202,6 +202,40 @@ def test_an_agents_instruction_message_is_dropped_from_the_chunks() -> None:
     assert "The real question." in text
 
 
+def test_visible_blanks_injected_text_and_keeps_every_line_and_section() -> None:
+    document = addressable(
+        [
+            "# AGENTS.md instructions for /repo\n\nBe terse.",
+            "Keep this <INSTRUCTIONS>secret rules\nacross lines</INSTRUCTIONS> visible.",
+            "The real question with <system-reminder>hidden note</system-reminder> here.",
+        ]
+    )
+
+    view = chunks.visible(document)
+
+    assert len(view.lines) == len(document.lines)
+    assert view.sections == document.sections
+    assert view.heading_lines == document.heading_lines
+    text = "\n".join(view.lines)
+    assert "secret" not in text and "Be terse" not in text and "hidden" not in text
+    assert "AGENTS" not in text
+    assert "visible." in text and "The real question with" in text and "here." in text
+    assert document.lines != view.lines
+
+
+def test_visible_removes_injected_text_from_legacy_messages() -> None:
+    document = legacy(("user", "Plain <system-reminder>hidden</system-reminder> words."))
+
+    text = "\n".join(chunks.visible(document).lines)
+
+    assert "hidden" not in text and "Plain" in text and "words." in text
+
+
+def test_visible_returns_the_same_lines_when_nothing_is_injected() -> None:
+    document = addressable(["Nothing injected here."])
+    assert chunks.visible(document).lines == document.lines
+
+
 def test_an_agents_prefix_in_an_assistant_message_is_kept() -> None:
     found = chunks.chunks(addressable(["AGENTS.md instructions for /repo are shown above."]))
     assert "AGENTS.md instructions for /repo are shown above." in text_of(found[0])

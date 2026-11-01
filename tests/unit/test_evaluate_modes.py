@@ -173,10 +173,11 @@ def test_main_scores_the_session_fixture_in_sessions_mode(
 ) -> None:
     status = evaluate.main(["--mode", "sessions", str(SESSION_SET)])
     out = capsys.readouterr().out
-    assert status == 1
+    assert status == 0
     assert "recovery-01" in out
     assert "session rows with an expected locator in the top 3: 4 of 4 (100%)" in out
-    assert "acceptance: not met (unanswerable-01)" in out
+    assert "session false positives (unanswerable with a row): 0 of 2 (0%)" in out
+    assert "acceptance: met" in out
 
 
 def test_main_scores_the_session_fixture_in_combined_mode(
