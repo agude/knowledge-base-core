@@ -10,7 +10,11 @@ from kb.sync_state import SyncState
 
 NOW = datetime(2026, 10, 26, 12, tzinfo=UTC)
 CANONICAL = setup_rules.instruction_block("/data/content")
-CLAUDE_RULES = [f"Bash(kb {word} *)" for word in setup_rules.WORKING_COMMANDS]
+CLAUDE_RULES = [
+    f"{tool}(kb {word} *)"
+    for tool in ("Bash", "PowerShell")
+    for word in setup_rules.WORKING_COMMANDS
+]
 
 
 def record(
@@ -208,7 +212,12 @@ def test_claude_rules_missing_broader_and_colon_form() -> None:
     partial = diagnosis.claude_allow_problems([*CLAUDE_RULES[1:], "Bash(kb *)"])
     assert partial[0] == "missing Bash(kb recall *)"
     assert "broader Bash(kb *)" in partial
-    assert diagnosis.claude_allow_problems(["Bash(npm test *)"])[-1] == "missing Bash(kb recall *)"
+    bash_only = [rule for rule in CLAUDE_RULES if rule.startswith("Bash(")]
+    assert diagnosis.claude_allow_problems(bash_only)[0] == "missing PowerShell(kb evidence *)"
+    powershell = diagnosis.claude_allow_problems([*CLAUDE_RULES, "PowerShell(kb *)"])
+    assert powershell == ("broader PowerShell(kb *)",)
+    none = diagnosis.claude_allow_problems(["Bash(npm test *)"])
+    assert none[-1] == "missing PowerShell(kb recall *)"
 
 
 def test_codex_rules_missing_broader_and_decision_aware() -> None:

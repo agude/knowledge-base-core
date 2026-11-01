@@ -26,12 +26,14 @@ def test_print_instructions_resolves_a_symbolic_link_in_the_content_path(kb: Kb)
     assert f"Content policy: @{kb.content.resolve().as_posix()}/AGENTS.md\n" in result.stdout
 
 
-def test_print_allow_claude_writes_the_seven_working_rules(kb: Kb) -> None:
+def test_print_allow_claude_writes_the_working_rules_for_each_shell_tool(kb: Kb) -> None:
     result = kb("setup", "--print", "allow-claude")
 
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == {
-        "permissions": {"allow": [f"Bash(kb {word} *)" for word in WORKING]}
+        "permissions": {
+            "allow": [f"{tool}(kb {word} *)" for tool in ("Bash", "PowerShell") for word in WORKING]
+        }
     }
 
 

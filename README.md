@@ -654,7 +654,8 @@ dotfiles install this text.
   a path, because the dotfiles install one file for both hosts. The line needs
   a content path, from `KB_CONTENT` or the config file.
 - `allow-claude` writes a settings fragment with `permissions.allow` set to
-  `Bash(kb COMMAND *)` for each working-agent command.
+  `Bash(kb COMMAND *)` and `PowerShell(kb COMMAND *)` for each working-agent
+  command. Claude Code on Windows runs commands through either tool.
 - `allow-codex` writes a rules file with one `prefix_rule` per working-agent
   command, each with `decision = "allow"`. Install it as a regular file under
   `$CODEX_HOME/rules/`. Codex 0.165.0 skips a symlinked rules file.

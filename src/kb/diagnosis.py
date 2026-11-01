@@ -17,7 +17,8 @@ SYNC_MAX_AGE = timedelta(minutes=60)
 TRANSCRIPT_MAX_AGE = timedelta(days=20)
 TIMER = "kb-sync.timer"
 WORKING = setup_rules.WORKING_COMMANDS
-EXPECTED_CLAUDE = frozenset(f"Bash(kb {command} *)" for command in WORKING)
+EXPECTED_CLAUDE = frozenset(setup_rules.claude_rules())
+CLAUDE_KB_PREFIXES = tuple(f"{tool}(kb" for tool in setup_rules.CLAUDE_SHELL_TOOLS)
 EXPECTED_CODEX = frozenset(("kb", command) for command in WORKING)
 PATTERN = re.compile(r"pattern\s*=\s*\[([^\]]*)\]")
 DECISION = re.compile(r'decision\s*=\s*"(\w+)"')
@@ -268,7 +269,7 @@ def claude_allow_problems(rules: Sequence[str] | None) -> tuple[str, ...]:
     problems.extend(
         f"broader {rule}"
         for rule in sorted(normalized)
-        if rule.startswith("Bash(kb") and rule not in EXPECTED_CLAUDE
+        if rule.startswith(CLAUDE_KB_PREFIXES) and rule not in EXPECTED_CLAUDE
     )
     return tuple(problems)
 
