@@ -1,5 +1,6 @@
 """Isolate every test from the user's real configuration and content repository."""
 
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -24,3 +25,19 @@ def isolated_user(
     monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
     monkeypatch.delenv("KB_CONTENT", raising=False)
     monkeypatch.delenv("KB_NOW", raising=False)
+
+
+# Windows refuses to create a symbolic link without Developer Mode or administrator
+# rights, and reports ERROR_PRIVILEGE_NOT_HELD.
+PRIVILEGE_NOT_HELD = 1314
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_call(item: pytest.Item) -> Generator[None, None, None]:
+    """Skip a test that cannot create the symbolic link it needs on this Windows machine."""
+    try:
+        return (yield)
+    except OSError as error:
+        if getattr(error, "winerror", None) == PRIVILEGE_NOT_HELD:
+            pytest.skip("creating a symbolic link needs Developer Mode on Windows")
+        raise

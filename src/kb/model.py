@@ -459,11 +459,11 @@ def _scan(
         line = lines[index]
         if marker:
             inside[index] = True
-            if _closes(line, marker, length):
+            if fence_closes(line, marker, length):
                 marker = ""
                 unclosed_fence_start = None
             continue
-        opened = _opens(line)
+        opened = fence_opening(line)
         if opened is not None:
             marker, length = opened
             inside[index] = True
@@ -477,7 +477,7 @@ def _scan(
     return inside, headings, tuple(h1_positions), unclosed_fence_start
 
 
-def _opens(line: str) -> tuple[str, int] | None:
+def fence_opening(line: str) -> tuple[str, int] | None:
     """The fence character and length when line opens a fence."""
     match = _FENCE.fullmatch(line)
     if match is None:
@@ -488,7 +488,7 @@ def _opens(line: str) -> tuple[str, int] | None:
     return marker[0], len(marker)
 
 
-def _closes(line: str, marker: str, length: int) -> bool:
+def fence_closes(line: str, marker: str, length: int) -> bool:
     """True when line closes an open fence of this character and length."""
     match = _FENCE.fullmatch(line)
     if match is None:

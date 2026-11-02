@@ -9,15 +9,19 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
-from kb import setup_rules
+from kb import setup_rules, token_cache
 from kb.sync_state import SyncState
 
 State = Literal["pass", "warn", "fail"]
 SYNC_MAX_AGE = timedelta(minutes=60)
 TRANSCRIPT_MAX_AGE = timedelta(days=20)
 TIMER = "kb-sync.timer"
+TASK = "kb-sync"
+# Task Scheduler states in which the task will run on its triggers.
+TASK_ENABLED = frozenset(("Ready", "Running", "Queued"))
 WORKING = setup_rules.WORKING_COMMANDS
-EXPECTED_CLAUDE = frozenset(f"Bash(kb {command} *)" for command in WORKING)
+EXPECTED_CLAUDE = frozenset(setup_rules.claude_rules())
+CLAUDE_KB_PREFIXES = tuple(f"{tool}(kb" for tool in setup_rules.CLAUDE_SHELL_TOOLS)
 EXPECTED_CODEX = frozenset(("kb", command) for command in WORKING)
 PATTERN = re.compile(r"pattern\s*=\s*\[([^\]]*)\]")
 DECISION = re.compile(r'decision\s*=\s*"(\w+)"')
@@ -141,18 +145,48 @@ def sync_check(state: SyncState | None, problem: str | None, now: datetime) -> C
     return Check("sync", "pass", f"last exchange {_stamp(state.last_exchange)}")
 
 
-def scheduler_check(
-    platform: str, enabled: str | None, active: str | None, problem: str | None
-) -> Check:
-    """Whether the timer that runs kb sync is enabled and active. Only Linux is checked."""
+def cache_check(cache: token_cache.CacheStatus) -> Check:
+    """Where the token cache is, its size, and whether it matches the evidence files on disk."""
+    if cache.state == "none":
+        return Check("cache", "pass", "not used: content is not a git worktree of its own")
+    if cache.state == "unignored":
+        return Check(
+            "cache",
+            "warn",
+            f"not written: git does not ignore {cache.path}",
+            "add the line `/cache/` to .gitignore in the content root and commit it",
+        )
+    if cache.state == "missing":
+        return Check("cache", "warn", f"missing: {cache.path}", "run kb sync")
+    if cache.state == "stale":
+        return Check(
+            "cache",
+            "warn",
+            f"stale: {cache.path}, {cache.entries} entries, {cache.size} bytes",
+            "run kb sync",
+        )
+    return Check(
+        "cache", "pass", f"{cache.path}: {cache.entries} entries, {cache.size} bytes, current"
+    )
+
+
+def scheduler_check(platform: str, answers: Sequence[str] | None, problem: str | None) -> Check:
+    """Whether the job that runs kb sync is scheduled, from the answers to scheduler_commands.
+
+    Linux answers whether kb-sync.timer is enabled and active. Windows answers the kb-sync
+    task's state. Other platforms are not checked.
+    """
+    if platform == "win32":
+        return _task_check(answers, problem)
     if platform != "linux":
         return Check(
             "scheduler", "warn", f"not checked on {platform}", "check the scheduler by hand"
         )
-    if problem is not None:
+    if problem is not None or answers is None:
         return Check(
             "scheduler", "warn", f"cannot query systemctl: {problem}", "check the timer by hand"
         )
+    enabled, active = answers
     if enabled == "enabled" and active == "active":
         return Check("scheduler", "pass", f"{TIMER} is enabled and active")
     return Check(
@@ -160,6 +194,33 @@ def scheduler_check(
         "warn",
         f"{TIMER} is {enabled or 'unknown'} and {active or 'unknown'}",
         f"enable and start {TIMER} for this user",
+    )
+
+
+def _task_check(answers: Sequence[str] | None, problem: str | None) -> Check:
+    """Whether the Windows kb-sync task is registered and enabled."""
+    if problem is not None or answers is None:
+        return Check(
+            "scheduler",
+            "warn",
+            f"cannot query Task Scheduler: {problem}",
+            "check the kb-sync task by hand",
+        )
+    (state,) = answers
+    if state in TASK_ENABLED:
+        return Check("scheduler", "pass", f"{TASK} task is {state.lower()}")
+    if not state:
+        return Check(
+            "scheduler",
+            "warn",
+            f"{TASK} task is not registered",
+            "run contrib/windows/register-kb-sync.ps1",
+        )
+    return Check(
+        "scheduler",
+        "warn",
+        f"{TASK} task is {state.lower()}",
+        f"enable it: Enable-ScheduledTask -TaskName {TASK}",
     )
 
 
@@ -268,7 +329,7 @@ def claude_allow_problems(rules: Sequence[str] | None) -> tuple[str, ...]:
     problems.extend(
         f"broader {rule}"
         for rule in sorted(normalized)
-        if rule.startswith("Bash(kb") and rule not in EXPECTED_CLAUDE
+        if rule.startswith(CLAUDE_KB_PREFIXES) and rule not in EXPECTED_CLAUDE
     )
     return tuple(problems)
 

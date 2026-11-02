@@ -68,7 +68,7 @@ def _arguments(values: Mapping[str, str]) -> tuple[str, str]:
 def _read_stdin() -> str:
     """Standard input, read to the end of the file and decoded as UTF-8."""
     try:
-        return sys.stdin.buffer.read().decode("utf-8")
+        return observation.read_text(sys.stdin.buffer.read())
     except UnicodeDecodeError as error:
         raise KbError(f"observe: standard input is not UTF-8: {error.reason}") from error
 

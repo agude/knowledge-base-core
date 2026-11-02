@@ -3,27 +3,17 @@
 import hashlib
 import shutil
 import subprocess
-import sys
 from pathlib import Path
-
-import pytest
 
 from kb import __version__
 
 from .harness import Kb, skill_lines, skill_paths
-
-pytestmark = pytest.mark.skipif(
-    sys.platform == "win32", reason="the installed Git hook is a shell script"
-)
+from .harness import kb_executable as kb_program
 
 
 def kb_executable(kb: Kb) -> Path:
     """Create a runner shim at the path setup records in the Git hook."""
-    path = kb.home / "bin" / "kb"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f'#!/bin/sh\nexec "{sys.executable}" -m kb "$@"\n', encoding="utf-8")
-    path.chmod(0o755)
-    return path
+    return kb_program(kb.home / "bin")
 
 
 def setup(kb: Kb, *options: str) -> subprocess.CompletedProcess[str]:

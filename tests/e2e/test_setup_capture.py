@@ -3,27 +3,18 @@
 import json
 import os
 import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
 
-import pytest
-
 from .harness import Kb
+from .harness import kb_executable as kb_program
 
-pytestmark = pytest.mark.skipif(
-    sys.platform == "win32", reason="the installed hook is a shell script"
-)
 ENABLED = "2026-10-26T12:00:00Z"
 
 
 def kb_executable(kb: Kb) -> Path:
     """Create a runner shim at the path setup records in the Git hook."""
-    path = kb.home / "bin" / "kb"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f'#!/bin/sh\nexec "{sys.executable}" -m kb "$@"\n', encoding="utf-8")
-    path.chmod(0o755)
-    return path
+    return kb_program(kb.home / "bin")
 
 
 def setup_content(kb: Kb) -> subprocess.CompletedProcess[str]:

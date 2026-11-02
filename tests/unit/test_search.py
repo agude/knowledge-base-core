@@ -1,9 +1,14 @@
 """Tests for query normalization, unit construction, and ranking."""
 
+import math
+from pathlib import Path
+
 import pytest
 
 from kb import search
 from kb.model import parse
+
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 
 @pytest.mark.parametrize(
@@ -32,6 +37,19 @@ def test_index_tokens_drop_stopwords_but_keep_negations() -> None:
         "without",
         "can't",
     )
+
+
+def test_cached_stems_match_uncached_stems_on_every_fixture_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    files = sorted(path for path in FIXTURES.rglob("*") if path.is_file())
+    texts = [path.read_text(encoding="utf-8", errors="replace") for path in files]
+    assert len(texts) > 50
+    search._stem.cache_clear()
+    cached = [search.index_tokens(text) for text in texts]
+    monkeypatch.setattr(search, "_stem", search._stem.__wrapped__)
+    uncached = [search.index_tokens(text) for text in texts]
+    assert cached == uncached
 
 
 def test_query_terms_are_distinct_and_in_order() -> None:
@@ -149,6 +167,64 @@ def test_rank_with_only_empty_units_is_empty_and_does_not_divide_by_zero() -> No
     assert search.rank([search.make_unit("", [], [], [])], ("alpha",)) == []
 
 
+def _unit_of_length(first: str, length: int) -> search.Unit:
+    """A body unit whose first token is the term and whose length is the token count."""
+    return search.make_unit("", [], [], [" ".join([first, *["filler"] * (length - 1)])])
+
+
+def test_document_frequency_counts_groups_not_units() -> None:
+    units = [
+        search.make_unit("", [], [], ["rare"]),
+        search.make_unit("", [], [], ["rare"]),
+        search.make_unit("", [], [], ["gamma"]),
+    ]
+    # Each unit has length 1, so the score is the IDF alone.
+    plain = search.rank(units, ("rare",))
+    assert plain[0].score == pytest.approx(math.log(1 + 1.5 / 2.5))
+    grouped = search.rank(units, ("rare",), groups=["a", "a", "b"])
+    assert grouped[0].score == pytest.approx(math.log(1 + 1.5 / 1.5))
+
+
+def test_average_length_is_taken_within_each_class() -> None:
+    units = [_unit_of_length("alpha", 1), _unit_of_length("alpha", 3), _unit_of_length("x", 1000)]
+    classed = {
+        hit.index: hit.score
+        for hit in search.rank(units, ("alpha",), classes=["chunk", "chunk", "file"])
+    }
+    # The chunk class averages 2 tokens, so the first unit has norm K1 * (0.25 + 0.75 / 2).
+    idf = math.log(1 + 1.5 / 2.5)
+    assert classed[0] == pytest.approx(idf * 2.5 / (1 + 1.5 * (0.25 + 0.75 * 1 / 2)))
+    mixed = {hit.index: hit.score for hit in search.rank(units, ("alpha",))}
+    assert mixed[0] != pytest.approx(classed[0])
+
+
+def test_default_groups_and_classes_are_plain_bm25() -> None:
+    units = [_unit_of_length("alpha", 1), _unit_of_length("alpha", 4), _unit_of_length("beta", 9)]
+    explicit = search.rank(units, ("alpha", "beta"), groups=[0, 1, 2], classes=["c", "c", "c"])
+    assert explicit == search.rank(units, ("alpha", "beta"))
+
+
+def test_mismatched_groups_are_an_error() -> None:
+    units = [_unit_of_length("alpha", 1)]
+    with pytest.raises(ValueError):
+        search.rank(units, ("alpha",), groups=["a", "b"])
+
+
+def test_delta_adds_once_for_each_term_the_unit_holds() -> None:
+    units = [search.make_unit("", [], [], ["alpha"]), search.make_unit("", [], [], ["beta"])]
+    plain = {hit.index: hit.score for hit in search.rank(units, ("alpha", "beta"))}
+    bonus = {hit.index: hit.score for hit in search.rank(units, ("alpha", "beta"), delta=1.0)}
+    # Each term is in one of two units, so its IDF is log 2. Each unit holds one term only,
+    # so neither unit receives the other term's bonus.
+    assert bonus[0] - plain[0] == pytest.approx(math.log(2))
+    assert bonus[1] - plain[1] == pytest.approx(math.log(2))
+
+
+def test_delta_does_not_change_qualification() -> None:
+    units = [search.make_unit("", [], [], ["alpha"])]
+    assert search.rank(units, ("alpha", "beta", "gamma", "delta"), delta=1.0) == []
+
+
 def test_clip_shortens_long_text_to_the_width_with_an_ellipsis() -> None:
     assert search.clip("short", 10) == "short"
     assert search.clip("exactly ten", 11) == "exactly ten"
@@ -183,16 +259,6 @@ def test_excerpt_with_a_match_at_the_start_has_no_leading_ellipsis() -> None:
 def test_excerpt_without_any_match_is_the_first_line_clipped() -> None:
     assert search.excerpt(["first line", "second"], ["zebra"]) == "first line"
     assert search.excerpt([], ["zebra"]) == ""
-
-
-def test_evidence_unit_has_the_title_and_the_text_without_headings() -> None:
-    document = parse(
-        "observations/pending/a.md", "---\ntitle: Alpha note\n---\n### user\n\nBeta words.\n"
-    )
-    unit = search.evidence_unit(document)
-    assert unit.title == ("alpha", "note")
-    assert unit.headings == ()
-    assert unit.body == ("beta", "word")
 
 
 def test_a_flag_is_indexed_under_its_word_as_well_as_itself() -> None:

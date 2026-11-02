@@ -1243,3 +1243,835 @@ commit and release named in the Part A closeout and the preparation section.
 - Live `kb doctor` on 0.2.1: exit 1 with 3 PASS, 9 WARN, and 1 FAIL
   (`sync: No record`), the expected pre-cutover baseline; 14 legacy
   registrations.
+
+## Session retrieval commit 1: memoized stemming (2026-10-31)
+
+Scratch copy of the content repository at `66f6f7d`, with `KB_CONTENT` set to
+it. Each case had one warm-up and three timed runs. Medians exclude the
+warm-up; peak RSS is the maximum of the three timed runs.
+
+| Command case | Before median | After median | Before peak RSS | After peak RSS | Gate |
+|---|---:|---:|---:|---:|---|
+| `kb evidence curator cadence --kind transcript` | 35.85 s | 13.05 s | 318,412 KiB | 149,120 KiB | <= 15 s |
+| Curated-hit `kb recall "curator cadence"` | 23.09 s | 8.35 s | 205,496 KiB | 92,396 KiB | <= 9 s |
+| No-match `kb recall zzqxvmissingterm` | 40.37 s | 13.02 s | 324,676 KiB | 151,300 KiB | none |
+
+The plan's "today" figures (38.7 s, 22.0 s) came from a different content
+revision; the "before" column here is measured on the copy used for "after".
+`just eval` output matched the pre-change output byte for byte.
+
+## Session retrieval commit 3: ranking from the token cache (2026-10-31)
+
+Scratch copy of the content repository at `66f6f7d`, `KB_CONTENT` set to it.
+The cache was removed before the cold run. Warm cases had one warm-up and
+three timed runs; the median and the maximum peak RSS are reported.
+
+| Command case | Median elapsed | Maximum peak RSS | Gate |
+|---|---:|---:|---|
+| Cold `kb evidence curator cadence --kind transcript` (single run) | 10.46 s | 160,756 KiB | <= 15 s |
+| Warm `kb evidence curator cadence --kind transcript` | 0.90 s | 75,664 KiB | <= 2 s |
+| Warm curated-hit `kb recall "curator cadence"` | 1.18 s | 77,864 KiB | <= 3 s |
+| Warm no-match `kb recall zzqxvmissingterm` | 1.36 s | 77,788 KiB | <= 5 s |
+
+Output check: ten queries, each run as `kb evidence`, `kb evidence --kind
+transcript`, and `kb recall`, 30 outputs in all. Every output matched the
+output from the commit before this one, byte for byte. `just eval` matched
+its earlier output byte for byte.
+
+The contract test requires each file to be parsed once per answer. Cache
+builds and excerpt reads therefore share one `corpus.Documents` per command
+or answer.
+
+The cache is written only when the content root is the top of its own git
+worktree. A content root inside another repository gets no cache and writes
+nothing there.
+
+## Session retrieval commit 4: cache refresh in sync and doctor (2026-10-31)
+
+Scratch copy of the content repository, with its `origin` set to a scratch
+bare clone so that `kb sync --no-push` could run without touching the real
+remote. No push was made.
+
+- `kb sync --no-push` on a cold cache printed `Cache: 2851 refreshed, 0
+  removed`.
+- `kb doctor` then reported `PASS cache` with 2851 entries and 22,305,323
+  bytes, current.
+- A recall run after the sync built zero evidence entries. The count was
+  taken by wrapping `token_cache._build`, the only place a file is tokenized.
+
+The ten queries used for the output checks in commits 3 and 5 are not in the
+repository. They are: curator cadence; nas restart; traefik; backup disk;
+codex rules; dotfiles cutover; transcript harvest; sync schedule; stale
+article ttl; observation pending. Each was run as `kb evidence QUERY`,
+`kb evidence QUERY --kind transcript`, and `kb recall QUERY`.
+
+## Session retrieval: live question set provenance (2026-10-31)
+
+The 40-case set named in the 2026-10-27 session notes (26 answerable, 14
+unanswerable, labels in `notes/eval-live-labels.md`) is not on disk. Neither
+its labels file nor `notes/eval-live.md` survives. This is the only copy
+that does.
+
+- File: `notes/eval-live.json`. Private and ignored by git. Not committed.
+- sha256: `7605398d22024bb72651d73b64e4a6f66b2c21a0d00b035f5043aaf974c6c6bc`.
+  Identical in every copy under the scratchpad of session `1ed3966f`.
+- Format: `kb-retrieval-questions` version 1. 20 cases, all answerable, ids
+  `live-01` to `live-20`. Its description reads "written from section
+  headings".
+- Labels: not independently checked. Every expected locator names a curated
+  article section. None names a transcript.
+- Results recorded on 2026-10-26: 20 of 20 answerable cases in the top 3, at
+  code commit `3335c2a`. The content revision behind that run is not
+  recorded. The current `~/Knowledge` HEAD is `1c05bfb`.
+- The file's mtime is 2026-10-26 14:00. The 40-case set is dated 2026-10-27.
+
+## Session retrieval: 6a harness and baseline (2026-10-31)
+
+`kb.evaluate` gained `--mode sessions|combined` in `977fd8b`. Sessions rows
+come from `recall.session_rows`. Combined rows come from
+`recall.from_sessions` (`bb169ab`), which leaves out any row that Uncurated
+already shows. Curated mode is unchanged: `just eval` matched its earlier
+output byte for byte, and the two curated sets matched on explicit paths.
+
+### Fixture baseline: session-recovery-v1 (whole-file rows)
+
+Six synthetic cases: three recovery, one current-state, two unanswerable.
+The numbers check the harness. They do not measure retrieval quality.
+
+| Measure | Sessions | Combined |
+|---|---|---|
+| Curated rows with an expected locator in the top 3 | - | 0 of 4 (0%) |
+| Session rows with an expected locator in the top 3 | 4 of 4 (100%) | 4 of 4 (100%) |
+| Added by the session block | - | 4 of 4 (100%) |
+| Session false positives (unanswerable with a row) | 1 of 2 (50%) | 1 of 2 (50%) |
+| Current-state cases with the current answer above the superseded one | 1 of 1 | 1 of 1 |
+| Superseded claims shown | 1 | 1 |
+| Session characters per query | 170 | 151 |
+| Acceptance | not met (unanswerable-01) | not met (unanswerable-01) |
+
+`unanswerable-01` matches only inside an `<INSTRUCTIONS>` block. Commit 5c
+removes that text before indexing, so this false positive is the failure
+5c must fix.
+
+### Ten recorded queries (whole-file session rows, live content)
+
+Run through `recall.session_rows` on `/home/agude/Knowledge`, HEAD `1c05bfb`.
+Top three rows each. No labels, so no scores.
+
+- curator cadence: `pending/20261031T163000-11ab7a5b.md#24`,
+  `pending/20261031T180001-c5ec48dd.md#123`, `archived/20260410T133417-89cb.md`
+- nas restart: `archived/20260813T010858-f86c.md`,
+  `archived/20261014T134048-7d7990c9.md`, `archived/20260711T231155-249a.md`
+- traefik: `pending/20261031T180001-c5ec48dd.md#75`
+- backup disk: `archived/20260714T020908-bcd2.md`,
+  `archived/20261015T053659-bd6f5e36.md`, `pending/20261026T225533-aaa7123d.md`
+- codex rules: `pending/20261029T030217-c652ddeb.md`,
+  `archived/20261009T022346-ff70227b.md`, `archived/20260819T172546-805ad273.md`
+- dotfiles cutover: `pending/20261029T030217-c652ddeb.md`,
+  `pending/20261028T225249-155c788e.md`, `pending/20261029T224500-eb17fc9e.md#131`
+- transcript harvest: `archived/20260529T012325-572e.md`,
+  `pending/20261027T185110-902acaff.md`, `pending/20261027T185033-28faa7ad.md`
+- sync schedule: `pending/20261027T174313-bf965675.md`,
+  `pending/20261026T225533-aaa7123d.md`, `pending/20261028T181303-e43f489f.md`
+- stale article ttl: `pending/20261027T174313-bf965675.md`,
+  `archived/20260905T222944-c0eb932f.md`, `pending/20261025T020639-5d2d7603.md`
+- observation pending: `archived/20260905T153638-604ad3d6.md`,
+  `archived/20260411T054929-110c.md`, `archived/20260412T220946-01c3.md`
+
+Two patterns in these rows. Probe commands echo the query words, so the
+transcripts of this work rank for their own queries (`curator cadence`,
+`traefik`). Some transcripts have no message number, so their locator is
+the file alone.
+
+### Not measured
+
+- Transcript labels for six live cases (`live-03`, `05`, `14`, `15`, `16`,
+  `19`). Their labels name no transcript. See the live baseline below.
+- Acceptance limits: none. The plan's numeric limits were removed on
+  2026-10-31, so no limit gates the candidate.
+
+### Mining for a live set (2026-10-31)
+
+Standalone user questions with an exchange in the harvested transcripts: 17
+of 262. Seven are standalone enough to use as queries: rollback window,
+dag and delete, RAG over raw sessions, marshal versus pickle versus shelve,
+the sync interaction, chunking by heading or file, and curation losing
+information. The rest depend on the conversation before them.
+
+The 17 exchanges are all in the same session as their question. A session
+score on them measures the question echo, not recovery.
+
+Real agent queries in the session logs: 26, after removing probes and
+benchmark runs. No unanswerable or current-state case was found in the
+corpus. The candidate lists are in `notes/mining-2026-10-31.md`, which
+git ignores.
+
+## Session retrieval: live baseline (2026-10-31)
+
+Identity:
+
+- Set: `notes/eval-live.json`, sha256
+  `5555b5038759d4b96345dce93248a86a8b3680d86f97b43914f8635a49871f7c`. The
+  provenance section above records `7605398d...`, so the file changed after
+  that record. Fourteen cases gained one transcript locator each: `live-01`,
+  `02`, `04`, `06` to `13`, `17`, `18`, and `20`. Each added locator equals
+  the `transcript_locator` in `notes/eval-live-qa.json`. No other field
+  changed. `live-03`, `05`, `14`, `15`, `16`, and `19` keep curated-only
+  labels.
+- Content: `/home/agude/Knowledge` at `12c5f09`, clean. The 2026-10-26 run
+  used `1c05bfb`.
+- Code: `dev-cache` at `fe7ceac`, clean.
+- Run: `kb.evaluate --mode sessions` and `--mode combined` on the set and the
+  content root. Whole-file rows, top 3.
+
+Results:
+
+| Measure | Sessions | Combined |
+|---|---|---|
+| Curated rows with an expected locator in the top 3 | - | 20 of 20 (100%) |
+| Session rows with an expected locator in the top 3 | 13 of 20 (65%) | 13 of 20 (65%) |
+| Added by the session block | - | 0 of 20 (0%) |
+| Session false positives | n/a, no unanswerable live case | n/a |
+| Session characters per query | 481 | 481 |
+| Acceptance | not met: `live-03`, `05`, `13`, `14`, `15`, `16`, `19` | met, curated criterion |
+
+Session rank for the 13 cases with a session hit: rank 1 for `live-01`, `02`,
+`04`, `07`, `08`, `09`, `10`, `11`, and `17`; rank 2 for `live-06`, `12`, and
+`20`; rank 3 for `live-18`.
+
+Misses:
+
+- `live-03`, `05`, `14`, `15`, `16`, `19`: label gap. Their labels name no
+  transcript, so sessions mode cannot pass them. They are not marked
+  unanswerable. The local stores `~/.claude/projects` and `~/.codex/sessions`
+  hold sessions from 2026-08 to 2026-10 only, so the March sessions behind
+  these cases are not there either.
+- `live-13`: ranking miss. Its QA-verified transcript,
+  `observations/archived/20260620T052754-69bf.md`, is not in the top 10
+  session rows for `smb mount credentials file`. The pool is 10 rows.
+
+Reading:
+
+- The live set is curation-saturated. Curated top 3 holds all 20 cases, so the
+  session block adds nothing here. The set measures session rank for answers
+  curation already covers. It cannot measure recovery of facts that curation
+  dropped. `session-recovery-v1` and the 6b audit measure recovery.
+
+Ten recorded queries at `12c5f09`, sessions mode, top 3. Paths are under
+`observations/`:
+
+- curator cadence: `pending/20261031T163000-11ab7a5b.md#24`,
+  `pending/20261031T180001-c5ec48dd.md#123`, `archived/20260410T133417-89cb.md`
+- nas restart: `archived/20260813T010858-f86c.md`,
+  `archived/20261014T134048-7d7990c9.md`, `archived/20260711T231155-249a.md`
+- traefik: `pending/20261031T180001-c5ec48dd.md#75`,
+  `pending/20261031T224501-5ba2c949.md#108`
+- backup disk: `archived/20260714T020908-bcd2.md`,
+  `archived/20261015T053659-bd6f5e36.md`, `pending/20261026T225533-aaa7123d.md`
+- codex rules: `pending/20261029T030217-c652ddeb.md`,
+  `archived/20261009T022346-ff70227b.md`, `archived/20260819T172546-805ad273.md`
+- dotfiles cutover: `pending/20261029T030217-c652ddeb.md`,
+  `pending/20261028T225249-155c788e.md`,
+  `pending/20261029T143001-e3d0ebb8.md#68`
+- transcript harvest: `pending/20261027T185110-902acaff.md`,
+  `pending/20261027T185033-28faa7ad.md`, `archived/20260529T012325-572e.md`
+- sync schedule: `pending/20261027T174313-bf965675.md`,
+  `pending/20261026T225533-aaa7123d.md`, `pending/20261028T181303-e43f489f.md`
+- stale article ttl: `pending/20261027T174313-bf965675.md`,
+  `archived/20260905T222944-c0eb932f.md`, `pending/20261025T020639-5d2d7603.md`
+- observation pending: `archived/20260905T153638-604ad3d6.md`,
+  `archived/20260412T220946-01c3.md`, `archived/20260411T054929-110c.md`
+
+Against `1c05bfb`, the traefik list gained a second row, and the
+dotfiles cutover third row changed from `pending/20261029T224500-eb17fc9e.md#131`
+to `pending/20261029T143001-e3d0ebb8.md#68`. Two other lists kept their files
+in a different order. The rest match. The content changed between the two
+revisions, so use this list as the 5c baseline.
+
+Not measured:
+
+- The six label gaps above.
+- The Windows CI leg for commit 2.
+- The construction-loss audit (6b).
+
+## Session retrieval 5c-i: legacy excerpts from the best chunk (2026-10-31)
+
+Built: a file-level transcript row takes its excerpt from its best chunk, through
+`chunks.best`. Legacy files have no message locator, so this changes only their
+excerpt text. Message rows keep the matched-message locator and excerpt. The
+addressable contract moved to `kb/addressing.py`, so `chunks.py` no longer imports
+`evidence.py`.
+
+Tried first, and reverted: chunk-first-message locators and dates. On the fixture
+they moved the four recovery answers from `#2`, `#5`, `#4`, and `#4` to `#1`, so
+all four labels failed. The 6a labels name the answering message.
+
+Checks, all on content `611db6a`, which is the Knowledge HEAD during this work:
+
+- File order and scores: 72 snapshots of `evidence.select` (live queries, ten
+  recorded queries, fixture queries; unbounded, and bounded to 2026-07-01
+  through 2026-10-31) match an archived copy of `HEAD` exactly.
+- `just eval`: output byte-identical to the pre-change run.
+- Live set, sessions mode: each case has the same rank as before. 13 of 20
+  have a transcript hit. Session characters per query 487 to 483.
+- Fixture, sessions and combined modes: output identical to the pre-change run.
+  `unanswerable-01` still fails, as 5c-ii must fix it.
+
+Content revision: Knowledge HEAD moved from `12c5f09` to `611db6a` during this
+work. The live and ten-query baselines above at `12c5f09` are therefore stale for
+absolute values. Rankings compare within one revision only.
+
+## Session retrieval: 6a re-baseline at Knowledge dc9cdcc (2026-10-31)
+
+Identity:
+
+- Content: `/home/agude/Knowledge`, `main` at `dc9cdcc`, clean. The 5c-i
+  record used `611db6a`; the `12c5f09` values above are stale.
+- Live set: `notes/eval-live.json`, sha256 `5555b503...`, unchanged since the
+  6a live baseline.
+- Code before 5c-ii: `dev-cache` at `2793bb0`, clean.
+
+Before (code `2793bb0`), whole-file rows, top 3:
+
+| Measure | Sessions | Combined |
+|---|---|---|
+| Live: curated rows with an expected locator in the top 3 | - | 20 of 20 (100%) |
+| Live: session rows with an expected locator in the top 3 | 13 of 20 (65%) | 13 of 20 (65%) |
+| Live: session characters per query | 483 | 478 |
+| Fixture: session rows with an expected locator in the top 3 | 4 of 4 (100%) | 4 of 4 (100%) |
+| Fixture: session false positives | 1 of 2 (50%) | 1 of 2 (50%) |
+| Fixture: session characters per query | 170 | 151 |
+| Fixture acceptance | not met (unanswerable-01) | not met (unanswerable-01) |
+
+Live misses: `live-03`, `05`, `14`, `15`, `16`, `19` (label gaps, unchanged) and
+`live-13` (ranking miss, unchanged).
+
+Ten recorded queries, sessions mode, top 3 (`kb evidence QUERY --kind transcript`
+on `KB_CONTENT=/home/agude/Knowledge`):
+
+- curator cadence: `pending/20261031T163000-11ab7a5b.md#24`,
+  `pending/20261031T180001-c5ec48dd.md#123`, `archived/20260410T133417-89cb.md`
+- nas restart: `archived/20260813T010858-f86c.md`,
+  `archived/20261014T134048-7d7990c9.md`, `archived/20260711T231155-249a.md`
+- traefik: `pending/20261031T180001-c5ec48dd.md#75`,
+  `pending/20261031T224501-5ba2c949.md#108`
+- backup disk: `archived/20260714T020908-bcd2.md`,
+  `archived/20261015T053659-bd6f5e36.md`, `pending/20261026T225533-aaa7123d.md`
+- codex rules: `pending/20261029T030217-c652ddeb.md`,
+  `archived/20261009T022346-ff70227b.md`, `archived/20260819T172546-805ad273.md`
+- dotfiles cutover: `pending/20261029T030217-c652ddeb.md`,
+  `pending/20261028T225249-155c788e.md`, `pending/20261029T143001-e3d0ebb8.md#68`
+- transcript harvest: `pending/20261027T185110-902acaff.md`,
+  `pending/20261027T185033-28faa7ad.md`, `archived/20260529T012325-572e.md`
+- sync schedule: `pending/20261027T174313-bf965675.md`,
+  `pending/20261026T225533-aaa7123d.md`, `pending/20261028T181303-e43f489f.md`
+- stale article ttl: `pending/20261027T174313-bf965675.md`,
+  `archived/20260905T222944-c0eb932f.md`, `pending/20261025T020639-5d2d7603.md`
+- observation pending: `archived/20260905T153638-604ad3d6.md`,
+  `archived/20260412T220946-01c3.md`, `archived/20260411T054929-110c.md`
+
+## Session retrieval 5c-ii: injected text removed from token sources (2026-10-31)
+
+Built, not accepted. This is the injected-text part of 5c-ii. Chunk scoring,
+the date-bounded chunk contract, and chunk metadata are not built.
+
+- `chunks.visible(document)` returns the document with each AGENTS.md
+  instruction message and each `<INSTRUCTIONS>` or `<system-reminder>` span
+  replaced by blank lines. Line numbers, sections, and the message contract are
+  unchanged.
+- `token_cache._build` tokenizes transcripts from that view: the file unit and
+  the message units. Other evidence kinds are tokenized as stored.
+- Chunk tokens already excluded injected text, so they do not change.
+- `FORMAT` is unchanged. The fingerprint covers `chunks.py`, so existing caches
+  rebuild on first use.
+- Scope: 124 of 1,633 transcripts in `~/Knowledge` have text removed.
+
+Results at `dc9cdcc`, after the change, top 3:
+
+| Measure | Sessions | Combined |
+|---|---|---|
+| Live: session rows with an expected locator in the top 3 | 13 of 20 (65%) | 13 of 20 (65%) |
+| Live: session characters per query | 483 (was 483) | 478 (was 478) |
+| Live: per-case ranks | identical to before | - |
+| Fixture: session false positives | 0 of 2 (0%) (was 1 of 2) | 0 of 2 (0%) (was 1 of 2) |
+| Fixture: session characters per query | 145 (was 170) | 126 (was 151) |
+| Fixture: `unanswerable-01` | pass, 0 rows | pass, 0 rows |
+
+Fixture acceptance now meets the existing criterion in both modes. Live
+acceptance is still not met: the six label gaps and `live-13` are unchanged.
+
+Ten recorded queries after the change. Eight top-3 lists are identical. Two
+changed:
+
+- stale article ttl: `archived/20260905T222944-c0eb932f.md` left the top 3.
+  `archived/20260905T153638-604ad3d6.md` entered at rank 3. The file
+  `c0eb932f` contains no injected text, and its tokens are unchanged. The
+  change comes from the corpus-wide BM25 terms (average length and document
+  frequency) after 124 other transcripts lost injected text.
+- transcript harvest: `archived/20260529T012325-572e.md` moved to rank 2, and
+  `pending/20261027T185033-28faa7ad.md` moved to rank 3. The same cause applies:
+  both files' text is unchanged.
+
+Checks: `just check` passed with 1,740 tests and 91.56% coverage. `just eval`
+exited 0, and the curated sets pass as before. New tests: visible-view removal
+of injected spans and AGENTS messages with line numbers kept, legacy removal,
+no-op on clean text, and a transcript entry that holds no injected token. The
+fixture acceptance test now expects 0 and "acceptance: met".
+
+## Session retrieval 5c-ii-b: chunk scoring (2026-11-01)
+
+Identity:
+
+- Content: `/home/agude/Knowledge`, `main` at `e9ebcb8`, clean. The 5c-ii record
+  used `dc9cdcc`, so the baseline below was measured again at `e9ebcb8` before
+  any code change. Measured on a copy (`cp -a`) so no cache was written to
+  Knowledge.
+- Live set: `notes/eval-live.json`, unchanged since the 6a live baseline.
+- Code before: `dev-cache` at `9293bf5`. Code after: `00a29db`, which is the
+  ranking commit. Commit `8f10f5d` records chunk metadata and is
+  ranking-neutral (checked: live, fixture, and ten-query output unchanged).
+
+Built:
+
+- `chunks.Chunk` holds the last message number, the first and last timestamps,
+  and the piece index. The cache stores them (`FORMAT = 3`).
+- `chunks.parts` and `chunks.group` form chunks from messages and eligibility.
+  An excluded message ends a chunk, and a split piece is never merged.
+- `evidence.select` scores each transcript by its best chunk. The row locator is
+  the message in the winning chunk that holds the most distinct query terms, when
+  it holds at least half of them. Otherwise the row keeps the file locator and
+  date, as before. The excerpt is the winning chunk's text.
+- With date bounds, chunks come from cached messages. They are regrouped with the
+  same rule, and `test_evidence_equivalence` checks them against a document-based
+  reference.
+- The row date is the date of the matched message. The plan says "first
+  contributing message", but its locator section names the matched message, so the
+  row date follows the locator. Decision for the user, see Open.
+
+Results, top 3 unless noted. Before is `9293bf5` at `e9ebcb8`. After is `00a29db`.
+
+| Measure | Before | After |
+|---|---|---|
+| Fixture, sessions: session rows with expected locator | 4 of 4 | 4 of 4 |
+| Fixture, sessions: false positives | 0 of 2 | 0 of 2 |
+| Fixture, sessions: characters per query | 145 | 145 |
+| Fixture, combined: characters per query | 126 | 126 |
+| Live, sessions: session rows with expected locator | 13 of 20 (65%) | 12 of 20 (60%) |
+| Live, sessions: characters per query | 484 | 480 |
+| Live, combined: session rows with expected locator | 13 of 20 | 12 of 20 |
+| Live, combined: characters per query | 478 | 476 |
+| Live, curated criterion (all modes) | 20 of 20 | 20 of 20 |
+| Synthetic-curated, curated | 5 of 5 | 5 of 5 |
+| Synthetic-curated, sessions: hits | 0 of 5 | 0 of 5 |
+| Synthetic-curated, sessions: characters per query | 483 | 471 |
+| Synthetic-curated, combined: hits | 0 of 5 | 0 of 5 |
+| Synthetic-curated, combined: characters per query | 465 | 323 |
+
+Live per-case ranks, sessions mode (rank in the session list, `-` for none):
+
+| Case | Before | After |
+|---|---|---|
+| live-01 | 1 | 1 |
+| live-02 | 1 | 2 |
+| live-04 | 1 | 2 |
+| live-06 | 2 | 4 |
+| live-12 | 2 | 1 |
+| live-13 | - | 10 |
+| live-18 | 3 | 3 |
+| live-20 | 2 | 2 |
+| all others (07 to 11, 17) | 1 | 1 |
+| live-03, 05, 14, 15, 16, 19 | - | - |
+
+`live-13`: rank 10 after the change. Before, no session row in the top 10. Its
+transcript, `observations/archived/20260620T052754-69bf.md`, now reaches the top
+10 but not the top 3. Its label is unchanged.
+
+Label-gap misses, unchanged and not labelled: `live-03`, `05`, `14`, `15`, `16`,
+and `19`. They are not marked unanswerable.
+
+Ten recorded queries, top 3 before and after (paths under `observations/`):
+
+- curator cadence
+  - before: `pending/20261031T163000-11ab7a5b.md#24`, `pending/20261031T180001-c5ec48dd.md#123`, `archived/20260410T133417-89cb.md`
+  - after: `pending/20261031T180001-c5ec48dd.md#123`, `pending/20261031T163000-11ab7a5b.md#24`, `archived/20260410T133417-89cb.md`
+- nas restart
+  - before: `archived/20260813T010858-f86c.md`, `archived/20261014T134048-7d7990c9.md`, `archived/20260711T231155-249a.md`
+  - after: `archived/20260813T010858-f86c.md`, `archived/20261011T050311-edfc5c37.md`, `archived/20261014T134048-7d7990c9.md`
+- traefik
+  - before: `pending/20261101T040000-e62c60b2.md#19`, `pending/20261101T044500-1468afff.md#41`, `pending/20261031T180001-c5ec48dd.md#75`
+  - after: `pending/20261101T044500-1468afff.md#27`, `pending/20261031T224501-5ba2c949.md#108`, `pending/20261101T040000-e62c60b2.md#19`
+- backup disk
+  - before: `archived/20260714T020908-bcd2.md`, `archived/20261015T053659-bd6f5e36.md`, `pending/20261026T225533-aaa7123d.md`
+  - after: `pending/20261026T225533-aaa7123d.md`, `pending/20261030T181500-726c9f6d.md#2`, `pending/20261031T203001-75279057.md#10`
+- codex rules
+  - before: `pending/20261029T030217-c652ddeb.md`, `pending/20261101T195746-d618e45e.md#55`, `archived/20261009T022346-ff70227b.md`
+  - after: `pending/20261101T195746-d618e45e.md#52`, `pending/20261029T030217-c652ddeb.md`, `pending/20261028T221204-1123b402.md`
+- dotfiles cutover
+  - before: `pending/20261029T030217-c652ddeb.md`, `pending/20261028T225249-155c788e.md`, `pending/20261029T143001-e3d0ebb8.md#68`
+  - after: `pending/20261028T225249-155c788e.md`, `pending/20261029T030217-c652ddeb.md`, `pending/20261029T143001-e3d0ebb8.md#68`
+- transcript harvest
+  - before: `pending/20261027T185110-902acaff.md`, `archived/20260529T012325-572e.md`, `pending/20261027T185033-28faa7ad.md`
+  - after: `pending/20261027T061149-7d7f181f.md`, `archived/20260529T012325-572e.md`, `archived/20260529T020216-658a.md`
+- sync schedule
+  - before: `pending/20261101T163715-e7dcefa3.md#22`, `pending/20261101T195746-d618e45e.md#13`, `pending/20261027T174313-bf965675.md`
+  - after: `pending/20261027T174313-bf965675.md`, `pending/20261101T195746-d618e45e.md#8`, `pending/20261101T163715-e7dcefa3.md#144`
+- stale article ttl
+  - before: `pending/20261027T174313-bf965675.md`, `pending/20261101T044500-1468afff.md#29`, `archived/20260905T153638-604ad3d6.md`
+  - after: `pending/20261027T174313-bf965675.md`, `pending/20261025T020639-5d2d7603.md`, `pending/20261028T024940-a8f6ab4f.md`
+- observation pending
+  - before: `archived/20260905T153638-604ad3d6.md`, `archived/20260412T220946-01c3.md`, `archived/20260411T054929-110c.md`
+  - after: `archived/20260410T230002-3049.md`, `archived/20260412T220946-01c3.md`, `archived/20260411T054929-110c.md`
+
+Diffs:
+
+- File set changed for seven queries: backup disk, codex rules, nas restart,
+  observation pending, stale article ttl, traefik, and transcript harvest. Order
+  only changed for curator cadence, dotfiles cutover, and sync schedule.
+- Every locator list changed. Rows now name the matched message in the winning
+  chunk, so a `#N` can differ from the earlier whole-file row. Excerpts are chunk
+  text, so they can include neighbouring messages. Some excerpts are now a
+  neighbouring line, not the line that matched.
+- Mechanism: a file scores by its best chunk. A short chunk with the query
+  terms can outrank a long file whose matching turn is in a 1,024-character chunk
+  with other turns. A file that matched only across messages can lose its place.
+  I did not read every transcript to explain each individual row. The rows
+  above are the measured result.
+
+Timings, median of 3 runs after 1 warm-up, on the copy (`KB_CONTENT`):
+
+| Command | Before | After |
+|---|---|---|
+| `kb evidence curator cadence --kind transcript`, warm | 1.48 s | 1.34 s |
+| `kb recall sync schedule`, warm | 1.70 s | 1.57 s |
+| `kb evidence curator cadence --kind transcript`, cold (cache rebuilt) | 13.5 s | 14.7 s |
+| Peak RSS, warm evidence | 127 MB | 134 MB |
+| Peak RSS, cold evidence | 241 MB | 243 MB |
+| Cache file size | 48.6 MB | 49.2 MB |
+
+Timings are reported, not gated. The cold run includes the one-time rebuild after
+the fingerprint changed.
+
+Checks:
+
+- `just check` passed at `00a29db`: 1,748 tests, 91.49% coverage.
+- `just eval` exited 0. Both curated sets: acceptance met.
+- New tests: chunk metadata, grouping, eligibility barriers, split pieces,
+  locators (including a match in a later message and a half-of-terms rule),
+  date-bounded rows, a long transcript with one relevant turn ranking above a
+  short loosely related transcript, and the equivalence of cache and document
+  paths over every fixture corpus and date filter.
+- Not checked: whether the new long-transcript test fails on `9293bf5`. The
+  earlier version of the test, with a two-term short transcript, failed on this
+  code and was changed to a loosely related one-term transcript.
+
+Open:
+
+- Live acceptance is not met. The rank change moved `live-06` from 2 to 4 and
+  `live-13` from no hit to 10. This is the measured effect; no label or case was
+  changed.
+- Row date: the matched message's date, not the first contributing message's
+  date. Confirm or change.
+- BM25 length normalization still favours short chunks. Probe: a 35-character
+  transcript holding 2 of 3 query terms outranked a chunk of about 1,000 characters
+  holding all 3. The chunk unit has the same length bias that the plan named as the
+  problem. Not changed.
+- Cold rebuild took 1.1 s longer. The cache grew by 0.6 MB.
+
+## Session retrieval 5c-ii-c: corpus statistics and BM25+ (2026-11-01)
+
+Identity:
+
+- Content: `/home/agude/Knowledge`, `main` at `40dfe94`, clean. Measured on one
+  `cp -a` copy at
+  `/tmp/claude-1000/-home-agude-Projects-knowledge-base-core/2dccb1a3-568b-4b80-963c-6c441f48d2df/scratchpad/knowledge`.
+  No cache was written to Knowledge.
+- Live set: `notes/eval-live.json`, sha256 `5555b503...`, unchanged since the 6a
+  baseline.
+- Synthetic set: `notes/eval-synthetic-curated.json`, sha256 `d00af21c...`.
+- Fixture: `tests/fixtures/session-recovery-v1/`, unchanged.
+- Code before: `dev-cache` at `ce62031`, which is the 5c-ii-b record above.
+- Code points measured, all on the same copy:
+  - `ce62031`: baseline.
+  - `7915614`: step 1, corpus statistics.
+  - `ded76e7`: step 1 and step 2, BM25+ with delta 1.0 for evidence only.
+- Code after: `6380691` (test rewrites), and the commit that records this section.
+
+Built:
+
+- `search.rank` takes `groups`, `classes`, and `delta`. Their defaults give the
+  plain BM25 that curated recall uses.
+- Document frequency and the document count count distinct groups. For
+  evidence, a group is a transcript or an evidence file. A transcript counts once
+  for a term when any of its scored chunks holds the term. Date bounds still
+  apply, because only the scored chunks are units.
+- The average length is taken per class. Chunks average with chunks and whole
+  files with whole files.
+- Evidence uses `DELTA = 1.0`, the BM25+ lower bound. Each held term adds its IDF
+  once. Curated recall keeps 0.
+- `just eval` is byte-identical to `ce62031` at each code point, apart from the
+  trailing exit line the shell adds.
+- Test changes: the long-transcript test was rewritten. It fails at `9293bf5`.
+  The 35-character probe is a strict xfail.
+
+Results. Live rows are the session rows that recall prints, top 3 unless noted. Live MRR is the mean of 1/rank over all 20 cases, with 0 for a
+case that has no rank. Live hit@10 counts a rank of 10 or less.
+
+| Measure | ce62031 | 7915614 (step 1) | ded76e7 (step 1 + 2) |
+|---|---|---|---|
+| Live, sessions: top 3 (of 20) | 12 | 12 | 13 |
+| Live, sessions: hit@10 | 14 | 13 | 13 |
+| Live, sessions: MRR | 0.509 | 0.529 | 0.533 |
+| Live, sessions: characters per query | 480 | 482 | 484 |
+| Live, combined: session top 3 (of 20) | 12 | 12 | 13 |
+| Live, combined: session hit@10 | 14 | 13 | 13 |
+| Live, combined: session MRR | 0.510 | 0.529 | 0.533 |
+| Live, combined: characters per query | 476 | 480 | 477 |
+| Fixture, sessions: hits | 4 of 4 | 4 of 4 | 4 of 4 |
+| Fixture, sessions: false positives | 0 of 2 | 0 of 2 | 0 of 2 |
+| Fixture, sessions: characters per query | 145 | 145 | 145 |
+| Fixture, combined: characters per query | 126 | 126 | 126 |
+| Synthetic-curated, curated: top 3 | 5 of 5 | 5 of 5 | 5 of 5 |
+| Synthetic-curated, sessions: hits | 0 of 5 | 0 of 5 | 0 of 5 |
+| Synthetic-curated, sessions: characters per query | 471 | 471 | 472 |
+| Synthetic-curated, combined: session hits | 0 of 5 | 0 of 5 | 0 of 5 |
+| Synthetic-curated, combined: characters per query | 323 | 319 | 323 |
+
+Live misses that are label gaps, not ranking: `live-03`, `live-05`, `live-14`,
+`live-15`, `live-16`, and `live-19`. They have no rank at any code point, and
+their labels are unchanged.
+
+`live-06` and `live-13`:
+
+- `live-06`: rank 4 at `ce62031`, rank 4 at `7915614`, rank 3 at `ded76e7`, in
+  both modes.
+- `live-13`: rank 10 at `ce62031` in sessions mode and rank 8 in combined mode.
+  No rank at `7915614` or `ded76e7`. Step 1 removed it from the top 10. Its label
+  is unchanged. The cause is not analyzed.
+
+Per-case ranks. Session rank in the session list, and in combined mode the
+session rank that combined prints. `-` means no rank:
+
+| Case | Sessions: ce62031 | Sessions: 7915614 | Sessions: ded76e7 | Combined: ce62031 | Combined: 7915614 | Combined: ded76e7 |
+|---|---|---|---|---|---|---|
+| live-01 | 1 | 1 | 1 | 1 | 1 | 1 |
+| live-02 | 2 | 1 | 1 | 2 | 1 | 1 |
+| live-03 | - | - | - | - | - | - |
+| live-04 | 2 | 2 | 2 | 2 | 2 | 2 |
+| live-05 | - | - | - | - | - | - |
+| live-06 | 4 | 4 | 3 | 4 | 4 | 3 |
+| live-07 | 1 | 1 | 1 | 1 | 1 | 1 |
+| live-08 | 1 | 1 | 1 | 1 | 1 | 1 |
+| live-09 | 1 | 1 | 1 | 1 | 1 | 1 |
+| live-10 | 1 | 1 | 1 | 1 | 1 | 1 |
+| live-11 | 1 | 1 | 1 | 1 | 1 | 1 |
+| live-12 | 1 | 1 | 1 | 1 | 1 | 1 |
+| live-13 | 10 | - | - | 8 | - | - |
+| live-14 | - | - | - | - | - | - |
+| live-15 | - | - | - | - | - | - |
+| live-16 | - | - | - | - | - | - |
+| live-17 | 1 | 1 | 1 | 1 | 1 | 1 |
+| live-18 | 3 | 3 | 3 | 3 | 3 | 3 |
+| live-19 | - | - | - | - | - | - |
+| live-20 | 2 | 2 | 2 | 2 | 2 | 2 |
+
+Ten recorded queries, top 3 at each code point, paths under `observations/`
+(`kb evidence QUERY --kind transcript` on the copy):
+
+| Query | ce62031 top 3 | 7915614 top 3 | ded76e7 top 3 | Diff |
+|---|---|---|---|---|
+| curator cadence | pending/20261031T180001-c5ec48dd.md#123<br>pending/20261031T163000-11ab7a5b.md#24<br>archived/20260410T133417-89cb.md | pending/20261031T180001-c5ec48dd.md#123<br>pending/20261031T163000-11ab7a5b.md#24<br>archived/20260410T133417-89cb.md | pending/20261031T180001-c5ec48dd.md#123<br>pending/20261031T163000-11ab7a5b.md#24<br>archived/20260410T133417-89cb.md | none |
+| nas restart | archived/20260813T010858-f86c.md<br>archived/20261011T050311-edfc5c37.md<br>archived/20261014T134048-7d7990c9.md | archived/20260813T010858-f86c.md<br>archived/20261011T050311-edfc5c37.md<br>archived/20261014T134048-7d7990c9.md | archived/20260813T010858-f86c.md<br>archived/20261011T050311-edfc5c37.md<br>archived/20261014T134048-7d7990c9.md | none |
+| traefik | pending/20261101T044500-1468afff.md#27<br>pending/20261031T224501-5ba2c949.md#108<br>pending/20261101T040000-e62c60b2.md#19 | pending/20261101T044500-1468afff.md#27<br>pending/20261031T224501-5ba2c949.md#108<br>pending/20261101T040000-e62c60b2.md#19 | pending/20261101T044500-1468afff.md#27<br>pending/20261031T224501-5ba2c949.md#108<br>pending/20261101T040000-e62c60b2.md#19 | none |
+| backup disk | pending/20261026T225533-aaa7123d.md<br>pending/20261102T010715-e9da9aab.md#22<br>pending/20261030T181500-726c9f6d.md#2 | pending/20261026T225533-aaa7123d.md<br>pending/20261102T010715-e9da9aab.md#22<br>pending/20261030T181500-726c9f6d.md#2 | pending/20261026T225533-aaa7123d.md<br>pending/20261102T010715-e9da9aab.md#22<br>pending/20261030T181500-726c9f6d.md#2 | none |
+| codex rules | pending/20261101T195746-d618e45e.md#52<br>pending/20261029T030217-c652ddeb.md<br>pending/20261028T221204-1123b402.md | pending/20261101T195746-d618e45e.md#52<br>pending/20261029T030217-c652ddeb.md<br>archived/20260828T035825-5fefb261.md | pending/20261101T195746-d618e45e.md#52<br>pending/20261029T030217-c652ddeb.md<br>archived/20260828T035825-5fefb261.md | step 1 |
+| dotfiles cutover | pending/20261028T225249-155c788e.md<br>pending/20261029T030217-c652ddeb.md<br>pending/20261029T143001-e3d0ebb8.md#68 | pending/20261028T225249-155c788e.md<br>pending/20261029T030217-c652ddeb.md<br>pending/20261029T143001-e3d0ebb8.md#68 | pending/20261028T225249-155c788e.md<br>pending/20261029T030217-c652ddeb.md<br>pending/20261029T143001-e3d0ebb8.md#68 | none |
+| transcript harvest | pending/20261027T061149-7d7f181f.md<br>archived/20260529T012325-572e.md<br>archived/20260529T020216-658a.md | pending/20261027T061149-7d7f181f.md<br>archived/20260529T012325-572e.md<br>archived/20260529T020216-658a.md | pending/20261027T061149-7d7f181f.md<br>archived/20260529T012325-572e.md<br>archived/20260529T020216-658a.md | none |
+| sync schedule | pending/20261027T174313-bf965675.md<br>pending/20261101T195746-d618e45e.md#8<br>pending/20261101T163715-e7dcefa3.md#144 | pending/20261031T180001-c5ec48dd.md#163<br>pending/20261101T195746-d618e45e.md#8<br>pending/20261027T174313-bf965675.md | pending/20261031T180001-c5ec48dd.md#163<br>pending/20261101T195746-d618e45e.md#8<br>pending/20261027T174313-bf965675.md | step 1 |
+| stale article ttl | pending/20261027T174313-bf965675.md<br>pending/20261025T020639-5d2d7603.md<br>pending/20261028T024940-a8f6ab4f.md | pending/20261027T174313-bf965675.md<br>pending/20261025T020639-5d2d7603.md<br>pending/20261028T024940-a8f6ab4f.md | pending/20261027T174313-bf965675.md<br>pending/20261025T020639-5d2d7603.md<br>pending/20261101T044500-1468afff.md#27 | step 2 |
+| observation pending | pending/20261102T012215-dc8d3bf8.md#102<br>pending/20261102T012215-532736a7.md#37<br>archived/20260412T220946-01c3.md | pending/20261102T012215-dc8d3bf8.md#102<br>pending/20261102T012215-532736a7.md#37<br>archived/20260412T220946-01c3.md | pending/20261102T012215-dc8d3bf8.md#102<br>pending/20261102T012215-532736a7.md#37<br>archived/20260412T220946-01c3.md | none |
+
+
+Timings. Warm runs are the median of 3 after 1 warm-up. Cold runs delete the
+cache before each of 3 runs, with no warm-up, and take the median:
+
+| Command | ce62031 | 7915614 (step 1) | ded76e7 (step 1 + 2) |
+|---|---|---|---|
+| Warm `kb evidence curator cadence --kind transcript` | 1424 ms | 1351 ms | 1409 ms |
+| Warm `kb recall "sync schedule"` | 1704 ms | 1623 ms | 1700 ms |
+| Cold `kb evidence curator cadence --kind transcript` | 13599 ms | 14133 ms | 13579 ms |
+
+The first step 1 run, before the rerun in the table, gave warm evidence 1508 ms,
+warm recall 1860 ms, and cold 13918 ms. Timings vary by 5 to 10 percent between
+runs. The timings are reported, not gated. Peak RSS was not measured in this
+section.
+
+Checks:
+
+- `just check` at `6380691`: 1,754 passed, 1 xfailed, 91.51% coverage. Each
+  ranking commit passed `just check` before it was committed. Step 1 passed with
+  1,752 tests, and step 2 with 1,754.
+- `just eval` at `6380691`: exit 0, `acceptance: met` for both fixture sets, and
+  output identical to `ce62031` apart from the trailing exit line. Checked at each
+  ranking commit.
+- Long-transcript test, rewritten: fails at `9293bf5` and passes at `6380691`.
+  Output at `9293bf5`:
+
+  ```text
+  >       assert [item.path for item in items] == [
+          "observations/archived/long.md#21",
+          "observations/archived/short.md#1",
+        ]
+  E       AssertionError: assert ['observation...d/long.md#21'] == ['observation...d/short.md#1']
+  E         At index 0 diff: 'observations/archived/short.md#1' != 'observations/archived/long.md#21'
+  ```
+
+- 35-character probe: strict xfail with the reason in the test. It fails at
+  `ce62031`, at `ded76e7`, and at `6380691`. The short chunk ranks first at each
+  code point, so the length bias is not changed. Its expected order was fixed
+  before it was run: the three-term chunk first.
+
+Open:
+
+- Acceptance is the user's decision. Live top 3 moved from 12 to 13 of 20.
+  `live-13` is unranked at both code points after step 1.
+- `live-13`: its cause is not analyzed. It lost its rank at step 1, the change to
+  document frequency for transcripts.
+- The 35-character probe is still a strict xfail. BM25 length normalization
+  favours a short chunk with two of three terms when the third term is common.
+  The BM25+ bound does not change that case.
+- Title tokens are still part of every chunk's length and frequency. Document
+  frequency now counts each transcript once, but title tokens still add length
+  to each chunk. Not changed.
+- Row date: the matched message's date. `plan.md` now says so.
+- Windows is not checked.
+
+## Usage report baseline (2026-11-01, revised 2026-11-02)
+
+`just usage` reads the local Claude Code and Codex stores, read-only. The first
+baseline was run at `dev-cache` `0412c09`. This revision is the A5 run, after the
+usage report excluded every output that does not belong to its kb call. The full
+`--list` output contains query text, so it is kept only in the session scratchpad
+and is not in the repository.
+
+Store date ranges (record timestamps):
+
+- Claude Code: 217 transcript files (main and subagent), 0 unreadable, 193 kb calls,
+  records 2026-10-07 to 2026-11-02.
+- Codex: 1232 rollout files, 0 unreadable, 496 kb calls, records 2026-08-17 to
+  2026-11-02.
+
+The stores grow during a session, so these counts are from one run on 2026-11-02.
+
+Recall tags (410 recalls): excluded-shared 333, excluded-incomplete 21,
+excluded-batch 2, excluded-unsupported 2, no-curated-match 3, pre-block 49. Excluded
+recalls are 358 of 410, and only 52 recalls have usable output. The character mean
+covers those 52. No recall lacks a paired result (no_output 0).
+
+Causes of the shared exclusions, counted over all kb calls in the stores (every
+subcommand, not only recall):
+
+- Codex exec scripts with more than one command literal: 261 kb calls.
+- One command whose line runs several kb calls, or a kb call that shares its line with
+  a pipeline or another command: Codex 94 kb calls, Claude Code 103 kb calls.
+
+Weekly metrics:
+
+```text
+week      recalls  recalls_excluded  no_output  with_session_row  session_row_reads  evidence_after_recall  gap_after_recall  mean_chars
+2026-W44  400      348               0          0                 0                  31                     0                 1732
+2026-W45  10       10                0          0                 0                  3                      0                 n/a
+```
+
+Reading the revised baseline:
+
+- The first baseline counted 405 recalls and gave a character mean of 11585 for
+  2026-W44. Its outputs included output that belonged to other calls in the same
+  script or command. The revision drops those, so the earlier mean is not comparable.
+- No usable recall after the From sessions block shipped showed session rows. Every
+  session-row metric is zero, so this baseline does not measure the block.
+- Excluded recalls are the main limit. Most are Codex exec scripts that run `kb recall`
+  beside other commands, usually through `Promise.allSettled`. Of the 188 such scripts
+  that hold a recall, 21 print `{i, status, value}` results and 23 print `{i, result}` or
+  `{index, result}`, where the position `i` names the command. The rest print
+  `{status, value}` without a position, a truncation warning, or free text. Claude Code
+  exclusions are lines that chain commands with `&&` or pipe into `head`.
+- Decision (user, 2026-11-02): positional batch results are not decoded. Decoding them
+  would raise usable recalls from 52 to about 95 of 410, and needs a pattern match on
+  JavaScript that the agent writes anew for each call. The report ships with its
+  exclusion counts. If the measurement window needs more data, the alternative is a
+  kb-side log: `kb recall` appends its time, query, and printed locators to a file in
+  the content git directory. That changes the "measure from raw sessions" decision and
+  needs approval before it is built.
+- The `reads_after_no_curated` metric is removed. It was zero by construction.
+
+## Pre-merge addendum A2: transcript parts stored once (cache format 4) (2026-11-02)
+
+- Change: the cache holds one `Entry` record per file, pickled directly.
+  A transcript stores its parts (message or split piece, with timestamp, size,
+  and body tokens). Chunks are formed from the parts by `chunks.group`, the same
+  rule as `chunks.chunks`. Formerly the tokens were stored three times: file body,
+  message bodies, and chunk bodies. `chunks.visible` and `search.evidence_unit`
+  are gone. `FORMAT` is 4.
+- Content: `~/Knowledge` at `deac4944f31d6ed6927e1a90efffc66b269021dc` for every
+  run in this section. Two thousand nine hundred seventy-one evidence files.
+- Method: `measure.py` in the session scratchpad. Cold refresh deletes the cache
+  file before each run. Warm timings are the median of 3 runs after 1 warm-up.
+  Commands ran with `python -m kb` from this repository. Before: source at
+  `fc18adc`, from `git archive`. After: the working tree at this commit.
+  `KB_CONTENT` points at `~/Knowledge`.
+
+| Measure | Before (format 3) | After (format 4) |
+|---|---|---|
+| Cache file size | 51,275,955 bytes (51.3 MB) | 22,361,791 bytes (22.4 MB) |
+| `pickle.load` of the cache, median | 0.349 s | 0.165 s |
+| Cold refresh, 3 runs | 13.36, 12.68, 12.84 s | 11.66, 11.05, 11.04 s |
+| `kb evidence curator cadence --kind transcript`, warm median | 1.351 s | 0.894 s |
+| `kb recall curator cadence` (curated hit), warm median | 2.082 s | 1.570 s |
+
+- The 0.59 s validation pass (`_from_tuple`) is gone. The format 4 cache
+  unpickles the records directly.
+- Warm query times did not get worse, so chunk tokens are not memoized per
+  process. `chunks.group` builds each query's chunk bodies from the parts.
+- `just eval --mode curated|sessions|combined` on the fixtures and on
+  `notes/eval-live.json` with `~/Knowledge`: byte-identical to the baseline.
+
+## Pre-merge addendum A3: one recall selection for output and evaluation (2026-11-02)
+
+- Change: `recall.select` returns the rows that recall shows, and `answer()` formats
+  them. Combined evaluation takes its session rows from that selection. Before this
+  change, combined evaluation always used the From sessions rows. With no curated
+  match, recall prints transcripts under Evidence, so a pending transcript that matched
+  a query was missing from combined evaluation. It was excluded as an Uncurated row, and
+  the Evidence fallback that prints it was never scored. The new test
+  `test_combined_mode_scores_the_pending_transcript_that_recall_prints_as_evidence`
+  fails on `fc18adc` and passes after this change.
+- Combined-mode diff: none. `just eval --mode combined` output is byte-identical on the
+  fixtures and on `notes/eval-live.json` with `~/Knowledge`, at Knowledge
+  `deac4944f31d6ed6927e1a90efffc66b269021dc`. The two unanswerable fixture cases have no
+  curated match, and no transcript row matches them, so they print no evidence rows. The
+  other four fixture cases have curated matches, and their combined rows did not change.
+- Curated and sessions modes: byte-identical, fixtures and live.
+- Recall output: 12 queries, each with and without `--no-sessions`, on `~/Knowledge`.
+  The 24 outputs are byte-identical before and after.
+- Load count: one `token_cache.load` per selection, over the directories that the shown
+  blocks read.
+
+## Session retrieval closeout (2026-11-02)
+
+- Branch `dev-cache` rebased onto `main` at `11f17da`, which merged `dev-windows`.
+  CI run 41494376425 at `4922d7e` passed every job: lint, type-check, the package
+  check, tests on Python 3.11 to 3.15, and the Windows test job (13 min). This is
+  the first Windows run of the token cache.
+- Local `just check` at `4922d7e`: 1,913 passed, 92.00% coverage. `just eval` in
+  curated, sessions, and combined modes is byte-identical to the pre-merge baseline
+  taken at `669222e`.
+- Audit rates: not measured. Commit 6b (live measurements, construction-loss audit,
+  live recovery set) was dropped as a pre-ship step (user, 2026-11-01). It runs
+  later only if the usage report shows frequent recovery reads.
+- Post-review fixes after the rebase: Codex result objects whose `output` starts
+  with the truncation warning are excluded as incomplete (302 such records in the
+  local store); shell-call extraction ignores heredoc bodies and comments, and
+  pops a file-descriptor digit only when it touches the redirection; the
+  evaluation row verdict uses the acceptance criterion; the cache stores only the
+  `source`, `created`, and `context` scalars.
+

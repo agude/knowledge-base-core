@@ -17,6 +17,9 @@ NAS_RESTART = (
     "\n"
     "Uncurated (pending, not yet verified):\n"
     "  observations/pending/20261024T094659-8d6fecbe.md | 2026-10-24 | observation | NAS restart after the update\n"
+    "From sessions (raw, unverified, may be superseded):\n"
+    "  observations/archived/20260903T120000-c3d4e5f6.md | 2026-09-03 | "
+    "After the outage, what order should the services start in?\n"
     "Read with: kb read <locator>\n"
 )
 NAS_RESTART_LIMIT_ONE = (
@@ -29,6 +32,9 @@ NAS_RESTART_LIMIT_ONE = (
     "  knowledge/infra/syncthing.md#2 | Restart order\n"
     "Uncurated (pending, not yet verified):\n"
     "  observations/pending/20261024T094659-8d6fecbe.md | 2026-10-24 | observation | NAS restart after the update\n"
+    "From sessions (raw, unverified, may be superseded):\n"
+    "  observations/archived/20260903T120000-c3d4e5f6.md | 2026-09-03 | "
+    "After the outage, what order should the services start in?\n"
     "Read with: kb read <locator>\n"
 )
 SYNCTHING_ONLY = (
@@ -88,7 +94,7 @@ def test_missing_query_prints_usage(kb: Kb) -> None:
     result = kb("recall")
     assert result.returncode == 1
     assert result.stdout == ""
-    assert result.stderr == "Usage: kb recall QUERY... [--limit N] [--in PATH]\n"
+    assert result.stderr == "Usage: kb recall QUERY... [--limit N] [--in PATH] [--no-sessions]\n"
 
 
 @pytest.mark.parametrize("limit", ["0", "x"])
@@ -124,6 +130,14 @@ def test_help_names_the_command(kb: Kb) -> None:
 
 
 def test_archived_evidence_is_not_searched_when_curated_results_exist(kb: Kb) -> None:
-    result = kb("recall", "nas", "restart", "order")
+    result = kb("recall", "nas", "restart", "order", "--no-sessions")
     assert "knowledge/infra/nas.md#1 | Restart order" in result.stdout
     assert "observations/archived/" not in result.stdout
+
+
+def test_archived_files_appear_only_as_session_rows_when_curated_results_exist(kb: Kb) -> None:
+    result = kb("recall", "nas", "restart", "order")
+    assert "knowledge/infra/nas.md#1 | Restart order" in result.stdout
+    shown, sessions = result.stdout.split("From sessions (raw, unverified, may be superseded):")
+    assert "observations/archived/" not in shown
+    assert sessions.count("observations/archived/") == 1

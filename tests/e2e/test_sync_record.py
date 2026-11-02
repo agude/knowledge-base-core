@@ -88,4 +88,4 @@ def test_a_record_that_cannot_be_written_is_reported_and_keeps_the_exit_status(
     result = remote_git_kb("sync")
 
     assert result.returncode == 0, result.stderr
-    assert result.stderr.startswith("sync: cannot record sync outcome: ")
+    assert "sync: cannot record sync outcome: " in result.stderr

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from kb import __version__, harvest, sync_state
+from kb import __version__, harvest, sync_state, token_cache
 from kb.commands import sync
 from kb.errors import KbError
 from kb.transcripts import Message, Session
@@ -204,3 +204,43 @@ def test_backlog_reads_head_and_selects_without_fetching_origin(
 
     assert (found.selection.ready_count, found.selection.waiting_count) == (1, 0)
     assert found.scan.failures == ()
+
+
+def test_the_token_cache_is_refreshed_after_the_exchange_on_push_and_no_push(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    events: list[str] = []
+    stub_steps(monkeypatch)
+
+    def exchange(
+        root: Path, status: object, no_push: bool
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        events.append(f"exchange no_push={no_push}")
+        return (), ()
+
+    def refresh(root: Path) -> token_cache.RefreshReport:
+        events.append("refresh")
+        return token_cache.RefreshReport(refreshed=2, restated=3, removed=1, written=True)
+
+    monkeypatch.setattr(sync, "_sync_remote", exchange)
+    monkeypatch.setattr(token_cache, "refresh", refresh)
+
+    assert run_sync(tmp_path) == 0
+    assert sync._sync(tmp_path, tmp_path / ".git", {}, "test-host", NOW, None, True) == 0
+    assert events == ["exchange no_push=False", "refresh", "exchange no_push=True", "refresh"]
+    assert capsys.readouterr().out.count("Cache: 2 refreshed, 3 restated, 1 removed\n") == 2
+
+
+def test_a_token_cache_failure_is_a_warning_and_keeps_the_exit_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stub_steps(monkeypatch)
+
+    def refuse(root: Path) -> token_cache.RefreshReport:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(token_cache, "refresh", refuse)
+
+    assert run_sync(tmp_path) == 0
+    assert "sync: warning: cannot refresh the token cache" in capsys.readouterr().err
+    assert record(tmp_path).last_outcome == "ok"

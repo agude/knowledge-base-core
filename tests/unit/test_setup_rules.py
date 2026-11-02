@@ -55,7 +55,11 @@ def test_a_policy_path_with_a_line_break_or_nul_is_refused(content_root: str) ->
 def test_the_claude_fragment_allows_exactly_the_working_commands() -> None:
     fragment = json.loads(setup_rules.allow_claude())
 
-    assert fragment == {"permissions": {"allow": [f"Bash(kb {word} *)" for word in WORKING]}}
+    assert fragment == {
+        "permissions": {
+            "allow": [f"{tool}(kb {word} *)" for tool in ("Bash", "PowerShell") for word in WORKING]
+        }
+    }
 
 
 def test_the_block_without_policy_is_the_canonical_block_minus_its_policy_clause() -> None:

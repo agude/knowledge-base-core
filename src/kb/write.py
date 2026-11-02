@@ -35,7 +35,7 @@ def publish_and_commit(
 
     temporary = scratch / f"record-{os.urandom(4).hex()}.md"
     try:
-        with temporary.open("x", encoding="utf-8") as handle:
+        with temporary.open("x", encoding="utf-8", newline="") as handle:
             handle.write(text)
         backend = lock.default_backend(platform)
         with lock.write_lock(git_directory, wait, backend):
@@ -58,7 +58,8 @@ def project() -> str:
         check=False,
     )
     if top.returncode == 0:
-        return top.stdout.removesuffix("\n")
+        # Git prints C:/ paths on Windows; Path gives them the native separator.
+        return str(Path(top.stdout.removesuffix("\n")))
     return str(here)
 
 

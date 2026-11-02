@@ -1,18 +1,24 @@
 """Pure selection and message-addressability rules for evidence search."""
 
+import shutil
 import socket
 import subprocess
 import sys
+from collections.abc import Sequence
 from datetime import date
 from io import StringIO
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from kb import corpus, evidence, lock, search
+from kb import addressing, chunks, corpus, evidence, lock, model, search, token_cache
 from kb.commands import evidence as evidence_command
 from kb.context import Context
+from kb.entries import Entry, chunk_tokens, chunk_unit
 from kb.model import Document, parse
+
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 TRANSCRIPT_FRONT = (
     "title: Transcript fixture\n"
@@ -41,7 +47,7 @@ def transcript(
     return parse("observations/archived/transcript.md", f"---\n{front}---\n\n{body}\n")
 
 
-def test_addressable_messages_normalize_timestamps_and_ignore_fenced_headings() -> None:
+def test_message_sections_normalize_timestamps_and_ignore_fenced_headings() -> None:
     document = parse(
         "observations/archived/transcript.md",
         "---\n" + TRANSCRIPT_FRONT + "---\n\n"
@@ -50,11 +56,13 @@ def test_addressable_messages_normalize_timestamps_and_ignore_fenced_headings() 
         "## 2. assistant, 2026-10-20T00:20:00Z\n\n"
         "The message body has a matching phrase.\n",
     )
-    messages = evidence.addressable_messages(document)
-    assert messages is not None
-    assert [message.number for message in messages] == [1, 2]
-    assert messages[0].timestamp.isoformat() == "2026-10-20T00:10:00+00:00"
-    assert "matching phrase" in messages[1].body[0]
+    sections = addressing.message_sections(document)
+    assert sections is not None
+    assert [section.number for section in sections] == [1, 2]
+    assert sections[0].timestamp.isoformat() == "2026-10-20T00:10:00+00:00"
+    assert (
+        "matching phrase" in document.prose(sections[1].section.start, sections[1].section.end)[0]
+    )
 
 
 @pytest.mark.parametrize(
@@ -86,7 +94,18 @@ def test_addressable_messages_normalize_timestamps_and_ignore_fenced_headings() 
 def test_incomplete_or_malformed_transcripts_use_file_level_handling(
     front: str, headings: tuple[str, ...]
 ) -> None:
-    assert evidence.addressable_messages(transcript(front, headings)) is None
+    assert addressing.message_sections(transcript(front, headings)) is None
+
+
+def cached(tmp_path: Path, files: dict[str, str]) -> tuple[Path, list[Entry]]:
+    """Write files under a fresh content root, and return its root and their cache entries."""
+    root = tmp_path / "content"
+    for relpath, text in files.items():
+        target = root / relpath
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+    loaded = token_cache.load(root, sorted(files))
+    return root, [loaded[relpath] for relpath in sorted(files)]
 
 
 def test_transcript_source_is_overridden_by_question_storage_kind() -> None:
@@ -94,21 +113,23 @@ def test_transcript_source_is_overridden_by_question_storage_kind() -> None:
         "questions/open/gap.md",
         "---\ntitle: Gap\nsource: session-transcript\n---\n\nQuestion body.\n",
     )
-    assert evidence.evidence_kind(document.path, document) == "open-question"
+    assert evidence.evidence_kind(document.path, document.scalar("source")) == "open-question"
 
 
-def test_file_ties_sort_by_path_after_date_and_score() -> None:
-    query = search.query_terms(("backup", "disk"))
+def test_file_ties_sort_by_path_after_date_and_score(tmp_path: Path) -> None:
     contents = "---\ntitle: Backup disk\ncreated: 2026-10-20\n---\n\nBackup disk inventory.\n"
-    later_path = parse("observations/archived/z.md", contents)
-    earlier_path = parse("observations/archived/a.md", contents)
+    root, entries = cached(
+        tmp_path,
+        {"observations/archived/z.md": contents, "observations/archived/a.md": contents},
+    )
     items = evidence.select(
-        [(later_path.path, later_path), (earlier_path.path, earlier_path)],
-        query,
+        list(reversed(entries)),
+        search.query_terms(("backup", "disk")),
         None,
         None,
         None,
         5,
+        corpus.Documents(root).read,
     )
     assert [item.path for item in items] == [
         "observations/archived/a.md",
@@ -116,18 +137,215 @@ def test_file_ties_sort_by_path_after_date_and_score() -> None:
     ]
 
 
-def test_malformed_transcript_remains_a_file_level_result() -> None:
-    document = transcript(TRANSCRIPT_FRONT.replace("part: 1\n", "part: 0\n"))
+def test_a_file_level_legacy_transcript_shows_the_chunk_with_the_most_terms(
+    tmp_path: Path,
+) -> None:
+    filler = "padding " * 150
+    contents = (
+        "---\ntitle: Legacy\nsource: session-transcript\ncreated: 2026-10-21\n---\n\n"
+        f"### user\n\nalpha here. {filler}\n\n"
+        "### assistant\n\nalpha and beta together.\n"
+    )
+    root, entries = cached(tmp_path, {"observations/archived/l.md": contents})
+
     items = evidence.select(
-        [(document.path, document)],
+        entries,
+        search.query_terms(("alpha", "beta")),
+        "transcript",
+        None,
+        None,
+        5,
+        corpus.Documents(root).read,
+    )
+
+    assert [item.path for item in items] == ["observations/archived/l.md"]
+    assert items[0].date == date(2026, 10, 21)
+    assert "beta" in items[0].text
+
+
+def test_malformed_transcript_remains_a_file_level_result(tmp_path: Path) -> None:
+    text = transcript(TRANSCRIPT_FRONT.replace("part: 1\n", "part: 0\n")).lines
+    root, entries = cached(
+        tmp_path, {"observations/archived/transcript.md": "\n".join(text) + "\n"}
+    )
+    items = evidence.select(
+        entries,
         search.query_terms(("message", "body")),
         None,
         None,
         None,
         5,
+        corpus.Documents(root).read,
     )
     assert len(items) == 1
-    assert items[0].path == document.path
+    assert items[0].path == "observations/archived/transcript.md"
+    assert items[0].message_number is None
+
+
+SESSION_FRONT = (
+    "---\ntitle: Session transcript\nsource: session-transcript\nsession: s\n"
+    'first_message: "m1"\nlast_message: "m2"\npart: 1\n'
+    "started: 2026-10-01T00:00:00Z\nended: 2026-10-31T00:00:00Z\n"
+    "created: 2026-10-22\n---\n\n"
+)
+
+
+def session(*messages: tuple[str, str]) -> str:
+    """A valid addressable transcript with one message per (UTC timestamp, text) pair."""
+    body = "".join(
+        f"## {number}. {'user' if number % 2 else 'assistant'}, {moment}\n\n{text}\n\n"
+        for number, (moment, text) in enumerate(messages, 1)
+    )
+    return SESSION_FRONT + body
+
+
+CHATTER = "unrelated status chatter about lunch " * 8
+
+
+def chunk_scores(loaded: list[Entry], terms: Sequence[str]) -> dict[str, float]:
+    """The best chunk score of each transcript, computed from its chunks as one corpus.
+
+    The units, groups, classes, and delta are the ones evidence.select passes to search.rank.
+    Every entry in loaded is a transcript with messages.
+    """
+    units: list[search.Unit] = []
+    owners: list[str] = []
+    for entry in loaded:
+        for found in chunk_tokens(entry):
+            units.append(chunk_unit(entry, found))
+            owners.append(entry.path)
+    hits = search.rank(
+        units,
+        terms,
+        groups=owners,
+        classes=["chunk"] * len(units),
+        delta=evidence.DELTA,
+    )
+    best: dict[str, float] = {}
+    for hit in hits:
+        best.setdefault(owners[hit.index], hit.score)
+    return best
+
+
+def test_a_transcript_scores_as_its_best_chunk(tmp_path: Path) -> None:
+    long_turns = [(f"2026-10-20T00:{number:02d}:00Z", CHATTER) for number in range(1, 31)]
+    long_turns[14] = ("2026-10-20T01:00:00Z", "The traefik certificate renewal failed.")
+    files = {
+        "observations/archived/long.md": session(*long_turns),
+        "observations/archived/short.md": session(
+            ("2026-10-20T00:01:00Z", "traefik backups and the family share")
+        ),
+        "observations/archived/other.md": session(
+            ("2026-10-20T00:01:00Z", "certificate notes for the lease")
+        ),
+    }
+    root, entries = cached(tmp_path, files)
+    terms = search.query_terms(("traefik", "certificate"))
+
+    items = evidence.select(
+        entries,
+        terms,
+        "transcript",
+        None,
+        None,
+        5,
+        corpus.Documents(root).read,
+    )
+
+    expected = chunk_scores(entries, terms)
+    assert {item.path.partition("#")[0]: item.score for item in items} == pytest.approx(
+        {path: expected[path] for path in files if path in expected}
+    )
+
+
+def test_the_row_names_the_matched_message_and_the_chunk_that_holds_it(tmp_path: Path) -> None:
+    turns = [(f"2026-10-20T00:{number:02d}:00Z", CHATTER) for number in range(1, 31)]
+    turns[11] = ("2026-10-20T01:00:00Z", "The traefik certificate renewal failed.")
+    path = "observations/archived/long.md"
+    root, entries = cached(tmp_path, {path: session(*turns)})
+
+    items = evidence.select(
+        entries,
+        search.query_terms(("traefik", "certificate")),
+        "transcript",
+        None,
+        None,
+        5,
+        corpus.Documents(root).read,
+    )
+
+    assert len(items) == 1
+    item = items[0]
+    assert item.message_number == 12
+    assert item.path == f"{path}#12"
+    assert item.chunk is not None
+    listed = chunks.chunks(corpus.Documents(root).read(path))
+    assert listed[item.chunk].number <= 12 <= listed[item.chunk].last
+
+
+def test_the_row_names_the_matched_message_inside_the_winning_chunk(tmp_path: Path) -> None:
+    root, entries = cached(
+        tmp_path,
+        {
+            "observations/archived/t.md": session(
+                ("2026-10-20T00:01:00Z", "Which share holds the photos?"),
+                ("2026-10-21T00:02:00Z", "The family share holds the photos."),
+                ("2026-10-21T00:03:00Z", "Unrelated follow up."),
+            )
+        },
+    )
+
+    items = evidence.select(
+        entries,
+        search.query_terms(("family", "share")),
+        "transcript",
+        None,
+        None,
+        5,
+        corpus.Documents(root).read,
+    )
+
+    assert [item.path for item in items] == ["observations/archived/t.md#2"]
+    assert items[0].date == date(2026, 10, 21)
+    assert items[0].message_number == 2
+    assert items[0].text == "The family share holds the photos."
+
+
+def test_a_date_bound_drops_a_transcript_whose_only_match_is_outside_it(tmp_path: Path) -> None:
+    root, entries = cached(
+        tmp_path,
+        {
+            "observations/archived/t.md": session(
+                ("2026-10-05T00:01:00Z", "Old restart of the NAS."),
+                ("2026-10-20T00:02:00Z", "Unrelated follow up."),
+            )
+        },
+    )
+    read = corpus.Documents(root).read
+
+    outside = evidence.select(entries, ["restart"], "transcript", date(2026, 10, 10), None, 5, read)
+    inside = evidence.select(entries, ["restart"], "transcript", date(2026, 10, 1), None, 5, read)
+
+    assert outside == []
+    assert [item.path for item in inside] == ["observations/archived/t.md#1"]
+
+
+def test_an_ineligible_message_never_joins_a_chunk_under_a_date_bound(tmp_path: Path) -> None:
+    root, entries = cached(
+        tmp_path,
+        {
+            "observations/archived/t.md": session(
+                ("2026-10-20T00:01:00Z", "Alpha reading."),
+                ("2026-10-05T00:02:00Z", "Unrelated filler."),
+                ("2026-10-20T00:03:00Z", "Beta conclusion."),
+            )
+        },
+    )
+    read = corpus.Documents(root).read
+
+    items = evidence.select(entries, ["filler"], "transcript", date(2026, 10, 10), None, 5, read)
+
+    assert items == []
 
 
 def unexpected_external_call(*_args: object, **_kwargs: object) -> None:
@@ -135,10 +353,14 @@ def unexpected_external_call(*_args: object, **_kwargs: object) -> None:
     pytest.fail("read-only evidence command made an external call")
 
 
-def test_command_parses_each_selected_document_once_and_stays_read_only(
-    monkeypatch: pytest.MonkeyPatch,
+def test_command_parses_each_document_once_and_only_when_needed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    root = Path(__file__).resolve().parents[1] / "fixtures" / "content"
+    """A cold run parses each stale file once. A warm run parses only the printed files."""
+    root = tmp_path / "content"
+    shutil.copytree(FIXTURES / "content", root)
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    (root / ".gitignore").write_text("/cache/\n", encoding="utf-8")
     context = Context(root=root, today=date(2026, 10, 26))
     monkeypatch.setattr(evidence_command, "load", lambda *_args: context)
     expected_paths = sorted(
@@ -146,22 +368,43 @@ def test_command_parses_each_selected_document_once_and_stays_read_only(
         for directory in evidence_command.ALL_DIRECTORIES
         for path in corpus.markdown_files(root, directory)
     )
-    original_read = corpus.read_document
-    parsed_paths: list[str] = []
+    parsed: list[str] = []
+    original_parse = model.parse
 
-    def track_read(content_root: Path, path: str) -> Document:
-        parsed_paths.append(path)
-        return original_read(content_root, path)
+    def counting_parse(path: str, text: str) -> Document:
+        parsed.append(path)
+        return original_parse(path, text)
 
-    monkeypatch.setattr(corpus, "read_document", track_read)
-    monkeypatch.setattr(subprocess, "run", unexpected_external_call)
+    real_run = subprocess.run
+
+    def git_for_the_cache_only(
+        args: Sequence[str], **kwargs: Any
+    ) -> subprocess.CompletedProcess[str]:
+        # The cache asks git where the worktree is and whether it ignores the cache file.
+        # Every other process is refused.
+        if list(args[:2]) not in (["git", "rev-parse"], ["git", "check-ignore"]):
+            pytest.fail("read-only evidence command ran another process")
+        return real_run(list(args), **kwargs)
+
+    monkeypatch.setattr(model, "parse", counting_parse)
+    monkeypatch.setattr(subprocess, "run", git_for_the_cache_only)
     monkeypatch.setattr(socket, "socket", unexpected_external_call)
     monkeypatch.setattr(lock, "write_lock", unexpected_external_call)
-    output = StringIO()
-    monkeypatch.setattr(sys, "stdout", output)
     before = {path: (root / path).read_bytes() for path in expected_paths}
 
-    assert evidence_command.run(("backup", "disk")) == 0
-    assert parsed_paths == expected_paths
-    assert len(parsed_paths) == len(set(parsed_paths))
+    def run_and_print() -> list[str]:
+        output = StringIO()
+        monkeypatch.setattr(sys, "stdout", output)
+        parsed.clear()
+        assert evidence_command.run(("backup", "disk")) == 0
+        rows = output.getvalue().splitlines()[1:-1]
+        return [row.split(" | ")[0].strip().partition("#")[0] for row in rows]
+
+    run_and_print()
+    assert len(parsed) == len(set(parsed))
+    assert set(parsed) <= set(expected_paths)
+
+    printed = run_and_print()
+    assert printed
+    assert sorted(parsed) == sorted(set(printed))
     assert {path: (root / path).read_bytes() for path in expected_paths} == before

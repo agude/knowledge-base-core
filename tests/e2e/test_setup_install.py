@@ -8,13 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
+from .harness import HOLD_KERNEL_LOCK, TODAY, Kb, kb_executable, run_git, skill_lines, toml_path
 
-from .harness import HOLD_KERNEL_LOCK, TODAY, Kb, run_git, skill_lines
-
-pytestmark = pytest.mark.skipif(
-    sys.platform == "win32", reason="the installed pre-commit hook is a POSIX shell script"
-)
 ARTICLE = (
     "---\ntitle: Backups\nupdated: 2026-10-20\nverified: 2026-10-20\nttl: domain\n---\n"
     "# Backups\n\n## 1. Schedule\n\nNightly.\n"
@@ -24,11 +19,7 @@ MARKER = "# Installed by kb setup. Do not edit; run kb setup again to update.\n"
 
 def shim(kb: Kb) -> Path:
     """A kb executable that runs this interpreter's kb, at a path that an install would use."""
-    path = kb.home / "bin" / "kb"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f'#!/bin/sh\nexec "{sys.executable}" -m kb "$@"\n', encoding="utf-8")
-    path.chmod(0o755)
-    return path
+    return kb_executable(kb.home / "bin")
 
 
 def hook_of(kb: Kb) -> Path:
@@ -70,7 +61,7 @@ def test_the_first_run_writes_the_config_and_the_hook_and_the_second_changes_not
         f"{skill_lines(git_kb, 'installed')}"
     )
     assert git_kb.config_file.read_text(encoding="utf-8") == (
-        f'content = "{git_kb.content.as_posix()}"\n'
+        f"content = {toml_path(git_kb.content)}\n"
     )
     assert hook_of(git_kb).read_text(encoding="utf-8") == (
         f"#!/bin/sh\n{MARKER}exec '{shim(git_kb)}' hook pre-commit \"$@\"\n"

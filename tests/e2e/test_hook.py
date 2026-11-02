@@ -13,9 +13,6 @@ import pytest
 
 from .harness import Kb, run_git
 
-pytestmark = pytest.mark.skipif(
-    sys.platform == "win32", reason="the installed pre-commit hook is a POSIX shell script"
-)
 TODAY = "2026-10-26"
 ARTICLE = (
     "---\ntitle: Backups\nupdated: 2026-10-20\nverified: 2026-10-20\nttl: domain\n---\n"

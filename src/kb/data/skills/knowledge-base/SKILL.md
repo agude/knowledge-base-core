@@ -20,9 +20,12 @@ kb recall backup retention
 
 `kb recall QUERY...` prints the best curated sections in full, with a locator,
 heading, freshness, and sources. It may list matching pending observations and
-open questions under `Uncurated`. If no curated section matches, it returns
-the best observations, transcripts, and questions as evidence. Read a printed
-locator directly:
+open questions under `Uncurated`. When a curated section matches, it may also
+list up to three raw session transcript rows under `From sessions (raw,
+unverified, may be superseded)`. Those rows can be superseded by curated
+sections, so check the curated sections first. If no curated section matches,
+it returns the best observations, transcripts, and questions as evidence. Add
+`--no-sessions` to omit the session rows. Read a printed locator directly:
 
 ```sh
 kb read knowledge/infra/backups.md#2

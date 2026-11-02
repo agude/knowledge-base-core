@@ -43,12 +43,22 @@ from `content = "PATH"` in `config.toml`. That file is
 
 `kb recall` ranks curated sections by BM25. A curated result can include
 matching pending observations and open questions under `Uncurated (pending,
-not yet verified)`. It does not scan archived observations or resolved
-questions on that path. When there is no curated result, recall searches all
+not yet verified)`. Curated results never scan archived observations or
+resolved questions. When there is no curated result, recall searches all
 observations and questions and shows the best matches as evidence. Each row
 shows its locator, date, kind, and title or excerpt. An addressable harvested
 message uses `PATH#N`; older transcripts without addressable messages keep a
 file locator.
+
+After the Uncurated block, a curated result also prints up to three matching
+session transcript rows, from pending and archived transcripts, under `From
+sessions (raw, unverified, may be superseded):`. Each row shows its locator,
+date, and an excerpt of at most 86 characters: the 80-character excerpt width
+plus two ellipses. A transcript that already appears under Uncurated is left
+out. The block is omitted when no session row matches, and when no curated
+section matches, because the evidence list already holds the sessions.
+`--no-sessions` omits the block. Curated sections are the same with or without
+it.
 
 `--in PATH` scopes curated files and observations by their content paths. If
 the scope is under `knowledge/` or `sources/`, questions are selected by
@@ -128,10 +138,11 @@ The question stores `title`, `context`, `source: session`, `project`, `host`,
 and `created` fields in that order.
 
 All three options are required. Title and body follow the same rules as
-`kb observe`; `--body -` reads UTF-8 text from standard input. `--context` is
-the best-known area that lacks knowledge. No `kb map` call is required, and the
-area need not exist. Bare names resolve under `knowledge/`; content-relative
-paths and unique filenames are accepted under `knowledge/` or `sources/`. Paths
+`kb observe`; `--body -` reads UTF-8 text from standard input, drops a leading
+byte-order mark, and stores CRLF line endings as LF. `--context` is the
+best-known area that lacks knowledge. No `kb map` call is required, and the area
+need not exist. Bare names resolve under `knowledge/`; content-relative paths
+and unique filenames are accepted under `knowledge/` or `sources/`. Paths
 use `/` separators, and the writer rejects blank, absolute or drive-letter,
 traversal, fragmented, or control-character contexts. A missing or deleted path
 is kept as a normalized literal; a shorthand is stored under `knowledge/`. The
@@ -238,8 +249,9 @@ one of `--destination` and `--obsolete`. An answered question's destination
 must be a locator that `kb read` resolves under `knowledge/`, including a
 valid section fragment. The command stores its canonical content-relative
 locator. `--obsolete` marks a question that no longer needs an answer and does
-not store a destination. `--answer -` reads UTF-8 text from standard input;
-the answer must contain non-whitespace text.
+not store a destination. `--answer -` reads UTF-8 text from standard input,
+drops a leading byte-order mark, and stores CRLF line endings as LF; the answer
+must contain non-whitespace text.
 
 The resolved copy keeps the open question's filename under
 `questions/resolved/`. It preserves the original text and appends `resolved`
@@ -464,7 +476,8 @@ kb observe --title "Meeting notes" --body - < notes.txt
 ```
 
 - `--title` is one line and must contain text. `--body` must contain text. `-`
-  reads the body from standard input to its end.
+  reads the body from standard input to its end; a leading byte-order mark is
+  dropped and CRLF line endings are stored as LF.
 - On success, stdout is `Wrote: observations/pending/<file>` and the exit status
   is 0. A usage error prints the usage line and exits 1. Any other failure prints
   nothing to stdout, prints a message that begins `observe:` to stderr, and exits 1.
@@ -586,6 +599,26 @@ The service defaults to `%h/.local/bin/kb`. Edit `ExecStart` in the copied
 service file if `kb` is installed elsewhere. The timer runs every 15 minutes
 and catches up after the machine was off.
 
+#### Register the Windows task
+
+`contrib/windows/register-kb-sync.ps1` registers a Task Scheduler task named
+`kb-sync` that runs `kb sync` every 15 minutes. `kb` does not run it. Run it in
+a normal PowerShell window after installing and configuring `kb`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File contrib\windows\register-kb-sync.ps1
+```
+
+The script uses the `kb` on `PATH`; pass `-Kb PATH` to use another. The task
+runs only while you are signed in, so it sees your mapped drives and Git
+credentials, and only while a network connection is up. Task Scheduler checks
+for any network, not for `origin`, so a run away from `origin` still fails and
+`kb sync` records the failure. `conhost --headless` keeps a console window from
+opening. A run missed while the machine was off starts when it is next
+available. Running
+the script again replaces the task. Remove it with
+`Unregister-ScheduledTask -TaskName kb-sync`.
+
 ## Setup and diagnosis
 
 ### `kb setup`
@@ -629,7 +662,8 @@ kb setup --print {instructions|allow-claude|allow-codex}
   is not an empty directory, and it refuses when `kb` cannot be found; both
   refusals come before anything is created. It writes the layout, with a
   `.gitkeep` in each empty directory, `.gitattributes` with
-  `* text=auto eol=lf`, and an `AGENTS.md` policy stub. Then it runs
+  `* text=auto eol=lf`, `.gitignore` with `/cache/` (the token cache), and an
+  `AGENTS.md` policy stub. Then it runs
   `git init -b main`, installs the hook, and makes one commit,
   `Initialize knowledge base content`. When the hook is refused or the commit
   fails, setup removes what it created, leaves the config unchanged, and exits
@@ -653,7 +687,8 @@ dotfiles install this text.
   a path, because the dotfiles install one file for both hosts. The line needs
   a content path, from `KB_CONTENT` or the config file.
 - `allow-claude` writes a settings fragment with `permissions.allow` set to
-  `Bash(kb COMMAND *)` for each working-agent command.
+  `Bash(kb COMMAND *)` and `PowerShell(kb COMMAND *)` for each working-agent
+  command. Claude Code on Windows runs commands through either tool.
 - `allow-codex` writes a rules file with one `prefix_rule` per working-agent
   command, each with `decision = "allow"`. Install it as a regular file under
   `$CODEX_HOME/rules/`. Codex 0.165.0 skips a symlinked rules file.
@@ -689,7 +724,8 @@ gather its facts reports why, and the other checks still run.
 | `hook` | kb installed it, and its `kb` runs `--version` | | the hook is absent or foreign, or its `kb` is missing |
 | `curation` | no unsettled batch | a batch is unsettled, or committed but not published | |
 | `sync` | the last exchange was within 60 minutes | the last run ended `dirty` or `error`, or the exchange is older | there is no record |
-| `scheduler` | on Linux, `kb-sync.timer` is enabled and active | it is not enabled or not active; elsewhere, `not checked on PLATFORM` | |
+| `cache` | the token cache in `cache/tokens.pickle` matches the evidence files, or the content root is not the top of its own Git worktree | the cache is missing or stale, or Git does not ignore it (add `/cache/` to `.gitignore`) | |
+| `scheduler` | on Linux, `kb-sync.timer` is enabled and active; on Windows, the `kb-sync` task is ready or running | it is not enabled or not active, the task is missing or disabled, or the platform is not checked | |
 | `capture` | `harvest_since` is set, the transcript roots are readable, and no ready transcript is older than 20 days | capture is disabled, a root is unreadable, or old ready transcripts exist | |
 | `instructions` | each host's global file has the canonical block, with or without its content policy line | a block is missing or differs | |
 | `skills` | both packaged skills at both host destinations match the package | a skill is missing, differs, or is unmanaged | |
@@ -699,7 +735,66 @@ gather its facts reports why, and the other checks still run.
   Codex retention is reported as `unknown`, because its configuration documents
   no retention setting.
 - `scheduler` asks `systemctl --user` whether `kb-sync.timer` is enabled and
-  active. A missing `systemctl` produces a warning.
+  active. On Windows it asks Task Scheduler, through `powershell.exe`, for the
+  `kb-sync` task's state. A missing `systemctl` or `powershell.exe` produces a
+  warning, and macOS reports `not checked on darwin`.
+
+## Windows
+
+`kb` runs on Windows with Git for Windows and uv. Install both, then install
+`kb` with Python 3.14:
+
+```powershell
+winget install --id Git.Git -e
+winget install --id astral-sh.uv -e
+uv tool install --python 3.14 PATH\TO\knowledge-base-core
+uv tool update-shell
+```
+
+Open a new window so `PATH` includes `%USERPROFILE%\.local\bin`, then run
+`kb setup --content PATH` and `kb doctor`. `detect-secrets` needs PyYAML, which
+has no Windows wheel for Python 3.15 yet, so uv would build it and that needs
+the Microsoft C++ Build Tools. Python 3.11 through 3.14 install from wheels.
+
+- `kb observe`, `kb gap`, and harvesting commit to the content repository, so
+  Git needs an identity. A fresh Git for Windows install has none:
+
+  ```powershell
+  git config --global user.name "Your Name"
+  git config --global user.email "you@example.com"
+  ```
+
+- Git refuses a repository on a network share owned by another account, such
+  as an `origin` on a NAS, with "detected dubious ownership". Trust each such
+  repository by the UNC path that Git prints:
+
+  ```powershell
+  git config --global --add safe.directory '%(prefix)///server/share/content.git'
+  ```
+
+- Run `uv` and `kb setup` in a normal terminal, not inside the Claude desktop
+  app. The app is a packaged Windows app, and Windows redirects what its
+  processes write under `AppData` into the app's private storage. uv's Python
+  and tools, and `kb`'s `%LOCALAPPDATA%\kb\config.toml`, would land where
+  other programs cannot see them. Agents in the app can still read files that
+  were written outside it.
+- Write paths in a hand-edited `config.toml` with `/`, or in a literal string:
+  `content = 'C:\Users\me\Knowledge'`. In a basic string, each backslash
+  must be doubled. `kb setup` writes the escaped form.
+- Git for Windows sets `core.autocrlf=true` system-wide. A content repository
+  made by `kb setup --init` has `* text=auto eol=lf`, which overrides it, and
+  `kb doctor` checks it. `kb` writes LF, stores CRLF from standard input as
+  LF, and drops the byte-order mark that Windows PowerShell adds to piped UTF-8.
+- The pre-commit hook is a POSIX `sh` script. Git for Windows runs it with its
+  own `sh`.
+- `kb setup --print allow-claude` includes `PowerShell(kb COMMAND *)` rules,
+  because Claude Code on Windows runs commands through either its Bash or its
+  PowerShell tool.
+- Register the sync task as described in
+  [Register the Windows task](#register-the-windows-task).
+- A cloned `knowledge-base-core` keeps `.python-version` at 3.15; pass
+  `--python 3.14` to `uv sync` and `uv run` on Windows. Tests that create
+  symbolic links are skipped unless Developer Mode is on.
 
 ## Development
 

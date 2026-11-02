@@ -23,14 +23,19 @@ def config_file(environ: Mapping[str, str], platform: str, home: Path) -> Path:
     return home / ".config" / "kb" / "config.toml"
 
 
-def scheduler_commands(platform: str) -> tuple[tuple[str, ...], tuple[str, ...]] | None:
-    """The argument lists that ask whether the sync timer is enabled and active, or None.
+def scheduler_commands(platform: str) -> tuple[tuple[str, ...], ...] | None:
+    """The argument lists that ask about the scheduled kb sync, or None where kb does not check.
 
-    Only Linux has a timer that kb installs, through systemd's user instance.
+    Linux asks systemd's user instance whether kb-sync.timer is enabled and active. Windows
+    asks Task Scheduler for the kb-sync task's state; the state names are not localized, and
+    a missing task prints nothing.
     """
-    if platform != LINUX:
-        return None
-    return (
-        ("systemctl", "--user", "is-enabled", "kb-sync.timer"),
-        ("systemctl", "--user", "is-active", "kb-sync.timer"),
-    )
+    if platform == LINUX:
+        return (
+            ("systemctl", "--user", "is-enabled", "kb-sync.timer"),
+            ("systemctl", "--user", "is-active", "kb-sync.timer"),
+        )
+    if platform == WINDOWS:
+        query = "(Get-ScheduledTask -TaskName 'kb-sync' -ErrorAction Stop).State"
+        return (("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", query),)
+    return None

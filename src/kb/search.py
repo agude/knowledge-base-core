@@ -4,9 +4,10 @@ Every function here takes values and returns values. The caller reads the
 files, builds the units, and formats the output.
 """
 
+import functools
 import math
 import re
-from collections.abc import Sequence
+from collections.abc import Hashable, Sequence
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
@@ -210,10 +211,13 @@ class _Profile:
     length: float
 
 
+@functools.cache
 def _stem(token: str) -> str:
     """The stem of a plain English word, after the derivation lexicon.
 
-    Flags, paths, numeric identifiers, and dates are returned unchanged.
+    Flags, paths, numeric identifiers, and dates are returned unchanged. The
+    result depends only on the token, and transcripts repeat most words many
+    times, so the cache removes most of the stemming work.
     """
     if not (token.isascii() and token.isalpha()):
         return token
@@ -317,39 +321,64 @@ def article_candidates(document: Document) -> list[Candidate]:
     return candidates
 
 
-def evidence_unit(document: Document) -> Unit:
-    """The unit of an evidence file: its title and all of its text."""
-    body = document.prose(document.body_start, len(document.lines))
-    return make_unit(document.title or "", (), (), body)
-
-
-def rank(units: Sequence[Unit], terms: Sequence[str]) -> list[Hit]:
+def rank(
+    units: Sequence[Unit],
+    terms: Sequence[str],
+    *,
+    groups: Sequence[Hashable] | None = None,
+    classes: Sequence[Hashable] | None = None,
+    delta: float = 0.0,
+) -> list[Hit]:
     """The units that qualify, best first. Ties keep their input order.
 
     A unit qualifies when it holds at least half of the distinct terms, rounded
     up, or when the whole query equals its title, an alias, or a heading.
+
+    groups names the document each unit belongs to. Document frequency and the
+    document count count distinct groups, so several units of one file count once.
+    Without groups, each unit is its own document.
+
+    classes names the length class of each unit. The average length is taken
+    within each class, so units of different kinds do not normalize each other.
+    Without classes, all units form one class.
+
+    delta is the BM25+ lower bound (Lv and Zhai, 2011). A unit adds delta times the
+    IDF of each query term it holds, so a term it lacks adds nothing. Its default,
+    0, is plain BM25.
     """
     if not terms or not units:
         return []
+    group_of = list(range(len(units))) if groups is None else list(groups)
+    class_of = [0] * len(units) if classes is None else list(classes)
+    if len(group_of) != len(units) or len(class_of) != len(units):
+        raise ValueError("groups and classes must name one value per unit")
     profiles = [_profile(unit, terms) for unit in units]
-    total = sum(profile.length for profile in profiles)
-    average = total / len(units) or 1.0
-    documents_with: dict[str, int] = {}
-    for profile in profiles:
+    totals: dict[Hashable, float] = {}
+    counts: dict[Hashable, int] = {}
+    for profile, length_class in zip(profiles, class_of, strict=True):
+        totals[length_class] = totals.get(length_class, 0.0) + profile.length
+        counts[length_class] = counts.get(length_class, 0) + 1
+    averages = {
+        length_class: totals[length_class] / counts[length_class] or 1.0 for length_class in totals
+    }
+    holders: dict[str, set[Hashable]] = {}
+    for group, profile in zip(group_of, profiles, strict=True):
         for term in profile.frequency:
-            documents_with[term] = documents_with.get(term, 0) + 1
+            holders.setdefault(term, set()).add(group)
+    documents = len(set(group_of))
+    documents_with = {term: len(found) for term, found in holders.items()}
     needed = math.ceil(len(terms) / 2)
     phrase = " ".join(terms)
     hits: list[Hit] = []
     for index, (unit, profile) in enumerate(zip(units, profiles, strict=True)):
         if len(profile.frequency) < needed and phrase not in unit.phrases:
             continue
-        norm = K1 * (1 - B + B * profile.length / average)
+        norm = K1 * (1 - B + B * profile.length / averages[class_of[index]])
         score = 0.0
         for term, frequency in profile.frequency.items():
             df = documents_with[term]
-            idf = math.log(1 + (len(units) - df + 0.5) / (df + 0.5))
-            score += idf * frequency * (K1 + 1) / (frequency + norm)
+            idf = math.log(1 + (documents - df + 0.5) / (df + 0.5))
+            score += idf * frequency * (K1 + 1) / (frequency + norm) + idf * delta
         hits.append(Hit(index, score))
     hits.sort(key=lambda hit: hit.score, reverse=True)
     return hits

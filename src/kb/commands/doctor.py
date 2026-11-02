@@ -28,6 +28,7 @@ from kb import (
     setup_rules,
     skills,
     sync_state,
+    token_cache,
 )
 from kb.args import Spec
 from kb.commands import curate, sync
@@ -101,6 +102,7 @@ def gather(context: Context) -> list[Check]:
             lambda found: diagnosis.curation_check(curate.doctor_findings(found)),
         ),
         with_root("sync", "warn", lambda found: _sync(found, context)),
+        with_root("cache", "warn", _cache),
         _guarded("scheduler", "warn", lambda: _scheduler(context)),
         _guarded("capture", "warn", lambda: _capture(context, root)),
         _guarded("instructions", "warn", lambda: _instructions(context, root)),
@@ -224,18 +226,21 @@ def _sync(root: Path, context: Context) -> Check:
     return diagnosis.sync_check(state, None, context.now)
 
 
+def _cache(root: Path) -> Check:
+    """The token cache: its path, size, and whether it matches the evidence files on disk."""
+    return diagnosis.cache_check(token_cache.status(root))
+
+
 def _scheduler(context: Context) -> Check:
-    """Whether the user's timer that runs kb sync is enabled and active, where kb checks it."""
+    """Whether the user's scheduled kb sync is enabled, where kb checks it."""
     commands = scheduler_commands(context.platform)
     if commands is None:
-        return diagnosis.scheduler_check(context.platform, None, None, None)
-    enabled_command, active_command = commands
+        return diagnosis.scheduler_check(context.platform, None, None)
     try:
-        enabled = _stdout(enabled_command)
-        active = _stdout(active_command)
+        answers = tuple(_stdout(command) for command in commands)
     except (OSError, subprocess.SubprocessError) as error:
-        return diagnosis.scheduler_check(context.platform, None, None, str(error))
-    return diagnosis.scheduler_check(context.platform, enabled, active, None)
+        return diagnosis.scheduler_check(context.platform, None, str(error))
+    return diagnosis.scheduler_check(context.platform, answers, None)
 
 
 def _capture(context: Context, root: Path | None) -> Check:

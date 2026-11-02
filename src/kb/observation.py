@@ -25,6 +25,16 @@ def check_title(title: str) -> None:
         raise InvalidArgument("the title must not be blank")
 
 
+def read_text(data: bytes) -> str:
+    """Standard input as text: UTF-8 without a leading byte-order mark, and CRLF stored as LF.
+
+    Content files use LF and no byte-order mark. Windows shells pipe CRLF, and Windows
+    PowerShell starts UTF-8 output with a byte-order mark. Raises UnicodeDecodeError for
+    bytes that are not UTF-8.
+    """
+    return data.decode("utf-8-sig").replace("\r\n", "\n")
+
+
 def check_body(body: str) -> None:
     """Raise InvalidArgument unless the body has some text in it."""
     if not body.strip():

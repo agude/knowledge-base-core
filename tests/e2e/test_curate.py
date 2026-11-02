@@ -29,7 +29,7 @@ def _pending(kb: Kb, filename: str) -> Path:
 def _write_article(kb: Kb, relative: str, content: str) -> Path:
     path = kb.content / relative
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    path.write_text(content, encoding="utf-8", newline="")
     return path
 
 
@@ -70,7 +70,9 @@ def _write_batch(
         "members": members,
     }
     path = directory / f"{run_id}.json"
-    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline=""
+    )
     return path
 
 
@@ -177,8 +179,8 @@ def test_explicit_selection_preserves_order_and_counts_utf8_bytes(git_kb: Kb) ->
     second = _pending(git_kb, "second.md")
     first_text = '---\ntitle: "Café"\ncreated: 2026-10-20\n---\n\nRésumé.\n'
     second_text = "---\ntitle: Second\ncreated: 2026-10-21\n---\n\nText.\n"
-    first.write_text(first_text, encoding="utf-8")
-    second.write_text(second_text, encoding="utf-8")
+    first.write_text(first_text, encoding="utf-8", newline="")
+    second.write_text(second_text, encoding="utf-8", newline="")
     _commit(git_kb, "observations/pending/first café.md", "observations/pending/second.md")
 
     result = git_kb(
@@ -208,6 +210,7 @@ def test_selection_skips_nonfitting_items_then_uses_remaining_budget(git_kb: Kb)
         path.write_text(
             "---\ntitle: " + filename + "\ncreated: 2026-10-20\n---\n\n" + "x" * size,
             encoding="utf-8",
+            newline="",
         )
     paths = [f"observations/pending/{name}" for name in ("a-first.md", "b-skip.md", "c-fit.md")]
     _commit(git_kb, *paths)
@@ -280,7 +283,7 @@ def test_start_requires_git_metadata(kb: Kb) -> None:
 
 def test_start_requires_a_clean_index_and_worktree(git_kb: Kb) -> None:
     staged = git_kb.content / "staged.txt"
-    staged.write_text("staged\n", encoding="utf-8")
+    staged.write_text("staged\n", encoding="utf-8", newline="")
     git_kb.git("add", "--", "staged.txt")
     dirty_index = git_kb("curate", "start", "--no-sync", "--max-bytes", "10000")
     _failure(dirty_index, "uncommitted changes")
@@ -288,7 +291,7 @@ def test_start_requires_a_clean_index_and_worktree(git_kb: Kb) -> None:
     git_kb.git("reset", "-q", "--", "staged.txt")
     staged.unlink()
     untracked = git_kb.content / "untracked.txt"
-    untracked.write_text("untracked\n", encoding="utf-8")
+    untracked.write_text("untracked\n", encoding="utf-8", newline="")
     dirty_worktree = git_kb("curate", "start", "--no-sync", "--max-bytes", "10000")
     _failure(dirty_worktree, "uncommitted changes")
 
@@ -309,7 +312,9 @@ def test_start_rejects_malformed_new_manifests_and_allows_settled_batches(git_kb
     directory.mkdir(parents=True, exist_ok=True)
     malformed_id = "20261028T120000-a1b2c3d4"
     malformed = directory / f"{malformed_id}.json"
-    malformed.write_text('{"schema_version": 1, "schema_version": 1}\n', encoding="utf-8")
+    malformed.write_text(
+        '{"schema_version": 1, "schema_version": 1}\n', encoding="utf-8", newline=""
+    )
     _commit(git_kb, f"observations/batches/{malformed.name}")
 
     refused = git_kb("curate", "start", "--no-sync", "--max-bytes", "10000")
@@ -336,10 +341,10 @@ def test_start_rejects_malformed_new_manifests_and_allows_settled_batches(git_kb
 def test_ignored_nested_markdown_is_not_eligible_or_reported(git_kb: Kb) -> None:
     nested = git_kb.content / "observations/pending/nested/ignored.md"
     nested.parent.mkdir()
-    nested.write_text("---\ntitle: Nested\n---\n\nNested text.\n", encoding="utf-8")
+    nested.write_text("---\ntitle: Nested\n---\n\nNested text.\n", encoding="utf-8", newline="")
     ignore = git_kb.content / ".gitignore"
     existing = ignore.read_text(encoding="utf-8") if ignore.exists() else ""
-    ignore.write_text(existing + "observations/pending/nested/\n", encoding="utf-8")
+    ignore.write_text(existing + "observations/pending/nested/\n", encoding="utf-8", newline="")
     _commit(git_kb, ".gitignore")
 
     result = git_kb("curate", "start", "--no-sync", "--max-bytes", "10000")
@@ -356,7 +361,7 @@ def test_ignored_nested_markdown_is_not_eligible_or_reported(git_kb: Kb) -> None
 
 def test_pending_symlink_is_refused(git_kb: Kb, tmp_path: Path) -> None:
     target = tmp_path / "outside.md"
-    target.write_text("---\ntitle: Outside\n---\n", encoding="utf-8")
+    target.write_text("---\ntitle: Outside\n---\n", encoding="utf-8", newline="")
     link = _pending(git_kb, "linked.md")
     try:
         link.symlink_to(target)
@@ -373,7 +378,9 @@ def test_pending_symlink_is_refused(git_kb: Kb, tmp_path: Path) -> None:
 def test_repository_and_filename_paths_with_spaces_are_safe(tmp_path: Path) -> None:
     git_kb = make_git_kb(tmp_path / "repository path with spaces")
     content = _pending(git_kb, "20261028T010000-a space.md")
-    content.write_text("---\ntitle: A spaced path\ncreated: 2026-10-20\n---\n", encoding="utf-8")
+    content.write_text(
+        "---\ntitle: A spaced path\ncreated: 2026-10-20\n---\n", encoding="utf-8", newline=""
+    )
     _commit(git_kb, "observations/pending/20261028T010000-a space.md")
 
     result = git_kb(
@@ -427,11 +434,13 @@ def test_related_stale_article_report_is_deduplicated_and_bounded(git_kb: Kb) ->
             f"---\ntitle: {title}\nupdated: 2020-01-01\nverified: 2020-01-01\nttl: 1\n---\n"
             f"# {title}\n\nA distinct maintenance fact.\n",
             encoding="utf-8",
+            newline="",
         )
         filename = f"20261028T0000{index:02d}-a1b2c3d4.md"
         (pending_dir / filename).write_text(
             f"---\ntitle: {title}\ncreated: 2026-10-20\n---\n\nReview this fact.\n",
             encoding="utf-8",
+            newline="",
         )
         article_paths.append(f"knowledge/spotlight-{index}.md")
     _commit(
@@ -590,7 +599,9 @@ def test_status_refuses_inconsistent_complete_archives(kb: Kb) -> None:
 def test_status_rejects_malformed_manifest_and_path_like_run_id(kb: Kb) -> None:
     malformed = kb.content / "observations/batches/20261028T120000-a1b2c3d4.json"
     malformed.parent.mkdir(parents=True, exist_ok=True)
-    malformed.write_text('{"schema_version": 1, "schema_version": 1}\n', encoding="utf-8")
+    malformed.write_text(
+        '{"schema_version": 1, "schema_version": 1}\n', encoding="utf-8", newline=""
+    )
 
     bad_json = kb("curate", "status", "20261028T120000-a1b2c3d4")
     _failure(bad_json, "malformed batch manifest")
@@ -620,7 +631,7 @@ def test_next_prints_full_observation_stable_context_and_three_section_limit(git
         "````sh\nrestart-services --after-network\n````\n"
     )
     pending = _pending(git_kb, filename)
-    pending.write_text(observation, encoding="utf-8")
+    pending.write_text(observation, encoding="utf-8", newline="")
     for index in range(4):
         article = git_kb.content / f"knowledge/next-context-{index}.md"
         conflict = "conflict: unresolved\n" if index == 0 else ""
@@ -634,6 +645,7 @@ def test_next_prints_full_observation_stable_context_and_three_section_limit(git
             "# Curation context crimson\n\n"
             f"Context entry {index}.\n",
             encoding="utf-8",
+            newline="",
         )
     manifest = _write_batch(
         git_kb, "20261028T120000-a1b2c3d4", [_member(filename, pending.read_bytes())]
@@ -1563,6 +1575,7 @@ def test_full_local_curation_workflow_and_historical_defer(git_kb: Kb) -> None:
         "---\n# Workflow evidence\n\n## 1. Incorporated fact\n\n"
         "A durable workflow fact.\n\n## 2. Duplicate fact\n\nA repeated durable fact.\n",
         encoding="utf-8",
+        newline="",
     )
     article_before_completion = article.read_bytes()
     verify_before_archive = git_kb("verify", "knowledge/workflow.md")

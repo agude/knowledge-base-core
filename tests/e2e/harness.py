@@ -59,6 +59,28 @@ def run_git(repo: Path, *args: str) -> str:
     return result.stdout
 
 
+def kb_executable(directory: Path) -> Path:
+    """A kb program in directory that runs this interpreter's kb, as an install would provide.
+
+    On POSIX it is a sh script. On Windows it is a copy of the environment's kb.exe launcher,
+    which Windows and Git for Windows' sh can both run.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    if sys.platform == "win32":
+        path = directory / "kb.exe"
+        shutil.copyfile(Path(sys.executable).with_name("kb.exe"), path)
+        return path
+    path = directory / "kb"
+    path.write_text(f'#!/bin/sh\nexec "{sys.executable}" -m kb "$@"\n', encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+def toml_path(path: Path) -> str:
+    """A path as kb setup writes it: a TOML basic string with the platform's separators."""
+    return '"' + str(path).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 @dataclass(frozen=True)
 class Kb:
     """One test's kb: a home directory, a content repository, and a fixed clock."""
@@ -159,6 +181,8 @@ def make_git_kb(root: Path) -> Kb:
     """A kb whose content repository is a git repository with the fixture as its only commit."""
     kb = make_kb(root)
     run_git(kb.content, "init", "-q", "-b", "main")
+    # kb setup --init writes this file. The token cache is written only where git ignores it.
+    (kb.content / ".gitignore").write_text("/cache/\n", encoding="utf-8")
     run_git(kb.content, "add", "--all")
     run_git(kb.content, "commit", "-q", "-m", "Import the content fixture")
     return kb

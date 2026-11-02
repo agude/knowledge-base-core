@@ -130,8 +130,15 @@ Recall returns curated sections in full, with locators for further reading.
 It always checks pending observations and open questions and lists matching
 ones as uncurated, so a known gap is visible next to related articles.
 It searches the rest of the evidence tier when no curated section matches.
-Provenance and a deliberate evidence search provide access to older material
-without filling normal recall output with transcripts.
+Provenance and a deliberate evidence search provide access to older material.
+
+Session transcripts are a second tier. When a curated section matches,
+recall also prints up to three transcript rows under `From sessions (raw,
+unverified, may be superseded)`, after the uncurated block, unless
+`--no-sessions` is given. Each row shows its date. Curated sections come
+first and remain the authority on what is current. The block ships on by
+default and is measured from real use; the user decides to keep, trim, or
+remove it after a fixed window (four weeks or 200 recalls).
 
 Knowledge is pulled when the agent needs it. The global agent instructions
 say that the knowledge base exists and when to use it; `kb map` lists its
@@ -244,7 +251,7 @@ Checked on 2026-10-27 at `3d3cfb7`:
 | U3 Diagnose a failure | `kb doctor`, phase 4 | Built on fixtures; on this machine it names the setup work that remains |
 | U4 Set policy | Content `AGENTS.md` import in the instruction block | Built on fixtures; the policy line is rendered from the configured content path |
 
-The current phase 5, part 1 plan is [`plan.md`](../plan.md) at the repository root.
+No temporary `plan.md` is active. [plan-session-retrieval.md](plan-session-retrieval.md) preserves the session retrieval plan (token cache, transcript chunks, the From sessions block, and the usage report).
 
 [plan-retrieval.md](plan-retrieval.md) and
 [plan-observe.md](plan-observe.md) preserve the earlier component plans.
@@ -254,7 +261,8 @@ fixes, closeout, and outstanding Windows criteria. Phase 2 now provides
 open questions and qualifying transcript message locators. Linux checks and
 real-content read-only validation are recorded in `notes/evidence.md`.
 Message locators remain fixture-validated because the real store has no
-addressable transcripts. The first native run of the Windows CI job remains.
+addressable transcripts. The Windows CI job has run natively; phase 6 tracks
+the Windows work.
 Harvesting has not been enabled on any machine, and installed host allow
 rules have not been updated. Phase 3 now includes local batch selection,
 next-item context, outcomes, and archive recovery, as well as `kb lint`,
@@ -283,8 +291,7 @@ fresh post-fix validation used revision
 acceptance checks with source tool-result references, cleanup proof, and
 continuation cut are in `notes/evidence.md`. The README documents sync and
 harvesting, `contrib/systemd/` contains the Linux timer files, and CI defines
-the Windows test job. The job's first native run remains the only outstanding
-phase 1 item.
+the Windows test job, which has run natively. No phase 1 item is outstanding.
 
 Enabling capture on a machine belongs to rollout, with an explicit boundary
 against the old capture hooks.
@@ -310,9 +317,8 @@ contracts belong in the short-term plan for this phase.
 Phase 2 is implemented in `kb gap`, `kb questions`, and `kb evidence`, with
 matching open questions in recall. The README describes the command
 contracts, real-content limits, and read/write distinction. The Linux checks
-and closeout measurements are recorded in `notes/evidence.md`. Native
-Windows CI remains unrun, and installed host allow rules remain rollout
-work. Phase 3 has built local batch selection, next-item context, outcomes,
+and closeout measurements are recorded in `notes/evidence.md`. Installed
+host allow rules remain rollout work. Phase 3 has built local batch selection, next-item context, outcomes,
 and archive recovery, alongside `kb lint`, `kb verify`, and `kb resolve`.
 Synchronized start, the finishing commit and push, the content pre-commit
 hook, and the one-time `ttl` assignment pass remain outstanding. The
@@ -430,6 +436,31 @@ before changing the parsers. `agent-session-backup` schedules itself only on
 Linux and macOS; a Windows machine needs its own backup schedule. Add the Task Scheduler entry and the Windows
 checks in `kb doctor`. Verify the complete cycle on a Windows machine.
 
+Status on 2026-11-01, on the `dev-windows` branch:
+
+- `kb` is installed with `uv tool install --python 3.14` on a Windows 10
+  machine, with a content clone, the hook, skills, instruction blocks, and
+  allow rules for both hosts. `kb doctor` passes everything except the
+  scheduler and capture checks.
+- Files that kb writes keep LF, standard input stores CRLF as LF, and the
+  `project` field uses one separator style.
+- `kb setup --print allow-claude` adds `PowerShell(kb COMMAND *)` rules, and
+  doctor checks them.
+- `contrib/windows/register-kb-sync.ps1` registers the `kb-sync` task, and
+  doctor reads its state. The task has not been registered on a machine yet.
+- The Windows CI job is back in the workflow. Its first native run on
+  `dev-windows` had one failure, a POSIX mode check, and 89.55% coverage; both
+  are addressed on the branch. The e2e setup, hook, and doctor tests now run
+  on Windows, except the doctor cases that would query the real Task
+  Scheduler.
+- Remaining: measure the Windows transcript shapes, enable capture, schedule
+  the session backup, register the task, and verify the complete cycle.
+
+`dev-windows` is merged into `main`. The token cache and session retrieval
+tests pass on the Windows CI job (run 41494376425, 2026-11-02), including the
+cache's kernel lock and atomic replacement. The usage report reads Claude
+Code's PowerShell tool calls as well as Bash.
+
 ### 7. Extend hosts and platforms
 
 Add OpenCode and Pi after the first rollout. Each needs a transcript parser,
@@ -460,6 +491,54 @@ the effect on every set, including the live set, and retain failing cases.
 Correct a wrong label with its reasoning rather than changing retrieval to
 match it. A new search engine or semantic retrieval is a separate decision
 that needs evidence of a gap the current approach cannot close.
+
+### Session retrieval — built (2026-11-02)
+
+Evidence ranking reads a token cache at `cache/tokens.pickle` in the
+content root. The content repository's `.gitignore` ignores `/cache/`, and
+kb writes the cache only where git ignores it, so it is never committed or
+synchronized; any stale or unreadable cache is rebuilt, and a fingerprint
+of every `kb` source file invalidates it on any code change. `kb sync`
+refreshes it, and `kb doctor` reports its state. Transcripts score by their
+best chunk: messages merge until 1,024 characters, and a message longer than
+4,000 characters splits into pieces of about 2,000 at blank lines outside
+code fences. Evidence document frequency counts files, chunks and files
+average their lengths separately, and evidence uses BM25+ with delta 1.0.
+Measurements and evaluation results are in `notes/evidence.md`.
+
+The usage report (`just usage`) counts kb calls from the raw Claude Code and
+Codex stores. Output counts only when it belongs to one kb call; every
+excluded call is counted by reason. Most Codex recalls run inside
+multi-command exec scripts and are excluded. Decoding positional batch
+results was rejected (user, 2026-11-02): it recovers about 43 recalls and
+needs a pattern match on agent-written JavaScript.
+
+Curation stays the first tier. Retrieval from an already curated corpus
+does not show that session summarization can stop. Any proposal to reduce
+curation needs a prospective trial with new sessions, independently checked
+current answers, supersession cases, and measured maintenance effort, with
+budgets and acceptance criteria fixed before it runs.
+
+Remaining work, each measured on every set before acceptance:
+
+- Decide keep, trim, or remove for the From sessions block after the usage
+  window.
+- If the window yields too few usable recalls, a kb-side recall log in the
+  ignored `cache/` directory replaces transcript parsing for recall counts. It changes
+  the measure-from-raw-sessions decision and needs approval first.
+- The construction-loss audit and a live recovery set (dropped as pre-ship
+  steps). The live set is curation-saturated: curated top 3 holds all 20
+  cases, so it measures session rank, not recovery.
+- Queued ranking fixes: BM25 length bias for very short chunks (a strict
+  xfail in `tests/unit/test_evidence.py`, and a queued 35-character probe
+  case for `session-recovery-v1`); title tokens adding their length to every
+  chunk; indexing a path's word parts (`live-13` misses because `smb`
+  appears only inside a path).
+- Small efficiency items: a scoped recall on a cold cache tokenizes files
+  outside the scope; curated evaluation parses the corpus once per case.
+- Not built: replay of a recall with no paired result. Codex retention is
+  unknown, and no readable NAS backup holds raw sessions older than the local
+  stores.
 
 ## Deriving temporary plans
 

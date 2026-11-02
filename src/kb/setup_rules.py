@@ -22,6 +22,9 @@ POLICY_PLACEHOLDER = "{content_policy}"
 POLICY_CLAUSE = " Content policy: " + POLICY_PLACEHOLDER
 MAX_BLOCK_LINES = 12
 WORKING_COMMANDS = ("recall", "read", "map", "questions", "evidence", "observe", "gap")
+# Claude Code runs shell commands through its Bash tool everywhere, and through its
+# PowerShell tool on Windows. Each tool needs its own allow rules.
+CLAUDE_SHELL_TOOLS = ("Bash", "PowerShell")
 ITEMS = ("instructions", "allow-claude", "allow-codex")
 CODEX_RULES_HEADER = (
     "# kb working-agent commands. Install as a regular file under $CODEX_HOME/rules/;"
@@ -80,8 +83,14 @@ def policy_import(content_root: str) -> str:
 
 def allow_claude() -> str:
     """The Claude Code settings fragment that allows the working-agent commands."""
-    rules = [f"Bash(kb {command} *)" for command in WORKING_COMMANDS]
-    return json.dumps({"permissions": {"allow": rules}}, indent=2) + "\n"
+    return json.dumps({"permissions": {"allow": list(claude_rules())}}, indent=2) + "\n"
+
+
+def claude_rules() -> tuple[str, ...]:
+    """The Claude Code allow rules: one per working-agent command for each shell tool."""
+    return tuple(
+        f"{tool}(kb {command} *)" for tool in CLAUDE_SHELL_TOOLS for command in WORKING_COMMANDS
+    )
 
 
 def allow_codex() -> str:

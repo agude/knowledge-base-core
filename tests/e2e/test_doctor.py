@@ -15,11 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from .harness import FIXTURE_TRANSCRIPTS, Kb, run_git
+from .harness import FIXTURE_TRANSCRIPTS, Kb, kb_executable, run_git
 
-pytestmark = pytest.mark.skipif(
-    sys.platform == "win32", reason="the installed hook and the Git checks run on POSIX here"
-)
 SINCE = "2026-10-24T00:00:00Z"
 CHECKS = (
     "version",
@@ -29,6 +26,7 @@ CHECKS = (
     "hook",
     "curation",
     "sync",
+    "cache",
     "scheduler",
     "capture",
     "instructions",
@@ -44,11 +42,7 @@ def set_mtime(path: Path, timestamp: str) -> None:
 
 
 def shim(kb: Kb) -> Path:
-    path = kb.home / "bin" / "kb"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f'#!/bin/sh\nexec "{sys.executable}" -m kb "$@"\n', encoding="utf-8")
-    path.chmod(0o755)
-    return path
+    return kb_executable(kb.home / "bin")
 
 
 def write_config(kb: Kb, harvest: bool = True) -> None:
@@ -108,6 +102,7 @@ def digests(root: Path) -> dict[str, str]:
     return found
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="doctor queries the real Task Scheduler")
 def test_a_configured_machine_passes_every_check(remote_git_kb: Kb) -> None:
     env = configured(remote_git_kb)
 
@@ -262,6 +257,8 @@ def test_each_removed_fact_is_named_with_its_fix_and_the_right_exit_status(
     expected: str,
     code: int,
 ) -> None:
+    if label == "timer disabled" and sys.platform == "win32":
+        pytest.skip("doctor queries the real Task Scheduler")
     env: dict[str, str | None] = dict(configured(remote_git_kb))
     env.update(mutate(remote_git_kb))
 
