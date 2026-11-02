@@ -198,27 +198,30 @@ def session(*messages: tuple[str, str]) -> str:
     return SESSION_FRONT + body
 
 
+CHATTER = "unrelated status chatter about lunch " * 8
+
+
 def test_a_long_transcript_with_one_relevant_turn_ranks_above_a_short_loosely_related_one(
     tmp_path: Path,
 ) -> None:
-    filler = [
-        (f"2026-10-20T00:{number:02d}:00Z", "unrelated status chatter about lunch " * 8)
-        for number in range(1, 41)
-    ]
+    filler = [(f"2026-10-20T00:{number:02d}:00Z", CHATTER) for number in range(1, 41)]
     turns = [
         *filler[:20],
         ("2026-10-20T01:00:00Z", "The traefik certificate renewal failed on the proxy."),
         *filler[20:],
     ]
-    root, entries = cached(
-        tmp_path,
-        {
-            "observations/archived/long.md": session(*turns),
-            "observations/archived/short.md": session(
-                ("2026-10-20T00:01:00Z", "traefik backups and the family share")
-            ),
-        },
-    )
+    files = {
+        "observations/archived/long.md": session(*turns),
+        "observations/archived/short.md": session(
+            ("2026-10-20T00:01:00Z", "traefik backups and the family share")
+        ),
+    }
+    # Twenty transcripts of chatter, each about one chunk long. They hold no query term, but
+    # they make the average whole file much shorter than the long transcript, so a
+    # whole-file score penalizes the long transcript's length. A chunk is not penalized.
+    for number in range(1, 21):
+        files[f"observations/archived/chatter-{number:02d}.md"] = session(*filler[:3])
+    root, entries = cached(tmp_path, files)
 
     items = evidence.select(
         entries,
@@ -232,6 +235,50 @@ def test_a_long_transcript_with_one_relevant_turn_ranks_above_a_short_loosely_re
 
     assert [item.path for item in items] == [
         "observations/archived/long.md#21",
+        "observations/archived/short.md#1",
+    ]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "BM25 length normalization still favours a 35-character chunk that holds two of three "
+        "terms over a chunk of about 1,000 characters that holds all three, when the third term "
+        "is common. Not changed in 5c-ii-c; see notes/evidence.md."
+    ),
+)
+def test_a_35_character_match_with_two_of_three_terms_ranks_below_a_chunk_with_all_three(
+    tmp_path: Path,
+) -> None:
+    short = "traefik certificate on the old host"
+    assert len(short) == 35
+    filler = [(f"2026-10-20T00:{number:02d}:00Z", CHATTER) for number in range(1, 4)]
+    files = {
+        "observations/archived/long.md": session(
+            *filler,
+            ("2026-10-20T00:04:00Z", "The traefik certificate renewal failed."),
+        ),
+        "observations/archived/short.md": session(("2026-10-20T00:01:00Z", short)),
+    }
+    # Ten transcripts hold the third term, so it is common and its IDF is low.
+    for number in range(1, 11):
+        files[f"observations/archived/renewal-{number:02d}.md"] = session(
+            ("2026-10-21T00:01:00Z", "renewal notice for the lease and the parking permit")
+        )
+    root, entries = cached(tmp_path, files)
+
+    items = evidence.select(
+        entries,
+        search.query_terms(("traefik", "certificate", "renewal")),
+        "transcript",
+        None,
+        None,
+        5,
+        corpus.Documents(root).read,
+    )
+
+    assert [item.path for item in items][:2] == [
+        "observations/archived/long.md#4",
         "observations/archived/short.md#1",
     ]
 
