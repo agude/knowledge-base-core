@@ -43,12 +43,22 @@ from `content = "PATH"` in `config.toml`. That file is
 
 `kb recall` ranks curated sections by BM25. A curated result can include
 matching pending observations and open questions under `Uncurated (pending,
-not yet verified)`. It does not scan archived observations or resolved
-questions on that path. When there is no curated result, recall searches all
+not yet verified)`. Curated results never scan archived observations or
+resolved questions. When there is no curated result, recall searches all
 observations and questions and shows the best matches as evidence. Each row
 shows its locator, date, kind, and title or excerpt. An addressable harvested
 message uses `PATH#N`; older transcripts without addressable messages keep a
 file locator.
+
+After the Uncurated block, a curated result also prints up to three matching
+session transcript rows, from pending and archived transcripts, under `From
+sessions (raw, unverified, may be superseded):`. Each row shows its locator,
+date, and an excerpt of at most 86 characters: the 80-character excerpt width
+plus two ellipses. A transcript that already appears under Uncurated is left
+out. The block is omitted when no session row matches, and when no curated
+section matches, because the evidence list already holds the sessions.
+`--no-sessions` omits the block. Curated sections are the same with or without
+it.
 
 `--in PATH` scopes curated files and observations by their content paths. If
 the scope is under `knowledge/` or `sources/`, questions are selected by

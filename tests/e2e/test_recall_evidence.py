@@ -117,6 +117,9 @@ def test_pending_observation_is_uncurated_beside_curated_results(kb: Kb) -> None
         "Uncurated (pending, not yet verified):\n"
         "  observations/pending/20261024T094659-8d6fecbe.md | 2026-10-24 | observation | "
         "NAS restart after the update\n"
+        "From sessions (raw, unverified, may be superseded):\n"
+        "  observations/archived/20260903T120000-c3d4e5f6.md | 2026-09-03 | "
+        "After the outage, what order should the services start in?\n"
         "Read with: kb read <locator>\n"
     )
 
@@ -135,7 +138,8 @@ def test_matching_open_question_appears_beside_curated_results(evidence_kb: Kb) 
     )
     assert any(row[0] == f"{SUBAGENT}#1" and row[2] == "transcript" for row in rows)
     assert "questions/resolved/" not in result.stdout
-    assert "observations/archived/" not in result.stdout
+    shown = result.stdout.split("From sessions (raw, unverified, may be superseded):")[0]
+    assert "observations/archived/" not in shown
 
 
 def test_curated_hit_uses_message_locator_for_pending_transcripts(evidence_kb: Kb) -> None:

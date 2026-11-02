@@ -20,6 +20,9 @@ from kb.model import Document
 WHO = "kb recall"
 DEFAULT_LIMIT = 3
 FOLLOW_UP = 5
+SESSION_ROWS = 3
+SESSIONS_HEADING = "From sessions (raw, unverified, may be superseded):"
+NO_SESSIONS = "--no-sessions"
 READ_WITH = "Read with: kb read <locator>"
 PENDING = "observations/pending"
 ARCHIVED = "observations/archived"
@@ -27,16 +30,20 @@ OPEN_QUESTIONS = "questions/open"
 ALL_QUESTIONS = (OPEN_QUESTIONS, "questions/resolved")
 SESSION_DIRECTORIES = (PENDING, ARCHIVED)
 SPEC = Spec(
-    usage="recall QUERY... [--limit N] [--in PATH]",
+    usage="recall QUERY... [--limit N] [--in PATH] [--no-sessions]",
     summary=(
         "Find the curated sections that answer QUERY, each with its header line. The first N\n"
         "sections print in full (default 3); the next few are listed. Pending observations\n"
         "and matching open questions are listed as uncurated. Without a curated match, pending\n"
         "and archived observations plus open and resolved questions are listed as evidence.\n"
+        "With a curated match, up to 3 matching session transcript rows follow under\n"
+        '"From sessions", unless --no-sessions is given. Rows already listed as uncurated\n'
+        "are left out.\n"
         "Addressable harvested messages use message locators. --in PATH scopes curated files\n"
         "and observation storage paths; questions under knowledge/ or sources/ match by context."
     ),
     valued=frozenset({"--limit", "--in"}),
+    switches=frozenset({NO_SESSIONS}),
 )
 
 
@@ -51,12 +58,24 @@ def run(words: Sequence[str]) -> int:
     limit = args.positive_int(parsed.values.get("--limit", str(DEFAULT_LIMIT)), "--limit")
     context = load(os.environ, sys.platform, Path.home())
     scope = _scope(context, parsed.values.get("--in"))
-    sys.stdout.write(answer(context, parsed.words, limit, scope))
+    sessions = NO_SESSIONS not in parsed.switches
+    sys.stdout.write(answer(context, parsed.words, limit, scope, sessions=sessions))
     return 0
 
 
-def answer(context: Context, words: Sequence[str], limit: int, scope: str | None) -> str:
-    """The text of the answer to a query. Each file is parsed at most once for the answer."""
+def answer(
+    context: Context,
+    words: Sequence[str],
+    limit: int,
+    scope: str | None,
+    *,
+    sessions: bool = True,
+) -> str:
+    """The text of the answer to a query. Each file is parsed at most once for the answer.
+
+    sessions adds the From sessions block after the curated results. It is not printed
+    when no curated section matches, because the evidence list already holds the sessions.
+    """
     documents = corpus.Documents(context.root)
     results = _ranked(context.root, words, scope)
     if not results:
@@ -92,6 +111,8 @@ def answer(context: Context, words: Sequence[str], limit: int, scope: str | None
     if uncurated:
         tail.append("Uncurated (pending, not yet verified):")
         tail.extend(evidence.format_rows(uncurated))
+    if sessions:
+        tail.extend(_session_block(context, words, scope, documents))
     tail.append(READ_WITH)
     return "\n".join(blocks) + "\n" + "\n".join(tail) + "\n"
 
@@ -287,6 +308,27 @@ def from_sessions(
     shown = {item.path for item in _uncurated(context, words, scope, documents)}
     rows = session_rows(context, words, scope, documents, limit + len(shown))
     return [row for row in rows if row.path not in shown][:limit]
+
+
+def _session_block(
+    context: Context,
+    words: Sequence[str],
+    scope: str | None,
+    documents: corpus.Documents,
+) -> list[str]:
+    """The From sessions heading and rows, or nothing when no session row qualifies.
+
+    Each row is locator | date | excerpt. An excerpt is at most search.EXCERPT_WIDTH characters.
+    """
+    rows = from_sessions(context, words, scope, documents, SESSION_ROWS)
+    if not rows:
+        return []
+    width = max(len(row.path) for row in rows)
+    lines = [SESSIONS_HEADING]
+    for row in rows:
+        date_text = row.date.isoformat() if row.date else ""
+        lines.append(f"  {row.path.ljust(width)} | {date_text} | {row.text}")
+    return lines
 
 
 def _scope(context: Context, value: str | None) -> str | None:

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from kb import corpus, evidence
+from kb import corpus, evidence, search
 from kb.commands import recall
 from kb.context import Context
 
@@ -86,3 +86,96 @@ def test_from_sessions_keeps_the_limit_after_leaving_rows_out(context: Context) 
     rows = recall.from_sessions(context, ["okapi"], None, corpus.Documents(context.root), 2)
     assert len(rows) == 2
     assert all(path.startswith("observations/archived/") for path in paths(rows))
+
+
+CURATED_QUERY = ["nas", "restart", "order"]
+# The fixture's archived transcript matches CURATED_QUERY, so tests that expect no session row
+# remove it first.
+FIXTURE_TRANSCRIPT = "observations/archived/20260903T120000-c3d4e5f6.md"
+EXCERPT_LIMIT = search.EXCERPT_WIDTH + len("...") * 2
+
+
+def test_the_session_block_follows_uncurated_and_precedes_the_read_line(context: Context) -> None:
+    write_transcript(context.root, "observations/archived/t1.md", "nas restart order confirmed")
+    write_transcript(context.root, "observations/pending/p1.md", "nas restart order pending")
+    text = recall.answer(context, CURATED_QUERY, 3, None)
+    lines = text.splitlines()
+    heading = lines.index(recall.SESSIONS_HEADING)
+    assert text.index("Uncurated (pending") < text.index(recall.SESSIONS_HEADING)
+    assert lines[-1] == recall.READ_WITH
+    assert heading < len(lines) - 1
+
+
+def test_each_session_row_has_its_locator_date_and_excerpt(context: Context) -> None:
+    write_transcript(context.root, "observations/archived/t1.md", "nas restart order confirmed")
+    text = recall.answer(context, CURATED_QUERY, 3, None)
+    lines = text.splitlines()
+    heading = lines.index(recall.SESSIONS_HEADING)
+    assert "may be superseded" in recall.SESSIONS_HEADING
+    row = lines[heading + 1]
+    locator, date_text, excerpt = (part.strip() for part in row.split(" | "))
+    assert locator.startswith("observations/archived/t1.md")
+    assert date_text == "2026-10-20"
+    assert excerpt == "nas restart order confirmed"
+
+
+def test_the_session_block_shows_at_most_three_rows_with_short_excerpts(context: Context) -> None:
+    for number in range(1, 6):
+        write_transcript(
+            context.root,
+            f"observations/archived/t{number}.md",
+            "nas restart order " + "padding words " * 20,
+        )
+    text = recall.answer(context, CURATED_QUERY, 3, None)
+    lines = text.splitlines()
+    heading = lines.index(recall.SESSIONS_HEADING)
+    rows = lines[heading + 1 : lines.index(recall.READ_WITH)]
+    assert len(rows) == recall.SESSION_ROWS
+    for row in rows:
+        assert len(row.split(" | ", 2)[2]) <= EXCERPT_LIMIT
+
+
+def test_a_session_row_already_shown_as_uncurated_is_left_out(context: Context) -> None:
+    write_transcript(context.root, "observations/pending/p1.md", "nas restart order pending")
+    text = recall.answer(context, CURATED_QUERY, 3, None)
+    lines = text.splitlines()
+    assert any(line.startswith("  observations/pending/p1.md") for line in lines)
+    session_rows = lines[lines.index(recall.SESSIONS_HEADING) + 1 : -1]
+    assert not any("observations/pending/p1.md" in row for row in session_rows)
+
+
+def test_no_session_block_when_no_session_row_qualifies(context: Context) -> None:
+    (context.root / FIXTURE_TRANSCRIPT).unlink()
+    text = recall.answer(context, CURATED_QUERY, 3, None)
+    assert text.startswith("knowledge/infra/nas.md#1")
+    assert recall.SESSIONS_HEADING not in text
+
+
+def test_no_session_block_without_a_curated_match(context: Context) -> None:
+    write_transcript(context.root, "observations/archived/t1.md", "zebra migration plan")
+    text = recall.answer(context, ["zebra"], 3, None)
+    assert text.startswith('No curated knowledge matches "zebra".')
+    assert "Evidence:" in text
+    assert "observations/archived/t1.md" in text
+    assert recall.SESSIONS_HEADING not in text
+
+
+def test_sessions_false_removes_the_block(context: Context) -> None:
+    write_transcript(context.root, "observations/archived/t1.md", "nas restart order confirmed")
+    shown = recall.answer(context, CURATED_QUERY, 3, None)
+    hidden = recall.answer(context, CURATED_QUERY, 3, None, sessions=False)
+    assert recall.SESSIONS_HEADING in shown
+    assert recall.SESSIONS_HEADING not in hidden
+    assert hidden == shown.split(recall.SESSIONS_HEADING)[0] + recall.READ_WITH + "\n"
+
+
+def test_the_no_sessions_switch_removes_the_block_from_the_command(
+    monkeypatch: pytest.MonkeyPatch, context: Context, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_transcript(context.root, "observations/archived/t1.md", "nas restart order confirmed")
+    monkeypatch.setenv("KB_CONTENT", str(context.root))
+    monkeypatch.setenv("KB_TODAY", TODAY.isoformat())
+    assert recall.run([*CURATED_QUERY, "--no-sessions"]) == 0
+    assert recall.SESSIONS_HEADING not in capsys.readouterr().out
+    assert recall.run(CURATED_QUERY) == 0
+    assert recall.SESSIONS_HEADING in capsys.readouterr().out

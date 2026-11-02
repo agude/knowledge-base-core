@@ -45,6 +45,9 @@ def test_results_are_printed_in_full_up_to_the_limit(context: Context) -> None:
         "Uncurated (pending, not yet verified):\n"
         "  observations/pending/20261024T094659-8d6fecbe.md | 2026-10-24 | observation | "
         "NAS restart after the update\n"
+        "From sessions (raw, unverified, may be superseded):\n"
+        "  observations/archived/20260903T120000-c3d4e5f6.md | 2026-09-03 | "
+        "After the outage, what order should the services start in?\n"
         "Read with: kb read <locator>\n"
     )
 
@@ -60,7 +63,7 @@ def test_curated_hits_search_only_pending_observations_and_open_questions(
         return original(root, directory)
 
     monkeypatch.setattr(corpus, "markdown_files", track_directories)
-    text = recall.answer(context, ["backup", "disk"], 3, None)
+    text = recall.answer(context, ["backup", "disk"], 3, None, sessions=False)
     assert "knowledge/infra/backups.md#top" in text
     assert "questions/open/20261001T090000-bbbb2222.md" in text
     assert "observations/archived" not in searched
@@ -201,6 +204,9 @@ def test_uncurated_pending_items_follow_curated_results(context: Context) -> Non
         "Uncurated (pending, not yet verified):\n"
         "  observations/pending/20261024T094659-8d6fecbe.md | 2026-10-24 | observation | "
         "NAS restart after the update\n"
+        "From sessions (raw, unverified, may be superseded):\n"
+        "  observations/archived/20260903T120000-c3d4e5f6.md | 2026-09-03 | "
+        "After the outage, what order should the services start in?\n"
         "Read with: kb read <locator>\n"
     )
 
