@@ -307,23 +307,48 @@ def test_a_new_format_rebuilds_everything(repo: Path, monkeypatch: pytest.Monkey
     assert report.refreshed == len(paths(repo))
 
 
-def test_the_fingerprint_changes_only_when_a_fingerprinted_module_changes(tmp_path: Path) -> None:
+def _package_copy(tmp_path: Path) -> Path:
     package = tmp_path / "kb"
     shutil.copytree(
         Path(token_cache.__file__).parent, package, ignore=shutil.ignore_patterns("__pycache__")
     )
-    baseline = token_cache.fingerprint(package)
-    assert baseline == token_cache.fingerprint()
+    return package
 
-    (package / "cli.py").write_text("# unrelated\n", encoding="utf-8")
+
+def test_the_fingerprint_matches_a_copy_of_the_package(tmp_path: Path) -> None:
+    package = _package_copy(tmp_path)
+    assert token_cache.fingerprint(package) == token_cache.fingerprint()
+
+
+@pytest.mark.parametrize("name", ["addressing.py", "corpus.py", "hosts/claude.py", "cli.py"])
+def test_an_edit_to_any_package_source_changes_the_fingerprint(tmp_path: Path, name: str) -> None:
+    package = _package_copy(tmp_path)
+    baseline = token_cache.fingerprint(package)
+    source = package / name
+    original = source.read_bytes()
+    source.write_bytes(original + b"\n# edit\n")
+    assert token_cache.fingerprint(package) != baseline
+    source.write_bytes(original)
     assert token_cache.fingerprint(package) == baseline
 
-    for name in token_cache.FINGERPRINT_MODULES:
-        source = package / name
+
+def test_every_python_file_under_the_package_is_fingerprinted(tmp_path: Path) -> None:
+    package = _package_copy(tmp_path)
+    baseline = token_cache.fingerprint(package)
+    sources = sorted(package.rglob("*.py"))
+    assert any(path.parent != package for path in sources)
+    for source in sources:
         original = source.read_bytes()
         source.write_bytes(original + b"\n# edit\n")
-        assert token_cache.fingerprint(package) != baseline, name
+        assert token_cache.fingerprint(package) != baseline, source
         source.write_bytes(original)
+
+
+def test_renaming_a_package_source_changes_the_fingerprint(tmp_path: Path) -> None:
+    package = _package_copy(tmp_path)
+    baseline = token_cache.fingerprint(package)
+    (package / "addressing.py").rename(package / "addressing_renamed.py")
+    assert token_cache.fingerprint(package) != baseline
 
 
 CORRUPT_KINDS = (

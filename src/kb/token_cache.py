@@ -15,7 +15,7 @@ import pickle
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from importlib import resources
@@ -34,18 +34,6 @@ EVIDENCE_DIRECTORIES = (
     "observations/archived",
     "questions/open",
     "questions/resolved",
-)
-# The modules whose code decides what an entry holds. An edit to any of them rebuilds the
-# cache. Each file is hashed whole, so a change to the tokens or to the message contract
-# cannot go unnoticed.
-FINGERPRINT_MODULES = (
-    "chunks.py",
-    "derivations.py",
-    "evidence.py",
-    "model.py",
-    "search.py",
-    "stem.py",
-    "token_cache.py",
 )
 # The front matter fields that the ranking path and its filters read.
 SCALAR_FIELDS = (
@@ -210,13 +198,29 @@ def cache_file(root: Path) -> Path | None:
 
 
 def fingerprint(package: Traversable | None = None) -> str:
-    """The SHA-256 of the source bytes of the modules that decide what an entry holds."""
+    """The SHA-256 of every Python source file in the kb package, subpackages included.
+
+    Each file contributes its path relative to the package, a NUL byte, and its bytes, in
+    sorted path order. Any edit to the package therefore changes the fingerprint and rebuilds
+    the cache, so a change to the tokens, the message contract, or the addressing rules
+    cannot leave stale entries behind.
+    """
     source = resources.files("kb") if package is None else package
     digest = hashlib.sha256()
-    for name in FINGERPRINT_MODULES:
-        digest.update(name.encode("ascii") + b"\0")
-        digest.update(source.joinpath(name).read_bytes())
+    for relpath, path in sorted(_python_sources(source, ""), key=lambda item: item[0]):
+        digest.update(relpath.encode("utf-8") + b"\0")
+        digest.update(path.read_bytes())
     return digest.hexdigest()
+
+
+def _python_sources(directory: Traversable, prefix: str) -> Iterator[tuple[str, Traversable]]:
+    """Each *.py file under directory, with its path relative to the package in POSIX form."""
+    for item in directory.iterdir():
+        relpath = f"{prefix}{item.name}"
+        if item.is_dir():
+            yield from _python_sources(item, f"{relpath}/")
+        elif item.name.endswith(".py"):
+            yield relpath, item
 
 
 def _update(
