@@ -24,6 +24,8 @@ DEFAULT_LIMIT = 3
 FOLLOW_UP = 5
 SESSION_ROWS = 3
 SESSIONS_HEADING = "From sessions (raw, unverified, may be superseded):"
+UNCURATED_HEADING = "Uncurated (pending, not yet verified):"
+ALSO_HEADING = "Also relevant:"
 NO_SESSIONS = "--no-sessions"
 READ_WITH = "Read with: kb read <locator>"
 PENDING = "observations/pending"
@@ -144,13 +146,13 @@ def answer(
     ]
     tail: list[str] = []
     if chosen.follow:
-        tail.append("Also relevant:")
+        tail.append(ALSO_HEADING)
         tail.extend(
             f"  {document.path}#{candidate.fragment} | {candidate.heading}"
             for document, candidate in chosen.follow
         )
     if chosen.uncurated:
-        tail.append("Uncurated (pending, not yet verified):")
+        tail.append(UNCURATED_HEADING)
         tail.extend(evidence.format_rows(chosen.uncurated))
     if chosen.sessions:
         tail.extend(_session_lines(chosen.sessions))

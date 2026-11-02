@@ -21,6 +21,7 @@ from kb.model import Document
 KINDS = ("observation", "transcript", "open-question", "resolved-question")
 TITLE_WIDTH = 72
 READ_WITH = "Read with: kb read <locator>"
+EVIDENCE_HEADING = "Evidence:"
 # Units are ranked as files: a transcript counts once for a term in document frequency, and
 # chunks and whole files have their own average lengths. DELTA is the BM25+ lower bound.
 CHUNK_CLASS = "chunk"
@@ -187,7 +188,7 @@ def format_results(query: str, items: Sequence[Item]) -> str:
     """Render selected rows or the exact no-match line."""
     if not items:
         return f'No evidence matches "{query}".\n'
-    return "\n".join(["Evidence:", *format_rows(items), READ_WITH]) + "\n"
+    return "\n".join([EVIDENCE_HEADING, *format_rows(items), READ_WITH]) + "\n"
 
 
 def format_rows(items: Sequence[Item]) -> list[str]:

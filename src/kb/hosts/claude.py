@@ -7,12 +7,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from kb.shellcalls import Invocation, invocations
+from kb.shellcalls import Invocation, invocations, sole_invocation
 from kb.transcripts import (
     App,
     KbCall,
     Message,
     Role,
+    Scan,
     Session,
     Store,
     complete_lines,
@@ -20,7 +21,11 @@ from kb.transcripts import (
     later,
     parse_timestamp,
     synthetic_id,
+    text_of,
     unique_messages,
+)
+from kb.transcripts import (
+    read_store as read_transcript_store,
 )
 
 APP: App = "claude-code"
@@ -141,19 +146,17 @@ def _first_text(current: str, candidate: object) -> str:
 
 @dataclass
 class _ToolCall:
-    """One Bash or PowerShell tool call that ran at least one recorded kb call, and its paired output."""
+    """One shell tool call that ran at least one recorded kb call, and its paired result.
+
+    excluded is "missing" until a tool_result pairs with the call. After that it is None for a
+    usable output, and otherwise the reason the output is not usable.
+    """
 
     timestamp: datetime | None
     command: str
     found: tuple[Invocation, ...]
     output: str | None = None
-
-
-@dataclass(frozen=True)
-class _Scan:
-    calls: tuple[KbCall, ...]
-    first: datetime | None
-    last: datetime | None
+    excluded: str | None = "missing"
 
 
 def kb_calls(text: str, session_id: str | None) -> tuple[KbCall, ...]:
@@ -166,22 +169,7 @@ def read_store(root: Path) -> Store:
 
     Only the files are read; nothing is written. An unreadable file is counted and skipped.
     """
-    calls: list[KbCall] = []
-    files = unreadable = 0
-    first: datetime | None = None
-    last: datetime | None = None
-    for path in _transcript_paths(root):
-        files += 1
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            unreadable += 1
-            continue
-        scan = _scan(text, path.stem)
-        calls.extend(scan.calls)
-        first = earlier(first, scan.first)
-        last = later(last, scan.last)
-    return Store(tuple(calls), files, unreadable, first, last)
+    return read_transcript_store(_transcript_paths(root), lambda text, path: _scan(text, path.stem))
 
 
 def _transcript_paths(root: Path) -> list[Path]:
@@ -191,8 +179,8 @@ def _transcript_paths(root: Path) -> list[Path]:
     return paths
 
 
-def _scan(text: str, session_id: str | None) -> _Scan:
-    """Pair each Bash or PowerShell tool call that ran a kb call with its tool_result, by tool-use ID."""
+def _scan(text: str, session_id: str | None) -> Scan:
+    """Pair each shell tool call that ran a kb call with its tool_result, by tool-use ID."""
     lines, _complete = complete_lines(text)
     project = ""
     first: datetime | None = None
@@ -227,38 +215,37 @@ def _scan(text: str, session_id: str | None) -> _Scan:
             elif block.get("type") == "tool_result":
                 use_id = block.get("tool_use_id")
                 if isinstance(use_id, str) and use_id in pending:
-                    pending.pop(use_id).output = _result_text(block.get("content"))
+                    _pair(pending.pop(use_id), block.get("content"))
     calls = tuple(
-        KbCall(
-            app=APP,
-            session_id=session_id,
-            timestamp=call.timestamp,
-            project=project,
-            command=call.command,
-            subcommand=found.subcommand,
-            arguments=found.arguments,
-            output=call.output,
-            shared=len(call.found) > 1,
-        )
-        for call in tool_calls
-        for found in call.found
+        _kb_call(call, found, session_id, project) for call in tool_calls for found in call.found
     )
-    return _Scan(calls, first, last)
+    return Scan(calls, first, last)
+
+
+def _pair(call: _ToolCall, content: object) -> None:
+    """Set a tool call's output from its tool_result content, or the reason it is unusable."""
+    text = text_of(content)
+    if text is None:
+        call.output, call.excluded = None, "unsupported"
+    else:
+        call.output, call.excluded = text, None
+
+
+def _kb_call(call: _ToolCall, found: Invocation, session_id: str | None, project: str) -> KbCall:
+    """One kb call. Its output is its own only when its tool call ran no other kb call."""
+    excluded = "shared" if sole_invocation(call.command) is None else call.excluded
+    return KbCall(
+        app=APP,
+        session_id=session_id,
+        timestamp=call.timestamp,
+        project=project,
+        command=call.command,
+        subcommand=found.subcommand,
+        arguments=found.arguments,
+        output=None if excluded is not None else call.output,
+        excluded=excluded,
+    )
 
 
 def _is_shell_use(block: Mapping[str, object]) -> bool:
     return block.get("type") == "tool_use" and block.get("name") in SHELL_TOOLS
-
-
-def _result_text(value: object) -> str:
-    """A tool_result's text: a string, or the text blocks of a list."""
-    if isinstance(value, str):
-        return value
-    if not isinstance(value, list):
-        return ""
-    texts = [
-        block.get("text")
-        for block in value
-        if isinstance(block, Mapping) and isinstance(block.get("text"), str)
-    ]
-    return "\n".join(text for text in texts if isinstance(text, str))

@@ -43,7 +43,11 @@ def call(
     session: str = "s1",
     arguments: tuple[str, ...] = (),
     output: str | None = None,
+    excluded: str | None = None,
 ) -> KbCall:
+    """A kb call. Without output, it is excluded as missing, unless another reason is given."""
+    if output is None and excluded is None:
+        excluded = "missing"
     return KbCall(
         app="claude-code",
         session_id=session,
@@ -53,7 +57,7 @@ def call(
         subcommand=subcommand,
         arguments=arguments,
         output=output,
-        shared=False,
+        excluded=excluded,
     )
 
 
@@ -90,19 +94,20 @@ def test_a_read_line_ends_the_parse() -> None:
 
 
 @pytest.mark.parametrize(
-    ("output", "moment", "status"),
+    ("output", "excluded", "moment", "status"),
     [
-        (None, AFTER, "no-output"),
-        (NO_MATCH, AFTER, "no-curated-match"),
-        (WITH_SESSIONS, AFTER, "session-rows"),
-        (CURATED_ONLY, BEFORE, "pre-block"),
-        (CURATED_ONLY, AFTER, "no-session-rows"),
+        (None, "missing", AFTER, "excluded-missing"),
+        (None, "shared", AFTER, "excluded-shared"),
+        (NO_MATCH, None, AFTER, "no-curated-match"),
+        (WITH_SESSIONS, None, AFTER, "session-rows"),
+        (CURATED_ONLY, None, BEFORE, "pre-block"),
+        (CURATED_ONLY, None, AFTER, "no-session-rows"),
     ],
 )
 def test_each_recall_is_tagged_by_its_block_and_time(
-    output: str | None, moment: datetime, status: str
+    output: str | None, excluded: str | None, moment: datetime, status: str
 ) -> None:
-    recall = call("recall", moment=moment, output=output)
+    recall = call("recall", moment=moment, output=output, excluded=excluded)
     view = usage.parse_recall(output) if output is not None else None
     assert usage.recall_status(recall, view) == status
 
@@ -125,8 +130,66 @@ def test_recalls_and_their_outputs_count_per_week() -> None:
     )
     rows = {row[0]: row for row in usage.weekly_rows(report)}
     assert rows["2026-W43"][1] == "1"
-    assert rows["2026-W44"][1:5] == ["2", "1", "1", "0"]
+    # recalls, recalls_excluded, no_output, with_session_row, session_row_reads.
+    assert rows["2026-W44"][1:6] == ["2", "1", "1", "1", "0"]
     assert rows["2026-W44"][8] == str(round(len(WITH_SESSIONS)))
+
+
+def test_an_excluded_recall_counts_by_reason_and_is_not_parsed() -> None:
+    report = usage.analyze(
+        [
+            call("recall", moment=AFTER, output=None, excluded="shared"),
+            call("recall", moment=AFTER, output=None, excluded="batch"),
+            call("recall", moment=AFTER, output=None),
+        ]
+    )
+    week = report.weeks[usage.week_of(AFTER)]
+    assert (week.recalls, week.recalls_excluded, week.no_output) == (3, 3, 1)
+    assert report.excluded == {"shared": 1, "batch": 1, "missing": 1}
+    assert week.mean_chars() == "n/a"
+
+
+def test_a_read_after_an_excluded_recall_does_not_match_an_earlier_recall() -> None:
+    report = usage.analyze(
+        [
+            call("recall", moment=AFTER, output=WITH_SESSIONS),
+            call("recall", moment=AFTER, output=None, excluded="shared"),
+            call("read", moment=AFTER, arguments=("observations/archived/t1.md#3",), output="x"),
+        ]
+    )
+    assert report.weeks[usage.week_of(AFTER)].session_row_reads == 0
+
+
+def test_the_render_reports_excluded_recalls_beside_the_tags() -> None:
+    report = usage.analyze(
+        [
+            call("recall", moment=AFTER, output=WITH_SESSIONS),
+            call("recall", moment=AFTER, output=None, excluded="shared"),
+        ]
+    )
+    text = usage.render({}, report)
+    assert "recall tags: excluded-shared=1, session-rows=1" in text
+    assert "recall excluded by reason: shared=1" in text
+    row = text.splitlines()[-1].split()
+    # week, recalls, recalls_excluded, no_output, with_session_row, session_row_reads,
+    # evidence_after_recall, gap_after_recall, mean_chars.
+    assert row == ["2026-W46", "2", "1", "0", "1", "0", "0", "0", str(len(WITH_SESSIONS))]
+
+
+def test_the_columns_are_the_counted_week_fields_and_the_mean() -> None:
+    assert usage.COLUMNS == (
+        "week",
+        "recalls",
+        "recalls_excluded",
+        "no_output",
+        "with_session_row",
+        "session_row_reads",
+        "evidence_after_recall",
+        "gap_after_recall",
+        "mean_chars",
+    )
+    report = usage.analyze([call("recall", moment=AFTER, output=CURATED_ONLY)])
+    assert all(len(row) == len(usage.COLUMNS) for row in usage.weekly_rows(report))
 
 
 def test_a_session_read_after_a_recall_that_showed_it_counts_once_in_its_week() -> None:
@@ -144,7 +207,6 @@ def test_a_session_read_after_a_recall_that_showed_it_counts_once_in_its_week() 
     )
     week = report.weeks[usage.week_of(AFTER)]
     assert week.session_row_reads == 1
-    assert week.reads_after_no_curated == 0
 
 
 def test_a_session_read_of_a_recall_without_curated_rows_is_counted_separately() -> None:
@@ -161,7 +223,6 @@ def test_a_session_read_of_a_recall_without_curated_rows_is_counted_separately()
     )
     week = report.weeks[usage.week_of(AFTER)]
     assert week.session_row_reads == 1
-    assert week.reads_after_no_curated == 1
 
 
 def test_a_read_in_another_session_does_not_match_the_recall() -> None:
@@ -211,6 +272,15 @@ def test_a_week_with_no_output_has_no_mean() -> None:
     assert report.weeks[usage.week_of(AFTER)].mean_chars() == "n/a"
 
 
+def test_the_listing_says_why_a_recall_has_no_shown_locators() -> None:
+    report = usage.analyze(
+        [call("recall", moment=AFTER, arguments=("a",), output=None, excluded="shared")]
+    )
+    text = usage.render_list(report)
+    assert "status=excluded-shared" in text
+    assert "shown: (excluded: shared)" in text
+
+
 def test_the_listing_gives_each_recall_its_query_locators_and_later_calls() -> None:
     report = usage.analyze(
         [
@@ -233,7 +303,7 @@ def test_a_recall_without_later_calls_says_none() -> None:
 
 def test_roots_come_from_flags_or_the_host_environment(tmp_path: Path) -> None:
     roots = usage._roots(
-        ["--claude-root", str(tmp_path)],
+        {"--claude-root": str(tmp_path)},
         {"CODEX_HOME": str(tmp_path / "codex")},
     )
     assert roots["claude-code"] == tmp_path
@@ -241,6 +311,56 @@ def test_roots_come_from_flags_or_the_host_environment(tmp_path: Path) -> None:
 
 
 def test_the_default_roots_follow_the_host_home_directories(tmp_path: Path) -> None:
-    roots = usage._roots([], {"HOME": str(tmp_path)})
-    assert roots["claude-code"].name == "projects"
+    roots = usage._roots({}, {"HOME": str(tmp_path), "CLAUDE_CONFIG_DIR": str(tmp_path / "cc")})
+    assert roots["claude-code"] == tmp_path / "cc" / "projects"
+    assert (
+        roots["codex"] == Path.home() / ".codex" / "sessions"
+        if not roots["codex"].is_relative_to(tmp_path)
+        else True
+    )
     assert roots["codex"].name == "sessions"
+
+
+def test_the_main_reads_the_named_roots_and_prints_the_report(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    claude_root = tmp_path / "claude"
+    (claude_root / "-work").mkdir(parents=True)
+    (claude_root / "-work" / "main.jsonl").write_text("", encoding="utf-8")
+    codex_root = tmp_path / "codex"
+    codex_root.mkdir()
+    assert usage.main(["--claude-root", str(claude_root), "--codex-root", str(codex_root)]) == 0
+    out = capsys.readouterr().out
+    assert "claude-code: 1 files, 0 unreadable, 0 kb calls" in out
+    assert "codex: 0 files, 0 unreadable, 0 kb calls" in out
+    assert "recall excluded by reason: none" in out
+
+
+def test_the_main_lists_each_recall_with_the_list_switch(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert (
+        usage.main(["--list", "--claude-root", str(tmp_path), "--codex-root", str(tmp_path)]) == 0
+    )
+    assert capsys.readouterr().out.strip() == ""
+
+
+def test_the_main_names_a_flag_without_a_value(capsys: pytest.CaptureFixture[str]) -> None:
+    assert usage.main(["--claude-root"]) == 1
+    assert "Option --claude-root requires an argument" in capsys.readouterr().err
+
+
+def test_the_main_rejects_an_unknown_flag_and_a_positional_word(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert usage.main(["--bogus"]) == 1
+    assert "Unknown option: --bogus" in capsys.readouterr().err
+    assert usage.main(["extra"]) == 1
+    assert "Unexpected argument: extra" in capsys.readouterr().err
+
+
+def test_the_main_prints_its_usage_for_help(capsys: pytest.CaptureFixture[str]) -> None:
+    assert usage.main(["--help"]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith(usage.USAGE)
+    assert "--list" in out

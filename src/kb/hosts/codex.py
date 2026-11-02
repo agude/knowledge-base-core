@@ -7,12 +7,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from kb.shellcalls import Invocation, invocations
+from kb.shellcalls import Invocation, invocations, sole_invocation
 from kb.transcripts import (
     App,
     KbCall,
     Message,
     Role,
+    Scan,
     Session,
     Store,
     complete_lines,
@@ -22,9 +23,20 @@ from kb.transcripts import (
     synthetic_id,
     unique_messages,
 )
+from kb.transcripts import read_store as read_transcript_store
 
 APP: App = "codex"
 SHELL_FUNCTIONS = frozenset({"exec", "exec_command", "run_shell_command", "shell"})
+# An exec script's first output block is its header. Its other blocks hold the script's output.
+EXEC_HEADERS = ("Script completed", "Script failed", "Script error:")
+TRUNCATED = "Warning: truncated output"
+# A command's JSON result object, and the keys of the batch results that Promise.all returns.
+RESULT_KEYS = frozenset({"output", "chunk_id", "wall_time_seconds", "exit_code"})
+BATCH_KEYS = (
+    frozenset({"i", "status", "value"}),
+    frozenset({"status", "value"}),
+    frozenset({"i", "result"}),
+)
 EXEC_COMMAND = re.compile(r'\b(?:cmd|command)\s*:\s*("(?:\\.|[^"\\])*")')
 TIMESTAMPED_ROLLOUT = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-(.+)$")
 INJECTED_BLOCKS = (
@@ -243,23 +255,32 @@ def _make_message(
     return Message(message_id, timestamp, role, text, commands), False
 
 
+@dataclass(frozen=True)
+class _Shell:
+    """One shell command of a tool call, with the recorded kb calls in it.
+
+    shared is True when the script ran more than one command, so its output cannot be split
+    among them.
+    """
+
+    command: str
+    found: tuple[Invocation, ...]
+    shared: bool
+
+
 @dataclass
 class _ToolCall:
-    """One Codex exec or shell call that ran at least one recorded kb call, and its output.
+    """One tool call that ran at least one recorded kb call, and its paired output.
 
-    commands holds each shell command the call ran, with the recorded kb calls in it.
+    commands holds each shell command the call ran. excluded is "missing" until an output pairs
+    with the call. After that it is None for a usable output, and otherwise the reason the output
+    is not usable.
     """
 
     timestamp: datetime | None
-    commands: list[tuple[str, tuple[Invocation, ...]]]
+    commands: list[_Shell]
     output: str | None = None
-
-
-@dataclass(frozen=True)
-class _Scan:
-    calls: tuple[KbCall, ...]
-    first: datetime | None
-    last: datetime | None
+    excluded: str | None = "missing"
 
 
 def kb_calls(text: str, filename: str) -> tuple[KbCall, ...]:
@@ -272,25 +293,12 @@ def read_store(root: Path) -> Store:
 
     An unreadable file is counted and skipped.
     """
-    calls: list[KbCall] = []
-    files = unreadable = 0
-    first: datetime | None = None
-    last: datetime | None = None
-    for path in sorted(root.rglob("rollout-*.jsonl")):
-        files += 1
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            unreadable += 1
-            continue
-        scan = _scan(text, path.name)
-        calls.extend(scan.calls)
-        first = earlier(first, scan.first)
-        last = later(last, scan.last)
-    return Store(tuple(calls), files, unreadable, first, last)
+    return read_transcript_store(
+        sorted(root.rglob("rollout-*.jsonl")), lambda text, path: _scan(text, path.name)
+    )
 
 
-def _scan(text: str, filename: str) -> _Scan:
+def _scan(text: str, filename: str) -> Scan:
     """Pair each exec or shell call that ran a kb call with its output, by call ID."""
     lines, _complete = complete_lines(text)
     session_id = _filename_id(filename)
@@ -331,35 +339,108 @@ def _scan(text: str, filename: str) -> _Scan:
                 pending[call_id] = call
         elif item_type in ("custom_tool_call_output", "function_call_output"):
             if isinstance(call_id, str) and call_id in pending:
-                pending.pop(call_id).output = _output_text(payload.get("output"))
-    calls = tuple(
-        KbCall(
-            app=APP,
-            session_id=session_id,
-            timestamp=call.timestamp,
-            project=project,
-            command=command,
-            subcommand=found.subcommand,
-            arguments=found.arguments,
-            output=call.output,
-            shared=sum(len(items) for _command, items in call.commands) > 1,
-        )
-        for call in tool_calls
-        for command, items in call.commands
-        for found in items
+                _pair(pending.pop(call_id), item_type, payload.get("output"))
+    calls: list[KbCall] = []
+    for call in tool_calls:
+        for shell in call.commands:
+            for found in shell.found:
+                calls.append(_kb_call(call, shell, found, session_id, project))
+    return Scan(tuple(calls), first, last)
+
+
+def _pair(call: _ToolCall, item_type: object, output: object) -> None:
+    """Set a tool call's output from its output record, or the reason the output is unusable."""
+    if item_type == "function_call_output":
+        text, excluded = (output, None) if isinstance(output, str) else (None, "unsupported")
+    else:
+        text, excluded = _script_output(output)
+    call.output, call.excluded = text, excluded
+
+
+def _kb_call(
+    call: _ToolCall, shell: _Shell, found: Invocation, session_id: str | None, project: str
+) -> KbCall:
+    """One kb call. Its output is its own only when its command ran alone in its script."""
+    shared = shell.shared or sole_invocation(shell.command) is None
+    excluded = "shared" if shared else call.excluded
+    return KbCall(
+        app=APP,
+        session_id=session_id,
+        timestamp=call.timestamp,
+        project=project,
+        command=shell.command,
+        subcommand=found.subcommand,
+        arguments=found.arguments,
+        output=None if excluded is not None else call.output,
+        excluded=excluded,
     )
-    return _Scan(calls, first, last)
 
 
-def _recorded_commands(
-    payload: Mapping[str, object], item_type: object
-) -> list[tuple[str, tuple[Invocation, ...]]]:
-    """Each shell command of a tool call that holds a recorded kb call, with those calls."""
-    found: list[tuple[str, tuple[Invocation, ...]]] = []
-    for command in _shell_commands(payload, item_type):
+def _script_output(output: object) -> tuple[str | None, str | None]:
+    """The output of an exec script, as text, or None and the reason it is not usable.
+
+    Block 0 is the exec header. The other blocks are read in order, and the first block that is
+    not plain output decides the reason.
+    """
+    if not isinstance(output, list) or not output or not all(map(_is_text_block, output)):
+        return None, "unsupported"
+    header, *blocks = output
+    if not header["text"].startswith(EXEC_HEADERS):
+        return None, "unsupported"
+    parts: list[str] = []
+    for block in blocks:
+        text, excluded = _block_text(block["text"])
+        if excluded is not None:
+            return None, excluded
+        parts.append(text)
+    return "\n".join(parts), None
+
+
+def _is_text_block(block: object) -> bool:
+    return (
+        isinstance(block, Mapping)
+        and block.get("type") == "input_text"
+        and isinstance(block.get("text"), str)
+    )
+
+
+def _block_text(text: str) -> tuple[str, str | None]:
+    """The output that one block holds, or "" and the reason it is not usable.
+
+    A result object gives its output field. A running process, a truncation warning, and a batch
+    are not usable. Any other JSON object is an unrecognized shape. Plain text is the output.
+    """
+    if text.startswith(TRUNCATED):
+        return "", "incomplete"
+    try:
+        decoded = json.loads(text)
+    except json.JSONDecodeError:
+        return text, None
+    if not isinstance(decoded, dict):
+        return "", "unsupported"
+    keys = frozenset(decoded)
+    if keys >= RESULT_KEYS:
+        value = decoded["output"]
+        return (value, None) if isinstance(value, str) else ("", "unsupported")
+    if "session_id" in keys and "exit_code" not in keys:
+        return "", "incomplete"
+    if keys in BATCH_KEYS:
+        return "", "batch"
+    return "", "unsupported"
+
+
+def _recorded_commands(payload: Mapping[str, object], item_type: object) -> list[_Shell]:
+    """Each shell command of a tool call that holds a recorded kb call, with those calls.
+
+    A script that holds more than one command shares its output among them.
+    """
+    commands = _shell_commands(payload, item_type)
+    shared = len(commands) > 1
+    found: list[_Shell] = []
+    for command in commands:
         items = invocations(command)
         if items:
-            found.append((command, items))
+            found.append(_Shell(command, items, shared))
     return found
 
 
@@ -392,16 +473,3 @@ def _exec_commands(source: str) -> list[str]:
         if isinstance(value, str):
             commands.append(value)
     return commands
-
-
-def _output_text(value: object) -> str:
-    """A tool output's text: a string, or the text blocks of a list."""
-    if isinstance(value, str):
-        return value
-    if not isinstance(value, list):
-        return ""
-    texts: list[str] = []
-    for block in value:
-        if isinstance(block, Mapping) and isinstance(block.get("text"), str):
-            texts.append(str(block["text"]))
-    return "\n".join(texts)

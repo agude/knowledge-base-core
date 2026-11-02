@@ -55,21 +55,39 @@ def test_a_call_without_a_result_has_no_output() -> None:
     assert calls[0].output is None
 
 
-def test_several_kb_calls_in_one_command_share_its_output() -> None:
+def test_several_kb_calls_in_one_command_share_its_output_and_exclude_it() -> None:
     text = lines(
         bash_use("t1", "kb recall alpha && kb read knowledge/a.md#1"),
         result("t1", "shared output"),
     )
     calls = claude.kb_calls(text, SESSION)
-    assert [(call.subcommand, call.shared, call.output) for call in calls] == [
-        ("recall", True, "shared output"),
-        ("read", True, "shared output"),
+    assert [(call.subcommand, call.excluded, call.output) for call in calls] == [
+        ("recall", "shared", None),
+        ("read", "shared", None),
     ]
 
 
-def test_a_single_kb_call_is_not_shared() -> None:
+def test_a_single_kb_call_keeps_its_output() -> None:
     calls = claude.kb_calls(lines(bash_use("t1", "kb recall alpha"), result("t1", "out")), SESSION)
-    assert calls[0].shared is False
+    assert (calls[0].excluded, calls[0].output) == (None, "out")
+
+
+def test_a_call_without_a_result_is_missing() -> None:
+    calls = claude.kb_calls(lines(bash_use("t1", "kb recall alpha")), SESSION)
+    assert calls[0].excluded == "missing"
+
+
+def test_an_error_result_keeps_its_text() -> None:
+    record = result("t1", "kb: no such path")
+    record["message"]["content"][0]["is_error"] = True  # type: ignore[index]
+    calls = claude.kb_calls(lines(bash_use("t1", "kb read a"), record), SESSION)
+    assert (calls[0].excluded, calls[0].output) == (None, "kb: no such path")
+
+
+def test_a_result_with_a_non_text_block_is_unsupported() -> None:
+    content = [{"type": "text", "text": "words"}, {"type": "image", "source": {}}]
+    calls = claude.kb_calls(lines(bash_use("t1", "kb read a"), result("t1", content)), SESSION)
+    assert calls[0].excluded == "unsupported"
 
 
 def test_non_kb_commands_and_other_tools_are_ignored() -> None:
@@ -108,6 +126,7 @@ def test_list_content_joins_its_text_blocks() -> None:
         lines(bash_use("t1", "kb gap --title t"), result("t1", content)), SESSION
     )
     assert calls[0].output == "first\nsecond"
+    assert calls[0].excluded is None
 
 
 def test_malformed_lines_are_skipped() -> None:
@@ -132,5 +151,6 @@ def test_read_store_reads_main_and_subagent_transcripts_and_counts_unreadable(
     assert store.files == 3
     assert store.unreadable == 1
     assert [call.session_id for call in store.calls] == ["main-1", "agent-a"]
+    assert [call.excluded for call in store.calls] == [None, None]
     assert store.first is not None and store.last is not None
     assert store.first <= store.last

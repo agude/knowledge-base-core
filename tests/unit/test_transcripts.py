@@ -1,14 +1,21 @@
 """Tests for the host-neutral transcript model and its stable helpers."""
 
 from datetime import UTC, datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
 from kb.transcripts import (
+    KbCall,
     Message,
+    Scan,
     complete_lines,
+    earlier,
+    later,
     parse_timestamp,
+    read_store,
     synthetic_id,
+    text_of,
     timestamp_text,
     unique_messages,
 )
@@ -68,3 +75,65 @@ def test_unique_messages_keeps_first_id_occurrence_and_counts_later_copies() -> 
 
 def test_unique_messages_accepts_no_messages() -> None:
     assert unique_messages(()) == ((), 0)
+
+
+def test_text_of_reads_a_string_or_a_list_of_text_blocks() -> None:
+    assert text_of("plain") == "plain"
+    assert text_of([{"type": "text", "text": "a"}, {"type": "input_text", "text": "b"}]) == "a\nb"
+
+
+@pytest.mark.parametrize("value", [None, 3, [], ["bare"], [{"type": "image"}], [{"text": 1}]])
+def test_text_of_has_no_text_for_other_shapes(value: object) -> None:
+    assert text_of(value) is None
+
+
+def test_earlier_and_later_keep_the_known_timestamp_when_one_is_missing() -> None:
+    moment = datetime(2026, 10, 1, tzinfo=UTC)
+    later_moment = moment + timedelta(hours=1)
+    assert earlier(None, moment) == moment
+    assert earlier(moment, None) == moment
+    assert earlier(later_moment, moment) == moment
+    assert later(None, moment) == moment
+    assert later(moment, None) == moment
+    assert later(moment, later_moment) == later_moment
+
+
+def _call(output: str | None, excluded: str | None) -> KbCall:
+    return KbCall(
+        app="claude-code",
+        session_id="s",
+        timestamp=None,
+        project="",
+        command="kb recall a",
+        subcommand="recall",
+        arguments=("a",),
+        output=output,
+        excluded=excluded,
+    )
+
+
+def test_a_kb_call_has_output_or_an_exclusion_and_not_both() -> None:
+    assert _call("text", None).output == "text"
+    assert _call(None, "missing").excluded == "missing"
+    with pytest.raises(ValueError, match="output or an exclusion"):
+        _call("text", "missing")
+    with pytest.raises(ValueError, match="output or an exclusion"):
+        _call(None, None)
+    with pytest.raises(ValueError, match="unknown exclusion"):
+        _call(None, "lost")
+
+
+def test_read_store_scans_each_path_and_counts_the_unreadable_ones(tmp_path: Path) -> None:
+    good = tmp_path / "good.jsonl"
+    good.write_text("line\n", encoding="utf-8")
+    bad = tmp_path / "bad.jsonl"
+    bad.write_bytes(b"\xff\xfe")
+    seen: list[str] = []
+
+    def scan(text: str, path: Path) -> Scan:
+        seen.append(path.name)
+        return Scan((), None, None)
+
+    store = read_store([good, bad], scan)
+    assert seen == ["good.jsonl"]
+    assert (store.files, store.unreadable, store.calls) == (2, 1, ())

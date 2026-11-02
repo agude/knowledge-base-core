@@ -1945,42 +1945,64 @@ Open:
 - Row date: the matched message's date. `plan.md` now says so.
 - Windows is not checked.
 
-## Usage report baseline (2026-11-01)
+## Usage report baseline (2026-11-01, revised 2026-11-02)
 
-`just usage` reads the local Claude Code and Codex stores, read-only. It was run at
-`dev-cache` `0412c09`. The full `--list` output contains query text, so it is kept only in
-the session scratchpad and is not in the repository.
+`just usage` reads the local Claude Code and Codex stores, read-only. The first
+baseline was run at `dev-cache` `0412c09`. This revision is the A5 run, after the
+usage report excluded every output that does not belong to its kb call. The full
+`--list` output contains query text, so it is kept only in the session scratchpad
+and is not in the repository.
 
 Store date ranges (record timestamps):
 
-- Claude Code: 215 transcript files (main and subagent), 0 unreadable, 198 kb calls,
+- Claude Code: 217 transcript files (main and subagent), 0 unreadable, 193 kb calls,
   records 2026-10-07 to 2026-11-02.
-- Codex: 1229 rollout files, 0 unreadable, 490 kb calls, records 2026-08-17 to
-  2026-11-01.
+- Codex: 1232 rollout files, 0 unreadable, 496 kb calls, records 2026-08-17 to
+  2026-11-02.
 
-Recall tags (405 recalls): pre-block 396, no-curated-match 7, no-output 2. A recall
-with no output has no paired tool result, and it is excluded from the character mean.
-Pre-block means the recall ran before `a739708` (committed 2026-11-02T04:32:06Z) and
-printed no From sessions block.
+The stores grow during a session, so these counts are from one run on 2026-11-02.
+
+Recall tags (410 recalls): excluded-shared 333, excluded-incomplete 21,
+excluded-batch 2, excluded-unsupported 2, no-curated-match 3, pre-block 49. Excluded
+recalls are 358 of 410, and only 52 recalls have usable output. The character mean
+covers those 52. No recall lacks a paired result (no_output 0).
+
+Causes of the shared exclusions, counted over all kb calls in the stores (every
+subcommand, not only recall):
+
+- Codex exec scripts with more than one command literal: 261 kb calls.
+- One command whose line runs several kb calls, or a kb call that shares its line with
+  a pipeline or another command: Codex 94 kb calls, Claude Code 103 kb calls.
 
 Weekly metrics:
 
 ```text
-week      recalls  no_output  with_session_row  session_row_reads  reads_after_no_curated  evidence_after_recall  gap_after_recall  mean_chars
-2026-W44  402      2          0                 0                  0                       32                     0                 11585
-2026-W45  3        0          0                 0                  0                       2                      0                 2363
+week      recalls  recalls_excluded  no_output  with_session_row  session_row_reads  evidence_after_recall  gap_after_recall  mean_chars
+2026-W44  400      348               0          0                 0                  31                     0                 1732
+2026-W45  10       10                0          0                 0                  3                      0                 n/a
 ```
 
-Reading the baseline:
+Reading the revised baseline:
 
-- No recall ran after the From sessions block shipped that showed session rows. Every
+- The first baseline counted 405 recalls and gave a character mean of 11585 for
+  2026-W44. Its outputs included output that belonged to other calls in the same
+  script or command. The revision drops those, so the earlier mean is not comparable.
+- No usable recall after the From sessions block shipped showed session rows. Every
   session-row metric is zero, so this baseline does not measure the block.
-- Two of the 405 recalls are from this session's own probes of a copy of Knowledge, and
-  they are pre-block. Four recalls are from subagent transcripts.
-- `reads_after_no_curated` is zero by construction. The block prints only when a curated
-  section matches, so a recall that shows session rows always shows a curated row too.
-  Under the shipped design this metric cannot be nonzero. Whether it should measure a
-  different case is an open question for the user.
+- Excluded recalls are the main limit. Most are Codex exec scripts that run `kb recall`
+  beside other commands, usually through `Promise.allSettled`. Of the 188 such scripts
+  that hold a recall, 21 print `{i, status, value}` results and 23 print `{i, result}` or
+  `{index, result}`, where the position `i` names the command. The rest print
+  `{status, value}` without a position, a truncation warning, or free text. Claude Code
+  exclusions are lines that chain commands with `&&` or pipe into `head`.
+- Decision (user, 2026-11-02): positional batch results are not decoded. Decoding them
+  would raise usable recalls from 52 to about 95 of 410, and needs a pattern match on
+  JavaScript that the agent writes anew for each call. The report ships with its
+  exclusion counts. If the measurement window needs more data, the alternative is a
+  kb-side log: `kb recall` appends its time, query, and printed locators to a file in
+  the content git directory. That changes the "measure from raw sessions" decision and
+  needs approval before it is built.
+- The `reads_after_no_curated` metric is removed. It was zero by construction.
 
 ## Pre-merge addendum A2: transcript parts stored once (cache format 4) (2026-11-02)
 

@@ -1,13 +1,18 @@
 """The neutral model shared by the host transcript parsers and sync logic."""
 
 import hashlib
-from collections.abc import Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Literal
 
 App = Literal["claude-code", "codex"]
 Role = Literal["user", "assistant"]
+# Why a kb call's output is not usable: no paired result, a command that shares its output
+# with another call, a batch of results, output that is still incomplete, or an output shape
+# that is not recognized.
+EXCLUSIONS = ("missing", "shared", "batch", "incomplete", "unsupported")
 
 
 @dataclass(frozen=True)
@@ -87,13 +92,33 @@ def unique_messages(messages: Sequence[Message]) -> tuple[tuple[Message, ...], i
     return tuple(kept), duplicates
 
 
+def text_of(value: object) -> str | None:
+    """The text of a tool output that is a string, or a list of text blocks. None otherwise.
+
+    The blocks are joined with newlines. A list that holds any block without text, or an empty
+    list, has no text.
+    """
+    if isinstance(value, str):
+        return value
+    if not isinstance(value, list) or not value:
+        return None
+    texts: list[str] = []
+    for block in value:
+        if not isinstance(block, Mapping) or not isinstance(block.get("text"), str):
+            return None
+        texts.append(block["text"])
+    return "\n".join(texts)
+
+
 def earlier(current: datetime | None, candidate: datetime | None) -> datetime | None:
+    """The earlier of two optional timestamps. None counts as no timestamp."""
     if candidate is None:
         return current
     return candidate if current is None or candidate < current else current
 
 
 def later(current: datetime | None, candidate: datetime | None) -> datetime | None:
+    """The later of two optional timestamps. None counts as no timestamp."""
     if candidate is None:
         return current
     return candidate if current is None or candidate > current else current
@@ -101,12 +126,12 @@ def later(current: datetime | None, candidate: datetime | None) -> datetime | No
 
 @dataclass(frozen=True)
 class KbCall:
-    """One kb call that an agent ran through its shell tool, with that tool call's output.
+    """One kb call that an agent ran through its shell tool, with the output that belongs to it.
 
     subcommand is one of the recorded kb subcommands, and arguments are the words after it.
-    shared is True when the tool call ran more than one recorded kb call. Its output then
-    belongs to all of them, and no split is guessed. output is None when the tool call has
-    no paired result.
+    output is the decoded command output, and it is None unless the output is usable. excluded
+    then names why it is not: one of EXCLUSIONS. A call is usable only when its tool call ran
+    exactly this one kb call, so that its output is its own.
     """
 
     app: App
@@ -117,7 +142,22 @@ class KbCall:
     subcommand: str
     arguments: tuple[str, ...]
     output: str | None
-    shared: bool
+    excluded: str | None
+
+    def __post_init__(self) -> None:
+        if (self.output is None) == (self.excluded is None):
+            raise ValueError("a kb call has output or an exclusion, and not both or neither")
+        if self.excluded is not None and self.excluded not in EXCLUSIONS:
+            raise ValueError(f"unknown exclusion: {self.excluded}")
+
+
+@dataclass(frozen=True)
+class Scan:
+    """The kb calls in one transcript file, and the span of its records."""
+
+    calls: tuple[KbCall, ...]
+    first: datetime | None
+    last: datetime | None
 
 
 @dataclass(frozen=True)
@@ -129,3 +169,26 @@ class Store:
     unreadable: int
     first: datetime | None
     last: datetime | None
+
+
+def read_store(paths: Iterable[Path], scan: Callable[[str, Path], Scan]) -> Store:
+    """Scan each transcript file that the paths name. Only the files are read; nothing is written.
+
+    An unreadable file is counted and skipped. scan is given the file's text and its path.
+    """
+    calls: list[KbCall] = []
+    files = unreadable = 0
+    first: datetime | None = None
+    last: datetime | None = None
+    for path in paths:
+        files += 1
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            unreadable += 1
+            continue
+        found = scan(text, path)
+        calls.extend(found.calls)
+        first = earlier(first, found.first)
+        last = later(last, found.last)
+    return Store(tuple(calls), files, unreadable, first, last)
