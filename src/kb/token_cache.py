@@ -334,8 +334,39 @@ def _build(document: model.Document, mtime_ns: int, size: int, digest: str) -> E
     return Entry(relpath, mtime_ns, size, digest, scalars, file_unit, messages, transcript_chunks)
 
 
+# The last cache file read or written in this process, keyed by its identity on disk. A
+# command that ranks evidence several times, such as kb recall, decodes the file once.
+_memo: tuple[tuple[object, ...], dict[str, Entry]] | None = None
+
+
+def _identity(target: Path, version: str) -> tuple[object, ...] | None:
+    """The cache file's path, inode, mtime, and size, with the format and code version.
+
+    None when the file is missing.
+    """
+    try:
+        status = target.stat()
+    except OSError:
+        return None
+    return (str(target), status.st_ino, status.st_mtime_ns, status.st_size, FORMAT, version)
+
+
 def _read(target: Path, version: str) -> dict[str, Entry] | None:
-    """The stored entries, or None when the file is missing, unreadable, or for another version."""
+    """The stored entries, or None when the file is missing, unreadable, or for another version.
+
+    The result is shared, not copied, while the file on disk is unchanged. Callers must not
+    change it.
+    """
+    global _memo
+    identity = _identity(target, version)
+    if identity is not None and _memo is not None and _memo[0] == identity:
+        return _memo[1]
+    entries = _decode(target, version)
+    _memo = (identity, entries) if identity is not None and entries is not None else None
+    return entries
+
+
+def _decode(target: Path, version: str) -> dict[str, Entry] | None:
     try:
         with target.open("rb") as handle:
             data = pickle.load(handle)
@@ -363,8 +394,11 @@ def _write(target: Path, version: str, entries: dict[str, Entry]) -> bool:
         return False
     except OSError as error:
         return _warn(target, error)
+    global _memo
     try:
         _replace_file(target, version, entries)
+        identity = _identity(target, version)
+        _memo = (identity, dict(entries)) if identity is not None else None
     except OSError as error:
         return _warn(target, error)
     finally:

@@ -121,9 +121,50 @@ def paths(root: Path) -> list[str]:
 def stored(root: Path) -> dict[str, token_cache.Entry]:
     target = token_cache.cache_file(root)
     assert target is not None
-    loaded = token_cache._read(target, token_cache.fingerprint())
+    loaded = token_cache._decode(target, token_cache.fingerprint())
     assert loaded is not None
     return loaded
+
+
+@pytest.fixture
+def decodes(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
+    """Every cache file that token_cache decodes from disk, in order."""
+    calls: list[Path] = []
+    original = token_cache._decode
+
+    def counting(target: Path, version: str) -> dict[str, token_cache.Entry] | None:
+        calls.append(target)
+        return original(target, version)
+
+    monkeypatch.setattr(token_cache, "_decode", counting)
+    monkeypatch.setattr(token_cache, "_memo", None)
+    return calls
+
+
+def test_loads_in_one_process_decode_an_unchanged_cache_file_once(
+    repo: Path, decodes: list[Path]
+) -> None:
+    token_cache.load(repo, paths(repo))
+    decodes.clear()
+    first = token_cache.load(repo, paths(repo)[:1])
+    second = token_cache.load(repo, paths(repo))
+    assert decodes == []
+    assert set(first) <= set(second)
+
+
+def test_a_cache_file_changed_on_disk_is_decoded_again(repo: Path, decodes: list[Path]) -> None:
+    token_cache.load(repo, paths(repo))
+    target = token_cache.cache_file(repo)
+    assert target is not None
+    token_cache._memo = None
+    token_cache.load(repo, paths(repo))
+    assert decodes == [target, target]
+
+    decodes.clear()
+    data = target.read_bytes()
+    target.write_bytes(data + b"\0")
+    token_cache.load(repo, paths(repo))
+    assert decodes == [target]
 
 
 def test_a_cold_build_and_a_warm_load_agree_and_the_warm_load_tokenizes_nothing(

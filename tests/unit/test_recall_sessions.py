@@ -179,3 +179,21 @@ def test_the_no_sessions_switch_removes_the_block_from_the_command(
     assert recall.SESSIONS_HEADING not in capsys.readouterr().out
     assert recall.run(CURATED_QUERY) == 0
     assert recall.SESSIONS_HEADING in capsys.readouterr().out
+
+
+def test_an_answer_selects_the_uncurated_rows_once(
+    context: Context, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_transcript(context.root, "observations/archived/t1.md", "restic backup retention")
+    calls: list[Sequence[str]] = []
+    original = recall._uncurated
+
+    def counting(
+        context: Context, words: Sequence[str], scope: str | None, documents: corpus.Documents
+    ) -> list[evidence.Item]:
+        calls.append(words)
+        return original(context, words, scope, documents)
+
+    monkeypatch.setattr(recall, "_uncurated", counting)
+    recall.answer(context, ["backup"], 3, None)
+    assert len(calls) == 1

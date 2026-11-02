@@ -112,7 +112,7 @@ def answer(
         tail.append("Uncurated (pending, not yet verified):")
         tail.extend(evidence.format_rows(uncurated))
     if sessions:
-        tail.extend(_session_block(context, words, scope, documents))
+        tail.extend(_session_block(context, words, scope, documents, uncurated))
     tail.append(READ_WITH)
     return "\n".join(blocks) + "\n" + "\n".join(tail) + "\n"
 
@@ -303,9 +303,15 @@ def from_sessions(
     scope: str | None,
     documents: corpus.Documents,
     limit: int,
+    uncurated: Sequence[evidence.Item] | None = None,
 ) -> list[evidence.Item]:
-    """Session rows that Uncurated does not already show, for the From sessions block."""
-    shown = {item.path for item in _uncurated(context, words, scope, documents)}
+    """Session rows that Uncurated does not already show, for the From sessions block.
+
+    uncurated is the Uncurated rows when the caller has already selected them.
+    """
+    if uncurated is None:
+        uncurated = _uncurated(context, words, scope, documents)
+    shown = {item.path for item in uncurated}
     rows = session_rows(context, words, scope, documents, limit + len(shown))
     return [row for row in rows if row.path not in shown][:limit]
 
@@ -315,12 +321,13 @@ def _session_block(
     words: Sequence[str],
     scope: str | None,
     documents: corpus.Documents,
+    uncurated: Sequence[evidence.Item],
 ) -> list[str]:
     """The From sessions heading and rows, or nothing when no session row qualifies.
 
     Each row is locator | date | excerpt. An excerpt is at most search.EXCERPT_WIDTH characters.
     """
-    rows = from_sessions(context, words, scope, documents, SESSION_ROWS)
+    rows = from_sessions(context, words, scope, documents, SESSION_ROWS, uncurated)
     if not rows:
         return []
     width = max(len(row.path) for row in rows)
