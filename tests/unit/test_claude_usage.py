@@ -14,14 +14,14 @@ def lines(*records: Mapping[str, object]) -> str:
     return "\n".join(json.dumps(record) for record in records) + "\n"
 
 
-def bash_use(use_id: str, command: str, when: str = WHEN) -> dict[str, object]:
+def bash_use(use_id: str, command: str, when: str = WHEN, tool: str = "Bash") -> dict[str, object]:
     return {
         "type": "assistant",
         "timestamp": when,
         "cwd": "/work",
         "message": {
             "content": [
-                {"type": "tool_use", "id": use_id, "name": "Bash", "input": {"command": command}}
+                {"type": "tool_use", "id": use_id, "name": tool, "input": {"command": command}}
             ]
         },
     }
@@ -154,3 +154,19 @@ def test_read_store_reads_main_and_subagent_transcripts_and_counts_unreadable(
     assert [call.excluded for call in store.calls] == [None, None]
     assert store.first is not None and store.last is not None
     assert store.first <= store.last
+
+
+def test_a_powershell_kb_call_is_read_like_a_bash_call() -> None:
+    text = lines(
+        bash_use("t1", "kb recall alpha", tool="PowerShell"),
+        result("t1", "the recall output"),
+    )
+    calls = claude.kb_calls(text, SESSION)
+    assert [(call.subcommand, call.arguments, call.output) for call in calls] == [
+        ("recall", ("alpha",), "the recall output")
+    ]
+
+
+def test_a_tool_that_is_not_a_shell_records_no_kb_call() -> None:
+    text = lines(bash_use("t1", "kb recall alpha", tool="Read"), result("t1", "output"))
+    assert claude.kb_calls(text, SESSION) == ()
