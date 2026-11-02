@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from kb import corpus, evidence, lock, model, search, token_cache
+from kb import addressing, corpus, evidence, lock, model, search, token_cache
 from kb.commands import evidence as evidence_command
 from kb.context import Context
 from kb.model import Document, parse
@@ -46,7 +46,7 @@ def transcript(
     return parse("observations/archived/transcript.md", f"---\n{front}---\n\n{body}\n")
 
 
-def test_addressable_messages_normalize_timestamps_and_ignore_fenced_headings() -> None:
+def test_message_sections_normalize_timestamps_and_ignore_fenced_headings() -> None:
     document = parse(
         "observations/archived/transcript.md",
         "---\n" + TRANSCRIPT_FRONT + "---\n\n"
@@ -55,11 +55,13 @@ def test_addressable_messages_normalize_timestamps_and_ignore_fenced_headings() 
         "## 2. assistant, 2026-10-20T00:20:00Z\n\n"
         "The message body has a matching phrase.\n",
     )
-    messages = evidence.addressable_messages(document)
-    assert messages is not None
-    assert [message.number for message in messages] == [1, 2]
-    assert messages[0].timestamp.isoformat() == "2026-10-20T00:10:00+00:00"
-    assert "matching phrase" in messages[1].body[0]
+    sections = addressing.message_sections(document)
+    assert sections is not None
+    assert [section.number for section in sections] == [1, 2]
+    assert sections[0].timestamp.isoformat() == "2026-10-20T00:10:00+00:00"
+    assert (
+        "matching phrase" in document.prose(sections[1].section.start, sections[1].section.end)[0]
+    )
 
 
 @pytest.mark.parametrize(
@@ -91,7 +93,7 @@ def test_addressable_messages_normalize_timestamps_and_ignore_fenced_headings() 
 def test_incomplete_or_malformed_transcripts_use_file_level_handling(
     front: str, headings: tuple[str, ...]
 ) -> None:
-    assert evidence.addressable_messages(transcript(front, headings)) is None
+    assert addressing.message_sections(transcript(front, headings)) is None
 
 
 def cached(tmp_path: Path, files: dict[str, str]) -> tuple[Path, list[token_cache.Entry]]:
@@ -177,6 +179,126 @@ def test_malformed_transcript_remains_a_file_level_result(tmp_path: Path) -> Non
     assert len(items) == 1
     assert items[0].path == "observations/archived/transcript.md"
     assert items[0].message_number is None
+
+
+SESSION_FRONT = (
+    "---\ntitle: Session transcript\nsource: session-transcript\nsession: s\n"
+    'first_message: "m1"\nlast_message: "m2"\npart: 1\n'
+    "started: 2026-10-01T00:00:00Z\nended: 2026-10-31T00:00:00Z\n"
+    "created: 2026-10-22\n---\n\n"
+)
+
+
+def session(*messages: tuple[str, str]) -> str:
+    """A valid addressable transcript with one message per (UTC timestamp, text) pair."""
+    body = "".join(
+        f"## {number}. {'user' if number % 2 else 'assistant'}, {moment}\n\n{text}\n\n"
+        for number, (moment, text) in enumerate(messages, 1)
+    )
+    return SESSION_FRONT + body
+
+
+def test_a_long_transcript_with_one_relevant_turn_ranks_above_a_short_loosely_related_one(
+    tmp_path: Path,
+) -> None:
+    filler = [
+        (f"2026-10-20T00:{number:02d}:00Z", "unrelated status chatter about lunch " * 8)
+        for number in range(1, 41)
+    ]
+    turns = [
+        *filler[:20],
+        ("2026-10-20T01:00:00Z", "The traefik certificate renewal failed on the proxy."),
+        *filler[20:],
+    ]
+    root, entries = cached(
+        tmp_path,
+        {
+            "observations/archived/long.md": session(*turns),
+            "observations/archived/short.md": session(
+                ("2026-10-20T00:01:00Z", "traefik backups and the family share")
+            ),
+        },
+    )
+
+    items = evidence.select(
+        entries,
+        search.query_terms(("traefik", "certificate")),
+        "transcript",
+        None,
+        None,
+        5,
+        corpus.Documents(root).read,
+    )
+
+    assert [item.path for item in items] == [
+        "observations/archived/long.md#21",
+        "observations/archived/short.md#1",
+    ]
+
+
+def test_the_row_names_the_matched_message_inside_the_winning_chunk(tmp_path: Path) -> None:
+    root, entries = cached(
+        tmp_path,
+        {
+            "observations/archived/t.md": session(
+                ("2026-10-20T00:01:00Z", "Which share holds the photos?"),
+                ("2026-10-21T00:02:00Z", "The family share holds the photos."),
+                ("2026-10-21T00:03:00Z", "Unrelated follow up."),
+            )
+        },
+    )
+
+    items = evidence.select(
+        entries,
+        search.query_terms(("family", "share")),
+        "transcript",
+        None,
+        None,
+        5,
+        corpus.Documents(root).read,
+    )
+
+    assert [item.path for item in items] == ["observations/archived/t.md#2"]
+    assert items[0].date == date(2026, 10, 21)
+    assert items[0].message_number == 2
+    assert items[0].text == "The family share holds the photos."
+
+
+def test_a_date_bound_drops_a_transcript_whose_only_match_is_outside_it(tmp_path: Path) -> None:
+    root, entries = cached(
+        tmp_path,
+        {
+            "observations/archived/t.md": session(
+                ("2026-10-05T00:01:00Z", "Old restart of the NAS."),
+                ("2026-10-20T00:02:00Z", "Unrelated follow up."),
+            )
+        },
+    )
+    read = corpus.Documents(root).read
+
+    outside = evidence.select(entries, ["restart"], "transcript", date(2026, 10, 10), None, 5, read)
+    inside = evidence.select(entries, ["restart"], "transcript", date(2026, 10, 1), None, 5, read)
+
+    assert outside == []
+    assert [item.path for item in inside] == ["observations/archived/t.md#1"]
+
+
+def test_an_ineligible_message_never_joins_a_chunk_under_a_date_bound(tmp_path: Path) -> None:
+    root, entries = cached(
+        tmp_path,
+        {
+            "observations/archived/t.md": session(
+                ("2026-10-20T00:01:00Z", "Alpha reading."),
+                ("2026-10-05T00:02:00Z", "Unrelated filler."),
+                ("2026-10-20T00:03:00Z", "Beta conclusion."),
+            )
+        },
+    )
+    read = corpus.Documents(root).read
+
+    items = evidence.select(entries, ["filler"], "transcript", date(2026, 10, 10), None, 5, read)
+
+    assert items == []
 
 
 def unexpected_external_call(*_args: object, **_kwargs: object) -> None:

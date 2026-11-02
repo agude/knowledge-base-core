@@ -1,16 +1,17 @@
 """Select and format matching observations, transcripts, and questions."""
 
+import math
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from kb import addressing, chunks, dates, locators, search
-from kb.model import Document, Section
+from kb import chunks, dates, locators, search
+from kb.model import Document
 
 if TYPE_CHECKING:
-    from kb.token_cache import Entry, MessageTokens
+    from kb.token_cache import ChunkTokens, Entry, MessageTokens
 
 KINDS = ("observation", "transcript", "open-question", "resolved-question")
 TITLE_WIDTH = 72
@@ -18,33 +19,29 @@ READ_WITH = "Read with: kb read <locator>"
 
 
 @dataclass(frozen=True)
-class Message:
-    """One validated harvested message and its body-only search unit."""
-
-    number: int
-    section: Section
-    timestamp: datetime
-    body: tuple[str, ...]
-    unit: search.Unit
-
-
-@dataclass(frozen=True)
 class Candidate:
-    """One searchable evidence file, its cache entry, and its addressable messages.
+    """One evidence file that a query may match, with the chunks that score it.
 
-    messages is None unless the file is an addressable transcript with at least one message.
+    scored holds a transcript's chunks, in order, as this query sees them: with date bounds,
+    only the eligible messages. It is empty for other kinds, which score as whole files.
+    addressable is True when the transcript has addressable messages.
     """
 
     path: str
     entry: "Entry"
     kind: str
     created: date | None
-    messages: "tuple[MessageTokens, ...] | None"
+    addressable: bool
+    scored: "tuple[ChunkTokens, ...]"
 
 
 @dataclass(frozen=True)
 class Item:
-    """One output row, with its file-level score kept private for sorting."""
+    """One output row, with its file-level score kept private for sorting.
+
+    chunk is the position of the winning chunk in the transcript's chunk list, or None for
+    evidence that is not a transcript. message_number is the matched message, or None.
+    """
 
     path: str
     date: date | None
@@ -52,6 +49,7 @@ class Item:
     text: str
     score: float
     message_number: int | None
+    chunk: int | None = None
 
 
 def select(
@@ -63,14 +61,18 @@ def select(
     limit: int,
     read: Callable[[str], Document],
 ) -> list[Item]:
-    """Rank eligible files, then select a qualifying message when one is addressable.
+    """Rank the eligible files, and show each transcript's best chunk and matched message.
 
-    Ranking uses the cached tokens alone. A document is read only for each row that is
-    printed, to build its excerpt.
+    A transcript scores as its best chunk, and a chunk scores with the file's title. Other
+    evidence scores as a whole file. With date bounds, a transcript is chunked from its eligible
+    messages only. Ranking uses the cached tokens alone. A document is read only for each row
+    that is printed, to build its excerpt.
     """
-    candidates: list[Candidate] = []
-    matching_messages: dict[str, tuple[tuple[MessageTokens, float], ...]] = {}
     has_date_bound = since is not None or until is not None
+    eligible = _eligible(since, until) if has_date_bound else None
+    candidates: list[Candidate] = []
+    units: list[search.Unit] = []
+    owners: list[tuple[int, int]] = []
 
     for entry in entries:
         kind = evidence_kind(entry.path, entry.scalars.get("source"))
@@ -78,39 +80,38 @@ def select(
             continue
 
         created = created_date_of(entry.scalars.get("created"))
-        messages = entry.messages if kind == "transcript" and entry.messages else None
-        if messages is None:
-            if has_date_bound and not _within(created, since, until):
-                continue
+        addressable = kind == "transcript" and bool(entry.messages)
+        if addressable and eligible is not None:
+            scored = _bounded_chunks(entry, eligible)
+        elif not addressable and has_date_bound and not _within(created, since, until):
+            continue
         else:
-            eligible = tuple(
-                message
-                for message in messages
-                if not has_date_bound or _within(_message_date(message), since, until)
-            )
-            message_hits = search.rank([message_unit(message) for message in eligible], terms)
-            if has_date_bound and not message_hits:
-                continue
-            matching_messages[entry.path] = tuple(
-                (eligible[hit.index], hit.score) for hit in message_hits
-            )
+            scored = entry.chunks
+        if kind == "transcript" and not scored:
+            continue
 
-        candidates.append(Candidate(entry.path, entry, kind, created, messages))
+        index = len(candidates)
+        candidates.append(Candidate(entry.path, entry, kind, created, addressable, tuple(scored)))
+        if kind == "transcript":
+            for position, found in enumerate(scored):
+                units.append(_chunk_unit(entry, found))
+                owners.append((index, position))
+        else:
+            units.append(file_unit(entry))
+            owners.append((index, -1))
 
-    file_hits = search.rank([file_unit(candidate.entry) for candidate in candidates], terms)
-    items = [
-        _row(
-            candidates[hit.index],
-            hit.score,
-            matching_messages.get(candidates[hit.index].path, ()),
-        )
-        for hit in file_hits
+    best: dict[int, tuple[float, int]] = {}
+    for hit in search.rank(units, terms):
+        index, position = owners[hit.index]
+        best.setdefault(index, (hit.score, position))
+    rows = [
+        (_row(candidates[index], score, position, terms), candidates[index])
+        for index, (score, position) in best.items()
     ]
-    items.sort(key=_sort_key)
-    by_path = {candidate.path: candidate for candidate in candidates}
+    rows.sort(key=lambda pair: _sort_key(pair[0]))
     return [
-        replace(item, text=_excerpt_for(by_path[item.path.partition("#")[0]], item, terms, read))
-        for item in items[:limit]
+        replace(item, text=_excerpt_for(candidate, item, terms, read, eligible))
+        for item, candidate in rows[:limit]
     ]
 
 
@@ -137,29 +138,68 @@ def file_unit(entry: "Entry") -> search.Unit:
     )
 
 
-def message_unit(message: "MessageTokens") -> search.Unit:
-    """The search unit of a cached message: its body only, as addressable_messages builds it."""
-    return search.Unit(title=(), aliases=(), headings=(), body=message[2], phrases=frozenset())
+def _chunk_unit(entry: "Entry", found: "ChunkTokens") -> search.Unit:
+    """The search unit of one chunk: its body, with the file's title and phrases."""
+    title, _aliases, _headings, _body, phrases = entry.file_unit
+    return search.Unit(
+        title=title,
+        aliases=(),
+        headings=(),
+        body=found[5],
+        phrases=frozenset(phrases),
+    )
 
 
-def addressable_messages(document: Document) -> tuple[Message, ...] | None:
-    """The transcript's messages when its complete addressability contract is valid."""
-    sections = addressing.message_sections(document)
-    if sections is None:
-        return None
-    messages: list[Message] = []
-    for item in sections:
-        body = document.prose(item.section.start, item.section.end)
-        messages.append(
-            Message(
-                number=item.number,
-                section=item.section,
-                timestamp=item.timestamp,
-                body=body,
-                unit=search.make_unit("", (), (), body),
+def _bounded_chunks(entry: "Entry", eligible: chunks.Eligible) -> "tuple[ChunkTokens, ...]":
+    """The chunks of an addressable transcript from its eligible messages only.
+
+    Split pieces are kept as cached. Whole messages are merged again from their cached tokens
+    and lengths, by the same rule as chunks.chunks, so a chunk never spans a message that
+    eligible rejects. Without rejected messages, the result equals entry.chunks.
+    """
+    pieces: dict[int, list[tuple[str, ...]]] = {}
+    for chunk in entry.chunks:
+        if chunk[4]:
+            pieces.setdefault(chunk[0], []).append(chunk[5])
+    found: list[chunks.Part] = []
+    bodies: list[tuple[str, ...]] = []
+    for number, moment, body, size in entry.messages:
+        started = datetime.fromisoformat(moment)
+        if number in pieces:
+            for index, piece in enumerate(pieces[number], 1):
+                found.append(chunks.Part(number, started, index, 0, (), eligible(started)))
+                bodies.append(piece)
+        else:
+            found.append(chunks.Part(number, started, 0, size, (), eligible(started)))
+            bodies.append(body)
+    out: list[ChunkTokens] = []
+    for start, end in chunks.group(found):
+        first, last = found[start], found[end - 1]
+        tokens = tuple(token for index in range(start, end) for token in bodies[index])
+        out.append(
+            (
+                first.number,
+                last.number,
+                _iso(first.timestamp),
+                _iso(last.timestamp),
+                first.piece,
+                tokens,
             )
         )
-    return tuple(messages)
+    return tuple(out)
+
+
+def _iso(moment: datetime | None) -> str | None:
+    return None if moment is None else moment.isoformat()
+
+
+def _eligible(since: date | None, until: date | None) -> chunks.Eligible:
+    """The chunk filter for date bounds. A message is eligible by its UTC date."""
+
+    def eligible(moment: datetime | None) -> bool:
+        return moment is None or _within(moment.date(), since, until)
+
+    return eligible
 
 
 def created_date(document: Document) -> date | None:
@@ -195,46 +235,67 @@ def format_rows(items: Sequence[Item]) -> list[str]:
 def _row(
     candidate: Candidate,
     score: float,
-    matched_messages: Sequence[tuple["MessageTokens", float]],
+    position: int,
+    terms: Sequence[str],
 ) -> Item:
-    """One row without its excerpt: the best message when one matched, else the file."""
-    if candidate.messages is not None and matched_messages:
-        message, _message_score = min(
-            matched_messages,
-            key=lambda match: (-match[1], match[0][0]),
-        )
-        return Item(
-            path=f"{candidate.path}#{message[0]}",
-            date=_message_date(message),
-            kind=candidate.kind,
-            text="",
-            score=score,
-            message_number=message[0],
-        )
-    return Item(candidate.path, candidate.created, candidate.kind, "", score, None)
+    """One row without its excerpt. A row names its matched message when one holds half the terms."""
+    if candidate.kind != "transcript":
+        return Item(candidate.path, candidate.created, candidate.kind, "", score, None)
+    message = None
+    if candidate.addressable:
+        message = _matched_message(candidate, candidate.scored[position], terms)
+    if message is None:
+        return Item(candidate.path, candidate.created, candidate.kind, "", score, None, position)
+    return Item(
+        path=f"{candidate.path}#{message[0]}",
+        date=_message_date(message),
+        kind=candidate.kind,
+        text="",
+        score=score,
+        message_number=message[0],
+        chunk=position,
+    )
+
+
+def _matched_message(
+    candidate: Candidate, found: "ChunkTokens", terms: Sequence[str]
+) -> "MessageTokens | None":
+    """The message of the chunk with the most distinct query terms, or None when it holds fewer
+    than half of them. A match spread over several messages keeps the file locator.
+
+    Ties go to the earlier message.
+    """
+    wanted = frozenset(terms)
+    members = [
+        message for message in candidate.entry.messages if found[0] <= message[0] <= found[1]
+    ]
+    if not members:
+        raise ValueError(f"{candidate.path} has no message {found[0]}")
+    best = max(members, key=lambda message: (len(wanted.intersection(message[2])), -message[0]))
+    if len(wanted.intersection(best[2])) < math.ceil(len(wanted) / 2):
+        return None
+    return best
 
 
 def _excerpt_for(
-    candidate: Candidate, item: Item, terms: Sequence[str], read: Callable[[str], Document]
+    candidate: Candidate,
+    item: Item,
+    terms: Sequence[str],
+    read: Callable[[str], Document],
+    eligible: chunks.Eligible | None,
 ) -> str:
     """The excerpt of a printed row, read from its document.
 
-    A row for a message shows that message. A file-level transcript shows its best chunk,
-    or its whole body when no chunk holds a query term.
+    A transcript row shows the text of its winning chunk, which may hold messages after the
+    matched one. Other evidence shows its title.
     """
     document = read(candidate.path)
-    if item.message_number is not None:
-        section = document.section(str(item.message_number))
-        if section is None:
-            raise ValueError(f"{candidate.path} has no message {item.message_number}")
-        return search.excerpt(document.prose(section.start, section.end), terms)
-    if candidate.kind == "transcript":
-        found = chunks.best(document, terms)
-        if found is not None:
-            return search.excerpt(_excerpt_lines(found.lines), terms)
-        body = _excerpt_lines(document.prose(document.body_start, len(document.lines)))
-        return search.excerpt(body, terms)
-    return search.clip(locators.display_title(document), TITLE_WIDTH)
+    if candidate.kind != "transcript":
+        return search.clip(locators.display_title(document), TITLE_WIDTH)
+    listed = chunks.chunks(document, eligible)
+    if item.chunk is None or item.chunk >= len(listed):
+        raise ValueError(f"{candidate.path} has no chunk {item.chunk}")
+    return search.excerpt(_excerpt_lines(listed[item.chunk].lines), terms)
 
 
 def _message_date(message: "MessageTokens") -> date:

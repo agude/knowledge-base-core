@@ -159,12 +159,20 @@ def test_entries_hold_the_units_that_evidence_builds_for_every_fixture_file(repo
         if evidence.evidence_kind(relpath, document.scalar("source")) == "transcript":
             document = chunks.visible(document)
         assert evidence.file_unit(entry) == search.evidence_unit(document)
-        expected = evidence.addressable_messages(document) or ()
-        assert [number for number, _, _ in entry.messages] == [m.number for m in expected]
-        for stored_message, message in zip(entry.messages, expected, strict=True):
-            assert stored_message[1] == message.timestamp.isoformat()
-            assert evidence.message_unit(stored_message) == message.unit
-        messages_seen += len(expected)
+        found = chunks.parts(document)
+        numbers = list(dict.fromkeys(part.number for part in found if part.number))
+        assert [message[0] for message in entry.messages] == numbers
+        for number, moment, body, _size in entry.messages:
+            members = [part for part in found if part.number == number]
+            assert members[0].timestamp is not None
+            assert moment == members[0].timestamp.isoformat()
+            assert body == tuple(
+                token
+                for part in members
+                for line in part.lines
+                for token in search.index_tokens(line)
+            )
+        messages_seen += len(numbers)
         for name in token_cache.SCALAR_FIELDS:
             value = document.scalar(name)
             assert entry.scalars.get(name) == value
@@ -581,10 +589,11 @@ def test_injected_text_is_not_tokenized_into_a_transcript_entry(repo: Path) -> N
     secret = set(search.index_tokens("zigzag cipher"))
     assert secret
     assert not secret & set(entry.file_unit[3])
-    assert not any(secret & set(body) for _, _, body in entry.messages)
+    assert not any(secret & set(message[2]) for message in entry.messages)
     assert not any(secret & set(chunk[-1]) for chunk in entry.chunks)
     assert set(search.index_tokens("kitchen")) <= set(entry.file_unit[3])
-    assert [number for number, _, _ in entry.messages] == [1, 2, 3]
+    # Message 3 is an AGENTS.md instruction message, which chunking drops, so it has no entry.
+    assert [message[0] for message in entry.messages] == [1, 2]
 
 
 def test_chunk_tokens_match_the_search_units_of_the_chunks(repo: Path) -> None:

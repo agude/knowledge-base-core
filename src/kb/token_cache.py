@@ -15,7 +15,7 @@ import pickle
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from importlib import resources
@@ -66,14 +66,16 @@ SCALAR_FIELDS = (
 UnitTokens = tuple[
     tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]
 ]
-# One addressable message: its number, its UTC timestamp in ISO form, and its body tokens.
-MessageTokens = tuple[int, str, tuple[str, ...]]
+# One addressable message: its number, its UTC timestamp in ISO form, its body tokens, and its
+# length in characters when it is not split (0 when it is). The body is the tokens of the
+# message's cleaned lines, so it equals its chunks' tokens joined.
+MessageTokens = tuple[int, str, tuple[str, ...], int]
 # One chunk: the numbers of its first and last messages (0 for none), the ISO timestamps of
 # those messages (None for none), its piece index (0 for whole messages), and its body tokens.
 ChunkTokens = tuple[int, int, str | None, str | None, int, tuple[str, ...]]
 _STORED_FIELDS = 8
 _STORED_UNIT_FIELDS = 5
-_STORED_MESSAGE_FIELDS = 3
+_STORED_MESSAGE_FIELDS = 4
 _STORED_CHUNK_FIELDS = 6
 
 
@@ -299,21 +301,10 @@ def _build(document: model.Document, mtime_ns: int, size: int, digest: str) -> E
         body,
         (" ".join(title),) if title else (),
     )
-    messages = tuple(
-        (
-            item.number,
-            item.timestamp.isoformat(),
-            tuple(
-                token
-                for index in range(item.section.start, item.section.end)
-                for token in kept.get(index, ())
-            ),
-        )
-        for item in addressing.message_sections(view) or ()
-    )
     scalars = {
         name: value for name in SCALAR_FIELDS if (value := document.scalar(name)) is not None
     }
+    messages: tuple[MessageTokens, ...] = ()
     transcript_chunks: tuple[ChunkTokens, ...] = ()
     if transcript:
         # Most chunk lines are unchanged file lines, so their tokens are reused. Only the
@@ -327,6 +318,8 @@ def _build(document: model.Document, mtime_ns: int, size: int, digest: str) -> E
                 known[line] = tokens
             return tokens
 
+        if addressing.message_sections(view) is not None:
+            messages = _message_tokens(chunks.parts(document), tokens_of)
         transcript_chunks = tuple(
             (
                 chunk.number,
@@ -474,11 +467,30 @@ def _message(value: object) -> MessageTokens:
     parts = _tuple(value)
     if len(parts) != _STORED_MESSAGE_FIELDS:
         raise TypeError("message")
-    number, timestamp, body = parts
-    if not isinstance(number, int) or not isinstance(timestamp, str):
+    number, timestamp, body, size = parts
+    if not (isinstance(number, int) and isinstance(timestamp, str) and isinstance(size, int)):
         raise TypeError("message fields")
     datetime.fromisoformat(timestamp)
-    return number, timestamp, _strings(body)
+    return number, timestamp, _strings(body), size
+
+
+def _message_tokens(
+    found: Sequence[chunks.Part], tokens_of: Callable[[str], tuple[str, ...]]
+) -> tuple[MessageTokens, ...]:
+    """One entry per addressable message, from its parts in order."""
+    by_number: dict[int, list[chunks.Part]] = {}
+    for part in found:
+        if part.number:
+            by_number.setdefault(part.number, []).append(part)
+    out: list[MessageTokens] = []
+    for number, members in by_number.items():
+        first = members[0]
+        body = tuple(
+            token for member in members for line in member.lines for token in tokens_of(line)
+        )
+        size = 0 if first.piece else first.size
+        out.append((number, _iso(first.timestamp) or "", body, size))
+    return tuple(out)
 
 
 def _iso(moment: datetime | None) -> str | None:

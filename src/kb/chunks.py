@@ -18,17 +18,20 @@ Rules:
 - A message longer than SPLIT_THRESHOLD is cut into pieces of about SPLIT_TARGET
   characters, at blank lines outside code fences. Each piece is its own chunk.
 
+- With a date bound, only the messages inside the bound are chunked. A message outside the
+  bound is a barrier: no chunk spans it.
+
 Chunk.number and Chunk.last are the numbers of the first and last messages, or NO_MESSAGE for a
 legacy or headingless file. Chunk.piece numbers the pieces of a split message. The thresholds
 are module constants. Changing one changes ranking.
 """
 
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 
-from kb import addressing, search
+from kb import addressing
 from kb.model import Document, fence_closes, fence_opening
 
 MERGE_THRESHOLD = 1024
@@ -62,6 +65,25 @@ class Chunk:
     lines: tuple[str, ...]
 
 
+Eligible = Callable[[datetime | None], bool]
+
+
+@dataclass(frozen=True)
+class Part:
+    """One message, or one piece of a split message, before chunks are formed.
+
+    piece is 0 for a whole message, and 1, 2, ... for the pieces of a split message. size is
+    the length of the lines. eligible is False for a message outside a date bound.
+    """
+
+    number: int
+    timestamp: datetime | None
+    piece: int
+    size: int
+    lines: tuple[str, ...]
+    eligible: bool = True
+
+
 @dataclass(frozen=True)
 class _Message:
     """A message's number, role, timestamp, first content line, and text, with authored headings.
@@ -78,14 +100,79 @@ class _Message:
     end: int
 
 
-def chunks(document: Document) -> tuple[Chunk, ...]:
-    """The chunks of one file, in order, with injected text removed."""
+def chunks(document: Document, eligible: Eligible | None = None) -> tuple[Chunk, ...]:
+    """The chunks of one file, in order, with injected text removed.
+
+    With eligible, only the messages whose timestamp it accepts are chunked, and no chunk
+    spans a message that it rejects.
+    """
+    return tuple(_assemble(parts(document, eligible)))
+
+
+def parts(document: Document, eligible: Eligible | None = None) -> list[Part]:
+    """The parts of one file, in order: one per message, and one per piece of a split message.
+
+    Each AGENTS.md instruction message is dropped. A file with no message headings is one part
+    with its whole body, and it is always eligible.
+    """
     messages = _messages(document)
     if messages is None:
-        body = document.prose(document.body_start, len(document.lines))
-        return (Chunk(NO_MESSAGE, NO_MESSAGE, None, None, 0, _clean(body)),)
-    cleaned = [item for item in map(_clean_message, messages) if item is not None]
-    return tuple(_assemble(cleaned))
+        lines = _clean(document.prose(document.body_start, len(document.lines)))
+        return [Part(NO_MESSAGE, None, 0, _length(lines), lines)]
+    out: list[Part] = []
+    for message in messages:
+        cleaned = _clean_message(message)
+        if cleaned is None:
+            continue
+        is_eligible = eligible is None or eligible(cleaned.timestamp)
+        if _length(cleaned.lines) > SPLIT_THRESHOLD:
+            out.extend(
+                Part(cleaned.number, cleaned.timestamp, index, _length(piece), piece, is_eligible)
+                for index, piece in enumerate(_split(cleaned.lines), 1)
+            )
+        else:
+            out.append(
+                Part(
+                    cleaned.number,
+                    cleaned.timestamp,
+                    0,
+                    _length(cleaned.lines),
+                    cleaned.lines,
+                    is_eligible,
+                )
+            )
+    return out
+
+
+def group(found: Sequence[Part]) -> list[tuple[int, int]]:
+    """The [start, end) index ranges of the chunks that parts form, in order.
+
+    A split piece is a chunk alone. A chunk of whole messages takes the following ones until
+    it reaches MERGE_THRESHOLD characters. Each joining blank line counts as two characters.
+    An ineligible part is skipped, and it ends the chunk before it.
+    """
+    ranges: list[tuple[int, int]] = []
+    index = 0
+    while index < len(found):
+        if not found[index].eligible:
+            index += 1
+            continue
+        start = index
+        index += 1
+        if found[start].piece:
+            ranges.append((start, index))
+            continue
+        size = found[start].size
+        while (
+            index < len(found)
+            and found[index].eligible
+            and not found[index].piece
+            and size < MERGE_THRESHOLD
+        ):
+            size += 2 + found[index].size
+            index += 1
+        ranges.append((start, index))
+    return ranges
 
 
 def visible(document: Document) -> Document:
@@ -102,33 +189,6 @@ def visible(document: Document) -> Document:
             lines[message.start : message.end] = [""] * (message.end - message.start)
     text = _INJECTED.sub(lambda match: "\n" * match.group(0).count("\n"), "\n".join(lines))
     return replace(document, lines=tuple(text.split("\n")))
-
-
-def best(document: Document, terms: Sequence[str]) -> Chunk | None:
-    """The chunk that shows the query best, or None when no chunk holds a query term.
-
-    A chunk with more distinct query terms wins. Ties go to the higher BM25 score among the
-    file's chunks, and then to the earlier chunk. This chooses only what a row shows. It
-    never changes which files rank.
-    """
-    found = chunks(document)
-    if not found:
-        return None
-    bodies = [search.index_tokens("\n".join(chunk.lines)) for chunk in found]
-    units = [
-        search.Unit(title=(), aliases=(), headings=(), body=body, phrases=frozenset())
-        for body in bodies
-    ]
-    scores = {hit.index: hit.score for hit in search.rank(units, terms)}
-    wanted = set(terms)
-
-    def key(index: int) -> tuple[int, float, int]:
-        return (len(wanted & set(bodies[index])), scores.get(index, 0.0), -index)
-
-    winner = max(range(len(found)), key=key)
-    if not wanted & set(bodies[winner]):
-        return None
-    return found[winner]
 
 
 def _messages(document: Document) -> list[_Message] | None:
@@ -247,40 +307,24 @@ def _length(lines: Sequence[str]) -> int:
     return len("\n".join(lines))
 
 
-def _assemble(messages: Sequence[_Message]) -> list[Chunk]:
-    """Merge short messages forward, and split each long message into its own chunks."""
+def _assemble(found: Sequence[Part]) -> list[Chunk]:
+    """The chunks that the groups of parts form, with the blank line between messages."""
     out: list[Chunk] = []
-    index = 0
-    while index < len(messages):
-        message = messages[index]
-        index += 1
-        if _length(message.lines) > SPLIT_THRESHOLD:
-            pieces = _split(message.lines)
-            out.extend(
-                Chunk(
-                    message.number, message.number, message.timestamp, message.timestamp, n, piece
-                )
-                for n, piece in enumerate(pieces, 1)
-            )
-            continue
-        lines = list(message.lines)
-        last = message
-        while (
-            _length(lines) < MERGE_THRESHOLD
-            and index < len(messages)
-            and _length(messages[index].lines) <= SPLIT_THRESHOLD
-        ):
-            last = messages[index]
-            lines.append("")
-            lines.extend(last.lines)
-            index += 1
+    for start, end in group(found):
+        members = found[start:end]
+        lines: list[str] = []
+        for position, member in enumerate(members):
+            if position:
+                lines.append("")
+            lines.extend(member.lines)
+        first, last = members[0], members[-1]
         out.append(
             Chunk(
-                message.number,
+                first.number,
                 last.number,
-                message.timestamp,
+                first.timestamp,
                 last.timestamp,
-                0,
+                first.piece,
                 tuple(lines),
             )
         )

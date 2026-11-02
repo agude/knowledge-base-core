@@ -321,24 +321,46 @@ def test_legacy_chunks_record_no_message_range_or_timestamps() -> None:
     ] == [(chunks.NO_MESSAGE, chunks.NO_MESSAGE, None, None, 0)]
 
 
-def test_best_chunk_has_the_most_distinct_query_terms() -> None:
-    filler = "x " * 600
-    document = addressable([filler + "alpha", filler + "beta gamma"])
+def test_an_ineligible_message_is_a_barrier_that_no_chunk_spans() -> None:
+    texts = ["a" * 300, "b" * 300, "c" * 300]
+    found = chunks.chunks(addressable(texts))
+    assert [(chunk.number, chunk.last) for chunk in found] == [(1, 3)]
 
-    best = chunks.best(document, ("beta", "gamma"))
+    rejected = chunks.chunks(
+        addressable(texts), eligible=lambda moment: moment is not None and moment.minute != 2
+    )
 
-    assert best is not None
-    assert best.number == 2
-
-
-def test_best_chunk_is_none_when_no_chunk_holds_a_query_term() -> None:
-    filler = "x " * 600
-    document = addressable([filler + "alpha", filler + "beta"])
-
-    assert chunks.best(document, ("zebra",)) is None
+    assert [(chunk.number, chunk.last) for chunk in rejected] == [(1, 1), (3, 3)]
+    assert "b" * 300 not in "\n".join(text_of(chunk) for chunk in rejected)
 
 
-def test_best_chunk_is_none_when_injected_text_leaves_no_message() -> None:
-    document = addressable(["# AGENTS.md instructions for the project"])
+def test_eligibility_is_checked_per_message_by_its_timestamp() -> None:
+    document = addressable(["alpha", "beta", "gamma"])
 
-    assert chunks.best(document, ("project",)) is None
+    parts = chunks.parts(document, lambda moment: moment is None or moment.minute > 1)
+
+    assert [(part.number, part.eligible) for part in parts] == [(1, False), (2, True), (3, True)]
+
+
+def test_a_split_piece_is_a_chunk_alone_even_beside_short_messages() -> None:
+    paragraphs = [f"P{number} " + "x" * 997 for number in range(1, 6)]
+    document = addressable(["short", "\n\n".join(paragraphs), "tail"])
+
+    parts = chunks.parts(document)
+    ranges = chunks.group(parts)
+
+    assert [(parts[start].number, parts[start].piece) for start, _ in ranges] == [
+        (1, 0),
+        (2, 1),
+        (2, 2),
+        (2, 3),
+        (3, 0),
+    ]
+    assert all(end - start == 1 for start, end in ranges[1:4])
+
+
+def test_group_stops_merging_once_a_chunk_reaches_the_threshold() -> None:
+    document = addressable(["a" * 600, "b" * 600, "c" * 10])
+    ranges = chunks.group(chunks.parts(document))
+
+    assert ranges == [(0, 2), (2, 3)]
