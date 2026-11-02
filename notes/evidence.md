@@ -1617,3 +1617,162 @@ exited 0, and the curated sets pass as before. New tests: visible-view removal
 of injected spans and AGENTS messages with line numbers kept, legacy removal,
 no-op on clean text, and a transcript entry that holds no injected token. The
 fixture acceptance test now expects 0 and "acceptance: met".
+
+## Session retrieval 5c-ii-b: chunk scoring (2026-11-01)
+
+Identity:
+
+- Content: `/home/agude/Knowledge`, `main` at `e9ebcb8`, clean. The 5c-ii record
+  used `dc9cdcc`, so the baseline below was measured again at `e9ebcb8` before
+  any code change. Measured on a copy (`cp -a`) so no cache was written to
+  Knowledge.
+- Live set: `notes/eval-live.json`, unchanged since the 6a live baseline.
+- Code before: `dev-cache` at `9293bf5`. Code after: `00a29db`, which is the
+  ranking commit. Commit `8f10f5d` records chunk metadata and is
+  ranking-neutral (checked: live, fixture, and ten-query output unchanged).
+
+Built:
+
+- `chunks.Chunk` holds the last message number, the first and last timestamps,
+  and the piece index. The cache stores them (`FORMAT = 3`).
+- `chunks.parts` and `chunks.group` form chunks from messages and eligibility.
+  An excluded message ends a chunk, and a split piece is never merged.
+- `evidence.select` scores each transcript by its best chunk. The row locator is
+  the message in the winning chunk that holds the most distinct query terms, when
+  it holds at least half of them. Otherwise the row keeps the file locator and
+  date, as before. The excerpt is the winning chunk's text.
+- With date bounds, chunks come from cached messages. They are regrouped with the
+  same rule, and `test_evidence_equivalence` checks them against a document-based
+  reference.
+- The row date is the date of the matched message. The plan says "first
+  contributing message", but its locator section names the matched message, so the
+  row date follows the locator. Decision for the user, see Open.
+
+Results, top 3 unless noted. Before is `9293bf5` at `e9ebcb8`. After is `00a29db`.
+
+| Measure | Before | After |
+|---|---|---|
+| Fixture, sessions: session rows with expected locator | 4 of 4 | 4 of 4 |
+| Fixture, sessions: false positives | 0 of 2 | 0 of 2 |
+| Fixture, sessions: characters per query | 145 | 145 |
+| Fixture, combined: characters per query | 126 | 126 |
+| Live, sessions: session rows with expected locator | 13 of 20 (65%) | 12 of 20 (60%) |
+| Live, sessions: characters per query | 484 | 480 |
+| Live, combined: session rows with expected locator | 13 of 20 | 12 of 20 |
+| Live, combined: characters per query | 478 | 476 |
+| Live, curated criterion (all modes) | 20 of 20 | 20 of 20 |
+| Synthetic-curated, curated | 5 of 5 | 5 of 5 |
+| Synthetic-curated, sessions: hits | 0 of 5 | 0 of 5 |
+| Synthetic-curated, sessions: characters per query | 483 | 471 |
+| Synthetic-curated, combined: hits | 0 of 5 | 0 of 5 |
+| Synthetic-curated, combined: characters per query | 465 | 323 |
+
+Live per-case ranks, sessions mode (rank in the session list, `-` for none):
+
+| Case | Before | After |
+|---|---|---|
+| live-01 | 1 | 1 |
+| live-02 | 1 | 2 |
+| live-04 | 1 | 2 |
+| live-06 | 2 | 4 |
+| live-12 | 2 | 1 |
+| live-13 | - | 10 |
+| live-18 | 3 | 3 |
+| live-20 | 2 | 2 |
+| all others (07 to 11, 17) | 1 | 1 |
+| live-03, 05, 14, 15, 16, 19 | - | - |
+
+`live-13`: rank 10 after the change. Before, no session row in the top 10. Its
+transcript, `observations/archived/20260620T052754-69bf.md`, now reaches the top
+10 but not the top 3. Its label is unchanged.
+
+Label-gap misses, unchanged and not labelled: `live-03`, `05`, `14`, `15`, `16`,
+and `19`. They are not marked unanswerable.
+
+Ten recorded queries, top 3 before and after (paths under `observations/`):
+
+- curator cadence
+  - before: `pending/20261031T163000-11ab7a5b.md#24`, `pending/20261031T180001-c5ec48dd.md#123`, `archived/20260410T133417-89cb.md`
+  - after: `pending/20261031T180001-c5ec48dd.md#123`, `pending/20261031T163000-11ab7a5b.md#24`, `archived/20260410T133417-89cb.md`
+- nas restart
+  - before: `archived/20260813T010858-f86c.md`, `archived/20261014T134048-7d7990c9.md`, `archived/20260711T231155-249a.md`
+  - after: `archived/20260813T010858-f86c.md`, `archived/20261011T050311-edfc5c37.md`, `archived/20261014T134048-7d7990c9.md`
+- traefik
+  - before: `pending/20261101T040000-e62c60b2.md#19`, `pending/20261101T044500-1468afff.md#41`, `pending/20261031T180001-c5ec48dd.md#75`
+  - after: `pending/20261101T044500-1468afff.md#27`, `pending/20261031T224501-5ba2c949.md#108`, `pending/20261101T040000-e62c60b2.md#19`
+- backup disk
+  - before: `archived/20260714T020908-bcd2.md`, `archived/20261015T053659-bd6f5e36.md`, `pending/20261026T225533-aaa7123d.md`
+  - after: `pending/20261026T225533-aaa7123d.md`, `pending/20261030T181500-726c9f6d.md#2`, `pending/20261031T203001-75279057.md#10`
+- codex rules
+  - before: `pending/20261029T030217-c652ddeb.md`, `pending/20261101T195746-d618e45e.md#55`, `archived/20261009T022346-ff70227b.md`
+  - after: `pending/20261101T195746-d618e45e.md#52`, `pending/20261029T030217-c652ddeb.md`, `pending/20261028T221204-1123b402.md`
+- dotfiles cutover
+  - before: `pending/20261029T030217-c652ddeb.md`, `pending/20261028T225249-155c788e.md`, `pending/20261029T143001-e3d0ebb8.md#68`
+  - after: `pending/20261028T225249-155c788e.md`, `pending/20261029T030217-c652ddeb.md`, `pending/20261029T143001-e3d0ebb8.md#68`
+- transcript harvest
+  - before: `pending/20261027T185110-902acaff.md`, `archived/20260529T012325-572e.md`, `pending/20261027T185033-28faa7ad.md`
+  - after: `pending/20261027T061149-7d7f181f.md`, `archived/20260529T012325-572e.md`, `archived/20260529T020216-658a.md`
+- sync schedule
+  - before: `pending/20261101T163715-e7dcefa3.md#22`, `pending/20261101T195746-d618e45e.md#13`, `pending/20261027T174313-bf965675.md`
+  - after: `pending/20261027T174313-bf965675.md`, `pending/20261101T195746-d618e45e.md#8`, `pending/20261101T163715-e7dcefa3.md#144`
+- stale article ttl
+  - before: `pending/20261027T174313-bf965675.md`, `pending/20261101T044500-1468afff.md#29`, `archived/20260905T153638-604ad3d6.md`
+  - after: `pending/20261027T174313-bf965675.md`, `pending/20261025T020639-5d2d7603.md`, `pending/20261028T024940-a8f6ab4f.md`
+- observation pending
+  - before: `archived/20260905T153638-604ad3d6.md`, `archived/20260412T220946-01c3.md`, `archived/20260411T054929-110c.md`
+  - after: `archived/20260410T230002-3049.md`, `archived/20260412T220946-01c3.md`, `archived/20260411T054929-110c.md`
+
+Diffs:
+
+- File set changed for seven queries: backup disk, codex rules, nas restart,
+  observation pending, stale article ttl, traefik, and transcript harvest. Order
+  only changed for curator cadence, dotfiles cutover, and sync schedule.
+- Every locator list changed. Rows now name the matched message in the winning
+  chunk, so a `#N` can differ from the earlier whole-file row. Excerpts are chunk
+  text, so they can include neighbouring messages. Some excerpts are now a
+  neighbouring line, not the line that matched.
+- Mechanism: a file scores by its best chunk. A short chunk with the query
+  terms can outrank a long file whose matching turn is in a 1,024-character chunk
+  with other turns. A file that matched only across messages can lose its place.
+  I did not read every transcript to explain each individual row. The rows
+  above are the measured result.
+
+Timings, median of 3 runs after 1 warm-up, on the copy (`KB_CONTENT`):
+
+| Command | Before | After |
+|---|---|---|
+| `kb evidence curator cadence --kind transcript`, warm | 1.48 s | 1.34 s |
+| `kb recall sync schedule`, warm | 1.70 s | 1.57 s |
+| `kb evidence curator cadence --kind transcript`, cold (cache rebuilt) | 13.5 s | 14.7 s |
+| Peak RSS, warm evidence | 127 MB | 134 MB |
+| Peak RSS, cold evidence | 241 MB | 243 MB |
+| Cache file size | 48.6 MB | 49.2 MB |
+
+Timings are reported, not gated. The cold run includes the one-time rebuild after
+the fingerprint changed.
+
+Checks:
+
+- `just check` passed at `00a29db`: 1,748 tests, 91.49% coverage.
+- `just eval` exited 0. Both curated sets: acceptance met.
+- New tests: chunk metadata, grouping, eligibility barriers, split pieces,
+  locators (including a match in a later message and a half-of-terms rule),
+  date-bounded rows, a long transcript with one relevant turn ranking above a
+  short loosely related transcript, and the equivalence of cache and document
+  paths over every fixture corpus and date filter.
+- Not checked: whether the new long-transcript test fails on `9293bf5`. The
+  earlier version of the test, with a two-term short transcript, failed on this
+  code and was changed to a loosely related one-term transcript.
+
+Open:
+
+- Live acceptance is not met. The rank change moved `live-06` from 2 to 4 and
+  `live-13` from no hit to 10. This is the measured effect; no label or case was
+  changed.
+- Row date: the matched message's date, not the first contributing message's
+  date. Confirm or change.
+- BM25 length normalization still favours short chunks. Probe: a 35-character
+  transcript holding 2 of 3 query terms outranked a chunk of about 1,000 characters
+  holding all 3. The chunk unit has the same length bias that the plan named as the
+  problem. Not changed.
+- Cold rebuild took 1.1 s longer. The cache grew by 0.6 MB.
