@@ -49,8 +49,9 @@ class Entry:
     """The cached tokens of one evidence file.
 
     path is content-relative. mtime_ns and size are the file's stat fields, and digest is the
-    SHA-256 of its bytes. scalars holds the front matter that the ranking path reads. title holds
-    the index tokens of the title. body holds the body's tokens, and it is empty for a transcript.
+    SHA-256 of its bytes. scalars holds the front matter named in token_cache.SCALAR_FIELDS.
+    title holds the index tokens of the title. body holds the body's tokens, and it is empty for
+    a transcript.
     parts holds a transcript's parts, and it is empty for other evidence. addressable is True
     when the transcript has message headings that addressing accepts.
     """

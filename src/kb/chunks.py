@@ -96,18 +96,13 @@ class Part:
 
 @dataclass(frozen=True)
 class _Message:
-    """A message's number, role, timestamp, first content line, and text, with authored headings.
-
-    start and end are the raw line range of the content, end excluded.
-    """
+    """A message's number, role, timestamp, first content line, and text, with authored headings."""
 
     number: int
     role: str
     timestamp: datetime | None
     head: str
     lines: tuple[str, ...]
-    start: int
-    end: int
 
 
 def chunks(document: Document, eligible: Eligible | None = None) -> tuple[Chunk, ...]:
@@ -203,12 +198,11 @@ def _messages(document: Document) -> list[_Message] | None:
     if sections is not None:
         messages: list[_Message] = []
         for item in sections:
-            start, end = item.section.start + 1, item.section.end
-            content = _unwrap_text_storage(_message_lines(document, start, end))
+            content = _unwrap_text_storage(
+                _message_lines(document, item.section.start + 1, item.section.end)
+            )
             messages.append(
-                _Message(
-                    item.number, item.role, item.timestamp, _head(content), content, start, end
-                )
+                _Message(item.number, item.role, item.timestamp, _head(content), content)
             )
         return messages
     return _legacy_messages(document)
@@ -233,15 +227,7 @@ def _legacy_messages(document: Document) -> list[_Message] | None:
         end = message_headings[position + 1] if position + 1 < len(message_headings) else len(lines)
         head = _head(lines[index + 1 : end])
         found.append(
-            _Message(
-                NO_MESSAGE,
-                heading[4:],
-                None,
-                head,
-                _message_lines(document, index + 1, end),
-                index + 1,
-                end,
-            )
+            _Message(NO_MESSAGE, heading[4:], None, head, _message_lines(document, index + 1, end))
         )
     return found or None
 

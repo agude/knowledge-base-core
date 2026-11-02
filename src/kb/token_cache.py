@@ -35,20 +35,9 @@ EVIDENCE_DIRECTORIES = (
     "questions/open",
     "questions/resolved",
 )
-# The front matter fields that the ranking path and its filters read.
-SCALAR_FIELDS = (
-    "title",
-    "source",
-    "created",
-    "context",
-    "project",
-    "session",
-    "part",
-    "first_message",
-    "last_message",
-    "started",
-    "ended",
-)
+# The front matter fields that Entry.scalars keeps. Only these are read from it: source and
+# created classify and date an evidence file, and context names its area in recall.
+SCALAR_FIELDS = ("source", "created", "context")
 
 
 @dataclass(frozen=True)

@@ -224,6 +224,7 @@ def test_entries_hold_the_tokens_that_the_documents_give_for_every_fixture_file(
         else:
             assert entry.parts == ()
             assert entries.file_unit(entry) == reference_unit(document)
+        assert set(entry.scalars) <= set(token_cache.SCALAR_FIELDS)
         for name in token_cache.SCALAR_FIELDS:
             assert entry.scalars.get(name) == document.scalar(name)
     assert parts_seen > 0
