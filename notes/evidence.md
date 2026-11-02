@@ -2055,3 +2055,23 @@ Reading the revised baseline:
   The 24 outputs are byte-identical before and after.
 - Load count: one `token_cache.load` per selection, over the directories that the shown
   blocks read.
+
+## Session retrieval closeout (2026-11-02)
+
+- Branch `dev-cache` rebased onto `main` at `11f17da`, which merged `dev-windows`.
+  CI run 41494376425 at `4922d7e` passed every job: lint, type-check, the package
+  check, tests on Python 3.11 to 3.15, and the Windows test job (13 min). This is
+  the first Windows run of the token cache.
+- Local `just check` at `4922d7e`: 1,913 passed, 92.00% coverage. `just eval` in
+  curated, sessions, and combined modes is byte-identical to the pre-merge baseline
+  taken at `669222e`.
+- Audit rates: not measured. Commit 6b (live measurements, construction-loss audit,
+  live recovery set) was dropped as a pre-ship step (user, 2026-11-01). It runs
+  later only if the usage report shows frequent recovery reads.
+- Post-review fixes after the rebase: Codex result objects whose `output` starts
+  with the truncation warning are excluded as incomplete (302 such records in the
+  local store); shell-call extraction ignores heredoc bodies and comments, and
+  pops a file-descriptor digit only when it touches the redirection; the
+  evaluation row verdict uses the acceptance criterion; the cache stores only the
+  `source`, `created`, and `context` scalars.
+

@@ -130,8 +130,15 @@ Recall returns curated sections in full, with locators for further reading.
 It always checks pending observations and open questions and lists matching
 ones as uncurated, so a known gap is visible next to related articles.
 It searches the rest of the evidence tier when no curated section matches.
-Provenance and a deliberate evidence search provide access to older material
-without filling normal recall output with transcripts.
+Provenance and a deliberate evidence search provide access to older material.
+
+Session transcripts are a second tier. When a curated section matches,
+recall also prints up to three transcript rows under `From sessions (raw,
+unverified, may be superseded)`, after the uncurated block, unless
+`--no-sessions` is given. Each row shows its date. Curated sections come
+first and remain the authority on what is current. The block ships on by
+default and is measured from real use; the user decides to keep, trim, or
+remove it after a fixed window (four weeks or 200 recalls).
 
 Knowledge is pulled when the agent needs it. The global agent instructions
 say that the knowledge base exists and when to use it; `kb map` lists its
@@ -244,7 +251,7 @@ Checked on 2026-10-27 at `3d3cfb7`:
 | U3 Diagnose a failure | `kb doctor`, phase 4 | Built on fixtures; on this machine it names the setup work that remains |
 | U4 Set policy | Content `AGENTS.md` import in the instruction block | Built on fixtures; the policy line is rendered from the configured content path |
 
-The current phase 5, part 1 plan is [`plan.md`](../plan.md) at the repository root.
+No temporary `plan.md` is active. [plan-session-retrieval.md](plan-session-retrieval.md) preserves the session retrieval plan (token cache, transcript chunks, the From sessions block, and the usage report).
 
 [plan-retrieval.md](plan-retrieval.md) and
 [plan-observe.md](plan-observe.md) preserve the earlier component plans.
@@ -449,6 +456,11 @@ Status on 2026-11-01, on the `dev-windows` branch:
 - Remaining: measure the Windows transcript shapes, enable capture, schedule
   the session backup, register the task, and verify the complete cycle.
 
+`dev-windows` is merged into `main`. The token cache and session retrieval
+tests pass on the Windows CI job (run 41494376425, 2026-11-02), including the
+cache's kernel lock and atomic replacement. The usage report reads Claude
+Code's PowerShell tool calls as well as Bash.
+
 ### 7. Extend hosts and platforms
 
 Add OpenCode and Pi after the first rollout. Each needs a transcript parser,
@@ -479,6 +491,53 @@ the effect on every set, including the live set, and retain failing cases.
 Correct a wrong label with its reasoning rather than changing retrieval to
 match it. A new search engine or semantic retrieval is a separate decision
 that needs evidence of a gap the current approach cannot close.
+
+### Session retrieval — built (2026-11-02)
+
+Evidence ranking reads a token cache in the content repository's git
+directory (`<git dir>/kb/tokens.pickle`). The cache is never committed or
+synchronized; any stale or unreadable cache is rebuilt, and a fingerprint
+of every `kb` source file invalidates it on any code change. `kb sync`
+refreshes it, and `kb doctor` reports its state. Transcripts score by their
+best chunk: messages merge until 1,024 characters, and a message longer than
+4,000 characters splits into pieces of about 2,000 at blank lines outside
+code fences. Evidence document frequency counts files, chunks and files
+average their lengths separately, and evidence uses BM25+ with delta 1.0.
+Measurements and evaluation results are in `notes/evidence.md`.
+
+The usage report (`just usage`) counts kb calls from the raw Claude Code and
+Codex stores. Output counts only when it belongs to one kb call; every
+excluded call is counted by reason. Most Codex recalls run inside
+multi-command exec scripts and are excluded. Decoding positional batch
+results was rejected (user, 2026-11-02): it recovers about 43 recalls and
+needs a pattern match on agent-written JavaScript.
+
+Curation stays the first tier. Retrieval from an already curated corpus
+does not show that session summarization can stop. Any proposal to reduce
+curation needs a prospective trial with new sessions, independently checked
+current answers, supersession cases, and measured maintenance effort, with
+budgets and acceptance criteria fixed before it runs.
+
+Remaining work, each measured on every set before acceptance:
+
+- Decide keep, trim, or remove for the From sessions block after the usage
+  window.
+- If the window yields too few usable recalls, a kb-side recall log in the
+  git directory replaces transcript parsing for recall counts. It changes
+  the measure-from-raw-sessions decision and needs approval first.
+- The construction-loss audit and a live recovery set (dropped as pre-ship
+  steps). The live set is curation-saturated: curated top 3 holds all 20
+  cases, so it measures session rank, not recovery.
+- Queued ranking fixes: BM25 length bias for very short chunks (a strict
+  xfail in `tests/unit/test_evidence.py`, and a queued 35-character probe
+  case for `session-recovery-v1`); title tokens adding their length to every
+  chunk; indexing a path's word parts (`live-13` misses because `smb`
+  appears only inside a path).
+- Small efficiency items: a scoped recall on a cold cache tokenizes files
+  outside the scope; curated evaluation parses the corpus once per case.
+- Not built: replay of a recall with no paired result. Codex retention is
+  unknown, and no readable NAS backup holds raw sessions older than the local
+  stores.
 
 ## Deriving temporary plans
 
