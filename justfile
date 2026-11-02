@@ -147,6 +147,11 @@ package-check: build
 eval *args:
     uv run --locked python -m kb.evaluate {{ args }}
 
+# Report kb call usage from the raw Claude Code and Codex stores. Read-only. Arguments: [--list]
+# lists each recall and its later calls for hand checking; the output holds query text.
+usage *args:
+    uv run --locked python -m kb.usage {{ args }}
+
 # Bump the version, then commit and tag it. Does not push.
 release bump:
     #!/usr/bin/env bash
