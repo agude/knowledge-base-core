@@ -156,3 +156,97 @@ def test_a_backslash_before_a_newline_continues_the_line() -> None:
 
 def test_an_escaped_quote_that_leaves_a_quote_open_gives_no_calls() -> None:
     assert invocations(r'kb recall "a\"; kb read b') == ()
+
+
+def test_a_heredoc_body_never_yields_a_call() -> None:
+    assert invocations("cat <<EOF\nkb recall fake\nEOF") == ()
+
+
+def test_a_call_on_the_line_after_a_heredoc_terminator_is_found() -> None:
+    found = invocations("cat <<EOF\nkb recall fake\nEOF\nkb read real")
+    assert [(item.subcommand, item.arguments) for item in found] == [("read", ("real",))]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cat <<'EOF'\nkb recall fake\nEOF\nkb recall real",
+        'cat <<"EOF"\nkb recall fake\nEOF\nkb recall real',
+        "cat <<\\EOF\nkb recall fake\nEOF\nkb recall real",
+    ],
+)
+def test_a_quoted_heredoc_delimiter_ends_the_body(command: str) -> None:
+    assert [item.arguments for item in invocations(command)] == [("real",)]
+
+
+def test_a_strip_tabs_heredoc_ends_at_a_tab_indented_terminator() -> None:
+    command = "cat <<-EOF\n\tkb recall fake\n\tEOF\nkb recall real"
+    assert [item.arguments for item in invocations(command)] == [("real",)]
+
+
+def test_a_heredoc_terminator_must_match_the_whole_line() -> None:
+    assert invocations("cat <<EOF\nEOF2\nkb recall fake") == ()
+
+
+def test_a_here_string_is_not_a_heredoc() -> None:
+    found = invocations('cat <<< "text"\nkb recall real')
+    assert [item.arguments for item in found] == [("real",)]
+
+
+def test_two_heredocs_on_one_line_each_end_at_their_own_terminator() -> None:
+    command = "cat <<A <<B\nkb recall f1\nA\nkb recall f2\nB\nkb recall real"
+    assert [item.arguments for item in invocations(command)] == [("real",)]
+
+
+def test_a_heredoc_on_the_kb_line_is_still_one_sole_call() -> None:
+    found = sole_invocation("kb observe --title t --body - <<EOF\nbody text\nEOF")
+    assert found is not None
+    assert found.subcommand == "observe"
+    assert found.arguments == ("--title", "t", "--body", "-")
+
+
+def test_a_comment_after_a_word_drops_to_the_end_of_the_line() -> None:
+    assert invocations("kb recall x # note")[0].arguments == ("x",)
+    assert invocations("kb recall x # note\nkb read y")[1].arguments == ("y",)
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["echo hi #; kb recall fake", "ls # && kb recall fake", "ls;# kb recall fake"],
+)
+def test_a_word_initial_hash_starts_a_comment_after_a_separator(command: str) -> None:
+    assert invocations(command) == ()
+
+
+def test_a_hash_inside_quotes_is_an_argument() -> None:
+    assert invocations('kb recall "a # b"')[0].arguments == ("a # b",)
+
+
+def test_a_hash_inside_a_word_is_an_argument() -> None:
+    assert invocations("kb recall a#b")[0].arguments == ("a#b",)
+
+
+def test_a_digit_word_before_a_spaced_redirect_is_an_argument() -> None:
+    assert invocations("kb recall 123 > out")[0].arguments == ("123",)
+
+
+def test_a_digit_word_that_touches_a_redirect_is_a_descriptor() -> None:
+    assert invocations("kb recall x 2>&1")[0].arguments == ("x",)
+    assert invocations("kb recall x 2>out")[0].arguments == ("x",)
+
+
+def test_a_backslash_escaped_hash_is_an_argument() -> None:
+    assert invocations("kb recall a\\#b")[0].arguments == ("a#b",)
+
+
+def test_a_redirect_operator_without_a_delimiter_is_not_a_heredoc() -> None:
+    assert invocations("kb recall x <<")[0].arguments == ("x",)
+
+
+def test_a_heredoc_delimiter_with_an_unclosed_quote_gives_no_calls() -> None:
+    assert invocations("cat <<'EOF\nkb recall fake") == ()
+
+
+def test_blanks_between_the_heredoc_operator_and_its_delimiter_are_allowed() -> None:
+    command = "cat << EOF\nkb recall fake\nEOF\nkb recall real"
+    assert [item.arguments for item in invocations(command)] == [("real",)]
