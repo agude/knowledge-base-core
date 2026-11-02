@@ -264,3 +264,16 @@ def test_combined_mode_scores_the_pending_transcript_that_recall_prints_as_evide
     assert outcome.ranked == ()
     assert outcome.sessions == (f"{relpath}#1",)
     assert outcome.passes(evaluate.COMBINED)
+
+
+def test_report_row_uses_the_acceptance_criterion_for_current_state() -> None:
+    case = answerable(("new.md#1",), ("old.md#1",))
+    superseded_first = evaluate.Outcome(case, ("old.md#1", "new.md#1"))
+    current_first = evaluate.Outcome(case, ("new.md#1", "old.md#1"))
+    failed = evaluate.report("s", [superseded_first]).splitlines()[1]
+    passed = evaluate.report("s", [current_first]).splitlines()[1]
+    assert " FAIL " in failed
+    assert " pass " in passed
+    assert evaluate.unmet([superseded_first]) == ["c"]
+    assert evaluate.verdict([superseded_first]) == "acceptance: not met (c)"
+    assert evaluate.verdict([current_first]) == "acceptance: met"

@@ -201,11 +201,10 @@ def report(name: str, outcomes: Sequence[Outcome]) -> str:
     lines = [name]
     for outcome in outcomes:
         case = outcome.case
+        verdict = "pass" if outcome.passes(CURATED) else "FAIL"
         if case.unanswerable:
-            verdict = "pass" if not outcome.ranked else "FAIL"
             detail = f"returned {len(outcome.ranked)}"
         else:
-            verdict = "pass" if outcome.hit else "FAIL"
             detail = f"rank {outcome.rank if outcome.rank is not None else '-'}"
         lines.append(f"  {case.id:<40} {verdict:<4}  {detail}")
     answerable = [outcome for outcome in outcomes if not outcome.case.unanswerable]
