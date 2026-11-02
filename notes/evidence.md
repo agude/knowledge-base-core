@@ -1944,3 +1944,40 @@ Open:
   to each chunk. Not changed.
 - Row date: the matched message's date. `plan.md` now says so.
 - Windows is not checked.
+
+## Usage report baseline (2026-11-01)
+
+`just usage` reads the local Claude Code and Codex stores, read-only. It was run at
+`dev-cache` `0412c09`. The full `--list` output contains query text, so it is kept only in
+the session scratchpad and is not in the repository.
+
+Store date ranges (record timestamps):
+
+- Claude Code: 215 transcript files (main and subagent), 0 unreadable, 198 kb calls,
+  records 2026-10-07 to 2026-11-02.
+- Codex: 1229 rollout files, 0 unreadable, 490 kb calls, records 2026-08-17 to
+  2026-11-01.
+
+Recall tags (405 recalls): pre-block 396, no-curated-match 7, no-output 2. A recall
+with no output has no paired tool result, and it is excluded from the character mean.
+Pre-block means the recall ran before `a739708` (committed 2026-11-02T04:32:06Z) and
+printed no From sessions block.
+
+Weekly metrics:
+
+```text
+week      recalls  no_output  with_session_row  session_row_reads  reads_after_no_curated  evidence_after_recall  gap_after_recall  mean_chars
+2026-W44  402      2          0                 0                  0                       32                     0                 11585
+2026-W45  3        0          0                 0                  0                       2                      0                 2363
+```
+
+Reading the baseline:
+
+- No recall ran after the From sessions block shipped that showed session rows. Every
+  session-row metric is zero, so this baseline does not measure the block.
+- Two of the 405 recalls are from this session's own probes of a copy of Knowledge, and
+  they are pre-block. Four recalls are from subagent transcripts.
+- `reads_after_no_curated` is zero by construction. The block prints only when a curated
+  section matches, so a recall that shows session rows always shows a curated row too.
+  Under the shipped design this metric cannot be nonzero. Whether it should measure a
+  different case is an open question for the user.
