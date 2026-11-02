@@ -3,14 +3,21 @@
 import json
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
+from kb.shellcalls import Invocation, invocations
 from kb.transcripts import (
     App,
+    KbCall,
     Message,
     Role,
     Session,
+    Store,
     complete_lines,
+    earlier,
+    later,
     parse_timestamp,
     synthetic_id,
     unique_messages,
@@ -18,6 +25,7 @@ from kb.transcripts import (
 
 APP: App = "codex"
 SHELL_FUNCTIONS = frozenset({"exec", "exec_command", "run_shell_command", "shell"})
+EXEC_COMMAND = re.compile(r'\b(?:cmd|command)\s*:\s*("(?:\\.|[^"\\])*")')
 TIMESTAMPED_ROLLOUT = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-(.+)$")
 INJECTED_BLOCKS = (
     re.compile(
@@ -233,3 +241,167 @@ def _make_message(
         original_timestamp = timestamp_value if isinstance(timestamp_value, str) else ""
         message_id = synthetic_id(APP, original_timestamp, role, text)
     return Message(message_id, timestamp, role, text, commands), False
+
+
+@dataclass
+class _ToolCall:
+    """One Codex exec or shell call that ran at least one recorded kb call, and its output.
+
+    commands holds each shell command the call ran, with the recorded kb calls in it.
+    """
+
+    timestamp: datetime | None
+    commands: list[tuple[str, tuple[Invocation, ...]]]
+    output: str | None = None
+
+
+@dataclass(frozen=True)
+class _Scan:
+    calls: tuple[KbCall, ...]
+    first: datetime | None
+    last: datetime | None
+
+
+def kb_calls(text: str, filename: str) -> tuple[KbCall, ...]:
+    """The recorded kb calls in one Codex rollout, each with its paired output."""
+    return _scan(text, filename).calls
+
+
+def read_store(root: Path) -> Store:
+    """Read every Codex rollout under a sessions directory. Only the files are read.
+
+    An unreadable file is counted and skipped.
+    """
+    calls: list[KbCall] = []
+    files = unreadable = 0
+    first: datetime | None = None
+    last: datetime | None = None
+    for path in sorted(root.rglob("rollout-*.jsonl")):
+        files += 1
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            unreadable += 1
+            continue
+        scan = _scan(text, path.name)
+        calls.extend(scan.calls)
+        first = earlier(first, scan.first)
+        last = later(last, scan.last)
+    return Store(tuple(calls), files, unreadable, first, last)
+
+
+def _scan(text: str, filename: str) -> _Scan:
+    """Pair each exec or shell call that ran a kb call with its output, by call ID."""
+    lines, _complete = complete_lines(text)
+    session_id = _filename_id(filename)
+    project = ""
+    first: datetime | None = None
+    last: datetime | None = None
+    pending: dict[str, _ToolCall] = {}
+    tool_calls: list[_ToolCall] = []
+    for line in lines:
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(record, dict):
+            continue
+        moment = parse_timestamp(record.get("timestamp"))
+        first = earlier(first, moment)
+        last = later(last, moment)
+        payload = record.get("payload")
+        if not isinstance(payload, Mapping):
+            continue
+        if record.get("type") == "session_meta":
+            cwd = payload.get("cwd")
+            if not project and isinstance(cwd, str):
+                project = cwd
+            continue
+        if record.get("type") != "response_item":
+            continue
+        item_type = payload.get("type")
+        call_id = payload.get("call_id")
+        if item_type in ("custom_tool_call", "function_call"):
+            commands = _recorded_commands(payload, item_type)
+            if not commands:
+                continue
+            call = _ToolCall(moment, commands)
+            tool_calls.append(call)
+            if isinstance(call_id, str):
+                pending[call_id] = call
+        elif item_type in ("custom_tool_call_output", "function_call_output"):
+            if isinstance(call_id, str) and call_id in pending:
+                pending.pop(call_id).output = _output_text(payload.get("output"))
+    calls = tuple(
+        KbCall(
+            app=APP,
+            session_id=session_id,
+            timestamp=call.timestamp,
+            project=project,
+            command=command,
+            subcommand=found.subcommand,
+            arguments=found.arguments,
+            output=call.output,
+            shared=sum(len(items) for _command, items in call.commands) > 1,
+        )
+        for call in tool_calls
+        for command, items in call.commands
+        for found in items
+    )
+    return _Scan(calls, first, last)
+
+
+def _recorded_commands(
+    payload: Mapping[str, object], item_type: object
+) -> list[tuple[str, tuple[Invocation, ...]]]:
+    """Each shell command of a tool call that holds a recorded kb call, with those calls."""
+    found: list[tuple[str, tuple[Invocation, ...]]] = []
+    for command in _shell_commands(payload, item_type):
+        items = invocations(command)
+        if items:
+            found.append((command, items))
+    return found
+
+
+def _shell_commands(payload: Mapping[str, object], item_type: object) -> list[str]:
+    """The shell commands of an exec call, or of a shell-style function call."""
+    name = payload.get("name")
+    if not isinstance(name, str):
+        return []
+    normalized = name.rsplit(".", 1)[-1]
+    if item_type == "custom_tool_call" and normalized == "exec":
+        source = payload.get("input")
+        return _exec_commands(source) if isinstance(source, str) else []
+    if item_type == "function_call" and normalized in SHELL_FUNCTIONS:
+        command = _command_value(payload.get("arguments", payload.get("input")))
+        return [] if command is None else [command]
+    return []
+
+
+def _exec_commands(source: str) -> list[str]:
+    """The string literals given as cmd or command in an exec script.
+
+    Literals that are not JSON strings, such as template literals, are not read.
+    """
+    commands: list[str] = []
+    for literal in EXEC_COMMAND.findall(source):
+        try:
+            value = json.loads(literal)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, str):
+            commands.append(value)
+    return commands
+
+
+def _output_text(value: object) -> str:
+    """A tool output's text: a string, or the text blocks of a list."""
+    if isinstance(value, str):
+        return value
+    if not isinstance(value, list):
+        return ""
+    texts: list[str] = []
+    for block in value:
+        if isinstance(block, Mapping) and isinstance(block.get("text"), str):
+            texts.append(str(block["text"]))
+    return "\n".join(texts)

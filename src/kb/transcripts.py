@@ -85,3 +85,47 @@ def unique_messages(messages: Sequence[Message]) -> tuple[tuple[Message, ...], i
         seen.add(message.id)
         kept.append(message)
     return tuple(kept), duplicates
+
+
+def earlier(current: datetime | None, candidate: datetime | None) -> datetime | None:
+    if candidate is None:
+        return current
+    return candidate if current is None or candidate < current else current
+
+
+def later(current: datetime | None, candidate: datetime | None) -> datetime | None:
+    if candidate is None:
+        return current
+    return candidate if current is None or candidate > current else current
+
+
+@dataclass(frozen=True)
+class KbCall:
+    """One kb call that an agent ran through its shell tool, with that tool call's output.
+
+    subcommand is one of the recorded kb subcommands, and arguments are the words after it.
+    shared is True when the tool call ran more than one recorded kb call. Its output then
+    belongs to all of them, and no split is guessed. output is None when the tool call has
+    no paired result.
+    """
+
+    app: App
+    session_id: str | None
+    timestamp: datetime | None
+    project: str
+    command: str
+    subcommand: str
+    arguments: tuple[str, ...]
+    output: str | None
+    shared: bool
+
+
+@dataclass(frozen=True)
+class Store:
+    """The kb calls found in one host's raw session store, and the span of its records."""
+
+    calls: tuple[KbCall, ...]
+    files: int
+    unreadable: int
+    first: datetime | None
+    last: datetime | None
