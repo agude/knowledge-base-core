@@ -32,6 +32,8 @@ LAYOUT = (
     "questions/resolved",
 )
 GITATTRIBUTES = "* text=auto eol=lf\n"
+# The token cache lives in cache/ at the top of the content root and must never be committed.
+GITIGNORE = "/cache/\n"
 POLICY_STUB = (
     "This file holds the content repository's rules for agents. Agents that read or change "
     "this repository follow the rules in this file.\n"
@@ -218,12 +220,13 @@ def _check_empty(target: Path) -> None:
 
 
 def _create_layout(target: Path) -> None:
-    """Create the content layout, each empty directory with a .gitkeep, and the two files."""
+    """Create the content layout, each empty directory with a .gitkeep, and the three files."""
     for relative in LAYOUT:
         directory = target / relative
         directory.mkdir(parents=True, exist_ok=True)
         (directory / ".gitkeep").touch()
     (target / ".gitattributes").write_bytes(GITATTRIBUTES.encode("utf-8"))
+    (target / ".gitignore").write_bytes(GITIGNORE.encode("utf-8"))
     (target / "AGENTS.md").write_bytes(POLICY_STUB.encode("utf-8"))
 
 

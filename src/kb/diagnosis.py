@@ -149,6 +149,13 @@ def cache_check(cache: token_cache.CacheStatus) -> Check:
     """Where the token cache is, its size, and whether it matches the evidence files on disk."""
     if cache.state == "none":
         return Check("cache", "pass", "not used: content is not a git worktree of its own")
+    if cache.state == "unignored":
+        return Check(
+            "cache",
+            "warn",
+            f"not written: git does not ignore {cache.path}",
+            "add the line `/cache/` to .gitignore in the content root and commit it",
+        )
     if cache.state == "missing":
         return Check("cache", "warn", f"missing: {cache.path}", "run kb sync")
     if cache.state == "stale":

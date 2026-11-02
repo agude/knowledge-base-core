@@ -54,8 +54,9 @@ def machine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> doctor.Context:
     root.mkdir()
     git(root, "init", "-q", "-b", "main")
     (root / ".gitattributes").write_text("* text=auto eol=lf\n", encoding="utf-8")
-    git(root, "add", ".gitattributes")
-    git(root, "commit", "-q", "-m", "Attributes")
+    (root / ".gitignore").write_text("/cache/\n", encoding="utf-8")
+    git(root, "add", ".gitattributes", ".gitignore")
+    git(root, "commit", "-q", "-m", "Attributes and ignores")
     origin = tmp_path / "origin.git"
     git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
     git(root, "remote", "add", "origin", str(origin))
@@ -327,6 +328,14 @@ def test_the_cache_check_names_each_state(machine: doctor.Context) -> None:
         "stale",
         "run kb sync",
     )
+
+
+def test_a_cache_that_git_does_not_ignore_warns_with_the_fix(machine: doctor.Context) -> None:
+    root = Path(machine.environ["KB_CONTENT"])
+    (root / ".gitignore").write_text("", encoding="utf-8")
+    check = doctor._cache(root)
+    assert (check.state, check.message.split(":")[0]) == ("warn", "not written")
+    assert check.fix is not None and "/cache/" in check.fix
 
 
 def test_a_content_root_that_is_not_a_worktree_has_no_cache_to_check(tmp_path: Path) -> None:

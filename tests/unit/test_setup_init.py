@@ -41,6 +41,7 @@ def test_the_layout_has_each_directory_with_an_empty_gitkeep_and_the_two_files(
     for relative in setup.LAYOUT:
         assert (target / relative / ".gitkeep").read_bytes() == b""
     assert (target / ".gitattributes").read_bytes() == b"* text=auto eol=lf\n"
+    assert (target / ".gitignore").read_bytes() == b"/cache/\n"
     assert (target / "AGENTS.md").read_text(encoding="utf-8").startswith("This file holds")
 
 

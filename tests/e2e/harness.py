@@ -181,6 +181,8 @@ def make_git_kb(root: Path) -> Kb:
     """A kb whose content repository is a git repository with the fixture as its only commit."""
     kb = make_kb(root)
     run_git(kb.content, "init", "-q", "-b", "main")
+    # kb setup --init writes this file. The token cache is written only where git ignores it.
+    (kb.content / ".gitignore").write_text("/cache/\n", encoding="utf-8")
     run_git(kb.content, "add", "--all")
     run_git(kb.content, "commit", "-q", "-m", "Import the content fixture")
     return kb

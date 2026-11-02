@@ -81,9 +81,11 @@ def git(root: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
 
 
-def make_repo(root: Path) -> Path:
+def make_repo(root: Path, ignore_cache: bool = True) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     git(root, "init", "-q")
+    if ignore_cache:
+        (root / ".gitignore").write_text("/cache/\n", encoding="utf-8")
     return root
 
 
@@ -539,8 +541,9 @@ def test_a_held_lock_means_correct_entries_and_no_write(
         os.close(descriptor)
 
 
-def test_the_cache_lands_in_the_git_directory_of_each_worktree(tmp_path: Path) -> None:
+def test_the_cache_lands_in_cache_at_the_top_of_each_worktree(tmp_path: Path) -> None:
     root = make_repo(tmp_path / "content")
+    git(root, "add", ".gitignore")
     git(
         root,
         "-c",
@@ -548,7 +551,6 @@ def test_the_cache_lands_in_the_git_directory_of_each_worktree(tmp_path: Path) -
         "-c",
         "user.email=test@example.com",
         "commit",
-        "--allow-empty",
         "-qm",
         "Start",
     )
@@ -557,9 +559,8 @@ def test_the_cache_lands_in_the_git_directory_of_each_worktree(tmp_path: Path) -
 
     main = token_cache.cache_file(root)
     other = token_cache.cache_file(worktree)
-    assert main == (root / ".git" / "kb" / "tokens.pickle").resolve()
-    assert other is not None
-    assert other.is_relative_to((root / ".git" / "worktrees").resolve())
+    assert main == root.resolve() / "cache" / "tokens.pickle"
+    assert other == worktree.resolve() / "cache" / "tokens.pickle"
 
 
 def test_outside_a_git_repository_nothing_is_cached_or_written(tmp_path: Path) -> None:
@@ -583,10 +584,33 @@ def test_a_content_root_inside_another_repository_gets_no_cache(tmp_path: Path) 
     inner = outer / "content"
     write(inner, "observations/pending/20261001T090000-nas.md", observation("NAS", "Restart it."))
     assert token_cache.cache_file(inner) is None
-    assert token_cache.cache_file(outer) == (outer / ".git" / "kb" / "tokens.pickle").resolve()
+    assert token_cache.cache_file(outer) == outer.resolve() / "cache" / "tokens.pickle"
     report = token_cache.refresh(inner)
     assert report.written is False
-    assert not (outer / ".git" / "kb").exists()
+    assert not (inner / "cache").exists()
+    assert not (outer / "cache").exists()
+
+
+def test_a_cache_that_git_does_not_ignore_is_never_written(tmp_path: Path) -> None:
+    root = make_repo(tmp_path / "content", ignore_cache=False)
+    write(root, "observations/pending/20261001T090000-nas.md", observation("NAS", "Restart it."))
+    assert token_cache.cache_file(root) is None
+
+    entries = token_cache.load(root, token_cache.evidence_paths(root))
+    assert list(entries) == ["observations/pending/20261001T090000-nas.md"]
+    assert token_cache.refresh(root).written is False
+    assert not (root / "cache").exists()
+    state = token_cache.status(root)
+    assert state.state == "unignored"
+    assert state.path == root.resolve() / "cache" / "tokens.pickle"
+
+
+def test_a_cache_file_that_is_tracked_is_not_ignored(tmp_path: Path) -> None:
+    root = make_repo(tmp_path / "content")
+    write(root, "cache/tokens.pickle", "tracked by mistake")
+    git(root, "add", "-f", "cache/tokens.pickle")
+    assert token_cache.cache_file(root) is None
+    assert token_cache.status(root).state == "unignored"
 
 
 def test_status_reports_missing_stale_and_current(repo: Path) -> None:

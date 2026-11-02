@@ -494,8 +494,9 @@ that needs evidence of a gap the current approach cannot close.
 
 ### Session retrieval — built (2026-11-02)
 
-Evidence ranking reads a token cache in the content repository's git
-directory (`<git dir>/kb/tokens.pickle`). The cache is never committed or
+Evidence ranking reads a token cache at `cache/tokens.pickle` in the
+content root. The content repository's `.gitignore` ignores `/cache/`, and
+kb writes the cache only where git ignores it, so it is never committed or
 synchronized; any stale or unreadable cache is rebuilt, and a fingerprint
 of every `kb` source file invalidates it on any code change. `kb sync`
 refreshes it, and `kb doctor` reports its state. Transcripts score by their
@@ -523,7 +524,7 @@ Remaining work, each measured on every set before acceptance:
 - Decide keep, trim, or remove for the From sessions block after the usage
   window.
 - If the window yields too few usable recalls, a kb-side recall log in the
-  git directory replaces transcript parsing for recall counts. It changes
+  ignored `cache/` directory replaces transcript parsing for recall counts. It changes
   the measure-from-raw-sessions decision and needs approval first.
 - The construction-loss audit and a live recovery set (dropped as pre-ship
   steps). The live set is curation-saturated: curated top 3 holds all 20

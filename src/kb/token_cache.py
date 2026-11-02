@@ -1,12 +1,12 @@
-"""The token cache: each evidence file's search tokens, kept in the content repository's git directory.
+"""The token cache: each evidence file's search tokens, kept in the content root's cache directory.
 
 kb evidence and kb recall rank every evidence file on each query, and tokenizing the
 harvested transcripts takes most of the time. This module keeps the tokens of each file
 and reuses them while the file's bytes are unchanged.
 
-The cache is one pickle of the records in kb.entries. It lives in the git directory of each
-worktree, is never committed or synced, and can be deleted at any time. An unreadable or
-stale cache is rebuilt.
+The cache is one pickle of the records in kb.entries. It lives in cache/ at the top of each
+worktree, which the content repository's .gitignore must ignore, so it is never committed or
+synced. It can be deleted at any time. An unreadable or stale cache is rebuilt.
 """
 
 import hashlib
@@ -26,7 +26,7 @@ from kb import addressing, chunks, corpus, evidence, lock, model, search
 from kb.entries import Entry, PartTokens
 
 FORMAT = 4
-CACHE_DIRECTORY = "kb"
+CACHE_DIRECTORY = "cache"
 CACHE_FILE = "tokens.pickle"
 LOCK_FILE = "tokens.lock"
 EVIDENCE_DIRECTORIES = (
@@ -77,22 +77,24 @@ def refresh(root: Path) -> RefreshReport:
 class CacheStatus:
     """The cache file's state, read without tokenizing anything.
 
-    state is "none" when the content root has no cache location, "missing" when no cache
-    file exists, "stale" when the file cannot be used or does not list the evidence files
+    state is "none" when the content root is not the top of a git worktree of its own,
+    "unignored" when git does not ignore the cache file, "missing" when no cache file exists, "stale" when the file cannot be used or does not list the evidence files
     as they are on disk, and "current" otherwise. entries and size describe the file.
     """
 
     path: Path | None
     entries: int
     size: int
-    state: Literal["none", "missing", "stale", "current"]
+    state: Literal["none", "unignored", "missing", "stale", "current"]
 
 
 def status(root: Path) -> CacheStatus:
     """The state of the cache file. Compares names and stat fields only, never bytes."""
-    target = cache_file(root)
+    target, usable = _location(root)
     if target is None:
         return CacheStatus(None, 0, 0, "none")
+    if not usable:
+        return CacheStatus(target, 0, 0, "unignored")
     try:
         size = target.stat().st_size
     except OSError:
@@ -126,14 +128,38 @@ def evidence_paths(root: Path) -> list[str]:
 
 
 def cache_file(root: Path) -> Path | None:
-    """The cache file in the git directory of root's worktree.
+    """The cache file, cache/tokens.pickle at the top of root's worktree, when kb may write it.
 
-    None when root is not the top of a git worktree of its own. A content root inside
-    another repository, such as a fixture, gets no cache and writes nothing there.
+    None when root is not the top of a git worktree of its own, or when git does not ignore
+    the cache file. A content root inside another repository, such as a fixture, gets no
+    cache, and an unignored cache is never written where a commit could pick it up.
     """
+    target, usable = _location(root)
+    return target if usable else None
+
+
+def _location(root: Path) -> tuple[Path | None, bool]:
+    """The cache file's path, and whether git ignores it there.
+
+    The path is None when root is not the top of a git worktree of its own.
+    """
+    toplevel = _git(root, "rev-parse", "--show-toplevel")
+    if toplevel is None or toplevel.returncode != 0:
+        return None, False
+    lines = toplevel.stdout.splitlines()
+    if len(lines) != 1 or Path(lines[0]).resolve() != root.resolve():
+        return None, False
+    relative = f"{CACHE_DIRECTORY}/{CACHE_FILE}"
+    ignored = _git(root, "check-ignore", "--quiet", "--", relative)
+    target = root.resolve() / CACHE_DIRECTORY / CACHE_FILE
+    return target, ignored is not None and ignored.returncode == 0
+
+
+def _git(root: Path, *words: str) -> subprocess.CompletedProcess[str] | None:
+    """Run one read-only git command in root, or None when git cannot run."""
     try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel", "--git-dir"],
+        return subprocess.run(
+            ["git", *words],
             cwd=root,
             capture_output=True,
             text=True,
@@ -142,13 +168,6 @@ def cache_file(root: Path) -> Path | None:
         )
     except OSError:
         return None
-    lines = result.stdout.splitlines()
-    if result.returncode != 0 or len(lines) != 2:
-        return None
-    toplevel, git = lines
-    if Path(toplevel).resolve() != root.resolve():
-        return None
-    return (root / git).resolve() / CACHE_DIRECTORY / CACHE_FILE
 
 
 def fingerprint(package: Traversable | None = None) -> str:

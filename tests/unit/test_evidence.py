@@ -360,6 +360,7 @@ def test_command_parses_each_document_once_and_only_when_needed(
     root = tmp_path / "content"
     shutil.copytree(FIXTURES / "content", root)
     subprocess.run(["git", "init", "-q", str(root)], check=True)
+    (root / ".gitignore").write_text("/cache/\n", encoding="utf-8")
     context = Context(root=root, today=date(2026, 10, 26))
     monkeypatch.setattr(evidence_command, "load", lambda *_args: context)
     expected_paths = sorted(
@@ -379,8 +380,9 @@ def test_command_parses_each_document_once_and_only_when_needed(
     def git_for_the_cache_only(
         args: Sequence[str], **kwargs: Any
     ) -> subprocess.CompletedProcess[str]:
-        # The cache asks git where the worktree is. Every other process is refused.
-        if list(args[:2]) != ["git", "rev-parse"]:
+        # The cache asks git where the worktree is and whether it ignores the cache file.
+        # Every other process is refused.
+        if list(args[:2]) not in (["git", "rev-parse"], ["git", "check-ignore"]):
             pytest.fail("read-only evidence command ran another process")
         return real_run(list(args), **kwargs)
 

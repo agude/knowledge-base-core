@@ -662,7 +662,8 @@ kb setup --print {instructions|allow-claude|allow-codex}
   is not an empty directory, and it refuses when `kb` cannot be found; both
   refusals come before anything is created. It writes the layout, with a
   `.gitkeep` in each empty directory, `.gitattributes` with
-  `* text=auto eol=lf`, and an `AGENTS.md` policy stub. Then it runs
+  `* text=auto eol=lf`, `.gitignore` with `/cache/` (the token cache), and an
+  `AGENTS.md` policy stub. Then it runs
   `git init -b main`, installs the hook, and makes one commit,
   `Initialize knowledge base content`. When the hook is refused or the commit
   fails, setup removes what it created, leaves the config unchanged, and exits
@@ -723,6 +724,7 @@ gather its facts reports why, and the other checks still run.
 | `hook` | kb installed it, and its `kb` runs `--version` | | the hook is absent or foreign, or its `kb` is missing |
 | `curation` | no unsettled batch | a batch is unsettled, or committed but not published | |
 | `sync` | the last exchange was within 60 minutes | the last run ended `dirty` or `error`, or the exchange is older | there is no record |
+| `cache` | the token cache in `cache/tokens.pickle` matches the evidence files, or the content root is not the top of its own Git worktree | the cache is missing or stale, or Git does not ignore it (add `/cache/` to `.gitignore`) | |
 | `scheduler` | on Linux, `kb-sync.timer` is enabled and active; on Windows, the `kb-sync` task is ready or running | it is not enabled or not active, the task is missing or disabled, or the platform is not checked | |
 | `capture` | `harvest_since` is set, the transcript roots are readable, and no ready transcript is older than 20 days | capture is disabled, a root is unreadable, or old ready transcripts exist | |
 | `instructions` | each host's global file has the canonical block, with or without its content policy line | a block is missing or differs | |

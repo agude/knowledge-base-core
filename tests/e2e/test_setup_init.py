@@ -44,6 +44,8 @@ def test_init_creates_the_layout_the_hook_the_config_and_one_commit_on_main(kb: 
     for relative in LAYOUT:
         assert (target / relative / ".gitkeep").read_bytes() == b""
     assert (target / ".gitattributes").read_bytes() == b"* text=auto eol=lf\n"
+    assert (target / ".gitignore").read_bytes() == b"/cache/\n"
+    assert run_git(target, "check-ignore", "cache/tokens.pickle") == "cache/tokens.pickle\n"
     assert "rules for agents" in (target / "AGENTS.md").read_text(encoding="utf-8")
     assert run_git(target, "rev-parse", "--abbrev-ref", "HEAD") == "main\n"
     assert run_git(target, "log", "--format=%s") == "Initialize knowledge base content\n"
