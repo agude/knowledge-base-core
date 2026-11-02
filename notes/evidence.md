@@ -2034,3 +2034,24 @@ Reading the revised baseline:
   process. `chunks.group` builds each query's chunk bodies from the parts.
 - `just eval --mode curated|sessions|combined` on the fixtures and on
   `notes/eval-live.json` with `~/Knowledge`: byte-identical to the baseline.
+
+## Pre-merge addendum A3: one recall selection for output and evaluation (2026-11-02)
+
+- Change: `recall.select` returns the rows that recall shows, and `answer()` formats
+  them. Combined evaluation takes its session rows from that selection. Before this
+  change, combined evaluation always used the From sessions rows. With no curated
+  match, recall prints transcripts under Evidence, so a pending transcript that matched
+  a query was missing from combined evaluation. It was excluded as an Uncurated row, and
+  the Evidence fallback that prints it was never scored. The new test
+  `test_combined_mode_scores_the_pending_transcript_that_recall_prints_as_evidence`
+  fails on `fc18adc` and passes after this change.
+- Combined-mode diff: none. `just eval --mode combined` output is byte-identical on the
+  fixtures and on `notes/eval-live.json` with `~/Knowledge`, at Knowledge
+  `deac4944f31d6ed6927e1a90efffc66b269021dc`. The two unanswerable fixture cases have no
+  curated match, and no transcript row matches them, so they print no evidence rows. The
+  other four fixture cases have curated matches, and their combined rows did not change.
+- Curated and sessions modes: byte-identical, fixtures and live.
+- Recall output: 12 queries, each with and without `--no-sessions`, on `~/Knowledge`.
+  The 24 outputs are byte-identical before and after.
+- Load count: one `token_cache.load` per selection, over the directories that the shown
+  blocks read.
