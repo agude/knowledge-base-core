@@ -192,6 +192,41 @@ def test_a_truncation_warning_is_incomplete() -> None:
     assert codex.kb_calls(text, FILENAME)[0].excluded == "incomplete"
 
 
+def result_envelope(output: str) -> str:
+    return json.dumps(
+        {
+            "chunk_id": "a1",
+            "exit_code": 0,
+            "original_token_count": 40,
+            "output": output,
+            "wall_time_seconds": 0.2,
+        }
+    )
+
+
+def test_a_result_object_whose_output_is_a_truncation_warning_is_incomplete() -> None:
+    warning = "Warning: truncated output (original token count: 9000)\nTotal output lines: 3"
+    text = lines(
+        meta(),
+        exec_call("c1", 'tools.exec_command({cmd:"kb read a"})'),
+        script_output("c1", result_envelope(warning + "\nsynthetic recall text")),
+    )
+    call = codex.kb_calls(text, FILENAME)[0]
+    assert call.excluded == "incomplete"
+    assert call.output is None
+
+
+def test_a_normal_result_object_is_still_usable() -> None:
+    text = lines(
+        meta(),
+        exec_call("c1", 'tools.exec_command({cmd:"kb read a"})'),
+        script_output("c1", result_envelope("synthetic recall text")),
+    )
+    call = codex.kb_calls(text, FILENAME)[0]
+    assert call.excluded is None
+    assert call.output == "synthetic recall text"
+
+
 def test_a_batch_of_results_is_a_batch() -> None:
     batch = json.dumps([{"i": 0, "status": "fulfilled", "value": "x"}])
     batch_object = json.dumps({"i": 0, "status": "fulfilled", "value": "x"})

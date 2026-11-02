@@ -421,7 +421,11 @@ def _block_text(text: str) -> tuple[str, str | None]:
     keys = frozenset(decoded)
     if keys >= RESULT_KEYS:
         value = decoded["output"]
-        return (value, None) if isinstance(value, str) else ("", "unsupported")
+        if not isinstance(value, str):
+            return "", "unsupported"
+        if value.startswith(TRUNCATED):
+            return "", "incomplete"
+        return value, None
     if "session_id" in keys and "exit_code" not in keys:
         return "", "incomplete"
     if keys in BATCH_KEYS:
