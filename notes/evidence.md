@@ -1776,3 +1776,171 @@ Open:
   holding all 3. The chunk unit has the same length bias that the plan named as the
   problem. Not changed.
 - Cold rebuild took 1.1 s longer. The cache grew by 0.6 MB.
+
+## Session retrieval 5c-ii-c: corpus statistics and BM25+ (2026-11-01)
+
+Identity:
+
+- Content: `/home/agude/Knowledge`, `main` at `40dfe94`, clean. Measured on one
+  `cp -a` copy at
+  `/tmp/claude-1000/-home-agude-Projects-knowledge-base-core/2dccb1a3-568b-4b80-963c-6c441f48d2df/scratchpad/knowledge`.
+  No cache was written to Knowledge.
+- Live set: `notes/eval-live.json`, sha256 `5555b503...`, unchanged since the 6a
+  baseline.
+- Synthetic set: `notes/eval-synthetic-curated.json`, sha256 `d00af21c...`.
+- Fixture: `tests/fixtures/session-recovery-v1/`, unchanged.
+- Code before: `dev-cache` at `ce62031`, which is the 5c-ii-b record above.
+- Code points measured, all on the same copy:
+  - `ce62031`: baseline.
+  - `7915614`: step 1, corpus statistics.
+  - `ded76e7`: step 1 and step 2, BM25+ with delta 1.0 for evidence only.
+- Code after: `6380691` (test rewrites), and the commit that records this section.
+
+Built:
+
+- `search.rank` takes `groups`, `classes`, and `delta`. Their defaults give the
+  plain BM25 that curated recall uses.
+- Document frequency and the document count count distinct groups. For
+  evidence, a group is a transcript or an evidence file. A transcript counts once
+  for a term when any of its scored chunks holds the term. Date bounds still
+  apply, because only the scored chunks are units.
+- The average length is taken per class. Chunks average with chunks and whole
+  files with whole files.
+- Evidence uses `DELTA = 1.0`, the BM25+ lower bound. Each held term adds its IDF
+  once. Curated recall keeps 0.
+- `just eval` is byte-identical to `ce62031` at each code point, apart from the
+  trailing exit line the shell adds.
+- Test changes: the long-transcript test was rewritten. It fails at `9293bf5`.
+  The 35-character probe is a strict xfail.
+
+Results. Live rows are the session rows that recall prints, top 3 unless noted. Live MRR is the mean of 1/rank over all 20 cases, with 0 for a
+case that has no rank. Live hit@10 counts a rank of 10 or less.
+
+| Measure | ce62031 | 7915614 (step 1) | ded76e7 (step 1 + 2) |
+|---|---|---|---|
+| Live, sessions: top 3 (of 20) | 12 | 12 | 13 |
+| Live, sessions: hit@10 | 14 | 13 | 13 |
+| Live, sessions: MRR | 0.509 | 0.529 | 0.533 |
+| Live, sessions: characters per query | 480 | 482 | 484 |
+| Live, combined: session top 3 (of 20) | 12 | 12 | 13 |
+| Live, combined: session hit@10 | 14 | 13 | 13 |
+| Live, combined: session MRR | 0.510 | 0.529 | 0.533 |
+| Live, combined: characters per query | 476 | 480 | 477 |
+| Fixture, sessions: hits | 4 of 4 | 4 of 4 | 4 of 4 |
+| Fixture, sessions: false positives | 0 of 2 | 0 of 2 | 0 of 2 |
+| Fixture, sessions: characters per query | 145 | 145 | 145 |
+| Fixture, combined: characters per query | 126 | 126 | 126 |
+| Synthetic-curated, curated: top 3 | 5 of 5 | 5 of 5 | 5 of 5 |
+| Synthetic-curated, sessions: hits | 0 of 5 | 0 of 5 | 0 of 5 |
+| Synthetic-curated, sessions: characters per query | 471 | 471 | 472 |
+| Synthetic-curated, combined: session hits | 0 of 5 | 0 of 5 | 0 of 5 |
+| Synthetic-curated, combined: characters per query | 323 | 319 | 323 |
+
+Live misses that are label gaps, not ranking: `live-03`, `live-05`, `live-14`,
+`live-15`, `live-16`, and `live-19`. They have no rank at any code point, and
+their labels are unchanged.
+
+`live-06` and `live-13`:
+
+- `live-06`: rank 4 at `ce62031`, rank 4 at `7915614`, rank 3 at `ded76e7`, in
+  both modes.
+- `live-13`: rank 10 at `ce62031` in sessions mode and rank 8 in combined mode.
+  No rank at `7915614` or `ded76e7`. Step 1 removed it from the top 10. Its label
+  is unchanged. The cause is not analyzed.
+
+Per-case ranks. Session rank in the session list, and in combined mode the
+session rank that combined prints. `-` means no rank:
+
+| Case | Sessions: ce62031 | Sessions: 7915614 | Sessions: ded76e7 | Combined: ce62031 | Combined: 7915614 | Combined: ded76e7 |
+|---|---|---|---|---|---|---|
+| live-01 | 1 | 1 | 1 | 1 | 1 | 1 |
+| live-02 | 2 | 1 | 1 | 2 | 1 | 1 |
+| live-03 | - | - | - | - | - | - |
+| live-04 | 2 | 2 | 2 | 2 | 2 | 2 |
+| live-05 | - | - | - | - | - | - |
+| live-06 | 4 | 4 | 3 | 4 | 4 | 3 |
+| live-07 | 1 | 1 | 1 | 1 | 1 | 1 |
+| live-08 | 1 | 1 | 1 | 1 | 1 | 1 |
+| live-09 | 1 | 1 | 1 | 1 | 1 | 1 |
+| live-10 | 1 | 1 | 1 | 1 | 1 | 1 |
+| live-11 | 1 | 1 | 1 | 1 | 1 | 1 |
+| live-12 | 1 | 1 | 1 | 1 | 1 | 1 |
+| live-13 | 10 | - | - | 8 | - | - |
+| live-14 | - | - | - | - | - | - |
+| live-15 | - | - | - | - | - | - |
+| live-16 | - | - | - | - | - | - |
+| live-17 | 1 | 1 | 1 | 1 | 1 | 1 |
+| live-18 | 3 | 3 | 3 | 3 | 3 | 3 |
+| live-19 | - | - | - | - | - | - |
+| live-20 | 2 | 2 | 2 | 2 | 2 | 2 |
+
+Ten recorded queries, top 3 at each code point, paths under `observations/`
+(`kb evidence QUERY --kind transcript` on the copy):
+
+| Query | ce62031 top 3 | 7915614 top 3 | ded76e7 top 3 | Diff |
+|---|---|---|---|---|
+| curator cadence | pending/20261031T180001-c5ec48dd.md#123<br>pending/20261031T163000-11ab7a5b.md#24<br>archived/20260410T133417-89cb.md | pending/20261031T180001-c5ec48dd.md#123<br>pending/20261031T163000-11ab7a5b.md#24<br>archived/20260410T133417-89cb.md | pending/20261031T180001-c5ec48dd.md#123<br>pending/20261031T163000-11ab7a5b.md#24<br>archived/20260410T133417-89cb.md | none |
+| nas restart | archived/20260813T010858-f86c.md<br>archived/20261011T050311-edfc5c37.md<br>archived/20261014T134048-7d7990c9.md | archived/20260813T010858-f86c.md<br>archived/20261011T050311-edfc5c37.md<br>archived/20261014T134048-7d7990c9.md | archived/20260813T010858-f86c.md<br>archived/20261011T050311-edfc5c37.md<br>archived/20261014T134048-7d7990c9.md | none |
+| traefik | pending/20261101T044500-1468afff.md#27<br>pending/20261031T224501-5ba2c949.md#108<br>pending/20261101T040000-e62c60b2.md#19 | pending/20261101T044500-1468afff.md#27<br>pending/20261031T224501-5ba2c949.md#108<br>pending/20261101T040000-e62c60b2.md#19 | pending/20261101T044500-1468afff.md#27<br>pending/20261031T224501-5ba2c949.md#108<br>pending/20261101T040000-e62c60b2.md#19 | none |
+| backup disk | pending/20261026T225533-aaa7123d.md<br>pending/20261102T010715-e9da9aab.md#22<br>pending/20261030T181500-726c9f6d.md#2 | pending/20261026T225533-aaa7123d.md<br>pending/20261102T010715-e9da9aab.md#22<br>pending/20261030T181500-726c9f6d.md#2 | pending/20261026T225533-aaa7123d.md<br>pending/20261102T010715-e9da9aab.md#22<br>pending/20261030T181500-726c9f6d.md#2 | none |
+| codex rules | pending/20261101T195746-d618e45e.md#52<br>pending/20261029T030217-c652ddeb.md<br>pending/20261028T221204-1123b402.md | pending/20261101T195746-d618e45e.md#52<br>pending/20261029T030217-c652ddeb.md<br>archived/20260828T035825-5fefb261.md | pending/20261101T195746-d618e45e.md#52<br>pending/20261029T030217-c652ddeb.md<br>archived/20260828T035825-5fefb261.md | step 1 |
+| dotfiles cutover | pending/20261028T225249-155c788e.md<br>pending/20261029T030217-c652ddeb.md<br>pending/20261029T143001-e3d0ebb8.md#68 | pending/20261028T225249-155c788e.md<br>pending/20261029T030217-c652ddeb.md<br>pending/20261029T143001-e3d0ebb8.md#68 | pending/20261028T225249-155c788e.md<br>pending/20261029T030217-c652ddeb.md<br>pending/20261029T143001-e3d0ebb8.md#68 | none |
+| transcript harvest | pending/20261027T061149-7d7f181f.md<br>archived/20260529T012325-572e.md<br>archived/20260529T020216-658a.md | pending/20261027T061149-7d7f181f.md<br>archived/20260529T012325-572e.md<br>archived/20260529T020216-658a.md | pending/20261027T061149-7d7f181f.md<br>archived/20260529T012325-572e.md<br>archived/20260529T020216-658a.md | none |
+| sync schedule | pending/20261027T174313-bf965675.md<br>pending/20261101T195746-d618e45e.md#8<br>pending/20261101T163715-e7dcefa3.md#144 | pending/20261031T180001-c5ec48dd.md#163<br>pending/20261101T195746-d618e45e.md#8<br>pending/20261027T174313-bf965675.md | pending/20261031T180001-c5ec48dd.md#163<br>pending/20261101T195746-d618e45e.md#8<br>pending/20261027T174313-bf965675.md | step 1 |
+| stale article ttl | pending/20261027T174313-bf965675.md<br>pending/20261025T020639-5d2d7603.md<br>pending/20261028T024940-a8f6ab4f.md | pending/20261027T174313-bf965675.md<br>pending/20261025T020639-5d2d7603.md<br>pending/20261028T024940-a8f6ab4f.md | pending/20261027T174313-bf965675.md<br>pending/20261025T020639-5d2d7603.md<br>pending/20261101T044500-1468afff.md#27 | step 2 |
+| observation pending | pending/20261102T012215-dc8d3bf8.md#102<br>pending/20261102T012215-532736a7.md#37<br>archived/20260412T220946-01c3.md | pending/20261102T012215-dc8d3bf8.md#102<br>pending/20261102T012215-532736a7.md#37<br>archived/20260412T220946-01c3.md | pending/20261102T012215-dc8d3bf8.md#102<br>pending/20261102T012215-532736a7.md#37<br>archived/20260412T220946-01c3.md | none |
+
+
+Timings. Warm runs are the median of 3 after 1 warm-up. Cold runs delete the
+cache before each of 3 runs, with no warm-up, and take the median:
+
+| Command | ce62031 | 7915614 (step 1) | ded76e7 (step 1 + 2) |
+|---|---|---|---|
+| Warm `kb evidence curator cadence --kind transcript` | 1424 ms | 1351 ms | 1409 ms |
+| Warm `kb recall "sync schedule"` | 1704 ms | 1623 ms | 1700 ms |
+| Cold `kb evidence curator cadence --kind transcript` | 13599 ms | 14133 ms | 13579 ms |
+
+The first step 1 run, before the rerun in the table, gave warm evidence 1508 ms,
+warm recall 1860 ms, and cold 13918 ms. Timings vary by 5 to 10 percent between
+runs. The timings are reported, not gated. Peak RSS was not measured in this
+section.
+
+Checks:
+
+- `just check` at `6380691`: 1,754 passed, 1 xfailed, 91.51% coverage. Each
+  ranking commit passed `just check` before it was committed. Step 1 passed with
+  1,752 tests, and step 2 with 1,754.
+- `just eval` at `6380691`: exit 0, `acceptance: met` for both fixture sets, and
+  output identical to `ce62031` apart from the trailing exit line. Checked at each
+  ranking commit.
+- Long-transcript test, rewritten: fails at `9293bf5` and passes at `6380691`.
+  Output at `9293bf5`:
+
+  ```text
+  >       assert [item.path for item in items] == [
+          "observations/archived/long.md#21",
+          "observations/archived/short.md#1",
+        ]
+  E       AssertionError: assert ['observation...d/long.md#21'] == ['observation...d/short.md#1']
+  E         At index 0 diff: 'observations/archived/short.md#1' != 'observations/archived/long.md#21'
+  ```
+
+- 35-character probe: strict xfail with the reason in the test. It fails at
+  `ce62031`, at `ded76e7`, and at `6380691`. The short chunk ranks first at each
+  code point, so the length bias is not changed. Its expected order was fixed
+  before it was run: the three-term chunk first.
+
+Open:
+
+- Acceptance is the user's decision. Live top 3 moved from 12 to 13 of 20.
+  `live-13` is unranked at both code points after step 1.
+- `live-13`: its cause is not analyzed. It lost its rank at step 1, the change to
+  document frequency for transcripts.
+- The 35-character probe is still a strict xfail. BM25 length normalization
+  favours a short chunk with two of three terms when the third term is common.
+  The BM25+ bound does not change that case.
+- Title tokens are still part of every chunk's length and frequency. Document
+  frequency now counts each transcript once, but title tokens still add length
+  to each chunk. Not changed.
+- Row date: the matched message's date. `plan.md` now says so.
+- Windows is not checked.
