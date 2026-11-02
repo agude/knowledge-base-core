@@ -84,6 +84,7 @@ def reference_select(
     candidates: list[tuple[str, Document, str, date | None, bool, tuple[chunks.Chunk, ...]]] = []
     units: list[search.Unit] = []
     owners: list[tuple[int, int]] = []
+    unit_classes: list[str] = []
     for path, document in documents:
         kind = evidence.evidence_kind(path, document.scalar("source"))
         if kind_filter is not None and kind != kind_filter:
@@ -107,12 +108,20 @@ def reference_select(
                 body = tuple(token for line in chunk.lines for token in search.index_tokens(line))
                 units.append(search.Unit(title, (), (), body, phrases))
                 owners.append((index, position))
+                unit_classes.append(evidence.CHUNK_CLASS)
         else:
             units.append(search.evidence_unit(document))
             owners.append((index, -1))
+            unit_classes.append(evidence.FILE_CLASS)
 
     best: dict[int, tuple[float, int]] = {}
-    for hit in search.rank(units, terms):
+    ranked = search.rank(
+        units,
+        terms,
+        groups=[owner for owner, _position in owners],
+        classes=unit_classes,
+    )
+    for hit in ranked:
         index, position = owners[hit.index]
         best.setdefault(index, (hit.score, position))
     items = []

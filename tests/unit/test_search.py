@@ -1,5 +1,6 @@
 """Tests for query normalization, unit construction, and ranking."""
 
+import math
 from pathlib import Path
 
 import pytest
@@ -164,6 +165,49 @@ def test_rank_with_no_terms_or_no_units_is_empty() -> None:
 
 def test_rank_with_only_empty_units_is_empty_and_does_not_divide_by_zero() -> None:
     assert search.rank([search.make_unit("", [], [], [])], ("alpha",)) == []
+
+
+def _unit_of_length(first: str, length: int) -> search.Unit:
+    """A body unit whose first token is the term and whose length is the token count."""
+    return search.make_unit("", [], [], [" ".join([first, *["filler"] * (length - 1)])])
+
+
+def test_document_frequency_counts_groups_not_units() -> None:
+    units = [
+        search.make_unit("", [], [], ["rare"]),
+        search.make_unit("", [], [], ["rare"]),
+        search.make_unit("", [], [], ["gamma"]),
+    ]
+    # Each unit has length 1, so the score is the IDF alone.
+    plain = search.rank(units, ("rare",))
+    assert plain[0].score == pytest.approx(math.log(1 + 1.5 / 2.5))
+    grouped = search.rank(units, ("rare",), groups=["a", "a", "b"])
+    assert grouped[0].score == pytest.approx(math.log(1 + 1.5 / 1.5))
+
+
+def test_average_length_is_taken_within_each_class() -> None:
+    units = [_unit_of_length("alpha", 1), _unit_of_length("alpha", 3), _unit_of_length("x", 1000)]
+    classed = {
+        hit.index: hit.score
+        for hit in search.rank(units, ("alpha",), classes=["chunk", "chunk", "file"])
+    }
+    # The chunk class averages 2 tokens, so the first unit has norm K1 * (0.25 + 0.75 / 2).
+    idf = math.log(1 + 1.5 / 2.5)
+    assert classed[0] == pytest.approx(idf * 2.5 / (1 + 1.5 * (0.25 + 0.75 * 1 / 2)))
+    mixed = {hit.index: hit.score for hit in search.rank(units, ("alpha",))}
+    assert mixed[0] != pytest.approx(classed[0])
+
+
+def test_default_groups_and_classes_are_plain_bm25() -> None:
+    units = [_unit_of_length("alpha", 1), _unit_of_length("alpha", 4), _unit_of_length("beta", 9)]
+    explicit = search.rank(units, ("alpha", "beta"), groups=[0, 1, 2], classes=["c", "c", "c"])
+    assert explicit == search.rank(units, ("alpha", "beta"))
+
+
+def test_mismatched_groups_are_an_error() -> None:
+    units = [_unit_of_length("alpha", 1)]
+    with pytest.raises(ValueError):
+        search.rank(units, ("alpha",), groups=["a", "b"])
 
 
 def test_clip_shortens_long_text_to_the_width_with_an_ellipsis() -> None:

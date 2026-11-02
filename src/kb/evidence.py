@@ -16,6 +16,10 @@ if TYPE_CHECKING:
 KINDS = ("observation", "transcript", "open-question", "resolved-question")
 TITLE_WIDTH = 72
 READ_WITH = "Read with: kb read <locator>"
+# Units are ranked as files: a transcript counts once for a term in document frequency, and
+# chunks and whole files have their own average lengths.
+CHUNK_CLASS = "chunk"
+FILE_CLASS = "file"
 
 
 @dataclass(frozen=True)
@@ -73,6 +77,7 @@ def select(
     candidates: list[Candidate] = []
     units: list[search.Unit] = []
     owners: list[tuple[int, int]] = []
+    unit_classes: list[str] = []
 
     for entry in entries:
         kind = evidence_kind(entry.path, entry.scalars.get("source"))
@@ -96,12 +101,20 @@ def select(
             for position, found in enumerate(scored):
                 units.append(_chunk_unit(entry, found))
                 owners.append((index, position))
+                unit_classes.append(CHUNK_CLASS)
         else:
             units.append(file_unit(entry))
             owners.append((index, -1))
+            unit_classes.append(FILE_CLASS)
 
     best: dict[int, tuple[float, int]] = {}
-    for hit in search.rank(units, terms):
+    ranked = search.rank(
+        units,
+        terms,
+        groups=[owner for owner, _position in owners],
+        classes=unit_classes,
+    )
+    for hit in ranked:
         index, position = owners[hit.index]
         best.setdefault(index, (hit.score, position))
     rows = [
