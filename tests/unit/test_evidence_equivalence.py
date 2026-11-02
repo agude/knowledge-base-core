@@ -120,6 +120,7 @@ def reference_select(
         terms,
         groups=[owner for owner, _position in owners],
         classes=unit_classes,
+        delta=evidence.DELTA,
     )
     for hit in ranked:
         index, position = owners[hit.index]

@@ -210,6 +210,21 @@ def test_mismatched_groups_are_an_error() -> None:
         search.rank(units, ("alpha",), groups=["a", "b"])
 
 
+def test_delta_adds_once_for_each_term_the_unit_holds() -> None:
+    units = [search.make_unit("", [], [], ["alpha"]), search.make_unit("", [], [], ["beta"])]
+    plain = {hit.index: hit.score for hit in search.rank(units, ("alpha", "beta"))}
+    bonus = {hit.index: hit.score for hit in search.rank(units, ("alpha", "beta"), delta=1.0)}
+    # Each term is in one of two units, so its IDF is log 2. Each unit holds one term only,
+    # so neither unit receives the other term's bonus.
+    assert bonus[0] - plain[0] == pytest.approx(math.log(2))
+    assert bonus[1] - plain[1] == pytest.approx(math.log(2))
+
+
+def test_delta_does_not_change_qualification() -> None:
+    units = [search.make_unit("", [], [], ["alpha"])]
+    assert search.rank(units, ("alpha", "beta", "gamma", "delta"), delta=1.0) == []
+
+
 def test_clip_shortens_long_text_to_the_width_with_an_ellipsis() -> None:
     assert search.clip("short", 10) == "short"
     assert search.clip("exactly ten", 11) == "exactly ten"

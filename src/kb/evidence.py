@@ -17,9 +17,10 @@ KINDS = ("observation", "transcript", "open-question", "resolved-question")
 TITLE_WIDTH = 72
 READ_WITH = "Read with: kb read <locator>"
 # Units are ranked as files: a transcript counts once for a term in document frequency, and
-# chunks and whole files have their own average lengths.
+# chunks and whole files have their own average lengths. DELTA is the BM25+ lower bound.
 CHUNK_CLASS = "chunk"
 FILE_CLASS = "file"
+DELTA = 1.0
 
 
 @dataclass(frozen=True)
@@ -113,6 +114,7 @@ def select(
         terms,
         groups=[owner for owner, _position in owners],
         classes=unit_classes,
+        delta=DELTA,
     )
     for hit in ranked:
         index, position = owners[hit.index]

@@ -333,6 +333,7 @@ def rank(
     *,
     groups: Sequence[Hashable] | None = None,
     classes: Sequence[Hashable] | None = None,
+    delta: float = 0.0,
 ) -> list[Hit]:
     """The units that qualify, best first. Ties keep their input order.
 
@@ -346,6 +347,10 @@ def rank(
     classes names the length class of each unit. The average length is taken
     within each class, so units of different kinds do not normalize each other.
     Without classes, all units form one class.
+
+    delta is the BM25+ lower bound (Lv and Zhai, 2011). A unit adds delta times the
+    IDF of each query term it holds, so a term it lacks adds nothing. Its default,
+    0, is plain BM25.
     """
     if not terms or not units:
         return []
@@ -379,7 +384,7 @@ def rank(
         for term, frequency in profile.frequency.items():
             df = documents_with[term]
             idf = math.log(1 + (documents - df + 0.5) / (df + 0.5))
-            score += idf * frequency * (K1 + 1) / (frequency + norm)
+            score += idf * frequency * (K1 + 1) / (frequency + norm) + idf * delta
         hits.append(Hit(index, score))
     hits.sort(key=lambda hit: hit.score, reverse=True)
     return hits
