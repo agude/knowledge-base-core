@@ -2,15 +2,16 @@
 that leave out anything the Uncurated block already shows."""
 
 import shutil
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date
 from pathlib import Path
 
 import pytest
 
-from kb import corpus, evidence, search
+from kb import corpus, evidence, search, token_cache
 from kb.commands import recall
 from kb.context import Context
+from kb.entries import Entry
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "content"
 TODAY = date(2026, 10, 31)
@@ -72,20 +73,22 @@ def test_session_rows_without_terms_is_empty(context: Context) -> None:
     assert recall.session_rows(context, ["--"], None, corpus.Documents(context.root), 5) == []
 
 
-def test_from_sessions_leaves_out_rows_that_uncurated_shows(context: Context) -> None:
-    write_transcript(context.root, "observations/archived/t1.md", "zebra migration plan")
-    write_transcript(context.root, "observations/pending/t2.md", "zebra migration plan")
-    rows = recall.from_sessions(context, ["zebra"], None, corpus.Documents(context.root), 5)
-    assert paths(rows) == ["observations/archived/t1.md"]
+def test_the_sessions_selection_leaves_out_rows_that_uncurated_shows(context: Context) -> None:
+    write_transcript(context.root, "observations/archived/t1.md", "nas restart order confirmed")
+    write_transcript(context.root, "observations/pending/t2.md", "nas restart order confirmed")
+    chosen = recall.select(context, CURATED_QUERY, None, 3)
+    assert "observations/pending/t2.md" in paths(chosen.uncurated)
+    assert "observations/pending/t2.md" not in paths(chosen.sessions)
+    assert "observations/archived/t1.md" in paths(chosen.sessions)
 
 
-def test_from_sessions_keeps_the_limit_after_leaving_rows_out(context: Context) -> None:
-    write_transcript(context.root, "observations/pending/p1.md", "okapi forest")
+def test_the_sessions_selection_keeps_the_limit_after_leaving_rows_out(context: Context) -> None:
+    write_transcript(context.root, "observations/pending/p1.md", "nas restart order confirmed")
     for name in ("a1", "a2", "a3"):
-        write_transcript(context.root, f"observations/archived/{name}.md", "okapi forest")
-    rows = recall.from_sessions(context, ["okapi"], None, corpus.Documents(context.root), 2)
-    assert len(rows) == 2
-    assert all(path.startswith("observations/archived/") for path in paths(rows))
+        write_transcript(context.root, f"observations/archived/{name}.md", "nas restart order")
+    chosen = recall.select(context, CURATED_QUERY, None, 3)
+    assert len(chosen.sessions) == recall.SESSION_ROWS
+    assert all(path.startswith("observations/archived/") for path in paths(chosen.sessions))
 
 
 CURATED_QUERY = ["nas", "restart", "order"]
@@ -189,11 +192,43 @@ def test_an_answer_selects_the_uncurated_rows_once(
     original = recall._uncurated
 
     def counting(
-        context: Context, words: Sequence[str], scope: str | None, documents: corpus.Documents
+        context: Context,
+        words: Sequence[str],
+        scope: str | None,
+        documents: corpus.Documents,
+        loaded: Mapping[str, Entry],
     ) -> list[evidence.Item]:
         calls.append(words)
-        return original(context, words, scope, documents)
+        return original(context, words, scope, documents, loaded)
 
     monkeypatch.setattr(recall, "_uncurated", counting)
     recall.answer(context, ["backup"], 3, None)
     assert len(calls) == 1
+
+
+def test_a_selection_loads_the_cache_once(
+    context: Context, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_transcript(context.root, "observations/archived/t1.md", "nas restart order confirmed")
+    write_transcript(context.root, "observations/pending/p1.md", "nas restart order pending")
+    loads: list[Sequence[str]] = []
+    original = token_cache.load
+
+    def counting(
+        root: object, paths: Sequence[str], documents: corpus.Documents | None = None
+    ) -> Mapping[str, Entry]:
+        loads.append(paths)
+        return original(root, paths, documents)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(token_cache, "load", counting)
+    chosen = recall.select(context, CURATED_QUERY, None, 3)
+    assert len(loads) == 1
+    assert chosen.sessions and chosen.uncurated
+
+
+def test_without_a_curated_match_the_selection_is_evidence_only(context: Context) -> None:
+    write_transcript(context.root, "observations/archived/t1.md", "zebra migration plan")
+    chosen = recall.select(context, ["zebra"], None, 3)
+    assert chosen.results == []
+    assert chosen.follow == [] and chosen.uncurated == [] and chosen.sessions == []
+    assert paths(chosen.evidence) == ["observations/archived/t1.md"]

@@ -8,7 +8,8 @@ Addressable harvested messages use message locators; other matches use files.
 
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from kb import areas, args, corpus, evidence, freshness, locators, search, token_cache
@@ -64,6 +65,60 @@ def run(words: Sequence[str]) -> int:
     return 0
 
 
+@dataclass(frozen=True)
+class Selection:
+    """The rows that recall shows for one query, before they are formatted.
+
+    results are the curated sections that qualify, best first, and follow are the sections under
+    "Also relevant". uncurated holds the rows under "Uncurated". sessions holds the rows under
+    "From sessions", and it is empty when sessions is False. evidence holds the rows of the
+    no-curated fallback. A selection with results has no evidence, and one without results has
+    no uncurated, follow, or session rows.
+    """
+
+    results: list[tuple[Document, search.Candidate]]
+    follow: list[tuple[Document, search.Candidate]]
+    uncurated: list[evidence.Item]
+    sessions: list[evidence.Item]
+    evidence: list[evidence.Item]
+
+
+def select(
+    context: Context,
+    words: Sequence[str],
+    scope: str | None,
+    limit: int,
+    *,
+    sessions: bool = True,
+) -> Selection:
+    """Choose the rows that recall shows for a query. The cache is loaded once for the selection.
+
+    Without a curated match, the evidence rows are the fallback, and nothing else is selected.
+    """
+    documents = corpus.Documents(context.root)
+    results = _ranked(context.root, words, scope)
+    if not results:
+        empty_directories: tuple[str, ...] = (PENDING, ARCHIVED, *ALL_QUESTIONS)
+        loaded = _loaded(context.root, documents, words, empty_directories)
+        items = _matching_evidence(
+            context, words, scope, empty_directories, FOLLOW_UP, documents, loaded
+        )
+        return Selection([], [], [], [], items)
+    # A curated answer lists only the directories its blocks read, so a block that is not shown
+    # does not list the archive.
+    directories = (PENDING, OPEN_QUESTIONS, ARCHIVED) if sessions else (PENDING, OPEN_QUESTIONS)
+    loaded = _loaded(context.root, documents, words, directories)
+    follow = results[limit : limit + FOLLOW_UP]
+    uncurated = _uncurated(context, words, scope, documents, loaded)
+    rows: list[evidence.Item] = []
+    if sessions:
+        # A session row that Uncurated already shows is left out, so ask for enough extra rows.
+        shown = {item.path for item in uncurated}
+        found = session_rows(context, words, scope, documents, SESSION_ROWS + len(shown), loaded)
+        rows = [row for row in found if row.path not in shown][:SESSION_ROWS]
+    return Selection(results, follow, uncurated, rows, [])
+
+
 def answer(
     context: Context,
     words: Sequence[str],
@@ -77,43 +132,28 @@ def answer(
     sessions adds the From sessions block after the curated results. It is not printed
     when no curated section matches, because the evidence list already holds the sessions.
     """
-    documents = corpus.Documents(context.root)
-    results = _ranked(context.root, words, scope)
-    if not results:
-        items = _matching_evidence(
-            context,
-            words,
-            scope,
-            (PENDING, ARCHIVED, *ALL_QUESTIONS),
-            FOLLOW_UP,
-            documents,
-        )
-        questions = matching_open_questions(context, words, scope, candidates=items)
-        question_paths = {item.path for item in questions}
-        items = [
-            item for item in items if item.kind != "open-question" or item.path in question_paths
-        ]
+    chosen = select(context, words, scope, limit, sessions=sessions)
+    if not chosen.results:
         head = f'No curated knowledge matches "{" ".join(words)}".'
-        if not items:
+        if not chosen.evidence:
             return head + "\n"
-        return head + "\n" + evidence.format_results(" ".join(words), items)
+        return head + "\n" + evidence.format_results(" ".join(words), chosen.evidence)
     blocks = [
-        section_block(context, document, candidate) for document, candidate in results[:limit]
+        section_block(context, document, candidate)
+        for document, candidate in chosen.results[:limit]
     ]
     tail: list[str] = []
-    follow = results[limit : limit + FOLLOW_UP]
-    if follow:
+    if chosen.follow:
         tail.append("Also relevant:")
         tail.extend(
             f"  {document.path}#{candidate.fragment} | {candidate.heading}"
-            for document, candidate in follow
+            for document, candidate in chosen.follow
         )
-    uncurated = _uncurated(context, words, scope, documents)
-    if uncurated:
+    if chosen.uncurated:
         tail.append("Uncurated (pending, not yet verified):")
-        tail.extend(evidence.format_rows(uncurated))
-    if sessions:
-        tail.extend(_session_block(context, words, scope, documents, uncurated))
+        tail.extend(evidence.format_rows(chosen.uncurated))
+    if chosen.sessions:
+        tail.extend(_session_lines(chosen.sessions))
     tail.append(READ_WITH)
     return "\n".join(blocks) + "\n" + "\n".join(tail) + "\n"
 
@@ -166,6 +206,7 @@ def matching_open_questions(
     *,
     candidates: Sequence[evidence.Item] | None = None,
     has_curated_matches: bool | None = None,
+    documents: corpus.Documents | None = None,
 ) -> list[evidence.Item]:
     """The open-question rows that occur in recall's bounded evidence matches."""
     if candidates is None:
@@ -176,7 +217,16 @@ def matching_open_questions(
             if has_curated_matches
             else (PENDING, ARCHIVED, *ALL_QUESTIONS)
         )
-        candidates = _matching_evidence(context, words, scope, directories, limit)
+        shared = corpus.Documents(context.root) if documents is None else documents
+        candidates = _matching_evidence(
+            context,
+            words,
+            scope,
+            directories,
+            limit,
+            shared,
+            _loaded(context.root, shared, words, directories),
+        )
     return [item for item in candidates if item.kind == "open-question"][:limit]
 
 
@@ -193,7 +243,16 @@ def matching_open_question_rows(
     directories = (
         (PENDING, OPEN_QUESTIONS) if has_curated_matches else (PENDING, ARCHIVED, *ALL_QUESTIONS)
     )
-    candidates = _matching_evidence(context, words, scope, directories, FOLLOW_UP)
+    documents = corpus.Documents(context.root)
+    candidates = _matching_evidence(
+        context,
+        words,
+        scope,
+        directories,
+        FOLLOW_UP,
+        documents,
+        _loaded(context.root, documents, words, directories),
+    )
     questions = matching_open_questions(context, words, scope, candidates=candidates)
     rows_by_path = {
         item.path: row
@@ -232,27 +291,45 @@ def section_block(context: Context, document: Document, candidate: search.Candid
     return locators.block(head, lines)
 
 
+def _loaded(
+    root: Path,
+    documents: corpus.Documents,
+    words: Sequence[str],
+    directories: Sequence[str],
+) -> dict[str, Entry]:
+    """The cache entries of the evidence files in directories, loaded in one pass.
+
+    Empty when the query has no terms, because nothing can match it.
+    """
+    if not search.query_terms(words):
+        return {}
+    paths = sorted(
+        {path for directory in directories for path in corpus.markdown_files(root, directory)}
+    )
+    return token_cache.load(root, paths, documents)
+
+
 def _matching_evidence(
     context: Context,
     words: Sequence[str],
     scope: str | None,
     directories: Sequence[str],
     limit: int,
-    documents: corpus.Documents | None = None,
+    documents: corpus.Documents,
+    loaded: Mapping[str, Entry],
 ) -> list[evidence.Item]:
     """Select the evidence rows recall uses for a query and its scope."""
     terms = search.query_terms(words)
     if not terms:
         return []
-    shared = corpus.Documents(context.root) if documents is None else documents
     return evidence.select(
-        _evidence(context.root, scope, directories, shared),
+        _evidence(context.root, scope, directories, loaded),
         terms,
         None,
         None,
         None,
         limit,
-        shared.read,
+        documents.read,
     )
 
 
@@ -261,19 +338,21 @@ def _uncurated(
     words: Sequence[str],
     scope: str | None,
     documents: corpus.Documents,
+    loaded: Mapping[str, Entry],
 ) -> list[evidence.Item]:
-    """The rows under Uncurated for a query: pending evidence and open questions."""
-    items = _matching_evidence(
+    """The rows under Uncurated for a query: pending evidence and open questions.
+
+    Every open question that the matching step returns is shown, so no question filter applies.
+    """
+    return _matching_evidence(
         context,
         words,
         scope,
         (PENDING, OPEN_QUESTIONS),
         FOLLOW_UP,
         documents,
+        loaded,
     )
-    questions = matching_open_questions(context, words, scope, candidates=items)
-    question_paths = {item.path for item in questions}
-    return [item for item in items if item.kind != "open-question" or item.path in question_paths]
 
 
 def session_rows(
@@ -282,13 +361,21 @@ def session_rows(
     scope: str | None,
     documents: corpus.Documents,
     limit: int,
+    loaded: Mapping[str, Entry] | None = None,
 ) -> list[evidence.Item]:
-    """The best transcript rows for a query, from pending and archived harvests."""
+    """The best transcript rows for a query, from pending and archived harvests.
+
+    This ranks every transcript row. The From sessions block takes its rows from here, after it
+    leaves out the rows that Uncurated shows. loaded is the cache for the query, or None to load it.
+    """
     terms = search.query_terms(words)
     if not terms:
         return []
+    entries = (
+        _loaded(context.root, documents, words, SESSION_DIRECTORIES) if loaded is None else loaded
+    )
     return evidence.select(
-        _evidence(context.root, scope, SESSION_DIRECTORIES, documents),
+        _evidence(context.root, scope, SESSION_DIRECTORIES, entries),
         terms,
         "transcript",
         None,
@@ -298,39 +385,11 @@ def session_rows(
     )
 
 
-def from_sessions(
-    context: Context,
-    words: Sequence[str],
-    scope: str | None,
-    documents: corpus.Documents,
-    limit: int,
-    uncurated: Sequence[evidence.Item] | None = None,
-) -> list[evidence.Item]:
-    """Session rows that Uncurated does not already show, for the From sessions block.
+def _session_lines(rows: Sequence[evidence.Item]) -> list[str]:
+    """The From sessions heading and rows. Each row is locator | date | excerpt.
 
-    uncurated is the Uncurated rows when the caller has already selected them.
+    An excerpt is at most search.EXCERPT_WIDTH characters.
     """
-    if uncurated is None:
-        uncurated = _uncurated(context, words, scope, documents)
-    shown = {item.path for item in uncurated}
-    rows = session_rows(context, words, scope, documents, limit + len(shown))
-    return [row for row in rows if row.path not in shown][:limit]
-
-
-def _session_block(
-    context: Context,
-    words: Sequence[str],
-    scope: str | None,
-    documents: corpus.Documents,
-    uncurated: Sequence[evidence.Item],
-) -> list[str]:
-    """The From sessions heading and rows, or nothing when no session row qualifies.
-
-    Each row is locator | date | excerpt. An excerpt is at most search.EXCERPT_WIDTH characters.
-    """
-    rows = from_sessions(context, words, scope, documents, SESSION_ROWS, uncurated)
-    if not rows:
-        return []
     width = max(len(row.path) for row in rows)
     lines = [SESSIONS_HEADING]
     for row in rows:
@@ -365,9 +424,12 @@ def _evidence(
     root: Path,
     scope: str | None,
     directories: Sequence[str],
-    documents: corpus.Documents,
+    loaded: Mapping[str, Entry],
 ) -> list[Entry]:
-    """The cache entries of the evidence files in scope, in path order."""
+    """The cache entries of the evidence files in scope, in path order.
+
+    loaded holds the entries of every file that recall may search, so no file is loaded here.
+    """
     match_context = scope is not None and areas.is_area_path(scope)
     paths = sorted(
         {
@@ -377,7 +439,6 @@ def _evidence(
             if _in_scope(path, scope) or (match_context and path.startswith("questions/"))
         }
     )
-    loaded = token_cache.load(root, paths, documents)
     entries = [loaded[path] for path in paths if path in loaded]
     if not match_context:
         return entries

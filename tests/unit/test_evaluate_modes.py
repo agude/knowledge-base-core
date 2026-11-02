@@ -229,3 +229,38 @@ def test_main_without_a_set_for_the_mode_is_an_error(
     write_set(tmp_path / "tests/fixtures/curated-set/questions.json", [raw_case()])
     assert evaluate.main(["--mode", "combined"]) == 1
     assert "no question sets for mode combined under tests/fixtures" in capsys.readouterr().err
+
+
+PENDING_TRANSCRIPT = (
+    "---\n"
+    "title: Session transcript: quokka\n"
+    "source: session-transcript\n"
+    "session: quokka-session\n"
+    "part: 1\n"
+    "first_message: quokka-1\n"
+    "last_message: quokka-1\n"
+    "started: 2026-10-20T10:00:00Z\n"
+    "ended: 2026-10-20T10:05:00Z\n"
+    "created: 2026-10-20T10:05:00Z\n"
+    "---\n\n"
+    "## 1. user, 2026-10-20T10:00:00Z\n\n"
+    "Quokka habitat notes from the session.\n"
+)
+
+
+def test_combined_mode_scores_the_pending_transcript_that_recall_prints_as_evidence(
+    tmp_path: Path,
+) -> None:
+    """With no curated match, recall prints the pending transcript under Evidence. Combined mode
+    must score that row too, so it does not drop rows that Uncurated would have shown."""
+    root = tmp_path / "content"
+    relpath = "observations/pending/20261020T100000-quokka.md"
+    (root / relpath).parent.mkdir(parents=True)
+    (root / relpath).write_text(PENDING_TRANSCRIPT, encoding="utf-8")
+    case = evaluate.Case("pending", "quokka habitat", (f"{relpath}#1",), False)
+
+    [outcome] = evaluate.run_cases(root, [case], evaluate.COMBINED)
+
+    assert outcome.ranked == ()
+    assert outcome.sessions == (f"{relpath}#1",)
+    assert outcome.passes(evaluate.COMBINED)

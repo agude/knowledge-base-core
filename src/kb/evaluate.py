@@ -164,28 +164,32 @@ def _case(path: Path, raw: object) -> Case:
 def run_cases(root: Path, cases: Sequence[Case], mode: str = CURATED) -> list[Outcome]:
     """Run each case's query through the rankings that the mode prints.
 
-    Each case gets its own corpus.Documents, so one query's parsed files are not kept for the next.
+    Sessions mode ranks every transcript row, up to POOL. Combined mode uses the selection that
+    recall prints, so its session rows are the From sessions rows, or the transcript rows of the
+    no-curated fallback. A case gets its own corpus.Documents, so one query's parsed files are not
+    kept for the next.
     """
     context = Context(root=root, today=date.today())
     outcomes: list[Outcome] = []
     for case in cases:
-        ranked = () if mode == SESSIONS else tuple(recall.ranked_locators(root, [case.query]))
+        words = [case.query]
         if mode == CURATED:
-            outcomes.append(Outcome(case, ranked))
+            outcomes.append(Outcome(case, tuple(recall.ranked_locators(root, words))))
             continue
-        rows = _session_rows(context, case.query, mode, corpus.Documents(root))
+        if mode == SESSIONS:
+            rows = recall.session_rows(context, words, None, corpus.Documents(root), POOL)
+            outcomes.append(Outcome(case, (), tuple(row.path for row in rows), _chars(rows[:TOP])))
+            continue
+        chosen = recall.select(context, words, None, recall.DEFAULT_LIMIT)
+        ranked = tuple(
+            f"{document.path}#{candidate.fragment}" for document, candidate in chosen.results
+        )
+        if chosen.results:
+            rows = chosen.sessions
+        else:
+            rows = [row for row in chosen.evidence if row.kind == "transcript"]
         outcomes.append(Outcome(case, ranked, tuple(row.path for row in rows), _chars(rows[:TOP])))
     return outcomes
-
-
-def _session_rows(
-    context: Context, query: str, mode: str, documents: corpus.Documents
-) -> list[evidence.Item]:
-    """Sessions mode scores every transcript row. Combined mode scores what From sessions prints."""
-    words = [query]
-    if mode == SESSIONS:
-        return recall.session_rows(context, words, None, documents, POOL)
-    return recall.from_sessions(context, words, None, documents, POOL)
 
 
 def _chars(rows: Sequence[evidence.Item]) -> int:
