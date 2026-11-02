@@ -4,9 +4,9 @@ kb evidence and kb recall rank every evidence file on each query, and tokenizing
 harvested transcripts takes most of the time. This module keeps the tokens of each file
 and reuses them while the file's bytes are unchanged.
 
-The cache is one pickle of plain tuples, strings, and numbers, so it holds no kb classes.
-It lives in the git directory of each worktree, is never committed or synced, and can be
-deleted at any time. An unreadable or stale cache is rebuilt.
+The cache is one pickle of the records in kb.entries. It lives in the git directory of each
+worktree, is never committed or synced, and can be deleted at any time. An unreadable or
+stale cache is rebuilt.
 """
 
 import hashlib
@@ -15,17 +15,17 @@ import pickle
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from kb import addressing, chunks, corpus, evidence, lock, model, search
+from kb.entries import Entry, PartTokens
 
-FORMAT = 3
+FORMAT = 4
 CACHE_DIRECTORY = "kb"
 CACHE_FILE = "tokens.pickle"
 LOCK_FILE = "tokens.lock"
@@ -49,41 +49,6 @@ SCALAR_FIELDS = (
     "started",
     "ended",
 )
-
-# A search.Unit as plain tuples: title, aliases, headings, body, and the sorted phrases.
-UnitTokens = tuple[
-    tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]
-]
-# One addressable message: its number, its UTC timestamp in ISO form, its body tokens, and its
-# length in characters when it is not split (0 when it is). The body is the tokens of the
-# message's cleaned lines, so it equals its chunks' tokens joined.
-MessageTokens = tuple[int, str, tuple[str, ...], int]
-# One chunk: the numbers of its first and last messages (0 for none), the ISO timestamps of
-# those messages (None for none), its piece index (0 for whole messages), and its body tokens.
-ChunkTokens = tuple[int, int, str | None, str | None, int, tuple[str, ...]]
-_STORED_FIELDS = 8
-_STORED_UNIT_FIELDS = 5
-_STORED_MESSAGE_FIELDS = 4
-_STORED_CHUNK_FIELDS = 6
-
-
-@dataclass(frozen=True)
-class Entry:
-    """The cached tokens of one evidence file.
-
-    messages is empty unless the file is an addressable transcript. chunks is empty unless
-    the file is a transcript. The stat fields are the file's modification time and size,
-    and digest is the SHA-256 of its bytes.
-    """
-
-    path: str
-    mtime_ns: int
-    size: int
-    digest: str
-    scalars: dict[str, str]
-    file_unit: UnitTokens
-    messages: tuple[MessageTokens, ...]
-    chunks: tuple[ChunkTokens, ...]
 
 
 @dataclass(frozen=True)
@@ -247,11 +212,15 @@ def _update(
     for relpath in wanted:
         path = root / relpath
         try:
-            status = path.stat()
+            stat_result = path.stat()
         except OSError:
             continue
         old = stored.get(relpath)
-        if old is not None and old.mtime_ns == status.st_mtime_ns and old.size == status.st_size:
+        if (
+            old is not None
+            and old.mtime_ns == stat_result.st_mtime_ns
+            and old.size == stat_result.st_size
+        ):
             entries[relpath] = old
             continue
         try:
@@ -260,11 +229,11 @@ def _update(
             continue
         digest = hashlib.sha256(data).hexdigest()
         if old is not None and old.digest == digest:
-            entry = replace(old, mtime_ns=status.st_mtime_ns, size=status.st_size)
+            entry = replace(old, mtime_ns=stat_result.st_mtime_ns, size=stat_result.st_size)
             restated += 1
         else:
             document = shared.parse(relpath, corpus.decode_text(data))
-            entry = _build(document, status.st_mtime_ns, status.st_size, digest)
+            entry = _build(document, stat_result.st_mtime_ns, stat_result.st_size, digest)
             refreshed += 1
         entries[relpath] = merged[relpath] = entry
 
@@ -282,38 +251,18 @@ def _update(
 
 
 def _build(document: model.Document, mtime_ns: int, size: int, digest: str) -> Entry:
-    """Tokenize one parsed file once. The file unit and the message bodies share its lines.
+    """Tokenize one parsed file once.
 
-    A transcript is tokenized from chunks.visible, so injected text cannot match. Other
-    evidence is tokenized as stored.
+    A transcript stores its title and its parts. Each part's lines are tokenized once, after
+    chunks.parts has removed injected text. Other evidence stores its title and body.
     """
     relpath = document.path
-    transcript = evidence.evidence_kind(relpath, document.scalar("source")) == "transcript"
-    view = chunks.visible(document) if transcript else document
-    lines = view.lines
-    kept = {
-        index: search.index_tokens(lines[index])
-        for index in range(view.body_start, len(lines))
-        if index not in view.heading_lines and index not in view.comment_lines
-    }
-    title = search.index_tokens(document.title or "")
-    body = tuple(token for tokens in kept.values() for token in tokens)
-    file_unit: UnitTokens = (
-        title,
-        (),
-        (),
-        body,
-        (" ".join(title),) if title else (),
-    )
     scalars = {
         name: value for name in SCALAR_FIELDS if (value := document.scalar(name)) is not None
     }
-    messages: tuple[MessageTokens, ...] = ()
-    transcript_chunks: tuple[ChunkTokens, ...] = ()
-    if transcript:
-        # Most chunk lines are unchanged file lines, so their tokens are reused. Only the
-        # lines that injected-text removal changed are tokenized again.
-        known = {lines[index]: tokens for index, tokens in kept.items()}
+    title = search.index_tokens(document.title or "")
+    if evidence.evidence_kind(relpath, document.scalar("source")) == "transcript":
+        known: dict[str, tuple[str, ...]] = {}
 
         def tokens_of(line: str) -> tuple[str, ...]:
             tokens = known.get(line)
@@ -322,20 +271,26 @@ def _build(document: model.Document, mtime_ns: int, size: int, digest: str) -> E
                 known[line] = tokens
             return tokens
 
-        if addressing.message_sections(view) is not None:
-            messages = _message_tokens(chunks.parts(document), tokens_of)
-        transcript_chunks = tuple(
-            (
-                chunk.number,
-                chunk.last,
-                _iso(chunk.started),
-                _iso(chunk.ended),
-                chunk.piece,
-                tuple(token for line in chunk.lines for token in tokens_of(line)),
+        parts = tuple(
+            PartTokens(
+                part.number,
+                part.timestamp,
+                part.piece,
+                part.size,
+                tuple(token for line in part.lines for token in tokens_of(line)),
             )
-            for chunk in chunks.chunks(document)
+            for part in chunks.parts(document)
         )
-    return Entry(relpath, mtime_ns, size, digest, scalars, file_unit, messages, transcript_chunks)
+        addressable = addressing.message_sections(document) is not None
+        return Entry(relpath, mtime_ns, size, digest, scalars, title, (), parts, addressable)
+    lines = document.lines
+    body = tuple(
+        token
+        for index in range(document.body_start, len(lines))
+        if index not in document.heading_lines and index not in document.comment_lines
+        for token in search.index_tokens(lines[index])
+    )
+    return Entry(relpath, mtime_ns, size, digest, scalars, title, body, (), False)
 
 
 # The last cache file read or written in this process, keyed by its identity on disk. A
@@ -371,18 +326,23 @@ def _read(target: Path, version: str) -> dict[str, Entry] | None:
 
 
 def _decode(target: Path, version: str) -> dict[str, Entry] | None:
+    """The stored entries, or None for a missing, unreadable, or mismatched file.
+
+    A pickle of the wrong shape, a format or fingerprint mismatch, or a key that names another
+    entry's path returns None, so the caller rebuilds the cache.
+    """
     try:
         with target.open("rb") as handle:
             data = pickle.load(handle)
-        if data["format"] != FORMAT or data["fingerprint"] != version:
+        if not isinstance(data, dict) or data["format"] != FORMAT or data["fingerprint"] != version:
             return None
-        entries: dict[str, Entry] = {}
-        for key, value in data["entries"].items():
-            entry = _from_tuple(value)
-            if entry.path != key:
-                raise ValueError(key)
-            entries[key] = entry
-        return entries
+        stored = data["entries"]
+        if not isinstance(stored, dict):
+            return None
+        for key, entry in stored.items():
+            if not isinstance(entry, Entry) or entry.path != key:
+                return None
+        return stored
     except Exception:
         return None
 
@@ -412,11 +372,7 @@ def _write(target: Path, version: str, entries: dict[str, Entry]) -> bool:
 
 
 def _replace_file(target: Path, version: str, entries: dict[str, Entry]) -> None:
-    payload = {
-        "format": FORMAT,
-        "fingerprint": version,
-        "entries": {path: _to_tuple(entry) for path, entry in entries.items()},
-    }
+    payload = {"format": FORMAT, "fingerprint": version, "entries": entries}
     descriptor, name = tempfile.mkstemp(dir=target.parent, prefix=".tokens-", suffix=".tmp")
     temporary = Path(name)
     try:
@@ -432,118 +388,3 @@ def _warn(target: Path, error: OSError) -> bool:
     """Print the one-line warning for a cache that could not be written. Always returns False."""
     sys.stderr.write(f"kb: token cache not written to {target}: {error.strerror or error}\n")
     return False
-
-
-def _to_tuple(entry: Entry) -> tuple[object, ...]:
-    return (
-        entry.path,
-        entry.mtime_ns,
-        entry.size,
-        entry.digest,
-        tuple(sorted(entry.scalars.items())),
-        entry.file_unit,
-        entry.messages,
-        entry.chunks,
-    )
-
-
-def _from_tuple(value: object) -> Entry:
-    """The entry that a stored tuple holds. Raises TypeError or ValueError on the wrong shape."""
-    parts = _tuple(value)
-    if len(parts) != _STORED_FIELDS:
-        raise TypeError("entry")
-    path, mtime_ns, size, digest, pairs, file_unit, messages, chunk_items = parts
-    if not (
-        isinstance(path, str)
-        and isinstance(mtime_ns, int)
-        and isinstance(size, int)
-        and isinstance(digest, str)
-    ):
-        raise TypeError("entry fields")
-    scalars: dict[str, str] = {}
-    for pair in _tuple(pairs):
-        name, text = _tuple(pair)
-        if not (isinstance(name, str) and isinstance(text, str)):
-            raise TypeError("scalar")
-        scalars[name] = text
-    return Entry(
-        path=path,
-        mtime_ns=mtime_ns,
-        size=size,
-        digest=digest,
-        scalars=scalars,
-        file_unit=_unit(file_unit),
-        messages=tuple(_message(item) for item in _tuple(messages)),
-        chunks=tuple(_chunk(item) for item in _tuple(chunk_items)),
-    )
-
-
-def _unit(value: object) -> UnitTokens:
-    parts = _tuple(value)
-    if len(parts) != _STORED_UNIT_FIELDS:
-        raise TypeError("unit")
-    title, aliases, headings, body, phrases = (_strings(part) for part in parts)
-    return title, aliases, headings, body, phrases
-
-
-def _chunk(value: object) -> ChunkTokens:
-    parts = _tuple(value)
-    if len(parts) != _STORED_CHUNK_FIELDS:
-        raise TypeError("chunk")
-    number, last, started, ended, piece, body = parts
-    if not all(isinstance(item, int) for item in (number, last, piece)):
-        raise TypeError("chunk numbers")
-    for timestamp in (started, ended):
-        if timestamp is not None:
-            if not isinstance(timestamp, str):
-                raise TypeError("chunk timestamp")
-            datetime.fromisoformat(timestamp)
-    return number, last, started, ended, piece, _strings(body)
-
-
-def _message(value: object) -> MessageTokens:
-    parts = _tuple(value)
-    if len(parts) != _STORED_MESSAGE_FIELDS:
-        raise TypeError("message")
-    number, timestamp, body, size = parts
-    if not (isinstance(number, int) and isinstance(timestamp, str) and isinstance(size, int)):
-        raise TypeError("message fields")
-    datetime.fromisoformat(timestamp)
-    return number, timestamp, _strings(body), size
-
-
-def _message_tokens(
-    found: Sequence[chunks.Part], tokens_of: Callable[[str], tuple[str, ...]]
-) -> tuple[MessageTokens, ...]:
-    """One entry per addressable message, from its parts in order."""
-    by_number: dict[int, list[chunks.Part]] = {}
-    for part in found:
-        if part.number:
-            by_number.setdefault(part.number, []).append(part)
-    out: list[MessageTokens] = []
-    for number, members in by_number.items():
-        first = members[0]
-        body = tuple(
-            token for member in members for line in member.lines for token in tokens_of(line)
-        )
-        size = 0 if first.piece else first.size
-        out.append((number, _iso(first.timestamp) or "", body, size))
-    return tuple(out)
-
-
-def _iso(moment: datetime | None) -> str | None:
-    """The ISO form of a timestamp, or None."""
-    return None if moment is None else moment.isoformat()
-
-
-def _tuple(value: object) -> tuple[Any, ...]:
-    if not isinstance(value, tuple):
-        raise TypeError("expected a tuple")
-    return value
-
-
-def _strings(value: object) -> tuple[str, ...]:
-    items = _tuple(value)
-    if not all(isinstance(item, str) for item in items):
-        raise TypeError("expected strings")
-    return items

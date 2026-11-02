@@ -45,6 +45,12 @@ FILTERS = (
 )
 
 
+def reference_unit(document: Document) -> search.Unit:
+    """The unit of an evidence file: its title and all of its text, as evidence built it first."""
+    body = document.prose(document.body_start, len(document.lines))
+    return search.make_unit(document.title or "", (), (), body)
+
+
 def _within(value: date | None, since: date | None, until: date | None) -> bool:
     return (
         value is not None
@@ -110,7 +116,7 @@ def reference_select(
                 owners.append((index, position))
                 unit_classes.append(evidence.CHUNK_CLASS)
         else:
-            units.append(search.evidence_unit(document))
+            units.append(reference_unit(document))
             owners.append((index, -1))
             unit_classes.append(evidence.FILE_CLASS)
 
@@ -139,7 +145,7 @@ def reference_select(
             continue
         members: dict[int, list[str]] = {}
         moments: dict[int, datetime] = {}
-        for part in chunks.parts(document, eligible):
+        for part in chunks.parts(document):
             if part.number and chunk.number <= part.number <= chunk.last:
                 members.setdefault(part.number, []).extend(
                     token for line in part.lines for token in search.index_tokens(line)

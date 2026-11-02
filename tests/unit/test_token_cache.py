@@ -1,17 +1,20 @@
 """Tests for the token cache: freshness, storage, recovery, and where the cache lives."""
 
+import dataclasses
 import os
 import pickle
 import shutil
 import subprocess
 import sys
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from kb import chunks, corpus, evidence, lock, model, search, token_cache
+from kb import addressing, chunks, corpus, entries, evidence, lock, model, search, token_cache
+from kb.entries import Entry, PartTokens
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 TRANSCRIPT = (
@@ -114,11 +117,17 @@ def counted(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     return calls
 
 
+def reference_unit(document: model.Document) -> search.Unit:
+    """The unit an evidence file had before the cache: its title and its body prose."""
+    body = document.prose(document.body_start, len(document.lines))
+    return search.make_unit(document.title or "", (), (), body)
+
+
 def paths(root: Path) -> list[str]:
     return token_cache.evidence_paths(root)
 
 
-def stored(root: Path) -> dict[str, token_cache.Entry]:
+def stored(root: Path) -> dict[str, Entry]:
     target = token_cache.cache_file(root)
     assert target is not None
     loaded = token_cache._decode(target, token_cache.fingerprint())
@@ -132,7 +141,7 @@ def decodes(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
     calls: list[Path] = []
     original = token_cache._decode
 
-    def counting(target: Path, version: str) -> dict[str, token_cache.Entry] | None:
+    def counting(target: Path, version: str) -> dict[str, Entry] | None:
         calls.append(target)
         return original(target, version)
 
@@ -182,7 +191,9 @@ def test_a_cold_build_and_a_warm_load_agree_and_the_warm_load_tokenizes_nothing(
     assert sorted(cold) == paths(repo)
 
 
-def test_entries_hold_the_units_that_evidence_builds_for_every_fixture_file(repo: Path) -> None:
+def test_entries_hold_the_tokens_that_the_documents_give_for_every_fixture_file(
+    repo: Path,
+) -> None:
     fixture_files = sorted(FIXTURES.rglob("*.md"))
     assert fixture_files
     names = []
@@ -191,33 +202,31 @@ def test_entries_hold_the_units_that_evidence_builds_for_every_fixture_file(repo
         write(repo, relpath, file.read_text(encoding="utf-8"))
         names.append(relpath)
 
-    entries = token_cache.load(repo, names)
-    assert sorted(entries) == sorted(names)
-    messages_seen = 0
+    loaded = token_cache.load(repo, names)
+    assert sorted(loaded) == sorted(names)
+    parts_seen = 0
     for relpath in names:
         document = corpus.read_document(repo, relpath)
-        entry = entries[relpath]
+        entry = loaded[relpath]
+        assert entry.title == search.index_tokens(document.title or "")
+        assert entry.addressable is (addressing.message_sections(document) is not None)
         if evidence.evidence_kind(relpath, document.scalar("source")) == "transcript":
-            document = chunks.visible(document)
-        assert evidence.file_unit(entry) == search.evidence_unit(document)
-        found = chunks.parts(document)
-        numbers = list(dict.fromkeys(part.number for part in found if part.number))
-        assert [message[0] for message in entry.messages] == numbers
-        for number, moment, body, _size in entry.messages:
-            members = [part for part in found if part.number == number]
-            assert members[0].timestamp is not None
-            assert moment == members[0].timestamp.isoformat()
-            assert body == tuple(
-                token
-                for part in members
-                for line in part.lines
-                for token in search.index_tokens(line)
-            )
-        messages_seen += len(numbers)
+            found = chunks.parts(document)
+            assert [(p.number, p.timestamp, p.piece, p.size) for p in entry.parts] == [
+                (p.number, p.timestamp, p.piece, p.size) for p in found
+            ]
+            for part, cached in zip(found, entry.parts, strict=True):
+                assert cached.body == tuple(
+                    token for line in part.lines for token in search.index_tokens(line)
+                )
+            assert entry.body == ()
+            parts_seen += len(entry.parts)
+        else:
+            assert entry.parts == ()
+            assert entries.file_unit(entry) == reference_unit(document)
         for name in token_cache.SCALAR_FIELDS:
-            value = document.scalar(name)
-            assert entry.scalars.get(name) == value
-    assert messages_seen > 0
+            assert entry.scalars.get(name) == document.scalar(name)
+    assert parts_seen > 0
 
 
 def test_a_touched_file_updates_its_stat_and_is_not_tokenized_again(
@@ -247,8 +256,8 @@ def test_an_edited_file_is_tokenized_again_and_no_other_file_is(repo: Path) -> N
     assert report == token_cache.RefreshReport(refreshed=1, restated=0, removed=0, written=True)
     after = stored(repo)
     changed = "observations/pending/20261001T090000-nas.md"
-    assert after[changed].file_unit != before[changed].file_unit
-    assert "traefik" in evidence.file_unit(after[changed]).body
+    assert after[changed].body != before[changed].body
+    assert "traefik" in entries.file_unit(after[changed]).body
     for relpath in after:
         if relpath != changed:
             assert after[relpath] == before[relpath]
@@ -417,9 +426,8 @@ def corrupt_payloads(version: str) -> dict[str, Callable[[Path], None]]:
     }
 
 
-def _valid_entry(path: str) -> tuple[object, ...]:
-    entry = token_cache._build(model.parse(path, "# NAS\n\nRestart it.\n"), 1, 2, "digest")
-    return token_cache._to_tuple(entry)
+def _valid_entry(path: str) -> Entry:
+    return token_cache._build(model.parse(path, "# NAS\n\nRestart it.\n"), 1, 2, "digest")
 
 
 @pytest.mark.parametrize("kind", CORRUPT_KINDS)
@@ -434,66 +442,42 @@ def test_an_unreadable_cache_is_rebuilt_from_the_files(repo: Path, kind: str) ->
     assert sorted(stored(repo)) == paths(repo)
 
 
-def _replaced(index: int, value: object) -> Callable[[tuple[Any, ...]], tuple[Any, ...]]:
-    """A function that replaces one field of a stored entry tuple."""
-
-    def mutate(entry: tuple[Any, ...]) -> tuple[Any, ...]:
-        return (*entry[:index], value, *entry[index + 1 :])
-
-    return mutate
-
-
-@pytest.mark.parametrize(
-    "mutate",
-    [
-        lambda t: t[:-1],
-        _replaced(0, 1),
-        _replaced(1, "mtime"),
-        _replaced(2, "size"),
-        _replaced(3, 4),
-        _replaced(4, "pairs"),
-        _replaced(4, (("a", "b", "c"),)),
-        _replaced(4, (("title", 1),)),
-        _replaced(5, (1, 2)),
-        _replaced(5, ((1,), (), (), (), ())),
-        _replaced(6, ((1, 2),)),
-        _replaced(6, ("not a tuple",)),
-        _replaced(6, (("1", "2026-10-01T09:00:00+00:00", ()),)),
-        _replaced(6, ((1, 5, ()),)),
-        _replaced(6, ((1, "2026-10-01T09:00:00+00:00", (1,)),)),
-        _replaced(6, ((1, "not a time", ()),)),
-        _replaced(7, ((1,),)),
-        _replaced(7, ("not a tuple",)),
-        _replaced(7, ((("0", ()),))),
-        _replaced(7, ((0, (1,)),)),
-    ],
-)
-def test_a_stored_entry_of_the_wrong_shape_is_refused(
-    mutate: Callable[[tuple[Any, ...]], Any],
-) -> None:
-    valid = _valid_entry("nas.md")
-    assert token_cache._from_tuple(valid).path == "nas.md"
-    with pytest.raises((TypeError, ValueError)):
-        token_cache._from_tuple(mutate(valid))
+def test_a_pickle_of_an_earlier_format_rebuilds_everything(repo: Path) -> None:
+    token_cache.load(repo, paths(repo))
+    target = token_cache.cache_file(repo)
+    assert target is not None
+    earlier = {
+        "format": token_cache.FORMAT - 1,
+        "fingerprint": token_cache.fingerprint(),
+        "entries": stored(repo),
+    }
+    target.write_bytes(pickle.dumps(earlier, protocol=5))
+    report = token_cache.refresh(repo)
+    assert report.refreshed == len(paths(repo))
+    assert sorted(stored(repo)) == paths(repo)
 
 
-def test_a_stored_entry_round_trips_through_its_tuple() -> None:
-    entry = token_cache._build(model.parse("nas.md", TRANSCRIPT), 1, 2, "digest")
-    assert token_cache._from_tuple(token_cache._to_tuple(entry)) == entry
-
-
-def test_the_cache_holds_only_builtin_types(repo: Path) -> None:
+def test_the_cache_holds_only_records_and_builtin_types(repo: Path) -> None:
     token_cache.load(repo, paths(repo))
 
     def assert_plain(value: object) -> None:
-        assert type(value) in (dict, tuple, str, int), type(value)
-        if isinstance(value, dict):
+        if isinstance(value, Entry):
+            for field in dataclasses.fields(value):
+                assert_plain(getattr(value, field.name))
+        elif isinstance(value, PartTokens):
+            for item in value:
+                assert_plain(item)
+        elif isinstance(value, datetime):
+            return
+        elif isinstance(value, dict):
             for key, item in value.items():
                 assert_plain(key)
                 assert_plain(item)
         elif isinstance(value, tuple):
             for item in value:
                 assert_plain(item)
+        else:
+            assert type(value) in (str, int, bool, type(None)), type(value)
 
     target = token_cache.cache_file(repo)
     assert target is not None
@@ -654,37 +638,40 @@ def test_injected_text_is_not_tokenized_into_a_transcript_entry(repo: Path) -> N
 
     secret = set(search.index_tokens("zigzag cipher"))
     assert secret
-    assert not secret & set(entry.file_unit[3])
-    assert not any(secret & set(message[2]) for message in entry.messages)
-    assert not any(secret & set(chunk[-1]) for chunk in entry.chunks)
-    assert set(search.index_tokens("kitchen")) <= set(entry.file_unit[3])
-    # Message 3 is an AGENTS.md instruction message, which chunking drops, so it has no entry.
-    assert [message[0] for message in entry.messages] == [1, 2]
+    assert not secret & set(entry.body)
+    assert not any(secret & set(part.body) for part in entry.parts)
+    assert not any(secret & set(chunk.body) for chunk in entries.chunk_tokens(entry))
+    kitchen = set(search.index_tokens("kitchen"))
+    assert kitchen <= {token for part in entry.parts for token in part.body}
+    # Message 3 is an AGENTS.md instruction message, which chunking drops, so it has no part.
+    assert sorted(entries.message_bodies(entry)) == [1, 2]
 
 
 def test_chunk_tokens_match_the_search_units_of_the_chunks(repo: Path) -> None:
-    transcript = repo / "observations/archived/20261001T100000-traefik.md"
-    document = corpus.read_document(repo, "observations/archived/20261001T100000-traefik.md")
-    entry = token_cache.load(repo, [transcript.relative_to(repo).as_posix()])[
-        transcript.relative_to(repo).as_posix()
-    ]
+    relpath = "observations/archived/20261001T100000-traefik.md"
+    document = corpus.read_document(repo, relpath)
+    entry = token_cache.load(repo, [relpath])[relpath]
     expected = [
         (
             chunk.number,
             chunk.last,
-            chunk.started.isoformat() if chunk.started else None,
-            chunk.ended.isoformat() if chunk.ended else None,
+            chunk.started,
+            chunk.ended,
             chunk.piece,
             search.make_unit("", (), (), list(chunk.lines)).body,
         )
         for chunk in chunks.chunks(document)
     ]
-    assert list(entry.chunks) == expected
-    assert entry.chunks
+    actual = [
+        (found.number, found.last, found.started, found.ended, found.piece, found.body)
+        for found in entries.chunk_tokens(entry)
+    ]
+    assert actual == expected
+    assert actual
 
 
-def test_only_transcripts_carry_chunks(repo: Path) -> None:
+def test_only_transcripts_carry_parts(repo: Path) -> None:
     loaded = token_cache.load(repo, paths(repo))
-    assert loaded["observations/pending/20261001T090000-nas.md"].chunks == ()
-    assert loaded["questions/open/nas.md"].chunks == ()
-    assert loaded["observations/archived/20261001T100000-traefik.md"].chunks
+    assert loaded["observations/pending/20261001T090000-nas.md"].parts == ()
+    assert loaded["questions/open/nas.md"].parts == ()
+    assert loaded["observations/archived/20261001T100000-traefik.md"].parts

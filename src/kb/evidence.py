@@ -5,13 +5,18 @@ import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime
-from typing import TYPE_CHECKING
 
 from kb import chunks, dates, locators, search
+from kb.entries import (
+    ChunkTokens,
+    Entry,
+    chunk_tokens,
+    chunk_unit,
+    file_unit,
+    message_bodies,
+    message_moment,
+)
 from kb.model import Document
-
-if TYPE_CHECKING:
-    from kb.token_cache import ChunkTokens, Entry, MessageTokens
 
 KINDS = ("observation", "transcript", "open-question", "resolved-question")
 TITLE_WIDTH = 72
@@ -33,11 +38,11 @@ class Candidate:
     """
 
     path: str
-    entry: "Entry"
+    entry: Entry
     kind: str
     created: date | None
     addressable: bool
-    scored: "tuple[ChunkTokens, ...]"
+    scored: tuple[ChunkTokens, ...]
 
 
 @dataclass(frozen=True)
@@ -58,7 +63,7 @@ class Item:
 
 
 def select(
-    entries: Sequence["Entry"],
+    entries: Sequence[Entry],
     terms: Sequence[str],
     kind_filter: str | None,
     since: date | None,
@@ -84,23 +89,24 @@ def select(
         kind = evidence_kind(entry.path, entry.scalars.get("source"))
         if kind_filter is not None and kind != kind_filter:
             continue
-
         created = created_date_of(entry.scalars.get("created"))
-        addressable = kind == "transcript" and bool(entry.messages)
-        if addressable and eligible is not None:
-            scored = _bounded_chunks(entry, eligible)
-        elif not addressable and has_date_bound and not _within(created, since, until):
-            continue
+        if kind == "transcript":
+            # Legacy transcripts have no message dates, so they keep the created-date filter.
+            if has_date_bound and not entry.addressable and not _within(created, since, until):
+                continue
+            scored = chunk_tokens(entry, eligible if entry.addressable else None)
+            if not scored:
+                continue
         else:
-            scored = entry.chunks
-        if kind == "transcript" and not scored:
-            continue
+            if has_date_bound and not _within(created, since, until):
+                continue
+            scored = ()
 
         index = len(candidates)
-        candidates.append(Candidate(entry.path, entry, kind, created, addressable, tuple(scored)))
+        candidates.append(Candidate(entry.path, entry, kind, created, entry.addressable, scored))
         if kind == "transcript":
             for position, found in enumerate(scored):
-                units.append(_chunk_unit(entry, found))
+                units.append(chunk_unit(entry, found))
                 owners.append((index, position))
                 unit_classes.append(CHUNK_CLASS)
         else:
@@ -119,15 +125,32 @@ def select(
     for hit in ranked:
         index, position = owners[hit.index]
         best.setdefault(index, (hit.score, position))
-    rows = [
+
+    # A row's date comes from its matched message, so a row is built only when the limit needs
+    # it. Rows that tie the last row kept are built as well, because their date breaks the tie.
+    ordered = sorted(best.items(), key=lambda pair: -pair[1][0])
+    built = [
         (_row(candidates[index], score, position, terms), candidates[index])
-        for index, (score, position) in best.items()
+        for index, (score, position) in ordered[: _built_count(ordered, limit)]
     ]
-    rows.sort(key=lambda pair: _sort_key(pair[0]))
+    built.sort(key=lambda pair: _sort_key(pair[0]))
     return [
         replace(item, text=_excerpt_for(candidate, item, terms, read, eligible))
-        for item, candidate in rows[:limit]
+        for item, candidate in built[:limit]
     ]
+
+
+def _built_count(ordered: Sequence[tuple[int, tuple[float, int]]], limit: int) -> int:
+    """How many leading rows to build: limit rows, and any that tie the last one of them."""
+    if limit <= 0:
+        return 0
+    if len(ordered) <= limit:
+        return len(ordered)
+    boundary = ordered[limit - 1][1][0]
+    count = limit
+    while count < len(ordered) and ordered[count][1][0] == boundary:
+        count += 1
+    return count
 
 
 def evidence_kind(path: str, source: str | None) -> str:
@@ -139,73 +162,6 @@ def evidence_kind(path: str, source: str | None) -> str:
     if source == "session-transcript":
         return "transcript"
     return "observation"
-
-
-def file_unit(entry: "Entry") -> search.Unit:
-    """The search unit of an evidence file, built from its cached tokens."""
-    title, aliases, headings, body, phrases = entry.file_unit
-    return search.Unit(
-        title=title,
-        aliases=aliases,
-        headings=headings,
-        body=body,
-        phrases=frozenset(phrases),
-    )
-
-
-def _chunk_unit(entry: "Entry", found: "ChunkTokens") -> search.Unit:
-    """The search unit of one chunk: its body, with the file's title and phrases."""
-    title, _aliases, _headings, _body, phrases = entry.file_unit
-    return search.Unit(
-        title=title,
-        aliases=(),
-        headings=(),
-        body=found[5],
-        phrases=frozenset(phrases),
-    )
-
-
-def _bounded_chunks(entry: "Entry", eligible: chunks.Eligible) -> "tuple[ChunkTokens, ...]":
-    """The chunks of an addressable transcript from its eligible messages only.
-
-    Split pieces are kept as cached. Whole messages are merged again from their cached tokens
-    and lengths, by the same rule as chunks.chunks, so a chunk never spans a message that
-    eligible rejects. Without rejected messages, the result equals entry.chunks.
-    """
-    pieces: dict[int, list[tuple[str, ...]]] = {}
-    for chunk in entry.chunks:
-        if chunk[4]:
-            pieces.setdefault(chunk[0], []).append(chunk[5])
-    found: list[chunks.Part] = []
-    bodies: list[tuple[str, ...]] = []
-    for number, moment, body, size in entry.messages:
-        started = datetime.fromisoformat(moment)
-        if number in pieces:
-            for index, piece in enumerate(pieces[number], 1):
-                found.append(chunks.Part(number, started, index, 0, (), eligible(started)))
-                bodies.append(piece)
-        else:
-            found.append(chunks.Part(number, started, 0, size, (), eligible(started)))
-            bodies.append(body)
-    out: list[ChunkTokens] = []
-    for start, end in chunks.group(found):
-        first, last = found[start], found[end - 1]
-        tokens = tuple(token for index in range(start, end) for token in bodies[index])
-        out.append(
-            (
-                first.number,
-                last.number,
-                _iso(first.timestamp),
-                _iso(last.timestamp),
-                first.piece,
-                tokens,
-            )
-        )
-    return tuple(out)
-
-
-def _iso(moment: datetime | None) -> str | None:
-    return None if moment is None else moment.isoformat()
 
 
 def _eligible(since: date | None, until: date | None) -> chunks.Eligible:
@@ -256,40 +212,45 @@ def _row(
     """One row without its excerpt. A row names its matched message when one holds half the terms."""
     if candidate.kind != "transcript":
         return Item(candidate.path, candidate.created, candidate.kind, "", score, None)
-    message = None
+    number = None
     if candidate.addressable:
-        message = _matched_message(candidate, candidate.scored[position], terms)
-    if message is None:
+        number = _matched_message(candidate, candidate.scored[position], terms)
+    if number is None:
         return Item(candidate.path, candidate.created, candidate.kind, "", score, None, position)
+    moment = message_moment(candidate.entry, number)
+    if moment is None:
+        raise ValueError(f"{candidate.path} message {number} has no timestamp")
     return Item(
-        path=f"{candidate.path}#{message[0]}",
-        date=_message_date(message),
+        path=f"{candidate.path}#{number}",
+        date=moment.date(),
         kind=candidate.kind,
         text="",
         score=score,
-        message_number=message[0],
+        message_number=number,
         chunk=position,
     )
 
 
-def _matched_message(
-    candidate: Candidate, found: "ChunkTokens", terms: Sequence[str]
-) -> "MessageTokens | None":
-    """The message of the chunk with the most distinct query terms, or None when it holds fewer
-    than half of them. A match spread over several messages keeps the file locator.
+def _matched_message(candidate: Candidate, found: ChunkTokens, terms: Sequence[str]) -> int | None:
+    """The number of the message in the chunk with the most distinct query terms, or None when it
+    holds fewer than half of them. A match spread over several messages keeps the file locator.
 
     Ties go to the earlier message.
     """
     wanted = frozenset(terms)
     members = [
-        message for message in candidate.entry.messages if found[0] <= message[0] <= found[1]
+        (number, body)
+        for number, body in message_bodies(candidate.entry).items()
+        if found.number <= number <= found.last
     ]
     if not members:
-        raise ValueError(f"{candidate.path} has no message {found[0]}")
-    best = max(members, key=lambda message: (len(wanted.intersection(message[2])), -message[0]))
-    if len(wanted.intersection(best[2])) < math.ceil(len(wanted) / 2):
+        raise ValueError(f"{candidate.path} has no message {found.number}")
+    number, body = max(
+        members, key=lambda member: (len(wanted.intersection(member[1])), -member[0])
+    )
+    if len(wanted.intersection(body)) < math.ceil(len(wanted) / 2):
         return None
-    return best
+    return number
 
 
 def _excerpt_for(
@@ -311,11 +272,6 @@ def _excerpt_for(
     if item.chunk is None or item.chunk >= len(listed):
         raise ValueError(f"{candidate.path} has no chunk {item.chunk}")
     return search.excerpt(_excerpt_lines(listed[item.chunk].lines), terms)
-
-
-def _message_date(message: "MessageTokens") -> date:
-    """The UTC date of a cached message timestamp."""
-    return datetime.fromisoformat(message[1]).date()
 
 
 def _excerpt_lines(lines: Sequence[str]) -> tuple[str, ...]:

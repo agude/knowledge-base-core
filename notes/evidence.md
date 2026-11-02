@@ -1981,3 +1981,34 @@ Reading the baseline:
   section matches, so a recall that shows session rows always shows a curated row too.
   Under the shipped design this metric cannot be nonzero. Whether it should measure a
   different case is an open question for the user.
+
+## Pre-merge addendum A2: transcript parts stored once (cache format 4) (2026-11-02)
+
+- Change: the cache holds one `Entry` record per file, pickled directly.
+  A transcript stores its parts (message or split piece, with timestamp, size,
+  and body tokens). Chunks are formed from the parts by `chunks.group`, the same
+  rule as `chunks.chunks`. Formerly the tokens were stored three times: file body,
+  message bodies, and chunk bodies. `chunks.visible` and `search.evidence_unit`
+  are gone. `FORMAT` is 4.
+- Content: `~/Knowledge` at `deac4944f31d6ed6927e1a90efffc66b269021dc` for every
+  run in this section. Two thousand nine hundred seventy-one evidence files.
+- Method: `measure.py` in the session scratchpad. Cold refresh deletes the cache
+  file before each run. Warm timings are the median of 3 runs after 1 warm-up.
+  Commands ran with `python -m kb` from this repository. Before: source at
+  `fc18adc`, from `git archive`. After: the working tree at this commit.
+  `KB_CONTENT` points at `~/Knowledge`.
+
+| Measure | Before (format 3) | After (format 4) |
+|---|---|---|
+| Cache file size | 51,275,955 bytes (51.3 MB) | 22,361,791 bytes (22.4 MB) |
+| `pickle.load` of the cache, median | 0.349 s | 0.165 s |
+| Cold refresh, 3 runs | 13.36, 12.68, 12.84 s | 11.66, 11.05, 11.04 s |
+| `kb evidence curator cadence --kind transcript`, warm median | 1.351 s | 0.894 s |
+| `kb recall curator cadence` (curated hit), warm median | 2.082 s | 1.570 s |
+
+- The 0.59 s validation pass (`_from_tuple`) is gone. The format 4 cache
+  unpickles the records directly.
+- Warm query times did not get worse, so chunk tokens are not memoized per
+  process. `chunks.group` builds each query's chunk bodies from the parts.
+- `just eval --mode curated|sessions|combined` on the fixtures and on
+  `notes/eval-live.json` with `~/Knowledge`: byte-identical to the baseline.

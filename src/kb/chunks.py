@@ -10,8 +10,7 @@ Rules:
   legacy "### user" or "### assistant" section. A file with neither is one chunk, which
   holds its whole body.
 - Injected text is removed first: spans inside <INSTRUCTIONS> and <system-reminder>, and
-  user messages that start with "# AGENTS.md instructions for". The same removal shapes
-  the token sources through visible(). Stored files never change.
+  user messages that start with "# AGENTS.md instructions for". Stored files never change.
 - A chunk starts at a message and takes the following messages until it reaches
   MERGE_THRESHOLD characters. A chunk never crosses a file, and a long message is never
   merged.
@@ -19,7 +18,8 @@ Rules:
   characters, at blank lines outside code fences. Each piece is its own chunk.
 
 - With a date bound, only the messages inside the bound are chunked. A message outside the
-  bound is a barrier: no chunk spans it.
+  bound is a barrier: no chunk spans it. The bound is a predicate over each part's timestamp,
+  so the cached tokens in kb.entries and the excerpts chunk the same way.
 
 Chunk.number and Chunk.last are the numbers of the first and last messages, or NO_MESSAGE for a
 legacy or headingless file. Chunk.piece numbers the pieces of a split message. The thresholds
@@ -30,6 +30,7 @@ import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
+from typing import Protocol
 
 from kb import addressing
 from kb.model import Document, fence_closes, fence_opening
@@ -45,6 +46,16 @@ _INJECTED = re.compile(
 )
 _AGENTS_PREFIX = "# AGENTS.md instructions for"
 _TEXT_STORAGE_OPEN = re.compile(r"(~{4,})text")
+
+
+class Sized(Protocol):
+    """A part as group sees it: its piece index and its length in characters."""
+
+    @property
+    def piece(self) -> int: ...
+
+    @property
+    def size(self) -> int: ...
 
 
 @dataclass(frozen=True)
@@ -73,7 +84,7 @@ class Part:
     """One message, or one piece of a split message, before chunks are formed.
 
     piece is 0 for a whole message, and 1, 2, ... for the pieces of a split message. size is
-    the length of the lines. eligible is False for a message outside a date bound.
+    the length of the lines.
     """
 
     number: int
@@ -81,7 +92,6 @@ class Part:
     piece: int
     size: int
     lines: tuple[str, ...]
-    eligible: bool = True
 
 
 @dataclass(frozen=True)
@@ -106,14 +116,25 @@ def chunks(document: Document, eligible: Eligible | None = None) -> tuple[Chunk,
     With eligible, only the messages whose timestamp it accepts are chunked, and no chunk
     spans a message that it rejects.
     """
-    return tuple(_assemble(parts(document, eligible)))
+    found = parts(document)
+    return tuple(_assemble(found, eligibility(found, eligible)))
 
 
-def parts(document: Document, eligible: Eligible | None = None) -> list[Part]:
+def eligibility(found: Sequence[Part], eligible: Eligible | None = None) -> list[bool]:
+    """Whether each part may be chunked: eligible's verdict on its timestamp, or True for all.
+
+    With no bound, every part is eligible.
+    """
+    if eligible is None:
+        return [True] * len(found)
+    return [eligible(part.timestamp) for part in found]
+
+
+def parts(document: Document) -> list[Part]:
     """The parts of one file, in order: one per message, and one per piece of a split message.
 
     Each AGENTS.md instruction message is dropped. A file with no message headings is one part
-    with its whole body, and it is always eligible.
+    with its whole body.
     """
     messages = _messages(document)
     if messages is None:
@@ -124,10 +145,9 @@ def parts(document: Document, eligible: Eligible | None = None) -> list[Part]:
         cleaned = _clean_message(message)
         if cleaned is None:
             continue
-        is_eligible = eligible is None or eligible(cleaned.timestamp)
         if _length(cleaned.lines) > SPLIT_THRESHOLD:
             out.extend(
-                Part(cleaned.number, cleaned.timestamp, index, _length(piece), piece, is_eligible)
+                Part(cleaned.number, cleaned.timestamp, index, _length(piece), piece)
                 for index, piece in enumerate(_split(cleaned.lines), 1)
             )
         else:
@@ -138,23 +158,25 @@ def parts(document: Document, eligible: Eligible | None = None) -> list[Part]:
                     0,
                     _length(cleaned.lines),
                     cleaned.lines,
-                    is_eligible,
                 )
             )
     return out
 
 
-def group(found: Sequence[Part]) -> list[tuple[int, int]]:
+def group(found: Sequence[Sized], eligible: Sequence[bool]) -> list[tuple[int, int]]:
     """The [start, end) index ranges of the chunks that parts form, in order.
 
-    A split piece is a chunk alone. A chunk of whole messages takes the following ones until
-    it reaches MERGE_THRESHOLD characters. Each joining blank line counts as two characters.
-    An ineligible part is skipped, and it ends the chunk before it.
+    eligible[index] is False for a part outside a date bound. A split piece is a chunk alone. A
+    chunk of whole messages takes the following ones until it reaches MERGE_THRESHOLD characters.
+    Each joining blank line counts as two characters. An ineligible part is skipped, and it ends
+    the chunk before it.
     """
+    if len(eligible) != len(found):
+        raise ValueError("eligible must name one value per part")
     ranges: list[tuple[int, int]] = []
     index = 0
     while index < len(found):
-        if not found[index].eligible:
+        if not eligible[index]:
             index += 1
             continue
         start = index
@@ -165,7 +187,7 @@ def group(found: Sequence[Part]) -> list[tuple[int, int]]:
         size = found[start].size
         while (
             index < len(found)
-            and found[index].eligible
+            and eligible[index]
             and not found[index].piece
             and size < MERGE_THRESHOLD
         ):
@@ -173,22 +195,6 @@ def group(found: Sequence[Part]) -> list[tuple[int, int]]:
             index += 1
         ranges.append((start, index))
     return ranges
-
-
-def visible(document: Document) -> Document:
-    """The document with injected text blanked. Token sources read this view.
-
-    Each AGENTS.md instruction message and each <INSTRUCTIONS> or <system-reminder> span is
-    replaced by blank lines, so every line keeps its number and the sections and message
-    contract are unchanged. A match inside injected text therefore cannot rank a file.
-    Stored files never change.
-    """
-    lines = list(document.lines)
-    for message in _messages(document) or ():
-        if message.role == "user" and message.head.startswith(_AGENTS_PREFIX):
-            lines[message.start : message.end] = [""] * (message.end - message.start)
-    text = _INJECTED.sub(lambda match: "\n" * match.group(0).count("\n"), "\n".join(lines))
-    return replace(document, lines=tuple(text.split("\n")))
 
 
 def _messages(document: Document) -> list[_Message] | None:
@@ -307,10 +313,10 @@ def _length(lines: Sequence[str]) -> int:
     return len("\n".join(lines))
 
 
-def _assemble(found: Sequence[Part]) -> list[Chunk]:
+def _assemble(found: Sequence[Part], eligible: Sequence[bool]) -> list[Chunk]:
     """The chunks that the groups of parts form, with the blank line between messages."""
     out: list[Chunk] = []
-    for start, end in group(found):
+    for start, end in group(found, eligible):
         members = found[start:end]
         lines: list[str] = []
         for position, member in enumerate(members):

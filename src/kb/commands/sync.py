@@ -273,7 +273,10 @@ def _refresh_cache(root: Path) -> None:
     except (KbError, OSError, UnicodeError) as error:
         sys.stderr.write(f"sync: warning: cannot refresh the token cache: {error}\n")
         return
-    sys.stdout.write(f"Cache: {report.refreshed} refreshed, {report.removed} removed\n")
+    sys.stdout.write(
+        f"Cache: {report.refreshed} refreshed, {report.restated} restated, "
+        f"{report.removed} removed\n"
+    )
 
 
 def _record_outcome(git_directory: Path, now: datetime, outcome: str, failure: str | None) -> None:

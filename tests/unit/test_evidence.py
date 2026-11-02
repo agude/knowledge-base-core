@@ -15,6 +15,7 @@ import pytest
 from kb import addressing, chunks, corpus, evidence, lock, model, search, token_cache
 from kb.commands import evidence as evidence_command
 from kb.context import Context
+from kb.entries import Entry, chunk_tokens, chunk_unit
 from kb.model import Document, parse
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
@@ -96,7 +97,7 @@ def test_incomplete_or_malformed_transcripts_use_file_level_handling(
     assert addressing.message_sections(transcript(front, headings)) is None
 
 
-def cached(tmp_path: Path, files: dict[str, str]) -> tuple[Path, list[token_cache.Entry]]:
+def cached(tmp_path: Path, files: dict[str, str]) -> tuple[Path, list[Entry]]:
     """Write files under a fresh content root, and return its root and their cache entries."""
     root = tmp_path / "content"
     for relpath, text in files.items():
@@ -201,26 +202,17 @@ def session(*messages: tuple[str, str]) -> str:
 CHATTER = "unrelated status chatter about lunch " * 8
 
 
-def chunk_scores(entries: list[token_cache.Entry], terms: Sequence[str]) -> dict[str, float]:
+def chunk_scores(loaded: list[Entry], terms: Sequence[str]) -> dict[str, float]:
     """The best chunk score of each transcript, computed from its chunks as one corpus.
 
     The units, groups, classes, and delta are the ones evidence.select passes to search.rank.
-    Every entry in entries is a transcript with messages.
+    Every entry in loaded is a transcript with messages.
     """
     units: list[search.Unit] = []
     owners: list[str] = []
-    for entry in entries:
-        title, _aliases, _headings, _body, phrases = entry.file_unit
-        for chunk in entry.chunks:
-            units.append(
-                search.Unit(
-                    title=title,
-                    aliases=(),
-                    headings=(),
-                    body=chunk[5],
-                    phrases=frozenset(phrases),
-                )
-            )
+    for entry in loaded:
+        for found in chunk_tokens(entry):
+            units.append(chunk_unit(entry, found))
             owners.append(entry.path)
     hits = search.rank(
         units,

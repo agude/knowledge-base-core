@@ -220,7 +220,7 @@ def test_the_token_cache_is_refreshed_after_the_exchange_on_push_and_no_push(
 
     def refresh(root: Path) -> token_cache.RefreshReport:
         events.append("refresh")
-        return token_cache.RefreshReport(refreshed=2, restated=0, removed=1, written=True)
+        return token_cache.RefreshReport(refreshed=2, restated=3, removed=1, written=True)
 
     monkeypatch.setattr(sync, "_sync_remote", exchange)
     monkeypatch.setattr(token_cache, "refresh", refresh)
@@ -228,7 +228,7 @@ def test_the_token_cache_is_refreshed_after_the_exchange_on_push_and_no_push(
     assert run_sync(tmp_path) == 0
     assert sync._sync(tmp_path, tmp_path / ".git", {}, "test-host", NOW, None, True) == 0
     assert events == ["exchange no_push=False", "refresh", "exchange no_push=True", "refresh"]
-    assert capsys.readouterr().out.count("Cache: 2 refreshed, 1 removed\n") == 2
+    assert capsys.readouterr().out.count("Cache: 2 refreshed, 3 restated, 1 removed\n") == 2
 
 
 def test_a_token_cache_failure_is_a_warning_and_keeps_the_exit_status(

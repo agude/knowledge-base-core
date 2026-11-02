@@ -261,16 +261,6 @@ def test_excerpt_without_any_match_is_the_first_line_clipped() -> None:
     assert search.excerpt([], ["zebra"]) == ""
 
 
-def test_evidence_unit_has_the_title_and_the_text_without_headings() -> None:
-    document = parse(
-        "observations/pending/a.md", "---\ntitle: Alpha note\n---\n### user\n\nBeta words.\n"
-    )
-    unit = search.evidence_unit(document)
-    assert unit.title == ("alpha", "note")
-    assert unit.headings == ()
-    assert unit.body == ("beta", "word")
-
-
 def test_a_flag_is_indexed_under_its_word_as_well_as_itself() -> None:
     assert search.index_tokens("run --rename now") == ("run", "--rename", "renam", "now")
     assert search.index_tokens("try --no-verify") == ("try", "--no-verify", "no", "verifi")

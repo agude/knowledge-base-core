@@ -14,6 +14,7 @@ from pathlib import Path
 from kb import areas, args, corpus, evidence, freshness, locators, search, token_cache
 from kb.args import Spec
 from kb.context import Context, load
+from kb.entries import Entry
 from kb.errors import KbError
 from kb.model import Document
 
@@ -365,7 +366,7 @@ def _evidence(
     scope: str | None,
     directories: Sequence[str],
     documents: corpus.Documents,
-) -> list[token_cache.Entry]:
+) -> list[Entry]:
     """The cache entries of the evidence files in scope, in path order."""
     match_context = scope is not None and areas.is_area_path(scope)
     paths = sorted(
@@ -382,7 +383,7 @@ def _evidence(
         return entries
 
     scope_area = areas.canonical_area(root, scope)
-    selected: list[token_cache.Entry] = []
+    selected: list[Entry] = []
     for entry in entries:
         if not entry.path.startswith("questions/"):
             selected.append(entry)

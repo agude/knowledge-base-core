@@ -321,12 +321,6 @@ def article_candidates(document: Document) -> list[Candidate]:
     return candidates
 
 
-def evidence_unit(document: Document) -> Unit:
-    """The unit of an evidence file: its title and all of its text."""
-    body = document.prose(document.body_start, len(document.lines))
-    return make_unit(document.title or "", (), (), body)
-
-
 def rank(
     units: Sequence[Unit],
     terms: Sequence[str],

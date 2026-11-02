@@ -9,6 +9,7 @@ import pytest
 from kb import corpus, evidence, search, token_cache
 from kb.commands import recall
 from kb.context import Context
+from kb.entries import Entry
 from kb.errors import KbError
 from kb.model import Document, parse
 
@@ -283,7 +284,7 @@ def test_scoped_recall_does_not_read_excluded_evidence(
     assert len(read_paths) == len(set(read_paths))
 
 
-def cached(tmp_path: Path, files: dict[str, str]) -> tuple[Path, list[token_cache.Entry]]:
+def cached(tmp_path: Path, files: dict[str, str]) -> tuple[Path, list[Entry]]:
     """Write files under a fresh content root, and return its root and their cache entries."""
     root = tmp_path / "content"
     for relpath, text in files.items():

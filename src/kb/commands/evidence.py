@@ -9,6 +9,7 @@ from pathlib import Path
 from kb import args, corpus, dates, evidence, search, token_cache
 from kb.args import Spec
 from kb.context import Context, load
+from kb.entries import Entry
 from kb.errors import KbError
 
 WHO = "evidence"
@@ -86,9 +87,7 @@ def _date(value: str | None, option: str) -> date | None:
     return parsed
 
 
-def _entries(
-    context: Context, kind_filter: str | None, documents: corpus.Documents
-) -> list[token_cache.Entry]:
+def _entries(context: Context, kind_filter: str | None, documents: corpus.Documents) -> list[Entry]:
     """The cache entries of the selected evidence files, in content-relative path order."""
     directories = ALL_DIRECTORIES if kind_filter is None else DIRECTORIES_BY_KIND[kind_filter]
     paths = sorted(
