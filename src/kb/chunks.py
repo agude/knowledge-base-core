@@ -18,13 +18,15 @@ Rules:
 - A message longer than SPLIT_THRESHOLD is cut into pieces of about SPLIT_TARGET
   characters, at blank lines outside code fences. Each piece is its own chunk.
 
-Chunk.number is the number of the first message, or NO_MESSAGE for a legacy or headingless
-file. The thresholds are module constants. Changing one changes ranking.
+Chunk.number and Chunk.last are the numbers of the first and last messages, or NO_MESSAGE for a
+legacy or headingless file. Chunk.piece numbers the pieces of a split message. The thresholds
+are module constants. Changing one changes ranking.
 """
 
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from datetime import datetime
 
 from kb import addressing, search
 from kb.model import Document, fence_closes, fence_opening
@@ -44,21 +46,32 @@ _TEXT_STORAGE_OPEN = re.compile(r"(~{4,})text")
 
 @dataclass(frozen=True)
 class Chunk:
-    """A chunk: the number of its first message, or NO_MESSAGE, and its cleaned lines."""
+    """A chunk and its cleaned lines.
+
+    number and last are the numbers of its first and last messages, or NO_MESSAGE for a
+    legacy or headingless file. started and ended are the timestamps of those messages, or
+    None without them. piece is 0 for a chunk of whole messages, and 1, 2, ... for the
+    pieces of one split message, in order.
+    """
 
     number: int
+    last: int
+    started: datetime | None
+    ended: datetime | None
+    piece: int
     lines: tuple[str, ...]
 
 
 @dataclass(frozen=True)
 class _Message:
-    """A message's number, role, first content line, and text, including authored headings.
+    """A message's number, role, timestamp, first content line, and text, with authored headings.
 
     start and end are the raw line range of the content, end excluded.
     """
 
     number: int
     role: str
+    timestamp: datetime | None
     head: str
     lines: tuple[str, ...]
     start: int
@@ -70,7 +83,7 @@ def chunks(document: Document) -> tuple[Chunk, ...]:
     messages = _messages(document)
     if messages is None:
         body = document.prose(document.body_start, len(document.lines))
-        return (Chunk(NO_MESSAGE, _clean(body)),)
+        return (Chunk(NO_MESSAGE, NO_MESSAGE, None, None, 0, _clean(body)),)
     cleaned = [item for item in map(_clean_message, messages) if item is not None]
     return tuple(_assemble(cleaned))
 
@@ -126,7 +139,11 @@ def _messages(document: Document) -> list[_Message] | None:
         for item in sections:
             start, end = item.section.start + 1, item.section.end
             content = _unwrap_text_storage(_message_lines(document, start, end))
-            messages.append(_Message(item.number, item.role, _head(content), content, start, end))
+            messages.append(
+                _Message(
+                    item.number, item.role, item.timestamp, _head(content), content, start, end
+                )
+            )
         return messages
     return _legacy_messages(document)
 
@@ -153,6 +170,7 @@ def _legacy_messages(document: Document) -> list[_Message] | None:
             _Message(
                 NO_MESSAGE,
                 heading[4:],
+                None,
                 head,
                 _message_lines(document, index + 1, end),
                 index + 1,
@@ -237,18 +255,35 @@ def _assemble(messages: Sequence[_Message]) -> list[Chunk]:
         message = messages[index]
         index += 1
         if _length(message.lines) > SPLIT_THRESHOLD:
-            out.extend(Chunk(message.number, piece) for piece in _split(message.lines))
+            pieces = _split(message.lines)
+            out.extend(
+                Chunk(
+                    message.number, message.number, message.timestamp, message.timestamp, n, piece
+                )
+                for n, piece in enumerate(pieces, 1)
+            )
             continue
         lines = list(message.lines)
+        last = message
         while (
             _length(lines) < MERGE_THRESHOLD
             and index < len(messages)
             and _length(messages[index].lines) <= SPLIT_THRESHOLD
         ):
+            last = messages[index]
             lines.append("")
-            lines.extend(messages[index].lines)
+            lines.extend(last.lines)
             index += 1
-        out.append(Chunk(message.number, tuple(lines)))
+        out.append(
+            Chunk(
+                message.number,
+                last.number,
+                message.timestamp,
+                last.timestamp,
+                0,
+                tuple(lines),
+            )
+        )
     return out
 
 

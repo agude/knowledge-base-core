@@ -25,7 +25,7 @@ from typing import Any, Literal
 
 from kb import addressing, chunks, corpus, evidence, lock, model, search
 
-FORMAT = 2
+FORMAT = 3
 CACHE_DIRECTORY = "kb"
 CACHE_FILE = "tokens.pickle"
 LOCK_FILE = "tokens.lock"
@@ -68,12 +68,13 @@ UnitTokens = tuple[
 ]
 # One addressable message: its number, its UTC timestamp in ISO form, and its body tokens.
 MessageTokens = tuple[int, str, tuple[str, ...]]
-# One chunk: the number of its first message (0 for none), and its body tokens.
-ChunkTokens = tuple[int, tuple[str, ...]]
+# One chunk: the numbers of its first and last messages (0 for none), the ISO timestamps of
+# those messages (None for none), its piece index (0 for whole messages), and its body tokens.
+ChunkTokens = tuple[int, int, str | None, str | None, int, tuple[str, ...]]
 _STORED_FIELDS = 8
 _STORED_UNIT_FIELDS = 5
 _STORED_MESSAGE_FIELDS = 3
-_STORED_CHUNK_FIELDS = 2
+_STORED_CHUNK_FIELDS = 6
 
 
 @dataclass(frozen=True)
@@ -327,7 +328,14 @@ def _build(document: model.Document, mtime_ns: int, size: int, digest: str) -> E
             return tokens
 
         transcript_chunks = tuple(
-            (chunk.number, tuple(token for line in chunk.lines for token in tokens_of(line)))
+            (
+                chunk.number,
+                chunk.last,
+                _iso(chunk.started),
+                _iso(chunk.ended),
+                chunk.piece,
+                tuple(token for line in chunk.lines for token in tokens_of(line)),
+            )
             for chunk in chunks.chunks(document)
         )
     return Entry(relpath, mtime_ns, size, digest, scalars, file_unit, messages, transcript_chunks)
@@ -451,10 +459,15 @@ def _chunk(value: object) -> ChunkTokens:
     parts = _tuple(value)
     if len(parts) != _STORED_CHUNK_FIELDS:
         raise TypeError("chunk")
-    number, body = parts
-    if not isinstance(number, int):
-        raise TypeError("chunk number")
-    return number, _strings(body)
+    number, last, started, ended, piece, body = parts
+    if not all(isinstance(item, int) for item in (number, last, piece)):
+        raise TypeError("chunk numbers")
+    for timestamp in (started, ended):
+        if timestamp is not None:
+            if not isinstance(timestamp, str):
+                raise TypeError("chunk timestamp")
+            datetime.fromisoformat(timestamp)
+    return number, last, started, ended, piece, _strings(body)
 
 
 def _message(value: object) -> MessageTokens:
@@ -466,6 +479,11 @@ def _message(value: object) -> MessageTokens:
         raise TypeError("message fields")
     datetime.fromisoformat(timestamp)
     return number, timestamp, _strings(body)
+
+
+def _iso(moment: datetime | None) -> str | None:
+    """The ISO form of a timestamp, or None."""
+    return None if moment is None else moment.isoformat()
 
 
 def _tuple(value: object) -> tuple[Any, ...]:

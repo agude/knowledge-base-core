@@ -168,7 +168,16 @@ def test_legacy_messages_make_chunks_without_message_numbers() -> None:
 def test_a_file_with_no_message_headings_is_one_chunk_with_its_whole_body() -> None:
     found = chunks.chunks(plain("Plain text.\n\nSecond paragraph."))
 
-    assert found == (chunks.Chunk(chunks.NO_MESSAGE, ("Plain text.", "", "Second paragraph.")),)
+    assert found == (
+        chunks.Chunk(
+            chunks.NO_MESSAGE,
+            chunks.NO_MESSAGE,
+            None,
+            None,
+            0,
+            ("Plain text.", "", "Second paragraph."),
+        ),
+    )
 
 
 def test_injected_instructions_and_reminders_are_removed_before_chunking() -> None:
@@ -274,6 +283,42 @@ def test_blank_lines_left_by_removed_text_are_trimmed_at_both_ends() -> None:
     assert text_of(found[0]).startswith("\n") is False
     assert text_of(found[0]).splitlines()[0] == "Hello there."
     assert text_of(found[0]).endswith("Goodbye.")
+
+
+def test_a_merged_chunk_records_its_first_and_last_message_and_timestamps() -> None:
+    found = chunks.chunks(addressable(["a" * 300, "b" * 300, "c" * 300, "d" * 300, "e" * 1100]))
+
+    assert [(chunk.number, chunk.last, chunk.piece) for chunk in found] == [(1, 4, 0), (5, 5, 0)]
+    assert found[0].started == datetime(2026, 10, 20, 0, 1, tzinfo=UTC)
+    assert found[0].ended == datetime(2026, 10, 20, 0, 4, tzinfo=UTC)
+    assert found[1].started == found[1].ended == datetime(2026, 10, 20, 0, 5, tzinfo=UTC)
+
+
+def test_split_pieces_record_their_message_and_a_one_based_piece_index() -> None:
+    paragraphs = [f"P{number} " + "x" * 997 for number in range(1, 6)]
+    found = chunks.chunks(addressable(["short", "\n\n".join(paragraphs), "tail"]))
+
+    split = [chunk for chunk in found if chunk.number == 2]
+    assert [chunk.piece for chunk in split] == [1, 2, 3]
+    assert all(chunk.last == 2 for chunk in split)
+    assert all(
+        chunk.started == chunk.ended == datetime(2026, 10, 20, 0, 2, tzinfo=UTC) for chunk in split
+    )
+    assert [(chunk.number, chunk.piece) for chunk in found] == [
+        (1, 0),
+        (2, 1),
+        (2, 2),
+        (2, 3),
+        (3, 0),
+    ]
+
+
+def test_legacy_chunks_record_no_message_range_or_timestamps() -> None:
+    found = chunks.chunks(legacy(("user", "Which share?"), ("assistant", "The family share.")))
+
+    assert [
+        (chunk.number, chunk.last, chunk.started, chunk.ended, chunk.piece) for chunk in found
+    ] == [(chunks.NO_MESSAGE, chunks.NO_MESSAGE, None, None, 0)]
 
 
 def test_best_chunk_has_the_most_distinct_query_terms() -> None:

@@ -582,7 +582,7 @@ def test_injected_text_is_not_tokenized_into_a_transcript_entry(repo: Path) -> N
     assert secret
     assert not secret & set(entry.file_unit[3])
     assert not any(secret & set(body) for _, _, body in entry.messages)
-    assert not any(secret & set(body) for _, body in entry.chunks)
+    assert not any(secret & set(chunk[-1]) for chunk in entry.chunks)
     assert set(search.index_tokens("kitchen")) <= set(entry.file_unit[3])
     assert [number for number, _, _ in entry.messages] == [1, 2, 3]
 
@@ -594,7 +594,14 @@ def test_chunk_tokens_match_the_search_units_of_the_chunks(repo: Path) -> None:
         transcript.relative_to(repo).as_posix()
     ]
     expected = [
-        (chunk.number, search.make_unit("", (), (), list(chunk.lines)).body)
+        (
+            chunk.number,
+            chunk.last,
+            chunk.started.isoformat() if chunk.started else None,
+            chunk.ended.isoformat() if chunk.ended else None,
+            chunk.piece,
+            search.make_unit("", (), (), list(chunk.lines)).body,
+        )
         for chunk in chunks.chunks(document)
     ]
     assert list(entry.chunks) == expected
