@@ -1,5 +1,6 @@
 """The pure doctor checks: each state of each check, and the rules that judge the host files."""
 
+import sys
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -12,7 +13,7 @@ NOW = datetime(2026, 10, 26, 12, tzinfo=UTC)
 CANONICAL = setup_rules.instruction_block("/data/content")
 CLAUDE_RULES = [
     f"{tool}(kb {word} *)"
-    for tool in ("Bash", "PowerShell")
+    for tool in setup_rules.claude_shell_tools(sys.platform)
     for word in setup_rules.WORKING_COMMANDS
 ]
 
@@ -238,19 +239,28 @@ def test_a_block_without_the_policy_line_is_accepted_only_as_the_named_form() ->
 
 
 def test_claude_rules_missing_broader_and_colon_form() -> None:
-    assert diagnosis.claude_allow_problems(None) == ("no permissions.allow list",)
-    assert diagnosis.claude_allow_problems(CLAUDE_RULES) == ()
+    assert diagnosis.claude_allow_problems(None, sys.platform) == ("no permissions.allow list",)
+    assert diagnosis.claude_allow_problems(CLAUDE_RULES, sys.platform) == ()
     colon = [rule.replace(" *)", ":*)") for rule in CLAUDE_RULES]
-    assert diagnosis.claude_allow_problems(colon) == ()
-    partial = diagnosis.claude_allow_problems([*CLAUDE_RULES[1:], "Bash(kb *)"])
+    assert diagnosis.claude_allow_problems(colon, sys.platform) == ()
+    partial = diagnosis.claude_allow_problems([*CLAUDE_RULES[1:], "Bash(kb *)"], sys.platform)
     assert partial[0] == "missing Bash(kb recall *)"
     assert "broader Bash(kb *)" in partial
     bash_only = [rule for rule in CLAUDE_RULES if rule.startswith("Bash(")]
-    assert diagnosis.claude_allow_problems(bash_only)[0] == "missing PowerShell(kb evidence *)"
-    powershell = diagnosis.claude_allow_problems([*CLAUDE_RULES, "PowerShell(kb *)"])
-    assert powershell == ("broader PowerShell(kb *)",)
-    none = diagnosis.claude_allow_problems(["Bash(npm test *)"])
-    assert none[-1] == "missing PowerShell(kb recall *)"
+    bash_only_problems = diagnosis.claude_allow_problems(bash_only, sys.platform)
+    if sys.platform == "win32":
+        assert bash_only_problems[0] == "missing PowerShell(kb evidence *)"
+        powershell = diagnosis.claude_allow_problems(
+            [*CLAUDE_RULES, "PowerShell(kb *)"], sys.platform
+        )
+        assert powershell == ("broader PowerShell(kb *)",)
+    else:
+        assert bash_only_problems == ()
+        assert (
+            diagnosis.claude_allow_problems([*CLAUDE_RULES, "PowerShell(kb *)"], sys.platform) == ()
+        )
+    none = diagnosis.claude_allow_problems(["Bash(npm test *)"], sys.platform)
+    assert none[-1] == f"missing {sorted(CLAUDE_RULES)[-1]}"
 
 
 def test_codex_rules_missing_broader_and_decision_aware() -> None:

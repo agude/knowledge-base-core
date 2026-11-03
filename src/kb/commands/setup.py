@@ -66,7 +66,7 @@ def run(words: Sequence[str]) -> int:
     if "--print" in parsed.values:
         if set(parsed.values) != {"--print"} or parsed.switches:
             raise SPEC.usage_error()
-        sys.stdout.write(_render(parsed.values["--print"], os.environ))
+        sys.stdout.write(_render(parsed.values["--print"], os.environ, sys.platform))
         return 0
     if "--init" in parsed.values and "--content" in parsed.values:
         raise SPEC.usage_error()
@@ -75,10 +75,10 @@ def run(words: Sequence[str]) -> int:
     return _configure(parsed, os.environ)
 
 
-def _render(item: str, environ: Mapping[str, str]) -> str:
+def _render(item: str, environ: Mapping[str, str], platform: str) -> str:
     """The text for one --print item."""
     if item == "allow-claude":
-        return setup_rules.allow_claude()
+        return setup_rules.allow_claude(platform)
     if item == "allow-codex":
         return setup_rules.allow_codex()
     if item == "instructions":

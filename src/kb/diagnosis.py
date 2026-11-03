@@ -20,8 +20,6 @@ TASK = "kb-sync"
 # Task Scheduler states in which the task will run on its triggers.
 TASK_ENABLED = frozenset(("Ready", "Running", "Queued"))
 WORKING = setup_rules.WORKING_COMMANDS
-EXPECTED_CLAUDE = frozenset(setup_rules.claude_rules())
-CLAUDE_KB_PREFIXES = tuple(f"{tool}(kb" for tool in setup_rules.CLAUDE_SHELL_TOOLS)
 EXPECTED_CODEX = frozenset(("kb", command) for command in WORKING)
 PATTERN = re.compile(r"pattern\s*=\s*\[([^\]]*)\]")
 DECISION = re.compile(r'decision\s*=\s*"(\w+)"')
@@ -286,7 +284,7 @@ def skills_check(findings: Sequence[str], foreign: bool = False) -> Check:
 
 
 def allow_rules_check(problems: dict[str, Sequence[str]]) -> Check:
-    """Whether each host has every working-agent rule and no broader kb rule."""
+    """Whether each host has every rule for its available tools and no broader kb rule."""
     failed = [f"{host}: {'; '.join(items)}" for host, items in problems.items() if items]
     if failed:
         return Check(
@@ -295,9 +293,11 @@ def allow_rules_check(problems: dict[str, Sequence[str]]) -> Check:
             " | ".join(failed),
             "install the output of kb setup --print allow-claude or allow-codex in each host",
         )
-    return Check(
-        "allow-rules", "pass", "each host has every working-agent rule and no other kb rule"
+    message = (
+        "each host has every working-agent rule for its available shell tools "
+        "and no broader kb rule"
     )
+    return Check("allow-rules", "pass", message)
 
 
 def instruction_problem(
@@ -320,16 +320,18 @@ def instruction_problem(
     return "block differs from the canonical block"
 
 
-def claude_allow_problems(rules: Sequence[str] | None) -> tuple[str, ...]:
-    """Missing working-agent rules and broader kb rules in a Claude Code allow list."""
+def claude_allow_problems(rules: Sequence[str] | None, platform: str) -> tuple[str, ...]:
+    """Missing working-agent rules and broader kb rules for this platform's Claude tools."""
     if rules is None:
         return ("no permissions.allow list",)
     normalized = {_claude_form(rule) for rule in rules}
-    problems = [f"missing {rule}" for rule in sorted(EXPECTED_CLAUDE - normalized)]
+    expected = frozenset(setup_rules.claude_rules(platform))
+    shell_prefixes = tuple(f"{tool}(kb" for tool in setup_rules.claude_shell_tools(platform))
+    problems = [f"missing {rule}" for rule in sorted(expected - normalized)]
     problems.extend(
         f"broader {rule}"
         for rule in sorted(normalized)
-        if rule.startswith(CLAUDE_KB_PREFIXES) and rule not in EXPECTED_CLAUDE
+        if rule.startswith(shell_prefixes) and rule not in expected
     )
     return tuple(problems)
 

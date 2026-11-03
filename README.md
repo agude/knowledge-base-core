@@ -687,8 +687,9 @@ dotfiles install this text.
   a path, because the dotfiles install one file for both hosts. The line needs
   a content path, from `KB_CONTENT` or the config file.
 - `allow-claude` writes a settings fragment with `permissions.allow` set to
-  `Bash(kb COMMAND *)` and `PowerShell(kb COMMAND *)` for each working-agent
-  command. Claude Code on Windows runs commands through either tool.
+  `Bash(kb COMMAND *)` for each working-agent command, and also
+  `PowerShell(kb COMMAND *)` on Windows. Claude Code on Windows runs commands
+  through either tool.
 - `allow-codex` writes a rules file with one `prefix_rule` per working-agent
   command, each with `decision = "allow"`. Install it as a regular file under
   `$CODEX_HOME/rules/`. Codex 0.165.0 skips a symlinked rules file.
@@ -729,7 +730,7 @@ gather its facts reports why, and the other checks still run.
 | `capture` | `harvest_since` is set, the transcript roots are readable, and no ready transcript is older than 20 days | capture is disabled, a root is unreadable, or old ready transcripts exist | |
 | `instructions` | each host's global file has the canonical block, with or without its content policy line | a block is missing or differs | |
 | `skills` | both packaged skills at both host destinations match the package | a skill is missing, differs, or is unmanaged | |
-| `allow-rules` | each host has every working-agent rule and no broader `kb` rule | a rule is missing, a broader rule exists, or a Codex rules file is a symbolic link | |
+| `allow-rules` | each host has every working-agent rule for its available shell tools and no broader `kb` rule | a rule is missing, a broader rule exists, or a Codex rules file is a symbolic link | |
 
 - `capture` reports Claude Code's `cleanupPeriodDays`, which defaults to 30.
   Codex retention is reported as `unknown`, because its configuration documents

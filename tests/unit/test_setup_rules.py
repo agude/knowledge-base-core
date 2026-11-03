@@ -2,6 +2,7 @@
 
 import json
 import re
+import sys
 
 import pytest
 
@@ -53,11 +54,15 @@ def test_a_policy_path_with_a_line_break_or_nul_is_refused(content_root: str) ->
 
 
 def test_the_claude_fragment_allows_exactly_the_working_commands() -> None:
-    fragment = json.loads(setup_rules.allow_claude())
+    fragment = json.loads(setup_rules.allow_claude(sys.platform))
 
     assert fragment == {
         "permissions": {
-            "allow": [f"{tool}(kb {word} *)" for tool in ("Bash", "PowerShell") for word in WORKING]
+            "allow": [
+                f"{tool}(kb {word} *)"
+                for tool in setup_rules.claude_shell_tools(sys.platform)
+                for word in WORKING
+            ]
         }
     }
 
@@ -82,7 +87,7 @@ def test_the_codex_rules_allow_exactly_the_working_commands() -> None:
 
 
 def test_no_rule_approves_a_curator_command_setup_or_the_bare_prefix() -> None:
-    text = setup_rules.allow_claude() + setup_rules.allow_codex()
+    text = setup_rules.allow_claude("win32") + setup_rules.allow_codex()
 
     for word in ("lint", "sync", "curate", "verify", "resolve", "setup"):
         assert f"kb {word}" not in text

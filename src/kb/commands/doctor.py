@@ -345,7 +345,7 @@ def _allow_rules(context: Context) -> Check:
     return diagnosis.allow_rules_check(
         {
             "claude": diagnosis.claude_allow_problems(
-                _claude_allow(claude_store / "settings.json")
+                _claude_allow(claude_store / "settings.json"), context.platform
             ),
             "codex": diagnosis.codex_allow_problems(*_codex_rules(codex_store / "rules")),
         }

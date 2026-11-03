@@ -74,7 +74,7 @@ def machine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> doctor.Context:
     canonical = setup_rules.instruction_block(str(root))
     claude.mkdir(parents=True)
     (claude / "CLAUDE.md").write_text(canonical, encoding="utf-8")
-    (claude / "settings.json").write_text(setup_rules.allow_claude(), encoding="utf-8")
+    (claude / "settings.json").write_text(setup_rules.allow_claude(sys.platform), encoding="utf-8")
     (codex / "rules").mkdir(parents=True)
     (codex / "AGENTS.md").write_text(canonical, encoding="utf-8")
     (codex / "rules" / "kb.rules").write_text(setup_rules.allow_codex(), encoding="utf-8")

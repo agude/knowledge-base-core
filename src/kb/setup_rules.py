@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from kb.errors import KbError
+from kb.platform import WINDOWS
 
 BEGIN_MARKER = "<!-- kb:begin -->"
 END_MARKER = "<!-- kb:end -->"
@@ -22,9 +23,6 @@ POLICY_PLACEHOLDER = "{content_policy}"
 POLICY_CLAUSE = " Content policy: " + POLICY_PLACEHOLDER
 MAX_BLOCK_LINES = 12
 WORKING_COMMANDS = ("recall", "read", "map", "questions", "evidence", "observe", "gap")
-# Claude Code runs shell commands through its Bash tool everywhere, and through its
-# PowerShell tool on Windows. Each tool needs its own allow rules.
-CLAUDE_SHELL_TOOLS = ("Bash", "PowerShell")
 ITEMS = ("instructions", "allow-claude", "allow-codex")
 CODEX_RULES_HEADER = (
     "# kb working-agent commands. Install as a regular file under $CODEX_HOME/rules/;"
@@ -81,15 +79,24 @@ def policy_import(content_root: str) -> str:
     return "@" + policy.replace(" ", "\\ ")
 
 
-def allow_claude() -> str:
-    """The Claude Code settings fragment that allows the working-agent commands."""
-    return json.dumps({"permissions": {"allow": list(claude_rules())}}, indent=2) + "\n"
+def allow_claude(platform: str) -> str:
+    """The Claude Code settings fragment for the shell tools available on this platform."""
+    return json.dumps({"permissions": {"allow": list(claude_rules(platform))}}, indent=2) + "\n"
 
 
-def claude_rules() -> tuple[str, ...]:
-    """The Claude Code allow rules: one per working-agent command for each shell tool."""
+def claude_shell_tools(platform: str) -> tuple[str, ...]:
+    """The Claude Code shell tools available on this platform."""
+    if platform == WINDOWS:
+        return ("Bash", "PowerShell")
+    return ("Bash",)
+
+
+def claude_rules(platform: str) -> tuple[str, ...]:
+    """The Claude Code allow rules for each working command and available shell tool."""
     return tuple(
-        f"{tool}(kb {command} *)" for tool in CLAUDE_SHELL_TOOLS for command in WORKING_COMMANDS
+        f"{tool}(kb {command} *)"
+        for tool in claude_shell_tools(platform)
+        for command in WORKING_COMMANDS
     )
 
 

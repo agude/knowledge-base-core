@@ -1,6 +1,7 @@
 """End-to-end checks of `kb setup --print`, which writes host text and changes nothing."""
 
 import json
+import sys
 
 from .harness import Kb
 
@@ -32,7 +33,11 @@ def test_print_allow_claude_writes_the_working_rules_for_each_shell_tool(kb: Kb)
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == {
         "permissions": {
-            "allow": [f"{tool}(kb {word} *)" for tool in ("Bash", "PowerShell") for word in WORKING]
+            "allow": [
+                f"{tool}(kb {word} *)"
+                for tool in (("Bash", "PowerShell") if sys.platform == "win32" else ("Bash",))
+                for word in WORKING
+            ]
         }
     }
 
