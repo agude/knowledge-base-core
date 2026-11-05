@@ -9,8 +9,10 @@ from __future__ import annotations
 import os
 import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
+from contextlib import closing
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -57,6 +59,16 @@ def install_text(kb: Kb, app: str, relative: str, text: str) -> Path:
     path.write_text(text, encoding="utf-8")
     set_mtime(path, "2026-10-25T00:00:00Z")
     return path
+
+
+def install_goose(kb: Kb) -> Path:
+    """Build Goose's session database in the isolated store from the fixture script."""
+    database = kb.goose_root / "data" / "sessions" / "sessions.db"
+    database.parent.mkdir(parents=True)
+    script = (FIXTURE_TRANSCRIPTS / "goose" / "sessions.sql").read_text(encoding="utf-8")
+    with closing(sqlite3.connect(database)) as connection:
+        connection.executescript(script)
+    return database
 
 
 def set_mtime(path: Path, timestamp: str) -> None:
@@ -295,6 +307,41 @@ def test_codex_main_and_subagent_use_measured_session_identity(remote_git_kb: Kb
     assert "<environment_context>" not in main
     assert "fixture command" in main
     assert field(agent, "parent_session") == "codex-main"
+
+
+def test_goose_main_and_subagent_sessions_are_harvested_once_from_the_database(
+    remote_git_kb: Kb,
+) -> None:
+    install_goose(remote_git_kb)
+    config(remote_git_kb)
+
+    result = remote_git_kb("sync")
+
+    assert result.returncode == 0, result.stderr
+    assert "Harvested: 2 session transcript(s)" in result.stdout
+    main = observation_text(observation_for(remote_git_kb, "20261025_1"))
+    agent = observation_text(observation_for(remote_git_kb, "20261025_2"))
+    assert field(main, "app") == "goose"
+    assert field(main, "project") == "/fixture/goose-project"
+    assert field(main, "first_message") == "goose-user-1"
+    assert field(main, "last_message") == "goose-assistant-2"
+    assert "Summarize this Goose fixture." in main
+    assert "fixture command" in main
+    assert "The main session is done." in main
+    for dropped in (
+        "<turn-context>",
+        "Drop this injected turn context.",
+        "Private reasoning must not be retained.",
+        "Fixture tool output must not be retained.",
+        "Drop this compaction summary.",
+        "Drop this block for the agent alone.",
+    ):
+        assert dropped not in main
+    assert field(agent, "parent_session") == "20261025_1"
+    assert "The subagent fixture is done." in agent
+    again = remote_git_kb("sync")
+    assert again.returncode == 0, again.stderr
+    assert "Harvested: 0 session transcript(s)" in again.stdout
 
 
 def test_read_second_message_keeps_heading_and_tilde_fence_as_text(remote_git_kb: Kb) -> None:

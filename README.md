@@ -4,13 +4,13 @@
 articles and source documents, and the observations and questions behind them.
 `recall`, `read`, `map`, `questions`, and `evidence` are read-only. `kb observe`
 records an observation, `kb gap` records an open question, and `kb sync` can
-record finished Claude Code and Codex transcripts. `kb lint`, `kb verify`, and
-`kb resolve` provide curator checks and explicit updates. `kb curate` runs
-resumable batches: `start` synchronizes with `origin`, and `finish` validates a
-batch, commits it once, and pushes it. The content pre-commit hook,
-`kb hook pre-commit`, checks every content commit. `kb setup` configures a
-machine and installs that hook, and `kb doctor` names each problem with its
-fix.
+record finished Claude Code, Codex, and Goose transcripts. `kb lint`,
+`kb verify`, and `kb resolve` provide curator checks and explicit updates.
+`kb curate` runs resumable batches: `start` synchronizes with `origin`, and
+`finish` validates a batch, commits it once, and pushes it. The content
+pre-commit hook, `kb hook pre-commit`, checks every content commit. `kb setup`
+configures a machine and installs that hook, and `kb doctor` names each problem
+with its fix.
 
 ## Usage
 
@@ -502,9 +502,9 @@ path.
 
 ### `kb sync`
 
-`kb sync` harvests finished Claude Code and Codex transcripts, commits the
-resulting observations, then fetches and rebases from `origin` and pushes local
-commits. Transcript harvesting is **off** until `harvest_since` is set in
+`kb sync` harvests finished Claude Code, Codex, and Goose transcripts, commits
+the resulting observations, then fetches and rebases from `origin` and pushes
+local commits. Transcript harvesting is **off** until `harvest_since` is set in
 `config.toml`; `kb` does not install or enable the timer.
 
 ```toml
@@ -517,17 +517,28 @@ it are ignored.
 Claude transcripts are read from `$CLAUDE_CONFIG_DIR/projects` (default
 `~/.claude/projects`), including subagents. Codex rollouts are read from
 `$CODEX_HOME/sessions` (default `~/.codex/sessions`), including subagent
-threads.
+threads. Goose sessions, including subagent sessions, are read from the SQLite
+database `sessions.db` in Goose's sessions directory:
+`$GOOSE_PATH_ROOT/data/sessions` when `GOOSE_PATH_ROOT` is an absolute path,
+otherwise `$XDG_DATA_HOME/goose/sessions` (default
+`~/.local/share/goose/sessions`), or `%APPDATA%\Block\goose\data\sessions` on
+Windows. The database is opened read only, and a missing database means there
+are no Goose sessions. A Goose session whose provider runs Claude Code or the
+Codex CLI (`claude-code`, `claude-acp`, `codex`, or `codex-acp`) is skipped,
+because that agent keeps its own transcript.
 
 Harvest keeps user text, assistant text, and shell commands. It drops tool
-output, reasoning, injected context, and user `<system-reminder>` spans. A
-session is ready after it has been idle for 60 minutes and its transcript ends
-on a complete line. Idle time uses the newest record timestamp or file
-modification time, whichever is later. Ready sessions are processed oldest
-first, up to 50 per run. Each transcript part becomes an observation; resumed
-sessions create later parts. When transcripts share a message prefix, the
-first session to harvest those message IDs owns them. If the later session has
-messages to record, its observation names the owner of the shared prefix.
+output, reasoning, injected context, user `<system-reminder>` spans, and Goose
+messages and text blocks that Goose does not show the user. A session is ready
+after it has been idle for 60 minutes and its transcript ends on a complete
+line. Idle time uses the newest record timestamp or file modification time,
+whichever is later. For a Goose session, the session's `updated_at` stands in
+for the modification time, and a session read from the database is always
+complete. Ready sessions are processed oldest first, up to 50 per run. Each
+transcript part becomes an observation; resumed sessions create later parts.
+When transcripts share a message prefix, the first session to harvest those
+message IDs owns them. If the later session has messages to record, its
+observation names the owner of the shared prefix.
 
 The title excerpt and message text are checked for possible secrets. A matching
 message line is replaced with `[redacted: <detector>]`; when the title excerpt
@@ -733,7 +744,8 @@ gather its facts reports why, and the other checks still run.
 
 - `capture` reports Claude Code's `cleanupPeriodDays`, which defaults to 30.
   Codex retention is reported as `unknown`, because its configuration documents
-  no retention setting.
+  no retention setting. Goose's sessions directory is checked with the other
+  transcript roots, and its ready sessions count toward the old ones.
 - `scheduler` asks `systemctl --user` whether `kb-sync.timer` is enabled and
   active. On Windows it asks Task Scheduler, through `powershell.exe`, for the
   `kb-sync` task's state. A missing `systemctl` or `powershell.exe` produces a

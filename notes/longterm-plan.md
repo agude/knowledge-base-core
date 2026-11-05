@@ -468,6 +468,13 @@ an instruction block, and allow rules. Reuse the neutral session model,
 observation format, write path, and sync behavior. Measure actual transcript
 shapes before specifying a parser.
 
+Goose has a transcript parser. `kb.hosts.goose` reads Goose's SQLite session
+database read only, in one transaction, into the neutral session model, and
+sync and doctor's capture check read it beside the Claude Code and Codex
+stores. Sessions that Goose ran through Claude Code or the Codex CLI are
+skipped, because those agents keep their own transcripts. Goose still needs an
+instruction block and allow rules.
+
 Add macOS when a macOS machine needs the system: a launchd entry, a CI job,
 and the macOS checks in `kb doctor`.
 

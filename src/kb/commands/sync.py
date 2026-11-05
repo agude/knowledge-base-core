@@ -29,8 +29,8 @@ from kb import (
 from kb.args import Spec
 from kb.config import content_root
 from kb.errors import KbError
-from kb.hosts import claude, codex
-from kb.platform import config_file
+from kb.hosts import claude, codex, goose
+from kb.platform import config_file, goose_sessions
 from kb.remote import RemoteStatus as RemoteStatus
 from kb.transcript_observation import (
     ContentLine,
@@ -55,8 +55,8 @@ REDACTION_PASSES = 3
 SPEC = Spec(
     usage="sync [--status] [--no-push] [--dry-run]",
     summary=(
-        "Harvest finished Claude Code and Codex transcripts, commit the observations, and sync "
-        "the content repository with origin."
+        "Harvest finished Claude Code, Codex, and Goose transcripts, commit the observations, and "
+        "sync the content repository with origin."
     ),
     switches=frozenset({"--status", "--no-push", "--dry-run"}),
 )
@@ -415,7 +415,7 @@ def _dry_run(
 
 
 def _scan_transcripts(environ: Mapping[str, str]) -> ScanResult:
-    """Read isolated Claude and Codex transcript files once and parse their snapshots."""
+    """Read isolated Claude, Codex, and Goose transcripts once and parse their snapshots."""
     candidates: list[harvest.Candidate] = []
     failures: list[Failure] = []
     claude_root = _store_root(environ, "CLAUDE_CONFIG_DIR", ".claude") / "projects"
@@ -432,6 +432,13 @@ def _scan_transcripts(environ: Mapping[str, str]) -> ScanResult:
     codex_root = _store_root(environ, "CODEX_HOME", ".codex") / "sessions"
     for path in sorted(codex_root.rglob("rollout-*.jsonl")):
         _read_candidate(path, failures, candidates, "codex")
+    goose_root = goose_sessions(environ, sys.platform, Path.home())
+    try:
+        snapshots = goose.read(goose_root)
+    except goose.DatabaseError as error:
+        failures.append(Failure("goose", f"cannot read session database: {error}"))
+    else:
+        candidates.extend(harvest.Candidate(item.session, item.updated) for item in snapshots)
     return ScanResult(tuple(candidates), tuple(failures))
 
 
@@ -547,6 +554,8 @@ def _record_from_document(document: model.Document) -> harvest.HarvestRecord | N
         app: App | None = "claude-code"
     elif app_value == "codex":
         app = "codex"
+    elif app_value == "goose":
+        app = "goose"
     else:
         app = None
     session_id = document.scalar("session")

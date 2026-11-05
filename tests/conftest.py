@@ -23,6 +23,7 @@ def isolated_user(
     monkeypatch.setenv("LOCALAPPDATA", str(home / "localappdata"))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(home / ".claude"))
     monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
+    monkeypatch.setenv("GOOSE_PATH_ROOT", str(home / ".goose"))
     monkeypatch.delenv("KB_CONTENT", raising=False)
     monkeypatch.delenv("KB_NOW", raising=False)
 

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import os
 import socket
+import sqlite3
 import subprocess
 from collections.abc import Iterator
-from contextlib import contextmanager, nullcontext
+from contextlib import closing, contextmanager, nullcontext
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -20,6 +21,9 @@ from kb.transcripts import Message, Session
 
 NOW = datetime(2026, 10, 26, 12, tzinfo=UTC)
 START = NOW - timedelta(hours=3)
+GOOSE_SCRIPT = (
+    Path(__file__).resolve().parents[1] / "fixtures" / "transcripts" / "goose" / "sessions.sql"
+)
 GIT_ENV = {
     "GIT_CONFIG_GLOBAL": os.devnull,
     "GIT_CONFIG_SYSTEM": os.devnull,
@@ -443,6 +447,31 @@ def test_dry_run_wraps_filesystem_errors(tmp_path: Path, monkeypatch: pytest.Mon
         sync._dry_run(root, root / ".git", {}, "host", NOW, START)
 
 
+def test_scan_transcripts_reads_goose_sessions_and_reports_an_unreadable_database(
+    tmp_path: Path,
+) -> None:
+    sessions = tmp_path / "goose" / "data" / "sessions"
+    sessions.mkdir(parents=True)
+    with closing(sqlite3.connect(sessions / "sessions.db")) as connection:
+        connection.executescript(GOOSE_SCRIPT.read_text(encoding="utf-8"))
+    environ = {"GOOSE_PATH_ROOT": str(tmp_path / "goose")}
+
+    result = sync._scan_transcripts(environ)
+
+    assert result.failures == ()
+    assert [
+        (candidate.session.app, candidate.session.id, candidate.session.parent_session)
+        for candidate in result.candidates
+    ] == [("goose", "20261025_1", None), ("goose", "20261025_2", "20261025_1")]
+    assert result.candidates[0].modified == datetime(2026, 10, 25, 9, 5, tzinfo=UTC)
+    (sessions / "sessions.db").write_bytes(b"not a database\n" * 100)
+    failed = sync._scan_transcripts(environ)
+    assert failed.candidates == ()
+    assert [(failure.session, failure.reason) for failure in failed.failures] == [
+        ("goose", "cannot read session database: file is not a database")
+    ]
+
+
 def test_scan_transcripts_parses_claude_and_codex_and_reports_bad_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -599,6 +628,7 @@ def test_head_records_rejects_truncated_cat_file_output(
     [
         ("session-transcript", "claude-code", "2", "claude-code", 2),
         ("session-transcript", "codex", "bad", "codex", None),
+        ("session-transcript", "goose", "1", "goose", 1),
         ("session-transcript", "unknown", "-1", None, None),
     ],
 )
