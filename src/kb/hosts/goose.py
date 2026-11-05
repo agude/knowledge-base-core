@@ -130,7 +130,11 @@ def read(root: Path) -> tuple[Snapshot, ...]:
 def _sessions(root: Path) -> Iterator[tuple[Header, list[Row]]]:
     """Each session with messages in the database under root, and its rows, one at a time."""
     database = root / DATABASE
-    if not database.is_file():
+    try:
+        database_exists = database.is_file()
+    except OSError as error:
+        raise DatabaseError(error.strerror or type(error).__name__) from error
+    if not database_exists:
         return
     try:
         # Imported here, so a Python built without sqlite3 still runs kb for the other hosts.
