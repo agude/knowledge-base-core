@@ -100,6 +100,11 @@ class Kb:
         return self.home / ".codex"
 
     @property
+    def goose_root(self) -> Path:
+        """The isolated Goose path root passed to kb subprocesses; sessions live under it."""
+        return self.home / ".goose"
+
+    @property
     def config_file(self) -> Path:
         """The isolated config file read through XDG_CONFIG_HOME."""
         return self.home / "xdg" / "kb" / "config.toml"
@@ -117,6 +122,7 @@ class Kb:
             "KB_LOCK_WAIT": "1",
             "CLAUDE_CONFIG_DIR": str(self.claude_config_dir),
             "CODEX_HOME": str(self.codex_home),
+            "GOOSE_PATH_ROOT": str(self.goose_root),
             "LANG": "C.UTF-8",
             "LC_ALL": "C.UTF-8",
             "PYTHONIOENCODING": "utf-8",

@@ -133,6 +133,12 @@ def test_reconstruct_state_uses_earlier_owner_and_ignores_invalid_front_matter_v
     assert state.owners[("claude-code", "message-1")] == ("claude-code", "session-a")
 
 
+def test_reconstruct_state_reads_each_host_app_as_its_own_session() -> None:
+    records = tuple(record(app=app, session_id="shared-id") for app in ("codex", "goose"))
+    state = reconstruct_state(records, (), "host-a")
+    assert set(state.parts) == {("codex", "shared-id"), ("goose", "shared-id")}
+
+
 def test_reconstruct_state_falls_back_to_timestamp_range_when_ids_changed() -> None:
     changed = session(
         "session-a",

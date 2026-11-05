@@ -35,7 +35,7 @@ from kb.commands import curate, sync
 from kb.commands.setup import existing_hook
 from kb.diagnosis import Check, State
 from kb.errors import KbError
-from kb.platform import config_file, scheduler_commands
+from kb.platform import config_file, goose_sessions, scheduler_commands
 
 SPEC = Spec(
     usage="doctor",
@@ -248,7 +248,8 @@ def _capture(context: Context, root: Path | None) -> Check:
     harvest_since = config.read_harvest_since(context.configuration)
     claude_store = _store(context.environ, "CLAUDE_CONFIG_DIR", context.home / ".claude")
     codex_store = _store(context.environ, "CODEX_HOME", context.home / ".codex")
-    roots = (claude_store / "projects", codex_store / "sessions")
+    goose_store = goose_sessions(context.environ, context.platform, context.home)
+    roots = (claude_store / "projects", codex_store / "sessions", goose_store)
     unreadable = [
         str(path) for path in roots if path.exists() and not os.access(path, os.R_OK | os.X_OK)
     ]

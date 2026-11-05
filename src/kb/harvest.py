@@ -198,7 +198,7 @@ def _valid_record(record: HarvestRecord, host: str) -> bool:
     return (
         record.source == "session-transcript"
         and record.host == host
-        and record.app in ("claude-code", "codex")
+        and record.app in ("claude-code", "codex", "goose")
         and isinstance(record.session, str)
         and bool(record.session)
         and isinstance(record.part, int)

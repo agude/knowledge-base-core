@@ -5,9 +5,12 @@ The end-to-end tests run the same checks in a subprocess, which coverage does no
 """
 
 import os
+import sqlite3
 import subprocess
 import sys
-from datetime import UTC, datetime
+from contextlib import closing
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -18,6 +21,9 @@ from kb.diagnosis import Check
 from kb.sync_state import SyncState
 
 NOW = datetime(2026, 10, 26, 12, tzinfo=UTC)
+GOOSE_SCRIPT = (
+    Path(__file__).resolve().parents[1] / "fixtures" / "transcripts" / "goose" / "sessions.sql"
+)
 
 
 def git(root: Path, *words: str) -> str:
@@ -226,6 +232,31 @@ def test_capture_passes_and_names_an_unreadable_transcript_root(
         assert unreadable.message == f"unreadable transcript root: {locked}"
     finally:
         locked.chmod(0o755)
+
+
+def test_capture_checks_the_goose_root_and_counts_its_old_ready_sessions(
+    machine: doctor.Context, tmp_path: Path
+) -> None:
+    goose_root = tmp_path / "goose"
+    sessions = goose_root / "data" / "sessions"
+    sessions.mkdir(parents=True)
+    with closing(sqlite3.connect(sessions / "sessions.db")) as connection:
+        connection.executescript(GOOSE_SCRIPT.read_text(encoding="utf-8"))
+    context = replace(machine, environ={**machine.environ, "GOOSE_PATH_ROOT": str(goose_root)})
+
+    assert by_name(doctor.gather(context))["capture"].state == "pass"
+    later = replace(context, now=NOW + timedelta(days=30))
+    old = by_name(doctor.gather(later))["capture"]
+    assert old.message.startswith("2 ready transcript(s) older than 20 days")
+
+    sessions.chmod(0)
+    try:
+        if os.access(sessions, os.R_OK | os.X_OK):
+            pytest.skip("this account can read a directory with mode 0")
+        unreadable = by_name(doctor.gather(context))["capture"]
+        assert unreadable.message == f"unreadable transcript root: {sessions}"
+    finally:
+        sessions.chmod(0o755)
 
 
 def test_capture_without_a_harvest_cutoff_reports_it_and_no_root_reports_the_problem(
