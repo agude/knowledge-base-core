@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-App = Literal["claude-code", "codex"]
+App = Literal["claude-code", "codex", "goose"]
 Role = Literal["user", "assistant"]
 # Why a kb call's output is not usable: no paired result, a command that shares its output
 # with another call, a batch of results, output that is still incomplete, or an output shape
@@ -28,7 +28,7 @@ class Message:
 
 @dataclass(frozen=True)
 class Session:
-    """One transcript file after its host-specific records have been interpreted."""
+    """One transcript after its host-specific records have been interpreted."""
 
     app: App
     id: str | None
