@@ -15,7 +15,21 @@ from itertools import groupby
 from operator import itemgetter
 from pathlib import Path
 
-from kb.transcripts import App, Message, Role, Session, later, synthetic_id, unique_messages
+from kb.shellcalls import Invocation, invocations, sole_invocation
+from kb.transcripts import (
+    App,
+    KbCall,
+    Message,
+    Role,
+    Scan,
+    Session,
+    Store,
+    earlier,
+    later,
+    synthetic_id,
+    text_of,
+    unique_messages,
+)
 
 APP: App = "goose"
 DATABASE = "sessions.db"
@@ -259,3 +273,114 @@ def _updated(value: object) -> datetime | None:
     except ValueError:
         return None
     return moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment.astimezone(UTC)
+
+
+@dataclass
+class _ToolCall:
+    """One shell tool call that ran at least one recorded kb call, and its paired result.
+
+    excluded is "missing" until a tool response pairs with the call. After that it is None for a
+    usable output, and otherwise the reason the output is not usable.
+    """
+
+    timestamp: datetime | None
+    command: str
+    found: tuple[Invocation, ...]
+    output: str | None = None
+    excluded: str | None = "missing"
+
+
+def kb_calls(header: Header, rows: Iterable[Row]) -> tuple[KbCall, ...]:
+    """The recorded kb calls in one Goose session, each with its paired output."""
+    return _scan(header, rows).calls
+
+
+def read_store(root: Path) -> Store:
+    """Read the kb calls of every session in the database under a sessions directory.
+
+    Only the database is read; nothing is written. The database counts as the store's one
+    file. A missing database is an empty store, and one that cannot be read is unreadable.
+    """
+    if not (root / DATABASE).is_file():
+        return Store((), 0, 0, None, None)
+    try:
+        scans = [_scan(header, rows) for header, rows in _sessions(root)]
+    except DatabaseError:
+        return Store((), 1, 1, None, None)
+    first: datetime | None = None
+    last: datetime | None = None
+    for scan in scans:
+        first = earlier(first, scan.first)
+        last = later(last, scan.last)
+    return Store(tuple(call for scan in scans for call in scan.calls), 1, 0, first, last)
+
+
+def _scan(header: Header, rows: Iterable[Row]) -> Scan:
+    """Pair each shell tool request that ran a kb call with its tool response, by request ID."""
+    first: datetime | None = None
+    last: datetime | None = None
+    pending: dict[str, _ToolCall] = {}
+    tool_calls: list[_ToolCall] = []
+    for row in rows:
+        moment = _timestamp(row.created)
+        first = earlier(first, moment)
+        last = later(last, moment)
+        for item in _content(row.content) or ():
+            if not isinstance(item, Mapping):
+                continue
+            request_id = item.get("id")
+            if not isinstance(request_id, str):
+                continue
+            command = _shell_command(item) if row.role == "assistant" else None
+            found = invocations(command) if command is not None else ()
+            if command is not None and found:
+                call = _ToolCall(moment, command, found)
+                pending[request_id] = call
+                tool_calls.append(call)
+            elif item.get("type") == "toolResponse" and request_id in pending:
+                call = pending.pop(request_id)
+                call.output, call.excluded = _output(item.get("toolResult"))
+    calls = tuple(_kb_call(call, found, header) for call in tool_calls for found in call.found)
+    return Scan(calls, first, last)
+
+
+def _output(result: object) -> tuple[str | None, str | None]:
+    """A tool response's output, as text, or None and the reason it is not usable.
+
+    Goose stores a tool result as its content blocks, or as an object that holds them. A
+    dispatched call whose command failed sets isError. The developer shell flags a timed-out or
+    cut-short run, and adds a second block only for a truncation notice. A block for the user
+    alone, beside its copy for the agent, is skipped.
+    """
+    if not isinstance(result, Mapping) or result.get("status") != "success":
+        return None, "unsupported"
+    value = result.get("value")
+    if isinstance(value, Mapping) and value.get("isError") is True:
+        return None, "unsupported"
+    content = value.get("content") if isinstance(value, Mapping) else value
+    flags = value.get("structuredContent") if isinstance(value, Mapping) else None
+    if isinstance(flags, Mapping) and (flags.get("timed_out") or flags.get("output_truncated")):
+        return None, "incomplete"
+    if not isinstance(content, list):
+        return None, "unsupported"
+    blocks = [block for block in content if _shown_to(block, "assistant")]
+    if len(blocks) > 1:
+        return None, "incomplete"
+    text = text_of(blocks)
+    return (text, None) if text is not None else (None, "unsupported")
+
+
+def _kb_call(call: _ToolCall, found: Invocation, header: Header) -> KbCall:
+    """One kb call. Its output is its own only when its tool call ran no other kb call."""
+    excluded = "shared" if sole_invocation(call.command) is None else call.excluded
+    return KbCall(
+        app=APP,
+        session_id=header.id,
+        timestamp=call.timestamp,
+        project=header.project,
+        command=call.command,
+        subcommand=found.subcommand,
+        arguments=found.arguments,
+        output=None if excluded is not None else call.output,
+        excluded=excluded,
+    )

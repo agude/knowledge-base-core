@@ -303,11 +303,14 @@ def test_a_recall_without_later_calls_says_none() -> None:
 
 def test_roots_come_from_flags_or_the_host_environment(tmp_path: Path) -> None:
     roots = usage._roots(
-        {"--claude-root": str(tmp_path)},
+        {"--claude-root": str(tmp_path), "--goose-root": str(tmp_path / "goose")},
         {"CODEX_HOME": str(tmp_path / "codex")},
     )
     assert roots["claude-code"] == tmp_path
     assert roots["codex"] == tmp_path / "codex" / "sessions"
+    assert roots["goose"] == tmp_path / "goose"
+    roots = usage._roots({}, {"GOOSE_PATH_ROOT": str(tmp_path / "root")})
+    assert roots["goose"] == tmp_path / "root" / "data" / "sessions"
 
 
 def test_the_default_roots_follow_the_host_home_directories(tmp_path: Path) -> None:
@@ -329,10 +332,15 @@ def test_the_main_reads_the_named_roots_and_prints_the_report(
     (claude_root / "-work" / "main.jsonl").write_text("", encoding="utf-8")
     codex_root = tmp_path / "codex"
     codex_root.mkdir()
-    assert usage.main(["--claude-root", str(claude_root), "--codex-root", str(codex_root)]) == 0
+    goose_root = tmp_path / "goose"
+    goose_root.mkdir()
+    (goose_root / "sessions.db").write_bytes(b"not a database")
+    roots = ["--claude-root", str(claude_root), "--codex-root", str(codex_root)]
+    assert usage.main([*roots, "--goose-root", str(goose_root)]) == 0
     out = capsys.readouterr().out
     assert "claude-code: 1 files, 0 unreadable, 0 kb calls" in out
     assert "codex: 0 files, 0 unreadable, 0 kb calls" in out
+    assert "goose: 1 files, 1 unreadable, 0 kb calls" in out
     assert "recall excluded by reason: none" in out
 
 

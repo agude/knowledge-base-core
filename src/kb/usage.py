@@ -1,6 +1,6 @@
-"""Read-only usage report for kb calls in the raw Claude Code and Codex session stores.
+"""Read-only usage report for kb calls in the raw Claude Code, Codex, and Goose session stores.
 
-python -m kb.usage [--list] [--claude-root PATH] [--codex-root PATH]
+python -m kb.usage [--list] [--claude-root PATH] [--codex-root PATH] [--goose-root PATH]
 
 Each kb recall output is parsed by its block structure into the locators it shows, tagged
 curated or session. A recall whose output is not usable is counted as excluded, with its reason,
@@ -18,11 +18,11 @@ from dataclasses import dataclass, field, fields
 from datetime import UTC, datetime
 from pathlib import Path
 
-from kb import args
+from kb import args, platform
 from kb.commands import recall
 from kb.errors import KbError
 from kb.evidence import EVIDENCE_HEADING
-from kb.hosts import claude, codex
+from kb.hosts import claude, codex, goose
 from kb.transcripts import KbCall, Store
 
 # The From sessions block shipped in commit a739708 (committer 2026-11-01T20:32:06-08:00).
@@ -38,16 +38,20 @@ UNKNOWN_WEEK = "unknown"
 UNKNOWN_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 # Week fields that feed the mean and are not columns of their own.
 PRIVATE_FIELDS = frozenset({"recall_chars", "recall_outputs"})
-USAGE = "Usage: python -m kb.usage [--list] [--claude-root PATH] [--codex-root PATH]"
+USAGE = (
+    "Usage: python -m kb.usage [--list] [--claude-root PATH] [--codex-root PATH]"
+    " [--goose-root PATH]"
+)
 SUMMARY = (
-    "Report kb call usage from the raw Claude Code and Codex session stores. Read-only.\n"
+    "Report kb call usage from the raw Claude Code, Codex, and Goose session stores. Read-only.\n"
     "--list prints each recall with its later calls, for hand checking. It shows query text.\n"
-    "The roots default to CLAUDE_CONFIG_DIR/projects and CODEX_HOME/sessions."
+    "The roots default to CLAUDE_CONFIG_DIR/projects, CODEX_HOME/sessions, and\n"
+    "Goose's sessions directory."
 )
 SPEC = args.Spec(
     usage="",
     summary=SUMMARY,
-    valued=frozenset({"--claude-root", "--codex-root"}),
+    valued=frozenset({"--claude-root", "--codex-root", "--goose-root"}),
     switches=frozenset({"--list"}),
 )
 
@@ -331,15 +335,18 @@ def _store_root(environ: Mapping[str, str], name: str, default: str) -> Path:
 
 
 def _roots(values: Mapping[str, str], environ: Mapping[str, str]) -> dict[str, Path]:
-    """The Claude projects and Codex sessions roots, from the flags or the host environment."""
+    """The Claude, Codex, and Goose session roots, from the flags or the host environment."""
     roots = {
         "claude-code": _store_root(environ, "CLAUDE_CONFIG_DIR", ".claude") / "projects",
         "codex": _store_root(environ, "CODEX_HOME", ".codex") / "sessions",
+        "goose": platform.goose_sessions(environ, sys.platform, Path.home()),
     }
     if "--claude-root" in values:
         roots["claude-code"] = Path(values["--claude-root"])
     if "--codex-root" in values:
         roots["codex"] = Path(values["--codex-root"])
+    if "--goose-root" in values:
+        roots["goose"] = Path(values["--goose-root"])
     return roots
 
 
@@ -360,6 +367,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     stores = {
         "claude-code": claude.read_store(roots["claude-code"]),
         "codex": codex.read_store(roots["codex"]),
+        "goose": goose.read_store(roots["goose"]),
     }
     report = analyze(_calls(stores))
     sys.stdout.write(render_list(report) if "--list" in parsed.switches else render(stores, report))

@@ -513,9 +513,9 @@ code fences. Evidence document frequency counts files, chunks and files
 average their lengths separately, and evidence uses BM25+ with delta 1.0.
 Measurements and evaluation results are in `notes/evidence.md`.
 
-The usage report (`just usage`) counts kb calls from the raw Claude Code and
-Codex stores. Output counts only when it belongs to one kb call; every
-excluded call is counted by reason. Most Codex recalls run inside
+The usage report (`just usage`) counts kb calls from the raw Claude Code,
+Codex, and Goose stores. Output counts only when it belongs to one kb call;
+every excluded call is counted by reason. Most Codex recalls run inside
 multi-command exec scripts and are excluded. Decoding positional batch
 results was rejected (user, 2026-11-02): it recovers about 43 recalls and
 needs a pattern match on agent-written JavaScript.
