@@ -4,10 +4,9 @@ import os
 import socket
 import sys
 from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
 from pathlib import Path
 
-from kb import areas, args, lock, observation, question, write
+from kb import areas, args, dates, lock, observation, question, write
 from kb.args import Spec
 from kb.context import load
 from kb.errors import KbError
@@ -90,7 +89,10 @@ def _content_root() -> Path:
 
 def _record(root: Path, title: str, context: str, body: str, wait: int) -> str:
     """Render, scan, publish, and commit the attributed question."""
-    when = datetime.now(UTC)
+    try:
+        when = dates.now(os.environ)
+    except KbError as error:
+        raise KbError(f"{WHO}: {error}") from error
     text = question.render(
         title, context, body, write.project(), observation.short_host(socket.gethostname()), when
     )

@@ -71,7 +71,10 @@ def _timestamp(value: str | None) -> datetime | None:
         return None
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         return None
-    return parsed.astimezone(UTC)
+    try:
+        return parsed.astimezone(UTC)
+    except OverflowError:
+        return None
 
 
 def _nonempty(value: str | None) -> bool:

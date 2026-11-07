@@ -1,17 +1,16 @@
 """kb observe: record one observation in observations/pending/, and commit only that file.
 
-The write path follows section 3 of the observe plan: validate, render, scan, write to a
-temporary file, take the lock, publish, commit, unlock, and report.
+Validate and render before taking the writer lock. Scan private scratch, publish,
+and commit while holding the lock, then report the committed path.
 """
 
 import os
 import socket
 import sys
 from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
 from pathlib import Path
 
-from kb import args, lock, observation, write
+from kb import args, dates, lock, observation, write
 from kb.args import Spec
 from kb.context import load
 from kb.errors import KbError
@@ -91,7 +90,10 @@ def _content_root() -> Path:
 
 def _record(root: Path, title: str, body: str, wait: int) -> str:
     """Write the observation, commit it, and return its file name."""
-    when = datetime.now(UTC)
+    try:
+        when = dates.now(os.environ)
+    except KbError as error:
+        raise KbError(f"observe: {error}") from error
     host = observation.short_host(socket.gethostname())
     return write.publish_and_commit(
         root,

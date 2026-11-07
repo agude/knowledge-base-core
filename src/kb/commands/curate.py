@@ -6,7 +6,6 @@ import shlex
 import socket
 import stat
 import sys
-import tempfile
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -24,6 +23,8 @@ from kb import (
     dates,
     evidence,
     freshness,
+    git_paths,
+    git_status,
     lint,
     locators,
     lock,
@@ -31,11 +32,14 @@ from kb import (
     observation,
     publish,
     remote,
+    scratch,
     secrets,
+    snapshot,
 )
 from kb.args import Spec
 from kb.commands import recall as recall_command
 from kb.commands import sync as sync_command
+from kb.content_paths import fixed_directory
 from kb.context import Context, load
 from kb.errors import KbError
 from kb.platform import config_file
@@ -162,7 +166,7 @@ def _start_command(words: Sequence[str]) -> int:
 
     try:
         context = load(os.environ, sys.platform, Path.home())
-        git_directory = lock.git_dir_path(context.root, WHO)
+        git_directory = lock.git_dir(context.root, WHO)
         backend = lock.default_backend(sys.platform)
         synchronize = "--no-sync" not in parsed.switches
         with lock.write_lock(git_directory, wait, backend):
@@ -252,7 +256,7 @@ def _complete_command(words: Sequence[str]) -> int:
 
     try:
         context = load(os.environ, sys.platform, Path.home())
-        git_directory = lock.git_dir_path(context.root, WHO)
+        git_directory = lock.git_dir(context.root, WHO)
         backend = lock.default_backend(sys.platform)
         with lock.write_lock(git_directory, wait, backend):
             batch = _read_batch(context.root, parsed.words[0])
@@ -305,7 +309,7 @@ def _transition_command(words: Sequence[str], spec: Spec, outcome: str) -> int:
 
     try:
         context = load(os.environ, sys.platform, Path.home())
-        git_directory = lock.git_dir_path(context.root, WHO)
+        git_directory = lock.git_dir(context.root, WHO)
         backend = lock.default_backend(sys.platform)
         with lock.write_lock(git_directory, wait, backend):
             batch = _read_batch(context.root, parsed.words[0])
@@ -471,7 +475,7 @@ def _finish_command(words: Sequence[str]) -> int:
 
     try:
         context = load(os.environ, sys.platform, Path.home())
-        git_directory = lock.git_dir_path(context.root, WHO)
+        git_directory = lock.git_dir(context.root, WHO)
         backend = lock.default_backend(sys.platform)
         with lock.write_lock(git_directory, wait, backend):
             return _finish(context.root, git_directory, parsed.words[0], no_push=no_push)
@@ -507,8 +511,9 @@ def _finish(root: Path, git_directory: Path, run_id: str, *, no_push: bool) -> i
     if committed is not None:
         return _resume_publication(root, committed, branch, no_push=no_push)
     _require_index_clean(root)
+    _require_completed_members(root, batch)
     changes = _publication_changes(root, batch)
-    verdict = publish.validate(root, changes)
+    verdict = publish.validate(root, changes, baseline=snapshot.read_head(root, WHO))
     if verdict.blocking:
         lines = [f"{WHO}: validation refused publication; nothing was written"]
         lines.extend(f"  {_finding_text(finding)}" for finding in verdict.blocking)
@@ -522,6 +527,32 @@ def _finish(root: Path, git_directory: Path, run_id: str, *, no_push: bool) -> i
         sys.stdout.write(f"Commit: {commit}\nCommitted locally; not published\n")
         return 0
     return _publish(root, commit, branch, new_commit=True)
+
+
+def _require_completed_members(root: Path, batch: curation.Batch) -> None:
+    """Recheck completed archives and recorded destinations before staging a new commit."""
+    for member in batch.members:
+        if member.status != "complete":
+            continue
+        if _member_file_exists(root, PENDING, member.filename):
+            raise KbError(
+                f"{WHO}: completed member {member.filename} still has a pending copy; inspect manually"
+            )
+        if not _matches_snapshot(root, ARCHIVED, member, archive=True):
+            raise KbError(
+                f"{WHO}: completed archive {member.filename} is missing or changed; inspect manually"
+            )
+        if member.disposition in {"incorporated", "duplicate"}:
+            destinations = _requested_destinations(
+                root,
+                [item.locator for item in member.destinations],
+                member.disposition,
+                member.reason,
+            )
+            if destinations != member.destinations:
+                raise KbError(
+                    f"{WHO}: a destination heading changed for {member.filename}; inspect manually"
+                )
 
 
 def _resume_publication(root: Path, commit: str, branch: str, *, no_push: bool) -> int:
@@ -578,21 +609,27 @@ def _publication_changes(root: Path, batch: curation.Batch) -> list[publish.Chan
     }
     changes: list[publish.Change] = []
     refused: list[str] = []
-    for code, path in _worktree_entries(root):
-        status = _change_status(code)
-        if publish.is_published(path) or path == manifest or path in archives:
-            changes.append(publish.Change(status, path))
-        elif path in removable and status == "D":
-            changes.append(publish.Change("D", path))
-        else:
-            refused.append(path)
+    for entry in _worktree_entries(root):
+        paths = [(_change_status(entry.code), entry.path)]
+        if entry.old_path is not None:
+            # Finish stages both sides explicitly; Git detects the staged rename later.
+            paths = [("A", entry.path)]
+            if "R" in entry.code:
+                paths.append(("D", entry.old_path))
+        for status, path in paths:
+            if publish.is_published(path) or path == manifest or path in archives:
+                changes.append(publish.Change(status, path))
+            elif path in removable and status == "D":
+                changes.append(publish.Change("D", path))
+            else:
+                refused.append(path)
     if refused:
         raise KbError(f"{WHO}: uncommitted changes outside the batch: {_listing(refused)}")
     return sorted(changes, key=lambda change: change.path)
 
 
-def _worktree_entries(root: Path) -> list[tuple[str, str]]:
-    """Each changed or untracked path with its two-letter Git status."""
+def _worktree_entries(root: Path) -> list[git_status.Entry]:
+    """Status records with both rename paths converted to content-relative names."""
     output = _git_output(
         root,
         "status",
@@ -601,13 +638,15 @@ def _worktree_entries(root: Path) -> list[tuple[str, str]]:
         "--untracked-files=all",
         message="cannot inspect Git status",
     )
-    entries: list[tuple[str, str]] = []
-    for record in output.split("\0"):
-        if not record:
-            continue
-        path = record[3:]
-        entries.append((record[:2], path))
-    return entries
+    prefix = git_paths.repository_prefix(root, WHO)
+    return [
+        git_status.Entry(
+            entry.code,
+            git_paths.to_content_path(entry.path, prefix),
+            None if entry.old_path is None else git_paths.to_content_path(entry.old_path, prefix),
+        )
+        for entry in git_status.parse_porcelain(output, command=WHO)
+    ]
 
 
 def _change_status(code: str) -> str:
@@ -629,13 +668,18 @@ def _commit_publication(
     batch: curation.Batch,
     paths: Sequence[str],
 ) -> str:
-    """Stage exactly the publication set, commit it once, and unstage on failure.
+    """Stage exactly the publication set and reconcile every failure before commit success.
 
     The message is rendered from the staged set, where Git detects renames that the
     worktree status reports as a deletion and an addition.
     """
+    previous_head = _head_commit(root)
     pathspec = _write_scratch_file(git_directory, _nul_terminated(paths))
     text: Path | None = None
+    commit_attempted = False
+    expected_tree = ""
+    subject = ""
+    commit_result: CompletedProcess[str] | None = None
     try:
         staged = _git_quiet(
             root,
@@ -646,7 +690,6 @@ def _commit_publication(
             "--pathspec-file-nul",
         )
         if staged.returncode != 0:
-            _unstage(root, git_directory, paths)
             detail = staged.stderr.rstrip("\n")
             raise KbError(f"{WHO}: cannot stage the publication set: {detail}")
         names = _git_output(
@@ -658,46 +701,119 @@ def _commit_publication(
             "-z",
             message="cannot read the staged set",
         ).split("\0")
-        staged_names = {name for name in names if name}
+        prefix = git_paths.repository_prefix(root, WHO)
+        staged_names = {git_paths.to_content_path(name, prefix) for name in names if name}
         if staged_names != set(paths):
-            _unstage(root, git_directory, paths)
             extra = sorted(staged_names - set(paths))
             missing = sorted(set(paths) - staged_names)
             raise KbError(
                 f"{WHO}: staged set differs from the publication set (extra: {extra}; "
                 f"missing: {missing}); nothing committed"
             )
-        staged_changes = publish.parse_name_status(
-            _git_output(
-                root,
-                "diff",
-                "--cached",
-                "--name-status",
-                "-M",
-                "-z",
-                "--no-ext-diff",
-                message="cannot read the staged set",
+        staged_changes = [
+            publish.Change(
+                change.status,
+                git_paths.to_content_path(change.path, prefix),
+                None
+                if change.old_path is None
+                else git_paths.to_content_path(change.old_path, prefix),
             )
-        )
+            for change in publish.parse_name_status(
+                _git_output(
+                    root,
+                    "diff",
+                    "--cached",
+                    "--name-status",
+                    "-M",
+                    "-z",
+                    "--no-ext-diff",
+                    message="cannot read the staged set",
+                )
+            )
+        ]
         message = publish.render_message(batch.id, batch, staged_changes)
-        try:
-            _scan_message(git_directory, message)
-        except KbError:
-            _unstage(root, git_directory, paths)
-            raise
+        subject = message.splitlines()[0]
+        _scan_message(git_directory, message)
         text = _write_scratch_file(git_directory, message.encode("utf-8"))
-        committed = _git_quiet(root, "commit", "-q", "-F", str(text))
-        if committed.returncode != 0:
-            _unstage(root, git_directory, paths)
-            detail = (committed.stderr or committed.stdout).rstrip("\n")
-            raise KbError(f"{WHO}: commit failed: {detail}")
-        return _git_output(
-            root, "rev-parse", "--verify", "HEAD", message="cannot read HEAD"
+        expected_tree = _git_output(
+            root, "write-tree", message="cannot snapshot the staged publication"
         ).strip()
+        commit_attempted = True
+        commit_result = _git_quiet(root, "commit", "-q", "-F", str(text))
+        if commit_result.returncode != 0:
+            detail = (commit_result.stderr or commit_result.stdout).rstrip("\n")
+            raise KbError(f"{WHO}: commit failed: {detail}")
+        return _head_commit(root)
+    except BaseException as error:
+        if commit_attempted:
+            outcome, committed_head, detail = _publication_commit_outcome(
+                root, previous_head, expected_tree, subject
+            )
+            if outcome == "committed":
+                if commit_result is not None and commit_result.returncode != 0:
+                    assert committed_head is not None
+                    return committed_head
+                raise
+            if outcome == "unknown":
+                message = (
+                    f"{WHO}: commit outcome is uncertain for {_listing(paths)}; the publication "
+                    "files and index were preserved; inspect Git status and HEAD before retrying"
+                )
+                raise KbError(f"{message}: {detail}" if detail else message) from error
+        try:
+            _unstage(root, git_directory, paths)
+        except BaseException as rollback_error:
+            detail = str(rollback_error) or "cleanup was interrupted"
+            if not detail.startswith(f"{WHO}:"):
+                detail = f"{WHO}: cannot unstage the publication set; inspect Git status: {detail}"
+            raise KbError(f"{detail}; original failure: {error}") from rollback_error
+        raise
     finally:
         pathspec.unlink(missing_ok=True)
         if text is not None:
             text.unlink(missing_ok=True)
+
+
+def _publication_commit_outcome(
+    root: Path, previous_head: str, expected_tree: str, subject: str
+) -> tuple[str, str | None, str]:
+    """Confirm the expected publication commit, a failed attempt, or an uncertain state."""
+    try:
+        head_result = _git_quiet(root, "rev-parse", "--verify", "HEAD")
+        if head_result.returncode != 0 or not head_result.stdout.strip():
+            detail = head_result.stderr.rstrip("\n") or "cannot inspect HEAD"
+            return "unknown", None, detail
+        head = head_result.stdout.strip()
+        if head == previous_head:
+            return "failed", None, "HEAD is unchanged"
+
+        metadata = _git_quiet(root, "show", "-s", "--format=%P%x00%s", head)
+        if metadata.returncode != 0:
+            detail = metadata.stderr.rstrip("\n") or "cannot inspect the new commit"
+            return "unknown", None, detail
+        fields = metadata.stdout.rstrip("\n").split("\0", 1)
+        if len(fields) != 2:
+            return "unknown", None, "Git returned malformed commit metadata"
+        if fields[0].split() != [previous_head] or fields[1] != subject:
+            return "unknown", None, "HEAD changed but does not identify this publication commit"
+
+        tree = _git_quiet(root, "rev-parse", "--verify", f"{head}^{{tree}}")
+        if tree.returncode != 0 or tree.stdout.strip() != expected_tree:
+            detail = tree.stderr.rstrip("\n") or "the new commit tree differs from the staged set"
+            return "unknown", None, detail
+        index = _git_quiet(root, "write-tree")
+        if index.returncode != 0 or index.stdout.strip() != expected_tree:
+            detail = index.stderr.rstrip("\n") or "the index differs from the staged set"
+            return "unknown", None, detail
+        status = _git_quiet(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+        if status.returncode != 0 or status.stdout:
+            detail = (
+                status.stderr.rstrip("\n") or "the worktree differs from the committed publication"
+            )
+            return "unknown", None, detail
+        return "committed", head, ""
+    except BaseException as error:
+        return "unknown", None, str(error) or "commit outcome inspection was interrupted"
 
 
 def _unstage(root: Path, git_directory: Path, paths: Sequence[str]) -> None:
@@ -730,13 +846,11 @@ def _scan_message(git_directory: Path, message: str) -> None:
 
 
 def _require_index_clean(root: Path) -> None:
-    staged = [
-        name
-        for name in _git_output(
-            root, "diff", "--cached", "--name-only", "-z", message="cannot read the index"
-        ).split("\0")
-        if name
-    ]
+    output = _git_output(
+        root, "diff", "--cached", "--name-only", "-z", message="cannot read the index"
+    )
+    prefix = git_paths.repository_prefix(root, WHO)
+    staged = [git_paths.to_content_path(name, prefix) for name in output.split("\0") if name]
     if staged:
         raise KbError(
             f"{WHO}: the index has staged changes: {_listing(staged)}; commit or unstage them first"
@@ -940,7 +1054,7 @@ def _complete(
 ) -> str:
     """Record an outcome and finish or resume its durable archive intent."""
     root = context.root
-    _scan_completion_text(destination_words, reason)
+    _scan_completion_text(git_directory, destination_words, reason)
     member = next((item for item in batch.members if item.filename == filename), None)
     if member is None:
         raise KbError(f"{WHO}: not a batch member")
@@ -1046,7 +1160,7 @@ def _transition_member(
     outcome: str,
 ) -> str:
     """Defer an unchanged input or drop a changed/missing one in the manifest only."""
-    _scan_completion_text((), reason)
+    _scan_completion_text(git_directory, (), reason)
     if not reason.strip() or "\n" in reason or "\r" in reason:
         raise KbError(f"{WHO}: {outcome} reason must be nonempty and single-line")
     member = next((item for item in batch.members if item.filename == filename), None)
@@ -1207,13 +1321,18 @@ def _same_outcome(
     return member.disposition == disposition and member.reason == reason and stored == requested
 
 
-def _scan_completion_text(destination_words: Sequence[str], reason: str | None) -> None:
+def _scan_completion_text(
+    git_directory: Path, destination_words: Sequence[str], reason: str | None
+) -> None:
     """Scan supplied locators and reasons before diagnostics or state writes."""
     entries = [(f"destination {index}", word) for index, word in enumerate(destination_words, 1)]
     if reason is not None:
         entries.append(("--reason", reason))
+    if not entries:
+        return
+    scan_directory = scratch.shared_directory(git_directory, WHO)
     for label, value in entries:
-        findings = secrets.findings(Path(tempfile.gettempdir()), value)
+        findings = secrets.findings(scan_directory, value)
         if findings:
             detectors = ", ".join(sorted({detector for detector, _line in findings}))
             raise KbError(f"{WHO}: possible secret in {label}: {detectors}")
@@ -1268,6 +1387,7 @@ def _replace_manifest(git_directory: Path, target: Path, batch: curation.Batch) 
     try:
         if target.is_symlink() or not target.is_file():
             raise KbError(f"{WHO}: batch manifest is missing or unsafe: {target.name}")
+        temporary.chmod(stat.S_IMODE(target.stat().st_mode))
         temporary.replace(target)
     finally:
         temporary.unlink(missing_ok=True)
@@ -1299,22 +1419,8 @@ def _publish_archive(
 
 def _write_scratch_file(git_directory: Path, content: bytes) -> Path:
     """Write and fsync temporary bytes under the common Git scratch directory."""
-    scratch = git_directory / "kb-tmp"
-    if scratch.is_symlink():
-        raise KbError(f"{WHO}: temporary directory is a symlink: {scratch}")
-    scratch.mkdir(parents=True, exist_ok=True)
-    if not scratch.resolve().is_relative_to(git_directory.resolve()):
-        raise KbError(f"{WHO}: temporary directory escapes the Git directory")
-    temporary = scratch / f"curate-{os.urandom(8).hex()}.tmp"
-    try:
-        with temporary.open("xb") as handle:
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-    except BaseException:
-        temporary.unlink(missing_ok=True)
-        raise
-    return temporary
+    directory = scratch.shared_directory(git_directory, WHO)
+    return scratch.create_file(directory, "curate-", ".tmp", content, flush=True)
 
 
 def _remove_pending(root: Path, member: curation.Member) -> None:
@@ -1589,24 +1695,13 @@ def _require_clean_tree(root: Path) -> None:
     if result.returncode != 0:
         detail = result.stderr.decode("utf-8", errors="replace").strip()
         raise KbError(f"{WHO}: cannot inspect Git status" + (f": {detail}" if detail else ""))
-    records = result.stdout.split(b"\0")
-    dirty: list[str] = []
-    index = 0
-    while index < len(records):
-        record = records[index]
-        index += 1
-        if not record:
-            continue
-        if len(record) < 4 or record[2:3] != b" ":
-            raise KbError(f"{WHO}: Git returned malformed NUL-delimited status")
-        status = record[:2]
-        paths = [os.fsdecode(record[3:])]
-        if b"R" in status or b"C" in status:
-            if index >= len(records) or not records[index]:
-                raise KbError(f"{WHO}: Git returned malformed rename status")
-            paths.append(os.fsdecode(records[index]))
-            index += 1
-        dirty.extend(paths)
+    prefix = git_paths.repository_prefix(root, WHO)
+    dirty = [
+        git_paths.to_content_path(path, prefix)
+        for entry in git_status.parse_porcelain(os.fsdecode(result.stdout), command=WHO)
+        for path in (entry.path, entry.old_path)
+        if path is not None
+    ]
     if dirty:
         listing = ", ".join(sorted(set(dirty)))
         raise KbError(f"{WHO}: content repository has uncommitted changes: {listing}")
@@ -1740,39 +1835,21 @@ def _fixed_directory(
     optional: bool = False,
 ) -> Path | None:
     """Resolve a fixed content directory without following symlink components."""
-    root_resolved = root.resolve()
-    path = root
-    for component in relative.split("/"):
-        path = path / component
-        if path.is_symlink():
-            raise KbError(f"{WHO}: content directory is a symlink: {relative}")
-        if not path.exists():
-            if not create:
-                if optional:
-                    return None
-                raise KbError(f"{WHO}: content directory is missing: {relative}")
-            path.mkdir()
-        if not path.is_dir() or not path.resolve().is_relative_to(root_resolved):
-            raise KbError(f"{WHO}: unsafe content directory: {relative}")
-    return path
+    return fixed_directory(root, relative, command=WHO, create=create, optional=optional)
 
 
 def _publish_manifest(git_directory: Path, target: Path, text: str) -> None:
     """Publish one manifest atomically from the common Git directory's scratch area."""
-    scratch = git_directory / "kb-tmp"
-    if scratch.is_symlink():
-        raise KbError(f"{WHO}: temporary directory is a symlink: {scratch}")
-    scratch.mkdir(parents=True, exist_ok=True)
-    if not scratch.resolve().is_relative_to(git_directory.resolve()):
-        raise KbError(f"{WHO}: temporary directory escapes the Git directory")
-    temporary = scratch / f"curate-{os.urandom(8).hex()}.json"
+    directory = scratch.shared_directory(git_directory, WHO)
+    temporary = scratch.create_file(
+        directory, "curate-", ".json", text.encode("utf-8"), mode=0o666, flush=True
+    )
     try:
-        with temporary.open("xb") as handle:
-            handle.write(text.encode("utf-8"))
-            handle.flush()
-            os.fsync(handle.fileno())
         if target.exists() or target.is_symlink():
             raise KbError(f"{WHO}: batch manifest already exists: {target.name}")
-        temporary.replace(target)
+        try:
+            os.link(temporary, target)
+        except FileExistsError as error:
+            raise KbError(f"{WHO}: batch manifest already exists: {target.name}") from error
     finally:
         temporary.unlink(missing_ok=True)

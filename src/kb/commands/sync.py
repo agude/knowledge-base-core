@@ -17,17 +17,21 @@ from kb import (
     args,
     config,
     dates,
+    git_paths,
     harvest,
     lock,
     model,
     observation,
     remote,
+    scratch,
     secrets,
     sync_state,
     token_cache,
+    write,
 )
 from kb.args import Spec
 from kb.config import content_root
+from kb.content_paths import fixed_directory
 from kb.errors import KbError
 from kb.hosts import claude, codex, goose
 from kb.platform import config_file, goose_sessions
@@ -98,11 +102,6 @@ class Prepared:
         return 0 if self.text is None else len(self.text.encode("utf-8"))
 
 
-# The seams that the sync tests replace. The remote steps live in kb.remote.
-_dirty_paths = remote.dirty_paths
-_fetch_status = remote.fetch_status
-
-
 def run(words: Sequence[str]) -> int:
     """Run sync, status, or dry-run and return its exit status."""
     parsed = args.parse(SPEC, words)
@@ -124,7 +123,7 @@ def run(words: Sequence[str]) -> int:
         harvest_since = config.read_harvest_since(configuration)
         now = dates.now(environ)
         host = observation.short_host(socket.gethostname())
-        git_directory = lock.git_dir(root)
+        git_directory = lock.git_dir(root, "sync")
     except KbError as error:
         raise KbError(f"sync: {error}") from None
     except (OSError, UnicodeError) as error:
@@ -176,7 +175,7 @@ def recover_and_harvest(
         errors.append(f"sync: recovery failed: {error}")
 
     if harvest_since is not None:
-        with _scanner_workspace(git_directory, preserve=False) as scan_directory:
+        with _scanner_workspace(git_directory, standalone=False) as scan_directory:
             candidates = _scan_transcripts(environ)
             errors.extend(_failure_text(failure) for failure in candidates.failures)
             records = _head_records(root)
@@ -245,14 +244,14 @@ def _integrate(
     for message in errors:
         sys.stderr.write(f"{message}\n")
 
-    dirty = _dirty_paths(root)
+    dirty = remote.dirty_paths(root)
     if dirty:
         sys.stderr.write(f"sync: uncommitted changes in {root}; not pulling or pushing\n")
         for path in dirty[:10]:
             sys.stderr.write(f"  {path}\n")
         return True, list(errors)
 
-    status, fetch_error = _fetch_status(root)
+    status, fetch_error = remote.fetch_status(root)
     if fetch_error is not None:
         sys.stderr.write(f"{fetch_error}\n")
         return False, [*errors, fetch_error]
@@ -354,7 +353,7 @@ def _status(
         found = backlog(root, environ, host, now, harvest_since)
         errors.extend(_failure_text(failure) for failure in found.scan.failures)
         ready, waiting = found.selection.ready_count, found.selection.waiting_count
-    fetched, fetch_error = _fetch_status(root)
+    fetched, fetch_error = remote.fetch_status(root)
     if fetch_error is not None:
         errors.append(fetch_error)
     else:
@@ -381,7 +380,7 @@ def _dry_run(
         sys.stdout.write("Totals: 0 sessions, 0 messages, 0 bytes, 0 redacted lines\n")
         return 0
     try:
-        with _scanner_workspace(git_directory, preserve=True) as scan_directory:
+        with _scanner_workspace(git_directory, standalone=True) as scan_directory:
             scanned = _scan_transcripts(environ)
             records = _head_records(root)
             state = harvest.reconstruct_state(records, _sessions(scanned.candidates), host)
@@ -489,7 +488,10 @@ def _sessions(candidates: Sequence[harvest.Candidate]) -> tuple[Session, ...]:
 
 def _head_records(root: Path) -> tuple[harvest.HarvestRecord, ...]:
     """Read transcript observation front matter from HEAD, never from the worktree or index."""
-    tree = _git_bytes(root, "ls-tree", "-r", "-z", "--full-tree", "HEAD", "--", PENDING, ARCHIVED)
+    prefix = git_paths.repository_prefix(root, "sync")
+    pending = git_paths.to_repository_path(PENDING, prefix)
+    archived = git_paths.to_repository_path(ARCHIVED, prefix)
+    tree = _git_bytes(root, "ls-tree", "-r", "-z", "--full-tree", "HEAD", "--", pending, archived)
     if tree.returncode != 0:
         detail = tree.stderr.decode("utf-8", errors="replace").rstrip("\n")
         raise KbError(f"cannot list committed observations: {detail}")
@@ -502,9 +504,14 @@ def _head_records(root: Path) -> tuple[harvest.HarvestRecord, ...]:
         if kind != "blob" or not encoded_path.endswith(b".md"):
             continue
         try:
-            relative = encoded_path.decode("utf-8")
+            repository_relative = encoded_path.decode("utf-8")
         except UnicodeDecodeError:
             continue
+        relative = git_paths.to_content_path(repository_relative, prefix)
+        if relative == ".." or relative.startswith("../"):
+            raise KbError(
+                f"committed observation is outside the content root: {repository_relative}"
+            )
         entries.append((object_id, relative))
     if not entries:
         return ()
@@ -561,6 +568,18 @@ def _record_from_document(document: model.Document) -> harvest.HarvestRecord | N
     session_id = document.scalar("session")
     part_text = document.scalar("part")
     part = int(part_text) if part_text and part_text.isascii() and part_text.isdigit() else None
+    message_ids = document.front.get("message_ids")
+    if message_ids is not None and (
+        not isinstance(message_ids, tuple)
+        or not message_ids
+        or not all(message_ids)
+        or len(set(message_ids)) != len(message_ids)
+        or message_ids[0] != document.scalar("first_message")
+        or message_ids[-1] != document.scalar("last_message")
+        or len(message_ids) != sum(section.level == 2 for section in document.sections)
+    ):
+        raise KbError(f"sync: invalid message_ids in committed observation {document.path}")
+    assert message_ids is None or isinstance(message_ids, tuple)
     return harvest.HarvestRecord(
         source=source,
         host=host,
@@ -573,32 +592,74 @@ def _record_from_document(document: model.Document) -> harvest.HarvestRecord | N
         ended=parse_timestamp(document.scalar("ended")),
         created=parse_timestamp(document.scalar("created")),
         forked_from=document.scalar("forked_from"),
+        message_ids=message_ids,
     )
 
 
 def _recover(root: Path, git_directory: Path, host: str) -> None:
     """Remove this host's uncommitted transcript observations and empty kb-tmp."""
-    _empty_directory(git_directory / TMP)
-    pending = root / PENDING
-    if not pending.is_dir():
+    pending = fixed_directory(root, PENDING, command="sync", create=False, optional=True)
+    scratch_directory = git_directory / TMP
+    if scratch_directory.is_symlink():
+        raise KbError(f"temporary directory is a symlink: {scratch_directory}")
+    _empty_directory(scratch_directory)
+    if pending is None:
         return
+    prefix = git_paths.repository_prefix(root, "sync")
+    candidates: list[tuple[Path, str]] = []
     for path in sorted(pending.glob("*.md")):
         if path.is_symlink() or not path.is_file():
             continue
         relative = path.relative_to(root).as_posix()
-        committed = _git(root, "cat-file", "-e", f"HEAD:{relative}")
-        if committed.returncode == 0:
-            continue
         try:
             document = model.parse(relative, path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError):
             continue
         if document.scalar("source") != "session-transcript" or document.scalar("host") != host:
             continue
+        candidates.append((path, relative))
+
+    if not candidates:
+        return
+    committed = _committed_pending_paths(root, prefix)
+    for path, relative in candidates:
+        if relative in committed:
+            continue
         unstaged = _git(root, "rm", "-q", "--cached", "--ignore-unmatch", "--", relative)
         if unstaged.returncode != 0:
             raise KbError(f"cannot unstage interrupted observation {relative}")
         path.unlink(missing_ok=True)
+
+
+def _committed_pending_paths(root: Path, prefix: str) -> set[str]:
+    """The content-relative pending paths in a successfully inspected HEAD tree."""
+    repository_pending = git_paths.to_repository_path(PENDING, prefix)
+    tree = _git_bytes(
+        root,
+        "ls-tree",
+        "-r",
+        "-z",
+        "--full-tree",
+        "HEAD",
+        "--",
+        repository_pending,
+    )
+    if tree.returncode != 0:
+        detail = tree.stderr.decode("utf-8", errors="replace").rstrip("\n")
+        raise KbError(f"cannot inspect committed observation paths: {detail}")
+    paths: set[str] = set()
+    for entry in tree.stdout.split(b"\0"):
+        if not entry:
+            continue
+        _metadata, encoded_path = entry.split(b"\t", 1)
+        repository_relative = os.fsdecode(encoded_path)
+        relative = git_paths.to_content_path(repository_relative, prefix)
+        if relative == ".." or relative.startswith("../"):
+            raise KbError(
+                f"committed observation is outside the content root: {repository_relative}"
+            )
+        paths.add(relative)
+    return paths
 
 
 def _empty_directory(path: Path) -> None:
@@ -619,22 +680,19 @@ def _empty_directory(path: Path) -> None:
 
 
 @contextmanager
-def _scanner_workspace(git_directory: Path, preserve: bool) -> Iterator[Path]:
-    """Yield a private scanner directory under git/kb-tmp and remove it on exit."""
-    scratch = git_directory / TMP
-    if scratch.is_symlink():
-        raise KbError(f"{scratch} must not be a symbolic link")
-    original = scratch.stat() if preserve and scratch.exists() else None
-    scratch.mkdir(parents=True, exist_ok=True)
-    try:
-        with tempfile.TemporaryDirectory(prefix="sync-", dir=scratch) as directory:
+def _scanner_workspace(git_directory: Path, *, standalone: bool) -> Iterator[Path]:
+    """Yield private scratch; dry-runs keep it outside Git, writers use shared scratch."""
+    if standalone:
+        with tempfile.TemporaryDirectory(prefix="sync-") as directory:
             yield Path(directory)
-    finally:
-        if preserve:
-            if original is None:
-                scratch.rmdir()
-            else:
-                os.utime(scratch, ns=(original.st_atime_ns, original.st_mtime_ns))
+        return
+
+    scratch_path = git_directory / TMP
+    if scratch_path.is_symlink():
+        raise KbError(f"{scratch_path} must not be a symbolic link")
+    scratch_directory = scratch.shared_directory(git_directory, "sync")
+    with tempfile.TemporaryDirectory(prefix="sync-", dir=scratch_directory) as directory:
+        yield Path(directory)
 
 
 def _write_selection(
@@ -660,7 +718,9 @@ def _write_selection(
             path = _publish(root, scan_directory, result.text, now)
         except (OSError, UnicodeError, KbError) as error:
             failures.append(_failure_text(Failure(plan.session.id or "unknown", str(error))))
-            _remove_paths(root, paths)
+            cleanup_error = _remove_paths(root, paths)
+            if cleanup_error is not None:
+                failures.append(cleanup_error)
             return WriteResult(0, tuple(failures)), 0, 0, 0, {}
         paths.append(path)
     if paths:
@@ -778,19 +838,23 @@ def _detector_counts(counts: Mapping[str, set[ContentLine | str]]) -> dict[str, 
 
 
 def _publish(root: Path, scan_directory: Path, text: str, now: datetime) -> str:
-    """Write a temporary observation, rename it into pending, and return its relative path."""
-    temporary = scan_directory / observation.temporary_name(os.urandom(4).hex())
-    pending = root / PENDING
-    pending.mkdir(parents=True, exist_ok=True)
+    """Publish a temporary observation without replacing a target, then return its content path."""
+    pending = fixed_directory(root, PENDING, command="sync", create=True)
+    assert pending is not None
+    # The scanned observation is hard-linked into content, so it takes the umask's mode.
+    temporary = scratch.create_file(
+        scan_directory, "observation-", ".md", text.encode("utf-8"), mode=0o666
+    )
     try:
-        with temporary.open("x", encoding="utf-8", newline="") as handle:
-            handle.write(text)
         for _ in range(MAX_NAME_TRIES):
             name = observation.file_name(now, os.urandom(4).hex())
             destination = pending / name
             if destination.exists():
                 continue
-            temporary.rename(destination)
+            try:
+                os.link(temporary, destination)
+            except FileExistsError:
+                continue
             return f"{PENDING}/{name}"
         raise KbError(f"no free file name in {PENDING}")
     finally:
@@ -798,25 +862,112 @@ def _publish(root: Path, scan_directory: Path, text: str, now: datetime) -> str:
 
 
 def _commit_observations(root: Path, paths: Sequence[str]) -> str | None:
-    """Stage and commit only this run's paths, deleting them if the commit fails."""
+    """Commit this run's paths, reconciling a reported or raised commit failure first."""
     subject = f"Observe: {len(paths)} session transcript(s)"
-    staged = _git(root, "add", "--", *paths)
-    if staged.returncode == 0:
+    try:
+        snapshots = tuple(write._commit_snapshot(root, path, "sync") for path in paths)
+    except KbError as error:
+        return f"sync: cannot save commit state: {error}"
+
+    try:
+        staged = _git(root, "add", "--", *paths)
+        if staged.returncode != 0:
+            detail = staged.stderr.rstrip("\n")
+            outcome, reason = _observation_commit_outcome(root, snapshots, subject)
+            return _finish_failed_observation_commit(
+                root, paths, outcome, _observation_failure_detail(detail, reason, outcome)
+            )
+
         committed = _git(root, "commit", "-q", "-m", subject, "--", *paths)
         if committed.returncode == 0:
             return None
         detail = committed.stderr.rstrip("\n")
-    else:
-        detail = staged.stderr.rstrip("\n")
-    _remove_paths(root, paths)
-    return f"sync: commit failed: {detail}" if detail else "sync: commit failed"
+        outcome, reason = _observation_commit_outcome(root, snapshots, subject)
+        return _finish_failed_observation_commit(
+            root, paths, outcome, _observation_failure_detail(detail, reason, outcome)
+        )
+    except BaseException as error:
+        outcome, detail = _observation_commit_outcome(root, snapshots, subject)
+        if outcome == "committed":
+            raise
+        if outcome == "unknown":
+            message = _uncertain_observation_commit(paths, detail)
+            raise KbError(message) from error
+        cleanup_error = _remove_paths(root, paths)
+        if cleanup_error is not None:
+            raise KbError(f"{cleanup_error}; original failure: {error}") from error
+        raise
 
 
-def _remove_paths(root: Path, paths: Sequence[str]) -> None:
-    """Unstage and delete only the observation paths supplied by this run."""
-    _git(root, "rm", "-q", "--cached", "--ignore-unmatch", "--", *paths)
+def _observation_commit_outcome(
+    root: Path, snapshots: Sequence[write.CommitSnapshot], subject: str
+) -> tuple[str, str]:
+    """Classify the batch only when every path agrees with its saved transaction state."""
+    results: list[tuple[str, str]] = []
+    for snapshot in snapshots:
+        try:
+            results.append(write._commit_outcome(root, snapshot, subject))
+        except BaseException as error:
+            results.append(("unknown", str(error)))
+    outcomes = {outcome for outcome, _ in results}
+    if outcomes == {"committed"}:
+        return "committed", ""
+    if outcomes == {"failed"}:
+        return "failed", "HEAD is unchanged"
+    detail = next((detail for outcome, detail in results if outcome == "unknown" and detail), "")
+    return "unknown", detail or "the paths do not agree on the commit outcome"
+
+
+def _finish_failed_observation_commit(
+    root: Path, paths: Sequence[str], outcome: str, detail: str
+) -> str | None:
+    """Preserve uncertain or committed batches; remove files only after proving no commit."""
+    if outcome == "committed":
+        return None
+    if outcome == "unknown":
+        return _uncertain_observation_commit(paths, detail)
+    failure = f"sync: commit failed: {detail}" if detail else "sync: commit failed"
+    cleanup_error = _remove_paths(root, paths)
+    return f"{failure}; {cleanup_error}" if cleanup_error is not None else failure
+
+
+def _observation_failure_detail(reported: str, inspection: str, outcome: str) -> str:
+    """Keep the old failure text when confirmed, and retain both clues when uncertain."""
+    if outcome == "failed":
+        return reported
+    if reported and inspection:
+        return f"{reported}; {inspection}"
+    return reported or inspection
+
+
+def _uncertain_observation_commit(paths: Sequence[str], detail: str) -> str:
+    """Tell the operator which files were retained because Git's outcome is unclear."""
+    listed = ", ".join(paths)
+    message = (
+        f"sync: commit outcome is uncertain for {listed}; the files and index were preserved; "
+        "inspect Git status and HEAD before retrying"
+    )
+    return f"{message}: {detail}" if detail else message
+
+
+def _remove_paths(root: Path, paths: Sequence[str]) -> str | None:
+    """Unstage all transaction paths before deleting any of their published files."""
+    error = write._unstage_paths(root, paths, "sync", _git)
+    if error is not None:
+        return error
+    failures: list[str] = []
     for relative in paths:
-        (root / relative).unlink(missing_ok=True)
+        try:
+            (root / relative).unlink(missing_ok=True)
+        except OSError as error:
+            failures.append(f"{relative}: {error}")
+    if not failures:
+        return None
+    return (
+        "sync: rollback could not remove "
+        + ", ".join(failures)
+        + "; inspect Git status before retrying"
+    )
 
 
 def _totals(

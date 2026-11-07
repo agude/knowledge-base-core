@@ -24,6 +24,7 @@ from kb import (
     config,
     dates,
     diagnosis,
+    git_status,
     observation,
     setup_rules,
     skills,
@@ -155,11 +156,10 @@ def _content(root: Path) -> Check:
 
 def _dirty_count(root: Path) -> int:
     """The changed or untracked paths in the worktree."""
-    result = _git(root, "status", "--porcelain", "--untracked-files=all")
+    result = _git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
     if result.returncode != 0:
         raise KbError(f"cannot inspect working tree: {result.stderr.rstrip()}")
-    paths = [line[3:] for line in result.stdout.splitlines()]
-    return len(paths)
+    return len(git_status.parse_porcelain(result.stdout))
 
 
 def _gitattributes(root: Path) -> Check:

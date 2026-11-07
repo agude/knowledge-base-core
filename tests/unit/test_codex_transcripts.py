@@ -295,7 +295,8 @@ def test_missing_command_id_is_synthetic_and_timestamp_is_normalized() -> None:
 
     session = codex.parse(raw + "\n", "rollout-main.jsonl")
 
-    assert session.messages[0].id == synthetic_id("codex", timestamp, "assistant", "")
+    assert session.messages[0].id.startswith("cmd-")
+    assert session.messages[0].legacy_id == synthetic_id("codex", timestamp, "assistant", "")
     assert session.messages[0].timestamp == datetime(2026, 10, 25, 14, tzinfo=UTC)
 
 
@@ -370,3 +371,44 @@ def test_duplicate_message_ids_keep_first_occurrence() -> None:
     session = codex.parse(text, "rollout-main.jsonl")
     assert [value.text for value in session.messages] == ["First."]
     assert session.duplicate_ids == 1
+
+
+def test_distinct_tool_call_ids_at_one_timestamp_keep_both_commands() -> None:
+    records = [
+        item(
+            "function_call",
+            {"call_id": call_id, "name": "functions.exec_command", "arguments": {"cmd": command}},
+        )
+        for call_id, command in (("call-first", "echo first"), ("call-second", "echo second"))
+    ]
+    text = "\n".join(records) + "\n"
+
+    parsed = codex.parse(text, "rollout-main.jsonl")
+
+    assert [value.commands for value in parsed.messages] == [("echo first",), ("echo second",)]
+    assert [value.id for value in parsed.messages] == ["call-first", "call-second"]
+    assert codex.parse(text, "rollout-main.jsonl").messages == parsed.messages
+
+
+def test_repeated_command_calls_without_payload_ids_remain_distinct_and_stable() -> None:
+    for call_ids in (("first", "second"), (None, None)):
+        records = [
+            item(
+                "function_call",
+                {
+                    "name": "functions.exec_command",
+                    "arguments": {"cmd": "echo repeated"},
+                    **({"call_id": call_id} if call_id else {}),
+                },
+            )
+            for call_id in call_ids
+        ]
+        text = "\n".join(records) + "\n"
+        parsed = codex.parse(text, "rollout-main.jsonl")
+
+        assert len(parsed.messages) == 2
+        assert len({value.id for value in parsed.messages}) == 2
+        assert [value.commands for value in parsed.messages] == [("echo repeated",)] * 2
+        assert codex.parse(text, "rollout-main.jsonl").messages == parsed.messages
+        appended = codex.parse(text + records[-1] + "\n", "rollout-main.jsonl")
+        assert appended.messages[:2] == parsed.messages

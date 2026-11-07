@@ -138,7 +138,13 @@ def make_run_id(when: datetime, suffix: str) -> str:
         raise StateError("batch timestamp must be timezone-aware")
     if not re.fullmatch(r"[0-9a-f]{8}", suffix):
         raise StateError("batch suffix must be eight lowercase hexadecimal digits")
-    return f"{when.astimezone(UTC):%Y%m%dT%H%M%S}-{suffix}"
+    try:
+        normalized = when.astimezone(UTC)
+    except OverflowError as error:
+        raise StateError(
+            "batch timestamp must normalize to a representable UTC timestamp"
+        ) from error
+    return f"{normalized:%Y%m%dT%H%M%S}-{suffix}"
 
 
 def make_member(filename: str, content: bytes) -> Member:
@@ -225,7 +231,13 @@ def make_batch(
     """Create a validated batch with byte totals derived from its members."""
     if created.tzinfo is None or created.utcoffset() is None:
         raise StateError("batch created timestamp must be timezone-aware")
-    timestamp = created.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+    try:
+        normalized = created.astimezone(UTC)
+    except OverflowError as error:
+        raise StateError(
+            "batch created timestamp must normalize to a representable UTC timestamp"
+        ) from error
+    timestamp = normalized.isoformat(timespec="seconds").replace("+00:00", "Z")
     ordered_members = tuple(members)
     total = sum(member.original_bytes for member in ordered_members)
     return Batch(
@@ -390,7 +402,7 @@ def begin_archive(
     """Record a recoverable archive intent for a pending member."""
     if member.status != "pending":
         raise StateError(f"cannot archive member in {member.status} state")
-    updated = replace(
+    return replace(
         member,
         status="archiving",
         disposition=disposition,
@@ -398,8 +410,6 @@ def begin_archive(
         reason=reason,
         archive_sha256=archive_sha256,
     )
-    validate_member(updated)
-    return updated
 
 
 def finish_archive(member: Member) -> Member:
@@ -413,18 +423,14 @@ def defer_member(member: Member, reason: str) -> Member:
     """Defer an unchanged pending member with a single-line reason."""
     if member.status != "pending":
         raise StateError(f"cannot defer member in {member.status} state")
-    updated = replace(member, status="deferred", reason=reason)
-    validate_member(updated)
-    return updated
+    return replace(member, status="deferred", reason=reason)
 
 
 def drop_member(member: Member, reason: str) -> Member:
     """Drop a changed or missing pending member without describing file operations."""
     if member.status != "pending":
         raise StateError(f"cannot drop member in {member.status} state")
-    updated = replace(member, status="dropped", reason=reason)
-    validate_member(updated)
-    return updated
+    return replace(member, status="dropped", reason=reason)
 
 
 def replace_member(batch: Batch, updated: Member) -> Batch:

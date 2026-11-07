@@ -8,7 +8,7 @@ from typing import NoReturn
 
 import pytest
 
-from kb import corpus, lock
+from kb import lock, model
 from kb.commands import lint as lint_command
 from kb.model import Document
 
@@ -40,16 +40,16 @@ def test_run_parses_each_path_once_and_does_not_write_or_use_external_services(
     monkeypatch.setenv("KB_TODAY", "2026-10-26")
     before = _tree_bytes(content)
     parsed: list[str] = []
-    read_document = corpus.read_document
+    parse = model.parse
 
-    def track_read(root: Path, relpath: str) -> Document:
+    def track_parse(relpath: str, text: str) -> Document:
         parsed.append(relpath)
-        return read_document(root, relpath)
+        return parse(relpath, text)
 
     def forbidden(*args: object, **kwargs: object) -> NoReturn:
         pytest.fail("kb lint must not call Git, acquire locks, or use the network")
 
-    monkeypatch.setattr(corpus, "read_document", track_read)
+    monkeypatch.setattr(model, "parse", track_parse)
     monkeypatch.setattr(subprocess, "run", forbidden)
     monkeypatch.setattr(socket, "create_connection", forbidden)
     monkeypatch.setattr(socket.socket, "connect", forbidden)
@@ -85,13 +85,13 @@ def test_each_reference_target_is_parsed_once(
     monkeypatch.setenv("KB_CONTENT", str(content))
     monkeypatch.setenv("KB_TODAY", "2026-10-26")
     parsed: list[str] = []
-    read_document = corpus.read_document
+    parse = model.parse
 
-    def track_read(root: Path, relpath: str) -> Document:
+    def track_parse(relpath: str, text: str) -> Document:
         parsed.append(relpath)
-        return read_document(root, relpath)
+        return parse(relpath, text)
 
-    monkeypatch.setattr(corpus, "read_document", track_read)
+    monkeypatch.setattr(model, "parse", track_parse)
 
     result = lint_command.run(["knowledge/source.md"])
 

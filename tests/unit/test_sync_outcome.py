@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from kb import __version__, harvest, sync_state, token_cache
+from kb import __version__, harvest, remote, sync_state, token_cache
 from kb.commands import sync
 from kb.errors import KbError
 from kb.transcripts import Message, Session
@@ -39,13 +39,13 @@ def stub_steps(
 ) -> None:
     """Replace the recovery, worktree, fetch, and remote steps with fixed answers."""
     monkeypatch.setattr(sync, "_recover", lambda *args: None)
-    monkeypatch.setattr(sync, "_dirty_paths", lambda _: dirty)
+    monkeypatch.setattr(remote, "dirty_paths", lambda _: dirty)
     if fetch_error is None:
         monkeypatch.setattr(
-            sync, "_fetch_status", lambda _: (sync.RemoteStatus("main", 0, 0), None)
+            remote, "fetch_status", lambda _: (sync.RemoteStatus("main", 0, 0), None)
         )
     else:
-        monkeypatch.setattr(sync, "_fetch_status", lambda _: (None, fetch_error))
+        monkeypatch.setattr(remote, "fetch_status", lambda _: (None, fetch_error))
     monkeypatch.setattr(sync, "_sync_remote", lambda *args: ((), remote_errors))
 
 
@@ -198,7 +198,7 @@ def test_backlog_reads_head_and_selects_without_fetching_origin(
     candidate = harvest.Candidate(make_session(), START)
     monkeypatch.setattr(sync, "_scan_transcripts", lambda _: sync.ScanResult((candidate,), ()))
     monkeypatch.setattr(sync, "_head_records", lambda _: ())
-    monkeypatch.setattr(sync, "_fetch_status", lambda _: pytest.fail("the backlog fetched origin"))
+    monkeypatch.setattr(remote, "fetch_status", lambda _: pytest.fail("the backlog fetched origin"))
 
     found = sync.backlog(tmp_path, {}, "test-host", NOW, START - timedelta(days=1))
 

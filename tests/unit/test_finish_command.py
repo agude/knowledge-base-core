@@ -296,12 +296,34 @@ def test_a_failed_stage_is_unstaged_and_reported(
 ) -> None:
     root = make_content()
     run = _settled(root, capsys)
-    _patch_git(monkeypatch, add=_completed(1, "fatal: disk full"))
+    batch = curate._read_batch(root, run)
+    paths = tuple(change.path for change in curate._publication_changes(root, batch))
+    before_head = git(root, "rev-parse", "HEAD").strip()
+    before_index = git(root, "write-tree").strip()
+    before_status = git(root, "status", "--porcelain")
+    before_files = {
+        path: (root / path).read_bytes() if (root / path).exists() else None for path in paths
+    }
+    real_git = curate._git_quiet
+
+    def stage_then_fail(worktree: Path, *words: str) -> CompletedProcess[str]:
+        result = real_git(worktree, *words)
+        if "add" in words and result.returncode == 0:
+            return _completed(1, "fatal: disk full")
+        return result
+
+    monkeypatch.setattr(curate, "_git_quiet", stage_then_fail)
 
     code, _, err = _run(capsys, "curate", "finish", run, "--no-push")
 
     assert code == 1
     assert "cannot stage the publication set: fatal: disk full" in err
+    assert git(root, "rev-parse", "HEAD").strip() == before_head
+    assert git(root, "write-tree").strip() == before_index
+    assert git(root, "status", "--porcelain") == before_status
+    assert {
+        path: (root / path).read_bytes() if (root / path).exists() else None for path in paths
+    } == before_files
     assert git(root, "diff", "--cached", "--name-only") == ""
 
 
@@ -335,6 +357,179 @@ def test_a_secret_match_in_the_message_is_an_internal_error(
 
     assert code == 1
     assert "matched a secret check (Fake); internal error" in err
+
+
+@pytest.mark.parametrize("failure", ["scan", "scratch", "interrupt"])
+def test_precommit_failure_unstages_publication_without_changing_worktree(
+    make_content: Callable[..., Path],
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    root = make_content()
+    run = _settled(root, capsys)
+    batch = curate._read_batch(root, run)
+    paths = tuple(change.path for change in curate._publication_changes(root, batch))
+    before_head = git(root, "rev-parse", "HEAD").strip()
+    before_index = git(root, "write-tree").strip()
+    before_status = git(root, "status", "--porcelain")
+    before_files = {
+        path: (root / path).read_bytes() if (root / path).exists() else None for path in paths
+    }
+    real_write_scratch = curate._write_scratch_file
+
+    def assert_real_staging() -> None:
+        assert set(git(root, "diff", "--cached", "--name-only").splitlines()) == set(paths)
+
+    if failure == "scan":
+
+        def fail_scan(_git_directory: Path, _message: str) -> None:
+            assert_real_staging()
+            raise OSError("injected message scan failure")
+
+        monkeypatch.setattr(curate, "_scan_message", fail_scan)
+    elif failure == "interrupt":
+
+        def interrupt_scan(_git_directory: Path, _message: str) -> None:
+            assert_real_staging()
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(curate, "_scan_message", interrupt_scan)
+    else:
+        scratch_writes = 0
+
+        def fail_commit_message_scratch(git_directory: Path, content: bytes) -> Path:
+            nonlocal scratch_writes
+            scratch_writes += 1
+            if scratch_writes == 2:
+                assert_real_staging()
+                raise OSError("injected commit message scratch failure")
+            return real_write_scratch(git_directory, content)
+
+        monkeypatch.setattr(curate, "_write_scratch_file", fail_commit_message_scratch)
+
+    if failure == "interrupt":
+        with pytest.raises(KeyboardInterrupt):
+            _run(capsys, "curate", "finish", run, "--no-push")
+    else:
+        code, _, err = _run(capsys, "curate", "finish", run, "--no-push")
+        assert code == 1
+        assert "injected" in err
+
+    assert git(root, "rev-parse", "HEAD").strip() == before_head
+    assert git(root, "write-tree").strip() == before_index
+    assert git(root, "status", "--porcelain") == before_status
+    after_files = {
+        path: (root / path).read_bytes() if (root / path).exists() else None for path in paths
+    }
+    assert after_files == before_files
+    assert list((root / ".git" / "kb-tmp").iterdir()) == []
+
+
+def test_precommit_failure_reports_unstage_error_and_still_cleans_scratch(
+    make_content: Callable[..., Path],
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = make_content()
+    run = _settled(root, capsys)
+    batch = curate._read_batch(root, run)
+    paths = tuple(change.path for change in curate._publication_changes(root, batch))
+    before_files = {
+        path: (root / path).read_bytes() if (root / path).exists() else None for path in paths
+    }
+    real_git = curate._git_quiet
+
+    def fail_unstage(worktree: Path, *words: str) -> CompletedProcess[str]:
+        if "reset" in words:
+            return _completed(1, "index locked")
+        return real_git(worktree, *words)
+
+    def fail_scan(_git_directory: Path, _message: str) -> None:
+        raise OSError("scan failed")
+
+    monkeypatch.setattr(curate, "_scan_message", fail_scan)
+    monkeypatch.setattr(curate, "_git_quiet", fail_unstage)
+
+    code, _, err = _run(capsys, "curate", "finish", run, "--no-push")
+
+    assert code == 1
+    assert "scan failed" in err
+    assert "cannot unstage the publication set; inspect Git status: index locked" in err
+    assert set(git(root, "diff", "--cached", "--name-only").splitlines()) == set(paths)
+    assert {
+        path: (root / path).read_bytes() if (root / path).exists() else None for path in paths
+    } == before_files
+    assert list((root / ".git" / "kb-tmp").iterdir()) == []
+
+
+@pytest.mark.parametrize("outcome", ["returned_error", "interruption"])
+def test_curation_preserves_a_commit_when_its_result_is_lost(
+    make_content: Callable[..., Path],
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    outcome: str,
+) -> None:
+    root = make_content()
+    run = _settled(root, capsys)
+    before_head = git(root, "rev-parse", "HEAD").strip()
+    real_git = curate._git_quiet
+
+    def lose_commit_result(worktree: Path, *words: str) -> CompletedProcess[str]:
+        result = real_git(worktree, *words)
+        if words[0] == "commit" and result.returncode == 0:
+            if outcome == "interruption":
+                raise KeyboardInterrupt
+            return _completed(128, "commit result interrupted")
+        return result
+
+    monkeypatch.setattr(curate, "_git_quiet", lose_commit_result)
+
+    if outcome == "interruption":
+        with pytest.raises(KeyboardInterrupt):
+            _run(capsys, "curate", "finish", run, "--no-push")
+    else:
+        code, out, err = _run(capsys, "curate", "finish", run, "--no-push")
+        assert code == 0, err
+        assert out.startswith("Commit: ")
+        assert out.endswith("Committed locally; not published\n")
+
+    assert git(root, "rev-parse", "HEAD").strip() != before_head
+    assert git(root, "status", "--porcelain") == ""
+    assert list((root / ".git" / "kb-tmp").iterdir()) == []
+
+
+def test_curation_preserves_publication_when_commit_outcome_is_unknown(
+    make_content: Callable[..., Path],
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = make_content()
+    run = _settled(root, capsys)
+    before_head = git(root, "rev-parse", "HEAD").strip()
+    real_git = curate._git_quiet
+    committed = False
+
+    def hide_head_after_commit(worktree: Path, *words: str) -> CompletedProcess[str]:
+        nonlocal committed
+        if committed and words[:3] == ("rev-parse", "--verify", "HEAD"):
+            return _completed(1, "HEAD inspection unavailable")
+        result = real_git(worktree, *words)
+        if words[0] == "commit" and result.returncode == 0:
+            committed = True
+            return _completed(128, "commit result interrupted")
+        return result
+
+    monkeypatch.setattr(curate, "_git_quiet", hide_head_after_commit)
+
+    code, _, err = _run(capsys, "curate", "finish", run, "--no-push")
+
+    assert code == 1
+    assert "commit outcome is uncertain" in err
+    assert "HEAD inspection unavailable" in err
+    assert git(root, "rev-parse", "HEAD").strip() != before_head
+    assert git(root, "status", "--porcelain") == ""
+    assert list((root / ".git" / "kb-tmp").iterdir()) == []
 
 
 def test_publication_reports_each_remote_failure_and_keeps_the_commit(
@@ -513,3 +708,108 @@ def test_git_queries_report_absence_outside_a_repository(tmp_path: Path) -> None
 )
 def test_worktree_codes_map_to_git_status_letters(code: str, status: str) -> None:
     assert curate._change_status(code) == status
+
+
+def test_finish_refuses_newly_broken_incoming_anchors_before_staging(
+    make_content: Callable[..., Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = make_content(origin=False)
+    source = ARTICLE + "\nSee [workflow](workflow.md#2).\n"
+    (root / "knowledge/index.md").write_text(source, encoding="utf-8")
+    (root / "knowledge/workflow.md").write_text(ARTICLE + "\n## 2. Second\n", encoding="utf-8")
+    git(root, "add", "--all")
+    git(root, "commit", "-q", "-m", "Seed valid incoming reference")
+    run = _settled(root, capsys)
+    (root / "knowledge/workflow.md").write_text(ARTICLE, encoding="utf-8")
+    before = git(root, "write-tree")
+    head = git(root, "rev-parse", "HEAD")
+
+    code, out, err = _run(capsys, "finish", run, "--no-push")
+
+    assert code == 1
+    assert out == ""
+    assert "missing local Markdown link anchor '#2'" in err
+    assert git(root, "write-tree") == before
+    assert git(root, "rev-parse", "HEAD") == head
+    assert (root / "knowledge/index.md").read_text(encoding="utf-8") == source
+    assert (root / "knowledge/workflow.md").read_text(encoding="utf-8") == ARTICLE
+
+
+@pytest.mark.parametrize("problem", ["modified", "missing", "pending"])
+def test_finish_rechecks_completed_archives_before_staging(
+    make_content: Callable[..., Path], capsys: pytest.CaptureFixture[str], problem: str
+) -> None:
+    root = make_content(origin=False)
+    run = _settled(root, capsys)
+    archive = root / "observations/archived/one.md"
+    pending = root / "observations/pending/one.md"
+    if problem == "modified":
+        archive.write_bytes(archive.read_bytes() + b"\nChanged after completion.\n")
+    elif problem == "missing":
+        archive.unlink()
+    else:
+        pending.write_text(git(root, "show", "HEAD:observations/pending/one.md"), encoding="utf-8")
+    before = git(root, "write-tree")
+    head = git(root, "rev-parse", "HEAD")
+    files = {
+        path.relative_to(root): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file() and ".git" not in path.relative_to(root).parts
+    }
+
+    code, out, err = _run(capsys, "finish", run, "--no-push")
+
+    assert code == 1, (out, err)
+    assert out == ""
+    assert "one.md" in err
+    assert git(root, "write-tree") == before
+    assert git(root, "rev-parse", "HEAD") == head
+    assert {
+        path.relative_to(root): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file() and ".git" not in path.relative_to(root).parts
+    } == files
+
+
+@pytest.mark.parametrize("problem", ["heading", "missing"])
+def test_finish_rechecks_destinations_recorded_at_completion(
+    make_content: Callable[..., Path], capsys: pytest.CaptureFixture[str], problem: str
+) -> None:
+    root = make_content(origin=False)
+    _observe(root, "one.md")
+    run = _start(capsys, "one.md")
+    code, _, err = _run(
+        capsys,
+        "complete",
+        run,
+        "one.md",
+        "--disposition",
+        "incorporated",
+        "knowledge/workflow.md#1",
+    )
+    assert code == 0, err
+    article = root / "knowledge/workflow.md"
+    if problem == "heading":
+        article.write_text(ARTICLE.replace("## 1. Fact", "## 1. Renamed"), encoding="utf-8")
+    else:
+        article.unlink()
+    before = git(root, "write-tree")
+    head = git(root, "rev-parse", "HEAD")
+    archive = root / "observations/archived/one.md"
+    archived = archive.read_bytes()
+    manifest = root / "observations/batches" / f"{run}.json"
+    manifest_bytes = manifest.read_bytes()
+
+    code, out, err = _run(capsys, "finish", run, "--no-push")
+
+    assert code == 1, (out, err)
+    assert out == ""
+    assert "destination" in err
+    assert git(root, "write-tree") == before
+    assert git(root, "rev-parse", "HEAD") == head
+    assert archive.read_bytes() == archived
+    assert manifest.read_bytes() == manifest_bytes
+    if problem == "heading":
+        assert article.read_text(encoding="utf-8") == ARTICLE.replace("## 1. Fact", "## 1. Renamed")
+    else:
+        assert not article.exists()

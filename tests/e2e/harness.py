@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 FIXTURE_CONTENT = Path(__file__).resolve().parents[1] / "fixtures" / "content"
@@ -41,6 +41,15 @@ HOLD_KERNEL_LOCK = (
 )
 
 
+def coverage_environment() -> dict[str, str]:
+    """Carry coverage's serialized configuration and optional core into isolated children."""
+    return {
+        name: os.environ[name]
+        for name in ("COVERAGE_PROCESS_CONFIG", "COVERAGE_CORE")
+        if name in os.environ
+    }
+
+
 def run_git(repo: Path, *args: str) -> str:
     """Run git in repo, isolated from the user's configuration, and return its stdout.
 
@@ -49,7 +58,12 @@ def run_git(repo: Path, *args: str) -> str:
     result = subprocess.run(
         ["git", *args],
         cwd=repo,
-        env={"PATH": os.environ.get("PATH", ""), "HOME": str(repo), **GIT_ISOLATION},
+        env={
+            "PATH": os.environ.get("PATH", ""),
+            "HOME": str(repo),
+            **GIT_ISOLATION,
+            **coverage_environment(),
+        },
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -127,6 +141,7 @@ class Kb:
             "LC_ALL": "C.UTF-8",
             "PYTHONIOENCODING": "utf-8",
             **GIT_ISOLATION,
+            **coverage_environment(),
         }
         for name, value in overrides.items():
             if value is None:
@@ -192,6 +207,24 @@ def make_git_kb(root: Path) -> Kb:
     run_git(kb.content, "add", "--all")
     run_git(kb.content, "commit", "-q", "-m", "Import the content fixture")
     return kb
+
+
+def make_subdirectory_kb(kb: Kb, name: str = "content") -> Kb:
+    """Commit a second content fixture under the repository and return it as the content root."""
+    content = kb.content / name
+    shutil.copytree(FIXTURE_CONTENT, content)
+    run_git(kb.content, "add", "--", name)
+    run_git(kb.content, "commit", "-q", "-m", "Add a content subdirectory")
+    return replace(kb, content=content)
+
+
+def make_linked_worktree_kb(kb: Kb, name: str = "linked-worktree") -> Kb:
+    """Check out the repository in a linked worktree and keep its content subdirectory."""
+    repository = Path(run_git(kb.content, "rev-parse", "--show-toplevel").strip())
+    content_relative = kb.content.relative_to(repository)
+    worktree = kb.home / name
+    run_git(repository, "worktree", "add", "--quiet", "-b", name, str(worktree))
+    return replace(kb, content=worktree / content_relative)
 
 
 def make_remote_git_kb(root: Path) -> Kb:

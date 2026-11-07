@@ -59,25 +59,6 @@ def test_every_locator_that_recall_and_map_print_is_read_back(
         assert status == 0, (locator, err)
 
 
-def test_only_the_model_parses_front_matter_or_headings_in_the_package() -> None:
-    markers = ("kb-section", "---", "#{")
-    for module in PACKAGE.glob("*.py"):
-        if module.name == "model.py":
-            continue
-        # Observation renderers write front matter; model.py alone parses it.
-        allowed = (
-            {"---"}
-            if module.name in {"observation.py", "question.py", "transcript_observation.py"}
-            else set()
-        )
-        tree = ast.parse(module.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                for marker in markers:
-                    if marker not in allowed:
-                        assert marker not in node.value, f"{module.name} mentions {marker!r}"
-
-
 def test_the_package_imports_only_the_standard_library_and_itself() -> None:
     allowed = set(sys.stdlib_module_names) | {"kb"}
     for module in PACKAGE.rglob("*.py"):

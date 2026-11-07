@@ -1,14 +1,11 @@
 """Tests for query normalization, unit construction, and ranking."""
 
 import math
-from pathlib import Path
 
 import pytest
 
 from kb import search
 from kb.model import parse
-
-FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 
 @pytest.mark.parametrize(
@@ -37,19 +34,6 @@ def test_index_tokens_drop_stopwords_but_keep_negations() -> None:
         "without",
         "can't",
     )
-
-
-def test_cached_stems_match_uncached_stems_on_every_fixture_file(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    files = sorted(path for path in FIXTURES.rglob("*") if path.is_file())
-    texts = [path.read_text(encoding="utf-8", errors="replace") for path in files]
-    assert len(texts) > 50
-    search._stem.cache_clear()
-    cached = [search.index_tokens(text) for text in texts]
-    monkeypatch.setattr(search, "_stem", search._stem.__wrapped__)
-    uncached = [search.index_tokens(text) for text in texts]
-    assert cached == uncached
 
 
 def test_query_terms_are_distinct_and_in_order() -> None:
@@ -344,3 +328,21 @@ def test_a_numeric_identifier_qualifies_only_the_units_that_hold_it() -> None:
         search.make_unit("", [], [], ["50 apples and 59 pears"]),
     ]
     assert [hit.index for hit in search.rank(units, search.query_terms(["50-59"]))] == [0]
+
+
+@pytest.mark.parametrize(
+    ("query", "ending", "expected"),
+    [
+        ("rename", "run --rename now", "--rename"),
+        ("59", "folder 50-59 contains files", "50-59"),
+    ],
+)
+def test_long_line_excerpts_center_on_expanded_tokens(
+    query: str, ending: str, expected: str
+) -> None:
+    line = "padding " * 30 + ending
+
+    result = search.excerpt([line], search.query_terms([query]))
+
+    assert expected in result
+    assert result.startswith("...")

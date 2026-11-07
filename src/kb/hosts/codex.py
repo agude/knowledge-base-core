@@ -20,6 +20,7 @@ from kb.transcripts import (
     earlier,
     later,
     parse_timestamp,
+    synthetic_command_id,
     synthetic_id,
     unique_messages,
 )
@@ -249,10 +250,20 @@ def _make_message(
     if timestamp is None:
         return None, True
     message_id = payload.get("id")
+    legacy_id = None
+    generated = False
     if not isinstance(message_id, str) or not message_id:
         original_timestamp = timestamp_value if isinstance(timestamp_value, str) else ""
         message_id = synthetic_id(APP, original_timestamp, role, text)
-    return Message(message_id, timestamp, role, text, commands), False
+        if commands:
+            legacy_id = message_id
+            call_id = payload.get("call_id")
+            if isinstance(call_id, str) and call_id:
+                message_id = call_id
+            else:
+                message_id = synthetic_command_id(APP, original_timestamp, role, text, commands)
+                generated = True
+    return Message(message_id, timestamp, role, text, commands, legacy_id, generated), False
 
 
 @dataclass(frozen=True)

@@ -5,7 +5,9 @@ from __future__ import annotations
 import os
 import socket
 import sqlite3
+import stat
 import subprocess
+import sys
 from collections.abc import Iterator
 from contextlib import closing, contextmanager, nullcontext
 from datetime import UTC, datetime, timedelta
@@ -13,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from kb import config, dates, harvest, lock, model, observation, remote, secrets
+from kb import config, dates, harvest, lock, model, observation, remote, secrets, write
 from kb.commands import sync
 from kb.errors import KbError
 from kb.transcript_observation import ContentLine
@@ -128,7 +130,7 @@ def _patch_run_setup(monkeypatch: pytest.MonkeyPatch, root: Path) -> None:
     monkeypatch.setattr(config, "read_harvest_since", lambda _: None)
     monkeypatch.setattr(dates, "now", lambda _: NOW)
     monkeypatch.setattr(socket, "gethostname", lambda: "test-host.local")
-    monkeypatch.setattr(lock, "git_dir", lambda _: root / ".git")
+    monkeypatch.setattr(lock, "git_dir", lambda *_args: root / ".git")
 
 
 def test_run_dry_run_dispatches_without_lock(
@@ -237,8 +239,8 @@ def test_sync_without_harvesting_runs_recovery_and_syncs_remote(
     root = make_repo(tmp_path / "content")
     calls: list[str] = []
     monkeypatch.setattr(sync, "_recover", lambda *args: calls.append("recover"))
-    monkeypatch.setattr(sync, "_dirty_paths", lambda _: ())
-    monkeypatch.setattr(sync, "_fetch_status", lambda _: (sync.RemoteStatus("main", 0, 0), None))
+    monkeypatch.setattr(remote, "dirty_paths", lambda _: ())
+    monkeypatch.setattr(remote, "fetch_status", lambda _: (sync.RemoteStatus("main", 0, 0), None))
     monkeypatch.setattr(
         sync,
         "_sync_remote",
@@ -254,7 +256,7 @@ def test_sync_reports_dirty_paths_and_recovery_errors(
 ) -> None:
     root = make_repo(tmp_path / "content")
     monkeypatch.setattr(sync, "_recover", lambda *args: (_ for _ in ()).throw(KbError("broken")))
-    monkeypatch.setattr(sync, "_dirty_paths", lambda _: tuple(f"file-{i}" for i in range(12)))
+    monkeypatch.setattr(remote, "dirty_paths", lambda _: tuple(f"file-{i}" for i in range(12)))
     assert sync._sync(root, root / ".git", {}, "test-host", NOW, None, False) == 1
     captured = capsys.readouterr()
     assert "sync: recovery failed: broken" in captured.err
@@ -266,7 +268,7 @@ def test_dirty_worktree_without_other_errors_exits_successfully(
 ) -> None:
     root = make_repo(tmp_path / "content")
     monkeypatch.setattr(sync, "_recover", lambda *args: None)
-    monkeypatch.setattr(sync, "_dirty_paths", lambda _: ("local.md",))
+    monkeypatch.setattr(remote, "dirty_paths", lambda _: ("local.md",))
     assert sync._sync(root, root / ".git", {}, "host", NOW, None, False) == 0
     assert "not pulling or pushing" in capsys.readouterr().err
 
@@ -276,8 +278,8 @@ def test_sync_returns_fetch_error_and_combines_harvest_errors(
 ) -> None:
     root = make_repo(tmp_path / "content")
     monkeypatch.setattr(sync, "_recover", lambda *args: None)
-    monkeypatch.setattr(sync, "_dirty_paths", lambda _: ())
-    monkeypatch.setattr(sync, "_fetch_status", lambda _: (None, "sync: fetch failed"))
+    monkeypatch.setattr(remote, "dirty_paths", lambda _: ())
+    monkeypatch.setattr(remote, "fetch_status", lambda _: (None, "sync: fetch failed"))
     assert sync._sync(root, root / ".git", {}, "test-host", NOW, None, False) == 1
     assert "sync: fetch failed" in capsys.readouterr().err
 
@@ -307,8 +309,8 @@ def test_sync_harvests_reports_record_counts_and_completes_remote_step(
         "_write_selection",
         lambda *args: (sync.WriteResult(1, ()), 2, 20, 1, {"Secret": 1}),
     )
-    monkeypatch.setattr(sync, "_dirty_paths", lambda _: ())
-    monkeypatch.setattr(sync, "_fetch_status", lambda _: (sync.RemoteStatus("main", 0, 0), None))
+    monkeypatch.setattr(remote, "dirty_paths", lambda _: ())
+    monkeypatch.setattr(remote, "fetch_status", lambda _: (sync.RemoteStatus("main", 0, 0), None))
     monkeypatch.setattr(sync, "_sync_remote", lambda *args: ((), ("sync: push failed",)))
     assert sync._sync(root, root / ".git", {}, "host", NOW, START, False) == 1
     captured = capsys.readouterr()
@@ -341,8 +343,8 @@ def test_sync_pushes_after_a_session_is_skipped_then_exits_one(
             {},
         ),
     )
-    monkeypatch.setattr(sync, "_dirty_paths", lambda _: ())
-    monkeypatch.setattr(sync, "_fetch_status", lambda _: (sync.RemoteStatus("main", 1, 0), None))
+    monkeypatch.setattr(remote, "dirty_paths", lambda _: ())
+    monkeypatch.setattr(remote, "fetch_status", lambda _: (sync.RemoteStatus("main", 1, 0), None))
     monkeypatch.setattr(sync, "_sync_remote", lambda *args: (("Pushed: 1 commit(s)",), ()))
     assert sync._sync(root, root / ".git", {}, "host", NOW, START, False) == 1
     captured = capsys.readouterr()
@@ -364,8 +366,8 @@ def test_sync_with_harvest_and_dirty_tree_stops_remote_sync(
         "_write_selection",
         lambda *args: (sync.WriteResult(0, ("sync: skipped session x",)), 0, 0, 0, {}),
     )
-    monkeypatch.setattr(sync, "_dirty_paths", lambda _: ("local",))
-    monkeypatch.setattr(sync, "_fetch_status", lambda _: pytest.fail("dirty tree fetched"))
+    monkeypatch.setattr(remote, "dirty_paths", lambda _: ("local",))
+    monkeypatch.setattr(remote, "fetch_status", lambda _: pytest.fail("dirty tree fetched"))
     assert sync._sync(root, root / ".git", {}, "host", NOW, START, True) == 1
 
 
@@ -373,14 +375,14 @@ def test_status_reports_backlog_and_remote_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = make_repo(tmp_path / "content")
-    monkeypatch.setattr(sync, "_fetch_status", lambda _: (None, "sync: remote failed"))
+    monkeypatch.setattr(remote, "fetch_status", lambda _: (None, "sync: remote failed"))
     assert sync._status(root, {}, "test-host", NOW, None) == 1
     assert "sync: remote failed" in capsys.readouterr().err
 
     candidate = harvest.Candidate(make_session(), START)
     monkeypatch.setattr(sync, "_scan_transcripts", lambda _: sync.ScanResult((candidate,), ()))
     monkeypatch.setattr(sync, "_head_records", lambda _: ())
-    monkeypatch.setattr(sync, "_fetch_status", lambda _: (sync.RemoteStatus("main", 2, 3), None))
+    monkeypatch.setattr(remote, "fetch_status", lambda _: (sync.RemoteStatus("main", 2, 3), None))
     assert sync._status(root, {}, "test-host", NOW, START - timedelta(days=1)) == 0
     captured = capsys.readouterr().out
     assert "Ready: 1" in captured and "Ahead: 2" in captured and "Behind: 3" in captured
@@ -549,6 +551,31 @@ def test_head_records_reads_committed_observation_and_ignores_old_fields(tmp_pat
     assert records[0].session == "saved" and records[0].part == 1
 
 
+def test_head_records_passes_content_relative_paths_to_the_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository = make_repo(tmp_path / "repository")
+    root = repository / "content"
+    pending = root / "observations" / "pending"
+    pending.mkdir(parents=True)
+    (pending / "saved.md").write_text(observation_text(), encoding="utf-8")
+    git(repository, "add", "content/observations")
+    git(repository, "commit", "-q", "-m", "Save nested transcript")
+    original_parse = model.parse
+    parsed_paths: list[str] = []
+
+    def capture(path: str, text: str) -> model.Document:
+        parsed_paths.append(path)
+        return original_parse(path, text)
+
+    monkeypatch.setattr(model, "parse", capture)
+
+    records = sync._head_records(root)
+
+    assert len(records) == 1
+    assert parsed_paths == ["observations/pending/saved.md"]
+
+
 def test_head_records_handles_tree_and_batch_errors_and_empty_trees(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -682,6 +709,86 @@ def test_recover_cleans_temp_and_only_this_hosts_uncommitted_observations(
     assert calls == ["observations/pending/owned.md"]
 
 
+@pytest.mark.parametrize("staged", [False, True])
+def test_recover_preserves_candidates_when_the_committed_tree_cannot_be_inspected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, staged: bool
+) -> None:
+    root = make_repo(tmp_path / "content")
+    pending = root / sync.PENDING
+    pending.mkdir(parents=True)
+    record = pending / "interrupted.md"
+    record.write_text(observation_text("interrupted"), encoding="utf-8")
+    if staged:
+        git(root, "add", "--", "observations/pending/interrupted.md")
+    original = record.read_bytes()
+    index = git(root, "write-tree")
+    calls: list[tuple[str, ...]] = []
+    original_git = sync._git
+
+    def track(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        if args[:1] == ("rm",):
+            calls.append(args)
+        return original_git(repo, *args)
+
+    monkeypatch.setattr(
+        sync,
+        "_git_bytes",
+        lambda *_args, **_kwargs: completed_bytes(1, b"", b"tree unavailable"),
+    )
+    monkeypatch.setattr(sync, "_git", track)
+
+    with pytest.raises(
+        KbError, match="cannot inspect committed observation paths: tree unavailable"
+    ):
+        sync._recover(root, root / ".git", "test-host")
+
+    assert record.read_bytes() == original
+    assert git(root, "write-tree") == index
+    assert calls == []
+
+
+@pytest.mark.parametrize("layout", ["root", "subdirectory", "linked-worktree"])
+def test_recover_preserves_committed_observations_in_repository_layouts(
+    tmp_path: Path, layout: str
+) -> None:
+    repository = make_repo(tmp_path / "repository")
+    if layout == "root":
+        root = repository
+        working_repository = repository
+    else:
+        (repository / "content").mkdir()
+        (repository / "content" / "seed.txt").write_text("content\n", encoding="utf-8")
+        git(repository, "add", "content/seed.txt")
+        git(repository, "commit", "-q", "-m", "Add content directory")
+        if layout == "linked-worktree":
+            working_repository = tmp_path / "linked-worktree"
+            git(repository, "worktree", "add", "--quiet", "--detach", str(working_repository))
+        else:
+            working_repository = repository
+        root = working_repository / "content"
+
+    pending = root / sync.PENDING
+    pending.mkdir(parents=True, exist_ok=True)
+    record = pending / "committed.md"
+    record.write_text(observation_text("committed"), encoding="utf-8")
+    relative = record.relative_to(working_repository).as_posix()
+    git(working_repository, "add", relative)
+    git(working_repository, "commit", "-q", "-m", "Commit transcript observation")
+    original = record.read_bytes()
+    head = git(working_repository, "rev-parse", "HEAD").strip()
+    index = git(working_repository, "write-tree").strip()
+
+    sync._recover(root, lock.git_dir(root, "sync"), "test-host")
+
+    assert (
+        record.exists(),
+        record.read_bytes() if record.exists() else None,
+        git(working_repository, "rev-parse", "HEAD").strip(),
+        git(working_repository, "write-tree").strip(),
+        git(working_repository, "status", "--porcelain").strip(),
+    ) == (True, original, head, index, "")
+
+
 def test_recover_skips_missing_pending_and_symlink_entries(tmp_path: Path) -> None:
     root = make_repo(tmp_path / "content")
     sync._recover(root, root / ".git", "test-host")
@@ -694,6 +801,66 @@ def test_recover_skips_missing_pending_and_symlink_entries(tmp_path: Path) -> No
     (pending / "invalid.md").write_bytes(b"\xff")
     sync._recover(root, root / ".git", "test-host")
     assert target.read_text(encoding="utf-8") == "keep"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symbolic links need privilege")
+def test_recover_refuses_a_symlinked_scratch_directory(tmp_path: Path) -> None:
+    root = make_repo(tmp_path / "content")
+    git_dir = root / ".git"
+    external = tmp_path / "external"
+    external.mkdir()
+    existing = external / "active.md"
+    existing.write_text("Keep active scratch.\n", encoding="utf-8")
+    scratch = git_dir / sync.TMP
+    scratch.symlink_to(external, target_is_directory=True)
+
+    with pytest.raises(KbError, match="temporary directory is a symlink"):
+        sync._recover(root, git_dir, "test-host")
+
+    assert scratch.is_symlink()
+    assert existing.read_text(encoding="utf-8") == "Keep active scratch.\n"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symbolic links need privilege")
+@pytest.mark.parametrize("relative", ["observations", "observations/pending"])
+@pytest.mark.parametrize("target_kind", ["internal", "external"])
+def test_recover_refuses_symlinked_fixed_directories_without_mutation(
+    tmp_path: Path, relative: str, target_kind: str
+) -> None:
+    root = make_repo(tmp_path / "content")
+    (root / "observations" / "pending").mkdir(parents=True)
+    external = root / "safe-area" if target_kind == "internal" else tmp_path / "external"
+    external.mkdir()
+    if relative == "observations":
+        external_pending = external / "pending"
+        external_pending.mkdir()
+        link = root / relative
+    else:
+        external_pending = external
+        link = root / relative
+    interrupted = external_pending / "interrupted.md"
+    interrupted.write_text(observation_text(), encoding="utf-8")
+    link.rename(tmp_path / "original-directory")
+    try:
+        link.symlink_to(external, target_is_directory=True)
+    except (NotImplementedError, OSError) as error:
+        pytest.skip(f"symlink creation unavailable: {error}")
+
+    scratch = root / ".git" / "kb-tmp"
+    scratch.mkdir()
+    scratch_file = scratch / "active.md"
+    scratch_file.write_text("keep", encoding="utf-8")
+    external_names = sorted(path.relative_to(external) for path in external.rglob("*"))
+    external_bytes = interrupted.read_bytes()
+    index = git(root, "ls-files", "--stage")
+
+    with pytest.raises(KbError, match="content directory is a symlink"):
+        sync._recover(root, root / ".git", "test-host")
+
+    assert sorted(path.relative_to(external) for path in external.rglob("*")) == external_names
+    assert interrupted.read_bytes() == external_bytes
+    assert scratch_file.read_text(encoding="utf-8") == "keep"
+    assert git(root, "ls-files", "--stage") == index
 
 
 def test_recover_reports_unstage_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -744,25 +911,25 @@ def test_empty_directory_handles_symlinks_files_and_nested_dirs(
 def test_scanner_workspace_preserves_or_cleans_and_rejects_symlink(tmp_path: Path) -> None:
     git_dir = tmp_path / ".git"
     git_dir.mkdir()
-    with sync._scanner_workspace(git_dir, preserve=True) as directory:
+    with sync._scanner_workspace(git_dir, standalone=True) as directory:
         assert directory.is_dir()
     assert not (git_dir / sync.TMP).exists()
     scratch = git_dir / sync.TMP
     scratch.mkdir()
     before = scratch.stat().st_mtime_ns
-    with sync._scanner_workspace(git_dir, preserve=True):
+    with sync._scanner_workspace(git_dir, standalone=True):
         pass
     assert scratch.is_dir() and scratch.stat().st_mtime_ns == before
-    with sync._scanner_workspace(git_dir, preserve=False):
+    with sync._scanner_workspace(git_dir, standalone=False):
         pass
     assert scratch.is_dir() and list(scratch.iterdir()) == []
-    with pytest.raises(RuntimeError), sync._scanner_workspace(git_dir, preserve=True):
+    with pytest.raises(RuntimeError), sync._scanner_workspace(git_dir, standalone=True):
         raise RuntimeError("leave")
     scratch.rmdir()
     scratch.symlink_to(git_dir)
     with (
         pytest.raises(KbError, match="symbolic link"),
-        sync._scanner_workspace(git_dir, preserve=True),
+        sync._scanner_workspace(git_dir, standalone=False),
     ):
         pass
 
@@ -966,6 +1133,93 @@ def test_publish_tries_again_after_a_name_collision(
     assert (root / path).read_text(encoding="utf-8") == "new"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX umask behavior")
+def test_a_published_observation_follows_the_umask(tmp_path: Path) -> None:
+    root = make_repo(tmp_path / "content")
+    scan = tmp_path / "scanner"
+    scan.mkdir()
+    previous = os.umask(0o022)
+    try:
+        path = sync._publish(root, scan, "new", NOW)
+    finally:
+        os.umask(previous)
+    assert stat.S_IMODE((root / path).stat().st_mode) == 0o644
+
+
+@pytest.mark.parametrize("occupied_kind", ["race", "dangling"])
+def test_publish_observation_retries_without_replacing_an_occupied_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, occupied_kind: str
+) -> None:
+    if occupied_kind == "dangling" and os.name == "nt":
+        pytest.skip("symbolic links need privilege")
+    root = make_repo(tmp_path / "content")
+    scan = tmp_path / "scanner"
+    scan.mkdir()
+    marker = scan / "other-operation.tmp"
+    marker.write_bytes(b"keep")
+    pending = root / sync.PENDING
+    pending.mkdir(parents=True)
+    first = pending / "race.md"
+    second = pending / "next.md"
+    if occupied_kind == "dangling":
+        first.symlink_to(pending / "missing.md")
+    else:
+        original_exists = Path.exists
+        inserted = False
+
+        def create_competing_observation(path: Path) -> bool:
+            nonlocal inserted
+            exists = original_exists(path)
+            if path == first and not exists and not inserted:
+                first.write_bytes(b"concurrent observation")
+                inserted = True
+            return exists
+
+        monkeypatch.setattr(Path, "exists", create_competing_observation)
+    names = iter((first.name, second.name))
+    monkeypatch.setattr(observation, "file_name", lambda _now, _suffix: next(names))
+
+    path = sync._publish(root, scan, "new observation", NOW)
+
+    assert path == f"{sync.PENDING}/{second.name}"
+    assert (pending / second.name).read_text(encoding="utf-8") == "new observation"
+    if occupied_kind == "dangling":
+        assert first.is_symlink()
+        assert not first.exists()
+    else:
+        assert first.read_bytes() == b"concurrent observation"
+    assert list(scan.iterdir()) == [marker]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symbolic links need privilege")
+@pytest.mark.parametrize("target_kind", ["internal", "external"])
+def test_publish_refuses_a_symlinked_pending_directory(tmp_path: Path, target_kind: str) -> None:
+    root = make_repo(tmp_path / "content")
+    scan = tmp_path / "scanner"
+    scan.mkdir()
+    pending = root / sync.PENDING
+    pending.mkdir(parents=True)
+    pending.rename(tmp_path / "pending-original")
+    external = root / "safe-area" if target_kind == "internal" else tmp_path / "external"
+    external.mkdir()
+    existing = external / "existing.md"
+    existing.write_text("keep", encoding="utf-8")
+    try:
+        pending.symlink_to(external, target_is_directory=True)
+    except (NotImplementedError, OSError) as error:
+        pytest.skip(f"symlink creation unavailable: {error}")
+    names = sorted(path.name for path in external.iterdir())
+    index = git(root, "ls-files", "--stage")
+
+    with pytest.raises(KbError, match="content directory is a symlink"):
+        sync._publish(root, scan, "new", NOW)
+
+    assert sorted(path.name for path in external.iterdir()) == names
+    assert existing.read_text(encoding="utf-8") == "keep"
+    assert list(scan.iterdir()) == []
+    assert git(root, "ls-files", "--stage") == index
+
+
 def test_publish_fails_after_all_names_collide(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1007,10 +1261,210 @@ def test_commit_observations_cleans_up_staging_and_paths_on_failure(
     assert not (root / path).exists()
 
 
+def test_rejected_hook_edits_do_not_leave_deleted_staged_batch_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = make_repo(tmp_path / "content")
+    for key, value in GIT_ENV.items():
+        monkeypatch.setenv(key, value)
+    paths = (
+        "observations/pending/first.md",
+        "observations/pending/second.md",
+    )
+    for index, path in enumerate(paths):
+        destination = root / path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(f"observation {index}\n", encoding="utf-8")
+    unrelated = root / "unrelated.md"
+    unrelated.write_text("keep this staged file\n", encoding="utf-8")
+    git(root, "add", "unrelated.md")
+    hook = root / ".git" / "hooks" / "pre-commit"
+    hook.write_text(
+        "#!/bin/sh\n"
+        "printf 'hook edit one\\n' > observations/pending/first.md\n"
+        "printf 'hook edit two\\n' > observations/pending/second.md\n"
+        "echo 'reject after editing' >&2\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    hook.chmod(0o755)
+
+    result = sync._commit_observations(root, paths)
+
+    assert result is not None and "commit failed" in result
+    assert git(root, "status", "--porcelain") == "A  unrelated.md\n"
+    assert all(not (root / path).exists() for path in paths)
+    assert unrelated.read_text(encoding="utf-8") == "keep this staged file\n"
+
+
+@pytest.mark.parametrize("failed_command", ["ls-files", "rm"])
+def test_sync_retains_batch_files_when_index_cleanup_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failed_command: str
+) -> None:
+    root = make_repo(tmp_path / "content")
+    for key, value in GIT_ENV.items():
+        monkeypatch.setenv(key, value)
+    paths = (
+        "observations/pending/first.md",
+        "observations/pending/second.md",
+    )
+    expected = {}
+    for index, path in enumerate(paths):
+        destination = root / path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        content = f"observation {index}\n"
+        destination.write_text(content, encoding="utf-8")
+        expected[path] = content
+    unrelated = root / "unrelated.md"
+    unrelated.write_text("keep this staged file\n", encoding="utf-8")
+    git(root, "add", "unrelated.md")
+    hook = root / ".git" / "hooks" / "pre-commit"
+    hook.write_text("#!/bin/sh\necho 'reject commit' >&2\nexit 1\n", encoding="utf-8")
+    hook.chmod(0o755)
+    run_git = sync._git
+
+    def fail_index_cleanup(worktree: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        if words[0] == failed_command:
+            return completed(128, stderr="index unavailable\n")
+        return run_git(worktree, *words)
+
+    monkeypatch.setattr(sync, "_git", fail_index_cleanup)
+    result = sync._commit_observations(root, paths)
+
+    assert result is not None and "rollback failed" in result
+    assert all(path in result for path in paths)
+    assert "index unavailable" in result
+    assert {path: (root / path).read_text(encoding="utf-8") for path in paths} == expected
+    assert git(root, "status", "--porcelain") == (
+        "A  observations/pending/first.md\nA  observations/pending/second.md\nA  unrelated.md\n"
+    )
+    assert unrelated.read_text(encoding="utf-8") == "keep this staged file\n"
+
+
+def test_write_selection_reports_failed_cleanup_after_publish_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = make_repo(tmp_path / "content")
+    scan = tmp_path / "scanner"
+    scan.mkdir()
+    first_path = "observations/pending/first.md"
+    first = make_plan()
+    second = make_plan(make_session("second"))
+    monkeypatch.setattr(sync, "_prepare", lambda *args: sync.Prepared("text", None, 1, {}))
+    calls = 0
+
+    def publish_once(worktree: Path, *_args: object) -> str:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("second publication failed")
+        destination = worktree / first_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text("published before failure\n", encoding="utf-8")
+        return first_path
+
+    monkeypatch.setattr(sync, "_publish", publish_once)
+    run_git = sync._git
+
+    def fail_index_inspection(worktree: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        if words[0] == "ls-files":
+            return completed(128, stderr="index unavailable\n")
+        return run_git(worktree, *words)
+
+    monkeypatch.setattr(sync, "_git", fail_index_inspection)
+    result, *_ = sync._write_selection(root, (first, second), scan, "host", NOW)
+
+    assert result.count == 0
+    assert len(result.failures) == 2
+    assert "second publication failed" in result.failures[0]
+    assert "rollback failed" in result.failures[1]
+    assert first_path in result.failures[1]
+    assert "index unavailable" in result.failures[1]
+    assert (root / first_path).read_text(encoding="utf-8") == "published before failure\n"
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_commit_observations_preserves_a_commit_with_an_interrupted_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, newline: str
+) -> None:
+    root = make_repo(tmp_path / "content")
+    for key, value in GIT_ENV.items():
+        monkeypatch.setenv(key, value)
+    paths = (
+        "observations/pending/first.md",
+        "observations/pending/second.md",
+    )
+    for index, path in enumerate(paths):
+        destination = root / path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(f"observation {index}{newline}".encode())
+    unrelated = root / "unrelated.md"
+    unrelated.write_text("staged separately\n", encoding="utf-8")
+    git(root, "add", "unrelated.md")
+    old_head = git(root, "rev-parse", "HEAD").strip()
+
+    run_git = sync._git
+
+    def interrupt_after_commit(worktree: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        result = run_git(worktree, *words)
+        if words[:2] == ("commit", "-q") and result.returncode == 0:
+            return completed(128, stderr="commit result interrupted")
+        return result
+
+    monkeypatch.setattr(sync, "_git", interrupt_after_commit)
+    assert sync._commit_observations(root, paths) is None
+
+    assert git(root, "rev-parse", "HEAD").strip() != old_head
+    for path in paths:
+        assert git(root, "show", f"HEAD:{path}") == (root / path).read_text(encoding="utf-8")
+        assert git(root, "show", f":{path}") == (root / path).read_text(encoding="utf-8")
+    assert git(root, "status", "--porcelain") == "A  unrelated.md\n"
+
+
+def test_commit_observations_preserves_files_when_outcome_inspection_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = make_repo(tmp_path / "content")
+    for key, value in GIT_ENV.items():
+        monkeypatch.setenv(key, value)
+    path = "observations/pending/uncertain.md"
+    destination = root / path
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text("preserve this observation\n", encoding="utf-8")
+    original_sync_git = sync._git
+    original_write_git = write._git
+    committed = False
+
+    def report_interrupted_commit(worktree: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        nonlocal committed
+        result = original_sync_git(worktree, *words)
+        if words[:2] == ("commit", "-q") and result.returncode == 0:
+            committed = True
+            return completed(128, stderr="commit result interrupted")
+        return result
+
+    def fail_head_inspection(worktree: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        if committed and words[:3] == ("rev-parse", "--verify", "HEAD"):
+            return completed(1, stderr="HEAD inspection unavailable\n")
+        return original_write_git(worktree, *words)
+
+    monkeypatch.setattr(sync, "_git", report_interrupted_commit)
+    monkeypatch.setattr(write, "_git", fail_head_inspection)
+    result = sync._commit_observations(root, (path,))
+
+    assert result is not None
+    assert "commit outcome is uncertain" in result
+    assert "HEAD inspection unavailable" in result
+    assert destination.read_text(encoding="utf-8") == "preserve this observation\n"
+    assert git(root, "show", f"HEAD:{path}") == destination.read_text(encoding="utf-8")
+    assert git(root, "show", f":{path}") == destination.read_text(encoding="utf-8")
+    assert git(root, "status", "--porcelain") == ""
+
+
 @pytest.mark.parametrize(
     ("status", "stdout", "stderr", "expected"),
     [
-        ("R  old -> new\n", 0, "", ("new",)),
+        ("R  new\0old\0", 0, "", ("new",)),
         ("", 1, "broken", "error"),
     ],
 )
@@ -1018,11 +1472,12 @@ def test_dirty_paths_handles_changes_renames_and_errors(
     monkeypatch: pytest.MonkeyPatch, status: str, stdout: int, stderr: str, expected: object
 ) -> None:
     monkeypatch.setattr(remote, "_git", lambda *args: completed(stdout, status, stderr))
+    monkeypatch.setattr(remote, "repository_prefix", lambda *_args: "")
     if expected == "error":
         with pytest.raises(KbError, match="cannot inspect working tree: broken"):
-            sync._dirty_paths(Path())
+            remote.dirty_paths(Path())
     else:
-        assert sync._dirty_paths(Path()) == expected
+        assert remote.dirty_paths(Path()) == expected
 
 
 @pytest.mark.parametrize(
@@ -1049,7 +1504,7 @@ def test_fetch_status_reports_git_failures(
 ) -> None:
     queued = iter(completed(*result) for result in results)
     monkeypatch.setattr(remote, "_git", lambda *args: next(queued))
-    status, error = sync._fetch_status(Path())
+    status, error = remote.fetch_status(Path())
     assert status is None and expected in (error or "")
 
 
@@ -1064,7 +1519,7 @@ def test_fetch_status_parses_valid_counts(monkeypatch: pytest.MonkeyPatch) -> No
         )
     )
     monkeypatch.setattr(remote, "_git", lambda *args: next(queued))
-    assert sync._fetch_status(Path()) == (sync.RemoteStatus("main", 2, 4), None)
+    assert remote.fetch_status(Path()) == (sync.RemoteStatus("main", 2, 4), None)
 
 
 @pytest.mark.parametrize(
@@ -1109,3 +1564,20 @@ def test_sync_remote_handles_ahead_behind_and_push_modes(
     assert sync._sync_remote(Path(), status, no_push) == (actions, errors)
     if errors and "rebase" in errors[0]:
         assert calls[-1] == ("rebase", "--abort")
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        'message_ids: "message-1"\n',
+        "message_ids:\n",
+        'message_ids:\n  - "other"\n',
+        'message_ids:\n  - "message-1"\n  - "message-1"\n',
+        'message_ids:\n  - ""\n',
+    ],
+)
+def test_malformed_exact_message_membership_refuses_committed_state(field: str) -> None:
+    text = observation_text().replace("part: 1\n", "part: 1\n" + field)
+    text = text.replace("Body.", "## 1. user, 2026-10-26T09:00:00Z\n\nBody.")
+    with pytest.raises(KbError, match="invalid message_ids in committed observation"):
+        sync._record_from_document(model.parse("saved.md", text))

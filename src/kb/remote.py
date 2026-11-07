@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kb.errors import KbError
+from kb.git_paths import repository_prefix, to_content_path
+from kb.git_status import parse_porcelain
 
 
 @dataclass(frozen=True)
@@ -27,8 +29,8 @@ class Result:
 
     pulled counts commits rebased from origin, and pushed counts local commits sent
     to origin. skipped_dirty lists the changed paths that stopped the step before any
-    fetch. errors holds one message per failure. A rebase conflict is aborted, so the
-    local commits stay in place.
+    fetch. errors holds one message per failure. A rebase conflict is aborted when
+    possible; an abort failure is reported separately and stops integration.
     """
 
     pulled: int = 0
@@ -40,17 +42,12 @@ class Result:
 
 def dirty_paths(root: Path) -> tuple[str, ...]:
     """Paths changed in the worktree or index."""
-    result = _git(root, "status", "--porcelain", "--untracked-files=all")
+    result = _git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
     if result.returncode != 0:
         detail = result.stderr.rstrip("\n")
         raise KbError(f"cannot inspect working tree: {detail}")
-    paths: list[str] = []
-    for line in result.stdout.splitlines():
-        path = line[3:] if len(line) > 3 else line
-        if " -> " in path:
-            path = path.split(" -> ", 1)[1]
-        paths.append(path)
-    return tuple(paths)
+    prefix = repository_prefix(root, "sync")
+    return tuple(to_content_path(entry.path, prefix) for entry in parse_porcelain(result.stdout))
 
 
 def fetch_status(root: Path) -> tuple[RemoteStatus | None, str | None]:
@@ -93,7 +90,15 @@ def integrate(root: Path, remote: RemoteStatus, *, push: bool) -> Result:
     if remote.behind:
         rebased = _git(root, "rebase", target)
         if rebased.returncode != 0:
-            _git(root, "rebase", "--abort")
+            aborted = _git(root, "rebase", "--abort")
+            if aborted.returncode != 0:
+                detail = aborted.stderr.rstrip("\n") or "no diagnostic available"
+                return Result(
+                    errors=(
+                        f"sync: rebase onto {target} failed",
+                        f"sync: rebase --abort failed: {detail}; inspect git status and recover manually before continuing",
+                    )
+                )
             return Result(errors=(f"sync: rebase onto {target} failed; local commits kept",))
         pulled = remote.behind
     if not (remote.ahead and push):

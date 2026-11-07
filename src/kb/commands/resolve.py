@@ -3,12 +3,12 @@
 import os
 import stat
 import sys
-import tempfile
 from collections.abc import Sequence
+from contextlib import suppress
 from pathlib import Path
 from typing import Literal
 
-from kb import args, corpus, locators, lock, model, observation, question, secrets
+from kb import args, corpus, locators, lock, model, observation, question, scratch, secrets
 from kb.args import Spec
 from kb.context import Context, load
 from kb.errors import KbError
@@ -104,7 +104,7 @@ def _resolve(
 ) -> str:
     """Validate, scan, and publish a resolved copy while holding both writer locks."""
     root = context.root
-    git = lock.git_dir_path(root, WHO)
+    git = lock.git_dir(root, WHO)
     backend = lock.default_backend(sys.platform)
     with lock.write_lock(git, wait, backend):
         source_relpath = _question_path(root, question_word)
@@ -132,12 +132,12 @@ def _resolve(
 
         target_relpath = source_relpath.replace(f"{OPEN}/", f"{RESOLVED}/", 1)
         target = root / target_relpath
-        if target.exists():
+        if target.exists() or target.is_symlink():
             raise KbError(f"{WHO}: resolved copy already exists: {target_relpath}")
 
+        scan_directory = scratch.shared_directory(git, WHO)
         found = secrets.findings(
-            Path(tempfile.gettempdir()),
-            question.resolution_scan_text(answer, canonical_destination),
+            scan_directory, question.resolution_scan_text(answer, canonical_destination)
         )
         if found:
             raise KbError("\n".join(question.resolution_refusal_lines(found)))
@@ -203,48 +203,52 @@ def _publish(
     mode: int,
 ) -> str:
     """Atomically publish the resolved file and restore the open file on failure."""
-    scratch = git / "kb-tmp"
-    scratch.mkdir(parents=True, exist_ok=True)
+    scratch_directory = scratch.shared_directory(git, WHO)
     root_resolved = root.resolve()
     if not target.parent.resolve().is_relative_to(root_resolved):
         raise KbError(f"{WHO}: resolved question path escapes the content repository")
     target.parent.mkdir(parents=True, exist_ok=True)
     if not target.resolve().is_relative_to(root_resolved):
         raise KbError(f"{WHO}: resolved question path escapes the content repository")
-    if target.exists():
+    if target.exists() or target.is_symlink():
         raise KbError(f"{WHO}: resolved copy already exists: {target.relative_to(root).as_posix()}")
 
-    temporary = scratch / f"resolve-{os.urandom(4).hex()}.md"
-    restore = scratch / f"resolve-restore-{os.urandom(4).hex()}.md"
+    temporary = scratch.create_file(scratch_directory, "resolve-", ".md", rendered)
+    restore: Path | None = None
     published = False
     publication_attempted = False
     try:
-        with temporary.open("xb") as handle:
-            handle.write(rendered)
         temporary.chmod(mode)
         publication_attempted = True
-        temporary.replace(target)
+        try:
+            os.link(temporary, target)
+        except FileExistsError as error:
+            relpath = target.relative_to(root).as_posix()
+            raise KbError(f"{WHO}: resolved copy already exists: {relpath}") from error
         published = True
         source.unlink()
     except BaseException:
-        ours = published or (
-            publication_attempted and target.is_file() and target.read_bytes() == rendered
-        )
+        ours = published
+        if publication_attempted and not ours and not target.is_symlink():
+            with suppress(OSError):
+                ours = temporary.samefile(target)
         if ours:
             try:
                 if not source.is_file() or source.read_bytes() != original:
-                    with restore.open("xb") as handle:
-                        handle.write(original)
+                    restore = scratch.create_file(
+                        scratch_directory, "resolve-restore-", ".md", original
+                    )
                     restore.chmod(mode)
                     restore.replace(source)
                 target.unlink(missing_ok=True)
             except BaseException as rollback_error:
                 raise KbError(
-                    f"{WHO}: rollback failed; inspect both question files and {scratch}"
+                    f"{WHO}: rollback failed; inspect both question files and {scratch_directory}"
                 ) from rollback_error
         raise
     finally:
         temporary.unlink(missing_ok=True)
-        restore.unlink(missing_ok=True)
+        if restore is not None:
+            restore.unlink(missing_ok=True)
 
     return source.relative_to(root).as_posix()

@@ -265,3 +265,62 @@ def test_duplicate_ids_keep_the_first_message_and_report_the_duplicate() -> None
 
     assert [message.text for message in session.messages] == ["First."]
     assert session.duplicate_ids == 1
+
+
+def test_missing_uuids_keep_distinct_shell_calls_at_one_timestamp() -> None:
+    text = (
+        "\n".join(
+            record(
+                "assistant",
+                [
+                    {
+                        "type": "tool_use",
+                        "id": call_id,
+                        "name": "Bash",
+                        "input": {"command": command},
+                    }
+                ],
+                message_id=None,
+            )
+            for call_id, command in (("call-first", "echo first"), ("call-second", "echo second"))
+        )
+        + "\n"
+    )
+
+    parsed = claude.parse(text, "commands")
+
+    assert [value.commands for value in parsed.messages] == [("echo first",), ("echo second",)]
+    assert [value.id for value in parsed.messages] == ["call-first", "call-second"]
+    assert claude.parse(text, "commands").messages == parsed.messages
+
+
+def test_repeated_commands_without_uuids_or_tool_ids_remain_distinct() -> None:
+    line = record(
+        "assistant",
+        [{"type": "tool_use", "name": "Bash", "input": {"command": "echo repeated"}}],
+        message_id=None,
+    )
+    text = line + "\n" + line + "\n"
+    parsed = claude.parse(text, "commands")
+
+    assert len(parsed.messages) == 2
+    assert len({value.id for value in parsed.messages}) == 2
+    assert [value.commands for value in parsed.messages] == [("echo repeated",)] * 2
+    assert claude.parse(text, "commands").messages == parsed.messages
+    assert claude.parse(text + line + "\n", "commands").messages[:2] == parsed.messages
+
+
+def test_missing_uuid_uses_the_ordered_group_of_shell_tool_ids() -> None:
+    blocks = [
+        {"type": "tool_use", "id": name, "name": "Bash", "input": {"command": command}}
+        for name, command in (("call-first", "echo first"), ("call-second", "echo second"))
+    ]
+    line = record("assistant", blocks, message_id=None)
+    parsed = claude.parse(line + "\n" + line + "\n", "group")
+    assert len(parsed.messages) == 1
+    assert parsed.duplicate_ids == 1
+    assert parsed.messages[0].commands == ("echo first", "echo second")
+    reversed_group = claude.parse(
+        record("assistant", list(reversed(blocks)), message_id=None) + "\n", "group"
+    )
+    assert parsed.messages[0].id != reversed_group.messages[0].id

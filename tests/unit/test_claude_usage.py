@@ -49,12 +49,6 @@ def test_each_result_pairs_with_its_tool_use_by_id_not_by_order() -> None:
     assert outputs == {"recall": "the recall output", "read": "the read output"}
 
 
-def test_a_call_without_a_result_has_no_output() -> None:
-    calls = claude.kb_calls(lines(bash_use("t1", "kb recall alpha")), SESSION)
-    assert len(calls) == 1
-    assert calls[0].output is None
-
-
 def test_several_kb_calls_in_one_command_share_its_output_and_exclude_it() -> None:
     text = lines(
         bash_use("t1", "kb recall alpha && kb read knowledge/a.md#1"),
@@ -74,6 +68,8 @@ def test_a_single_kb_call_keeps_its_output() -> None:
 
 def test_a_call_without_a_result_is_missing() -> None:
     calls = claude.kb_calls(lines(bash_use("t1", "kb recall alpha")), SESSION)
+    assert len(calls) == 1
+    assert calls[0].output is None
     assert calls[0].excluded == "missing"
 
 

@@ -27,6 +27,7 @@ class HarvestRecord:
     ended: datetime | None
     created: datetime | None
     forked_from: str | None = None
+    message_ids: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,7 @@ class HarvestState:
 
     parts: Mapping[SessionKey, PartState]
     owners: Mapping[MessageKey, SessionKey]
+    recovered: frozenset[MessageKey] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,21 @@ class Selection:
     ready_modified: tuple[datetime, ...] = ()
 
 
+@dataclass(frozen=True)
+class _LegacyView:
+    """The old parser's retained messages and indexed legacy endpoint positions."""
+
+    messages: tuple[Message, ...]
+    positions: Mapping[str, int]
+
+    def range(self, record: HarvestRecord) -> tuple[Message, ...] | None:
+        start = self.positions.get(record.first_message or "")
+        end = self.positions.get(record.last_message or "")
+        if start is None or end is None or start > end:
+            return None
+        return self.messages[start : end + 1]
+
+
 def reconstruct_state(
     records: Iterable[HarvestRecord], sessions: Iterable[Session], host: str
 ) -> HarvestState:
@@ -83,6 +100,17 @@ def reconstruct_state(
     session_by_key = {
         (session.app, session.id): session for session in sessions if session.id is not None
     }
+    views: dict[SessionKey, _LegacyView] = {}
+    copies: dict[MessageKey, list[_LegacyView]] = {}
+    for key, session in session_by_key.items():
+        messages = tuple(message for message in session.messages if not message.legacy_duplicate)
+        view = _LegacyView(
+            messages,
+            {message.legacy_id or message.id: index for index, message in enumerate(messages)},
+        )
+        views[key] = view
+        for identity in view.positions:
+            copies.setdefault((session.app, identity), []).append(view)
     accepted = [record for record in records if _valid_record(record, host)]
     parts: dict[SessionKey, PartState] = {}
     selected_records: dict[SessionKey, HarvestRecord] = {}
@@ -103,16 +131,29 @@ def reconstruct_state(
             )
 
     owners: dict[MessageKey, SessionKey] = {}
+    legacy_owners: dict[MessageKey, SessionKey] = {}
     for record in sorted(accepted, key=_ownership_order):
         assert record.app is not None and record.session is not None
         assert record.first_message is not None and record.last_message is not None
         assert record.started is not None and record.ended is not None
         key = (record.app, record.session)
-        session = session_by_key.get(key)
-        message_ids = _endpoints(record) if session is None else _message_range(session, record)
+        message_ids, legacy_ids = _record_ownership(record, views, copies)
+        for message_id in legacy_ids:
+            legacy_owners.setdefault((record.app, message_id), key)
         for message_id in message_ids:
             owners.setdefault((record.app, message_id), key)
-    return HarvestState(parts=parts, owners=owners)
+    recovered: set[MessageKey] = set()
+    for session in session_by_key.values():
+        for message in session.messages:
+            owner = legacy_owners.get((session.app, message.legacy_id or message.id))
+            message_key = (session.app, message.id)
+            if owner is None:
+                continue
+            if not message.legacy_duplicate:
+                owners.setdefault(message_key, owner)
+            elif message_key not in owners:
+                recovered.add(message_key)
+    return HarvestState(parts=parts, owners=owners, recovered=frozenset(recovered))
 
 
 def select_candidates(
@@ -139,6 +180,13 @@ def select_candidates(
         key = (session.app, session.id)
         previous = state.parts.get(key)
         messages, missing_pointer = _after_saved_part(session.messages, previous)
+        after_ids = {message.id for message in messages}
+        messages = tuple(
+            message
+            for message in session.messages
+            if (message.id in after_ids or (session.app, message.id) in state.recovered)
+            and (previous is None or state.owners.get((session.app, message.id)) != key)
+        )
         if missing_pointer:
             assert previous is not None
             warnings.append(
@@ -167,15 +215,18 @@ def select_candidates(
         session = candidate.session
         assert session.id is not None
         key = (session.app, session.id)
-        remaining = list(messages)
+        remaining: list[Message] = []
         skipped_owner: SessionKey | None = None
-        while remaining:
-            owner = owners.get((session.app, remaining[0].id))
-            if owner is None or owner == key:
-                break
-            if skipped_owner is None:
-                skipped_owner = owner
-            remaining.pop(0)
+        in_prefix = True
+        for message in messages:
+            owner = owners.get((session.app, message.id))
+            if in_prefix and owner is not None and owner != key:
+                if skipped_owner is None:
+                    skipped_owner = owner
+                continue
+            if (session.app, message.id) not in state.recovered:
+                in_prefix = False
+            remaining.append(message)
         if remaining:
             plans.append(
                 HarvestPlan(
@@ -231,24 +282,43 @@ def _ownership_order(record: HarvestRecord) -> tuple[datetime, bool, str]:
     return created, record.forked_from is not None, record.session or ""
 
 
-def _message_range(session: Session, record: HarvestRecord) -> tuple[str, ...]:
-    """Find a committed range by IDs, then by its recorded timestamps if IDs changed."""
+def _record_ownership(
+    record: HarvestRecord,
+    views: Mapping[SessionKey, _LegacyView],
+    copies: Mapping[MessageKey, list[_LegacyView]],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Return exact current membership and, for a legacy record, its represented old IDs."""
+    if record.message_ids is not None:
+        return record.message_ids, ()
+    assert record.app is not None and record.session is not None
     assert record.first_message is not None and record.last_message is not None
     assert record.started is not None and record.ended is not None
-    ids = [message.id for message in session.messages]
-    try:
-        start = ids.index(record.first_message)
-        end = ids.index(record.last_message)
-    except ValueError:
-        start, end = -1, -1
-    if 0 <= start <= end:
-        return tuple(ids[start : end + 1])
-    started = _utc(record.started)
-    ended = _utc(record.ended)
-    by_time = tuple(
-        message.id for message in session.messages if started <= message.timestamp <= ended
+    view = views.get((record.app, record.session))
+    if view is None:
+        view = next(
+            (
+                value
+                for value in copies.get((record.app, record.first_message), [])
+                if value.range(record) is not None
+            ),
+            None,
+        )
+    if view is None:
+        endpoints = _endpoints(record)
+        return endpoints, endpoints
+    matched = view.range(record)
+    if matched is None:
+        started, ended = _utc(record.started), _utc(record.ended)
+        matched = tuple(
+            message for message in view.messages if started <= message.timestamp <= ended
+        )
+    if not matched:
+        endpoints = _endpoints(record)
+        return endpoints, endpoints
+    return (
+        tuple(message.id for message in matched),
+        tuple(message.legacy_id or message.id for message in matched),
     )
-    return by_time or _endpoints(record)
 
 
 def _endpoints(record: HarvestRecord) -> tuple[str, ...]:
@@ -265,9 +335,21 @@ def _after_saved_part(
     """Return messages after the saved pointer, or after ended when that ID disappeared."""
     if previous is None:
         return messages, False
-    for index, message in enumerate(messages):
-        if message.id == previous.last_message:
-            return messages[index + 1 :], False
+    index = next(
+        (index for index, message in enumerate(messages) if message.id == previous.last_message),
+        None,
+    )
+    if index is None:
+        index = next(
+            (
+                index
+                for index, message in enumerate(messages)
+                if not message.legacy_duplicate and message.legacy_id == previous.last_message
+            ),
+            None,
+        )
+    if index is not None:
+        return messages[index + 1 :], False
     ended = _utc(previous.ended)
     return tuple(message for message in messages if message.timestamp > ended), True
 

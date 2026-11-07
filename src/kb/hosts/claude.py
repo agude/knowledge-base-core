@@ -20,8 +20,10 @@ from kb.transcripts import (
     earlier,
     later,
     parse_timestamp,
+    synthetic_command_id,
     synthetic_id,
     text_of,
+    tool_call_id,
     unique_messages,
 )
 from kb.transcripts import (
@@ -94,7 +96,7 @@ def _message(record: Mapping[str, object]) -> tuple[Message | None, bool]:
     timestamp = parse_timestamp(timestamp_value)
     if timestamp is None:
         return None, True
-    texts, commands = _content(message.get("content"), role)
+    texts, commands, call_ids = _content(message.get("content"), role)
     text = "\n".join(texts)
     if role == "user":
         text = SYSTEM_REMINDER.sub("", text)
@@ -102,19 +104,31 @@ def _message(record: Mapping[str, object]) -> tuple[Message | None, bool]:
         return None, False
     original_timestamp = timestamp_value if isinstance(timestamp_value, str) else ""
     message_id = record.get("uuid")
+    legacy_id = None
+    generated = False
     if not isinstance(message_id, str) or not message_id:
         message_id = synthetic_id(APP, original_timestamp, role, text)
-    return Message(message_id, timestamp, role, text, tuple(commands)), False
+        if commands:
+            legacy_id = message_id
+            if len(call_ids) == len(commands):
+                message_id = tool_call_id(call_ids)
+            else:
+                message_id = synthetic_command_id(
+                    APP, original_timestamp, role, text, tuple(commands)
+                )
+                generated = True
+    return Message(message_id, timestamp, role, text, tuple(commands), legacy_id, generated), False
 
 
-def _content(value: object, role: Role) -> tuple[list[str], list[str]]:
+def _content(value: object, role: Role) -> tuple[list[str], list[str], list[str]]:
     """Extract user or assistant text blocks and Claude Bash and PowerShell command inputs."""
     if role == "user" and isinstance(value, str):
-        return [value], []
+        return [value], [], []
     if not isinstance(value, list):
-        return [], []
+        return [], [], []
     texts: list[str] = []
     commands: list[str] = []
+    call_ids: list[str] = []
     for block in value:
         if not isinstance(block, Mapping):
             continue
@@ -126,7 +140,10 @@ def _content(value: object, role: Role) -> tuple[list[str], list[str]]:
             command = _shell_command(block.get("input"))
             if command is not None:
                 commands.append(command)
-    return texts, commands
+                call_id = block.get("id")
+                if isinstance(call_id, str) and call_id:
+                    call_ids.append(call_id)
+    return texts, commands, call_ids
 
 
 def _shell_command(value: object) -> str | None:

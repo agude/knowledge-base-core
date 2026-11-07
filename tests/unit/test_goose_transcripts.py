@@ -307,6 +307,19 @@ def test_updated_at_is_read_as_utc_in_each_stored_form() -> None:
     assert goose._updated(None) is None
 
 
+@pytest.mark.parametrize("value", ["0001-01-01T00:00:00+01:00", "9999-12-31T23:59:59-01:00"])
+def test_unrepresentable_updated_at_keeps_other_sessions_readable(
+    tmp_path: Path, value: str
+) -> None:
+    build(tmp_path, f"UPDATE sessions SET updated_at = '{value}' WHERE id = '20261025_1'")
+    main, agent = goose.read(tmp_path)
+    assert main.session.id == "20261025_1"
+    assert main.updated == main.session.latest_timestamp
+    assert main.session.messages
+    assert agent.session.id == "20261025_2"
+    assert agent.session.messages
+
+
 def test_a_header_reads_only_string_fields() -> None:
     assert goose._header((None, "/work", None, None, None)) is None
     assert goose._header(("id", None, "", 3, None)) == goose.Header("id", "", None, None)

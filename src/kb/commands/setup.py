@@ -16,7 +16,7 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC
 from pathlib import Path
 
-from kb import __version__, args, config, dates, lock, setup_rules, skills
+from kb import __version__, args, config, dates, lock, scratch, setup_rules, skills
 from kb.args import Spec
 from kb.errors import KbError
 from kb.platform import config_file
@@ -463,13 +463,15 @@ def _write_hook(hook: Path, script: str, git: Path) -> None:
     The replacement is a rename, so a symbolic link at the hook path is replaced and its
     target is left unchanged.
     """
-    scratch = git / TMP
-    scratch.mkdir(parents=True, exist_ok=True)
+    scratch_directory = scratch.shared_directory(git, "setup")
     hook.parent.mkdir(parents=True, exist_ok=True)
-    temporary = scratch / f"pre-commit-{os.urandom(4).hex()}"
+    temporary = scratch.create_file(
+        scratch_directory,
+        "pre-commit-",
+        "",
+        script.encode("utf-8"),
+    )
     try:
-        with temporary.open("x", encoding="utf-8", newline="") as handle:
-            handle.write(script)
         temporary.chmod(0o755)
         temporary.replace(hook)
     finally:

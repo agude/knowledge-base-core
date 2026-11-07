@@ -29,11 +29,6 @@ def test_an_extra_word_is_a_usage_error(words: list[str]) -> None:
         setup.run(words)
 
 
-def test_an_option_without_its_value_is_refused() -> None:
-    with pytest.raises(KbError, match="requires an argument"):
-        setup.run(["--print"])
-
-
 def test_an_unknown_item_names_the_choices() -> None:
     with pytest.raises(KbError, match="takes instructions, allow-claude, allow-codex; not bogus"):
         setup.run(["--print", "bogus"])

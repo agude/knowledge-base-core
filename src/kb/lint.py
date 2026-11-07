@@ -2,12 +2,12 @@
 
 import re
 from dataclasses import dataclass
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Literal
 
-from kb import corpus, links, locators
+from kb import corpus, links, locators, model, snapshot
 from kb.dates import parse_date
-from kb.freshness import MAX_TTL_DAYS, NAMED_TTL_DAYS
+from kb.freshness import ttl_days
 from kb.model import Document, Section
 
 MAX_H2_LINES = 50
@@ -27,6 +27,8 @@ class Finding:
 
     target is the content-relative file that a reference finding names, when it resolves
     inside the repository. Publication uses it to tell whether a change removed that file.
+    reference identifies its kind and original destination across snapshots, regardless
+    of line number or the particular validation error.
     """
 
     path: str
@@ -34,6 +36,7 @@ class Finding:
     severity: str
     message: str
     target: str | None = None
+    reference: tuple[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -101,47 +104,61 @@ def reference_findings(
     root: Path,
     source: Document,
     documents: dict[str, Document],
+    *,
+    content: snapshot.Content | None = None,
 ) -> list[Finding]:
     """Check one document's local links and sources, caching each Markdown target."""
     findings: list[Finding] = []
+    content = snapshot.Worktree(root) if content is None else content
     for reference in references(source):
         path, has_fragment, fragment = reference.destination.partition("#")
         if _external_or_absolute(reference.destination, path):
             continue
 
-        source_file = root / source.path
-        if reference.kind == "link":
-            target = (source_file.parent / path).resolve() if path else source_file.resolve()
-        else:
-            target = (root / path).resolve()
-
         try:
-            relpath = target.relative_to(root).as_posix()
+            source_file = PurePosixPath(source.path)
+            target = str(source_file.parent / path) if path else str(source_file)
+            relpath = content.resolve(target if reference.kind == "link" else path)
         except ValueError:
             message = (
                 f"local Markdown link escapes content root: {reference.destination}"
                 if reference.kind == "link"
                 else f"local source reference escapes content root: {reference.destination}"
             )
-            findings.append(Finding(reference.source_path, reference.line, "error", message))
+            findings.append(
+                Finding(
+                    reference.source_path,
+                    reference.line,
+                    "error",
+                    message,
+                    reference=(reference.kind, reference.destination),
+                )
+            )
             continue
 
-        if not target.is_file():
+        if not content.is_file(relpath):
             message = (
                 f"missing local Markdown link target: {reference.destination}"
                 if reference.kind == "link"
                 else f"missing local source reference: {reference.destination}"
             )
             findings.append(
-                Finding(reference.source_path, reference.line, "error", message, relpath)
+                Finding(
+                    reference.source_path,
+                    reference.line,
+                    "error",
+                    message,
+                    relpath,
+                    (reference.kind, reference.destination),
+                )
             )
             continue
-        if not has_fragment or not fragment or target.suffix != ".md":
+        if not has_fragment or not fragment or not relpath.endswith(".md"):
             continue
 
         target_document = documents.get(relpath)
         if target_document is None:
-            target_document = corpus.read_document(root, relpath)
+            target_document = model.parse(relpath, corpus.decode_text(content.read_bytes(relpath)))
             documents[relpath] = target_document
         if not fragment_resolves(target_document, fragment):
             message = (
@@ -150,7 +167,14 @@ def reference_findings(
                 else f"missing source reference anchor '#{fragment}': {reference.destination}"
             )
             findings.append(
-                Finding(reference.source_path, reference.line, "error", message, relpath)
+                Finding(
+                    reference.source_path,
+                    reference.line,
+                    "error",
+                    message,
+                    relpath,
+                    (reference.kind, reference.destination),
+                )
             )
     return findings
 
@@ -442,16 +466,8 @@ def valid_ttl(value: object) -> bool:
     """Whether a TTL is named or a positive integer within the supported limit."""
     if not isinstance(value, str):
         return False
-    if value in NAMED_TTL_DAYS:
-        return True
-    if not value.isascii() or not value.isdigit():
-        return False
-    significant = value.lstrip("0")
-    maximum = str(MAX_TTL_DAYS)
-    return bool(significant) and (
-        len(significant) < len(maximum)
-        or (len(significant) == len(maximum) and significant <= maximum)
-    )
+    days = ttl_days(value)
+    return days is not None and days > 0
 
 
 def _add(

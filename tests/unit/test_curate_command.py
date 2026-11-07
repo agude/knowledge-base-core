@@ -8,7 +8,6 @@ import shlex
 import socket
 import subprocess
 import sys
-import tempfile
 import urllib.request
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
@@ -229,7 +228,7 @@ def test_start_command_holds_the_shared_lock_and_wraps_runtime_errors(
     git_directory.mkdir()
     observed: list[object] = []
     monkeypatch.setattr(curate, "load", lambda *_args: context)
-    monkeypatch.setattr(lock, "git_dir_path", lambda *_args: git_directory)
+    monkeypatch.setattr(lock, "git_dir", lambda *_args: git_directory)
     monkeypatch.setattr(lock, "default_backend", lambda *_args: object())
     monkeypatch.setattr(lock, "write_lock", lambda *_args: contextlib.nullcontext())
 
@@ -519,9 +518,14 @@ def test_complete_scans_supplied_text_and_cleans_secret_scan_files(
     batch = curation.make_batch(RUN, datetime(2026, 10, 28, tzinfo=UTC), 1000, [member])
     manifest = batches / f"{RUN}.json"
     manifest.write_text(curation.render_batch(batch), encoding="utf-8", newline="")
-    scan_directory = tmp_path / "secret-scan"
-    scan_directory.mkdir()
-    monkeypatch.setattr(tempfile, "gettempdir", lambda: scan_directory)
+    scan_calls: list[Path] = []
+    original_findings = secrets.findings
+
+    def track_scan(directory: Path, text: str) -> list[tuple[str, int]]:
+        scan_calls.append(directory)
+        return original_findings(directory, text)
+
+    monkeypatch.setattr(secrets, "findings", track_scan)
     secret = 'password = "hunter2hunter2"'
     destinations = [secret] if supplied == "destination" else []
     reason = secret if supplied == "reason" else "Temporary"
@@ -539,7 +543,8 @@ def test_complete_scans_supplied_text_and_cleans_secret_scan_files(
 
     assert secret not in str(refusal.value)
     assert "Secret Keyword" in str(refusal.value)
-    assert sorted(path.name for path in scan_directory.iterdir()) == []
+    assert scan_calls == [root / ".git" / "kb-tmp"]
+    assert list((root / ".git" / "kb-tmp").iterdir()) == []
     assert (root / "observations" / "pending" / filename).read_text(encoding="utf-8") == content
     assert manifest.read_text(encoding="utf-8") == curation.render_batch(batch)
     assert not (root / "observations" / "archived" / filename).exists()
@@ -724,6 +729,47 @@ def test_archive_publication_never_replaces_a_file_created_after_precheck(
 
     assert archive_path.read_bytes() == b"concurrent archive"
     assert not list((root / ".git" / "kb-tmp").glob("*"))
+
+
+def test_manifest_publication_preserves_a_target_created_after_precheck(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _original, _batch = _completion_fixture(tmp_path)
+    target = root / "observations" / "batches" / "new.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    original_exists = Path.exists
+    inserted = False
+
+    def create_competing_manifest(path: Path) -> bool:
+        nonlocal inserted
+        exists = original_exists(path)
+        if path == target and not exists and not inserted:
+            target.write_bytes(b"concurrent manifest")
+            inserted = True
+        return exists
+
+    monkeypatch.setattr(Path, "exists", create_competing_manifest)
+
+    with pytest.raises(KbError, match="batch manifest already exists"):
+        curate._publish_manifest(root / ".git", target, "new manifest")
+
+    assert target.read_bytes() == b"concurrent manifest"
+    assert not list((root / ".git" / "kb-tmp").iterdir())
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symbolic links need privilege")
+def test_manifest_publication_preserves_an_existing_dangling_symlink(tmp_path: Path) -> None:
+    root, _original, _batch = _completion_fixture(tmp_path)
+    target = root / "observations" / "batches" / "dangling.json"
+    target.symlink_to(target.parent / "missing.json")
+    link = target.readlink()
+
+    with pytest.raises(KbError, match="batch manifest already exists"):
+        curate._publish_manifest(root / ".git", target, "new manifest")
+
+    assert target.is_symlink()
+    assert target.readlink() == link
+    assert not list((root / ".git" / "kb-tmp").iterdir())
 
 
 def test_complete_rejects_conflicting_retries_and_preserves_recovery_commands(
@@ -1009,7 +1055,7 @@ def test_transition_commands_run_under_shared_lock_and_handle_usage_and_busy(
     context = _context(root)
     git_directory = root / ".git"
     monkeypatch.setattr(curate, "load", lambda *_args: context)
-    monkeypatch.setattr(lock, "git_dir_path", lambda *_args: git_directory)
+    monkeypatch.setattr(lock, "git_dir", lambda *_args: git_directory)
     monkeypatch.setattr(lock, "default_backend", lambda *_args: object())
     monkeypatch.setattr(lock, "write_lock", lambda *_args: contextlib.nullcontext())
     monkeypatch.setenv("KB_LOCK_WAIT", "1")

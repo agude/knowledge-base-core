@@ -8,7 +8,16 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .harness import HOLD_KERNEL_LOCK, TODAY, Kb, kb_executable, run_git, skill_lines, toml_path
+from .harness import (
+    HOLD_KERNEL_LOCK,
+    TODAY,
+    Kb,
+    kb_executable,
+    make_subdirectory_kb,
+    run_git,
+    skill_lines,
+    toml_path,
+)
 
 ARTICLE = (
     "---\ntitle: Backups\nupdated: 2026-10-20\nverified: 2026-10-20\nttl: domain\n---\n"
@@ -129,6 +138,35 @@ def test_a_configured_hooks_path_receives_the_hook(git_kb: Kb) -> None:
     installed = git_kb.content / "custom-hooks" / "pre-commit"
     assert installed.read_text(encoding="utf-8").startswith("#!/bin/sh\n" + MARKER)
     assert not hook_of(git_kb).exists()
+
+
+def test_setup_installs_and_runs_the_hook_for_a_content_subdirectory(git_kb: Kb) -> None:
+    nested = make_subdirectory_kb(git_kb)
+    hooks = Path(
+        run_git(
+            nested.content,
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-path",
+            "hooks",
+        ).strip()
+    )
+    expected_hook = hooks / "pre-commit"
+
+    result = setup_for(nested)
+
+    assert result.returncode == 0, result.stderr
+    assert f"Hook: installed {expected_hook}\n" in result.stdout
+    assert expected_hook.read_text(encoding="utf-8").startswith("#!/bin/sh\n" + MARKER)
+    broken = ARTICLE + "\n# Second title\n"
+    article = nested.content / "knowledge/infra/setup-hook-paths.md"
+    article.write_text(broken, encoding="utf-8")
+    run_git(nested.content, "add", "--", "knowledge/infra/setup-hook-paths.md")
+
+    rejected = commit(nested, "Reject an invalid nested article")
+
+    assert rejected.returncode == 1
+    assert "hook: knowledge/infra/setup-hook-paths.md:" in rejected.stderr
 
 
 def test_a_held_write_lock_refuses_the_hook_while_the_config_is_written(git_kb: Kb) -> None:

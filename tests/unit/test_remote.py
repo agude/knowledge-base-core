@@ -138,6 +138,53 @@ def test_rebase_conflict_is_aborted_and_keeps_the_local_commit(
     assert git(local, "status", "--porcelain") == ""
 
 
+def test_failed_rebase_with_successful_abort_does_not_continue_integration(
+    pair: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    local, _ = pair
+    calls: list[tuple[str, ...]] = []
+
+    def git_result(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        calls.append(words)
+        return subprocess.CompletedProcess(
+            ["git", *words], 1 if words == ("rebase", "origin/main") else 0, "", "conflict\n"
+        )
+
+    monkeypatch.setattr(remote, "_git", git_result)
+
+    result = remote.integrate(local, remote.RemoteStatus("main", ahead=1, behind=1), push=True)
+
+    assert result == remote.Result(errors=(CONFLICT,))
+    assert calls == [("rebase", "origin/main"), ("rebase", "--abort")]
+
+
+def test_failed_rebase_and_abort_report_abort_diagnostic_and_stop_integration(
+    pair: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    local, _ = pair
+    calls: list[tuple[str, ...]] = []
+
+    def git_result(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        calls.append(words)
+        if words == ("rebase", "origin/main"):
+            return subprocess.CompletedProcess(["git", *words], 1, "", "conflict\n")
+        if words == ("rebase", "--abort"):
+            return subprocess.CompletedProcess(["git", *words], 1, "", "abort blocked\n")
+        raise AssertionError(f"unexpected Git command: {words}")
+
+    monkeypatch.setattr(remote, "_git", git_result)
+
+    result = remote.integrate(local, remote.RemoteStatus("main", ahead=1, behind=1), push=True)
+
+    assert result == remote.Result(
+        errors=(
+            "sync: rebase onto origin/main failed",
+            "sync: rebase --abort failed: abort blocked; inspect git status and recover manually before continuing",
+        )
+    )
+    assert calls == [("rebase", "origin/main"), ("rebase", "--abort")]
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="the rejecting hook is a POSIX script")
 def test_rejected_push_keeps_pulled_commits_and_reports_the_error(
     pair: tuple[Path, Path], tmp_path: Path
@@ -225,6 +272,21 @@ def test_dirty_paths_lists_changes_and_renames(
     (local / "new.md").write_text("new\n", encoding="utf-8")
 
     assert sorted(remote.dirty_paths(local)) == ["new.md", "renamed.txt"]
+
+
+def test_dirty_paths_are_content_relative_and_keep_outside_paths_distinct(
+    pair: tuple[Path, Path],
+) -> None:
+    local, _ = pair
+    content = local / "content"
+    content.mkdir()
+    (content / "seed.txt").write_text("content\n", encoding="utf-8")
+    git(local, "add", "content/seed.txt")
+    git(local, "commit", "-q", "-m", "Add content subdirectory")
+    (content / "inside.md").write_text("inside\n", encoding="utf-8")
+    (local / "outside.md").write_text("outside\n", encoding="utf-8")
+
+    assert sorted(remote.dirty_paths(content)) == ["../outside.md", "inside.md"]
 
 
 def test_dirty_paths_reports_a_directory_that_is_not_a_repository(tmp_path: Path) -> None:

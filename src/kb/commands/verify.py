@@ -1,12 +1,12 @@
 """kb verify: set an article's verification date and a required valid TTL."""
 
 import os
+import stat
 import sys
-import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
-from kb import args, corpus, lint, lock, model, secrets
+from kb import args, corpus, lint, lock, model, scratch
 from kb.args import Spec
 from kb.context import Context, load
 from kb.errors import KbError
@@ -40,7 +40,7 @@ def run(words: Sequence[str]) -> int:
     try:
         context = load(os.environ, sys.platform, Path.home())
         relpath = _article_path(context.root, parsed.words[0])
-        git = lock.git_dir_path(context.root, WHO)
+        git = lock.git_dir(context.root, WHO)
         ttl = _verify(context, relpath, git, ttl_override, wait)
     except lock.LockBusy as busy:
         raise KbError(
@@ -148,22 +148,15 @@ def _verify(
             )
             raise KbError(f"{WHO}: proposed result has lint errors:\n{details}")
 
-        secret_findings = secrets.findings(Path(tempfile.gettempdir()), ttl)
-        if secret_findings:
-            detail = ", ".join(f"{name} at line {line}" for name, line in secret_findings)
-            raise KbError(f"{WHO}: --ttl was refused by the secrets check: {detail}")
-
         result = proposed_text_with_bom.encode("utf-8")
         if result == original:
             return ttl
 
-        scratch = git / "kb-tmp"
-        scratch.mkdir(parents=True, exist_ok=True)
-        temporary = scratch / f"verify-{os.urandom(4).hex()}.md"
+        scratch_directory = scratch.shared_directory(git, WHO)
+        temporary = scratch.create_file(
+            scratch_directory, "verify-", ".md", result, mode=stat.S_IMODE(article.stat().st_mode)
+        )
         try:
-            with temporary.open("xb") as handle:
-                handle.write(result)
-            temporary.chmod(article.stat().st_mode & 0o7777)
             temporary.replace(article)
         finally:
             temporary.unlink(missing_ok=True)

@@ -7,13 +7,14 @@ import shutil
 import socket
 import subprocess
 import sys
-from datetime import UTC, datetime
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 
-from kb import cli, lock, observation, write
-from kb.commands import gap
+from kb import cli, lock, observation, secrets, write
+from kb.commands import gap, sync
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "content"
 USAGE = "Usage: kb gap --title TITLE --body TEXT --context PATH\n"
@@ -25,14 +26,6 @@ GIT_ENV = {
     "GIT_COMMITTER_NAME": "Test Committer",
     "GIT_COMMITTER_EMAIL": "committer@example.invalid",
 }
-
-
-class FixedClock:
-    """A fixed instant for stable question filenames and metadata."""
-
-    @staticmethod
-    def now(tz: object = None) -> datetime:
-        return datetime(2026, 10, 26, 12, 0, 5, tzinfo=UTC)
 
 
 class FakeFcntl:
@@ -243,7 +236,7 @@ def test_success_writes_exact_bytes_commits_one_path_and_reads_back(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setattr(gap, "datetime", FixedClock)
+    monkeypatch.setenv("KB_NOW", "2026-10-26T12:00:05Z")
     monkeypatch.setattr(socket, "gethostname", lambda: "test-host.local")
     title = 'Say "hi" \\ café'
     body = "The owner is not listed."
@@ -279,6 +272,36 @@ def test_success_writes_exact_bytes_commits_one_path_and_reads_back(
     assert body in read_output
 
 
+def test_sync_recovery_at_lock_acquisition_does_not_remove_gap_scratch(
+    content: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    original_lock = lock.write_lock
+
+    @contextmanager
+    def recover_then_lock(git_directory: Path, wait: int, backend: lock.Backend) -> Iterator[None]:
+        sync._recover(content, git_directory, observation.short_host(socket.gethostname()))
+        with original_lock(git_directory, wait, backend):
+            yield
+
+    monkeypatch.setattr(lock, "write_lock", recover_then_lock)
+
+    status, out, err = run_gap(
+        capsys,
+        "--title",
+        "Recovery boundary",
+        "--body",
+        "Keep scratch.",
+        "--context",
+        "infra",
+    )
+
+    assert (status, err) == (0, "")
+    assert out.startswith("Wrote: questions/open/")
+    assert list((content / ".git" / "kb-tmp").iterdir()) == []
+
+
 def test_secrets_in_each_supplied_field_are_refused_without_publication(
     content: Path,
     capsys: pytest.CaptureFixture[str],
@@ -312,7 +335,7 @@ def test_question_filename_collision_uses_a_new_random_suffix(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setattr(gap, "datetime", FixedClock)
+    monkeypatch.setenv("KB_NOW", "2026-10-26T12:00:05Z")
     first = content / "questions" / "open" / "20261026T120005-00000001.md"
     first.write_text("Existing collision.\n", encoding="utf-8")
     draws = iter(
@@ -329,6 +352,41 @@ def test_question_filename_collision_uses_a_new_random_suffix(
     assert git(content, "show", "--name-only", "--format=", "HEAD").split() == [
         "questions/open/20261026T120005-00000002.md"
     ]
+
+
+def test_a_record_name_collision_preserves_the_existing_scratch_file(
+    content: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    scratch = content / ".git" / "kb-tmp"
+    scratch.mkdir()
+    collision = scratch / "record-01020304.md"
+    collision.write_text("Keep this file.\n", encoding="utf-8")
+    draws = iter(
+        [
+            b"\xaa\xaa\xaa\xaa",
+            b"\x01\x02\x03\x04",
+            b"\x05\x06\x07\x08",
+            b"\x00\x00\x00\x01",
+        ]
+    )
+    monkeypatch.setattr(os, "urandom", lambda size: next(draws))
+
+    status, out, err = run_gap(
+        capsys,
+        "--title",
+        "Scratch collision",
+        "--body",
+        "Keep it.",
+        "--context",
+        "infra",
+    )
+
+    assert (status, err) == (0, "")
+    assert out.startswith("Wrote: questions/open/")
+    assert collision.read_text(encoding="utf-8") == "Keep this file.\n"
+    assert sorted(path.name for path in scratch.iterdir()) == [collision.name]
 
 
 def test_failed_staging_removes_the_new_question_and_preserves_existing_questions(
@@ -418,3 +476,58 @@ def test_rollback_failure_is_reported_and_keeps_the_question_for_recovery(
         question.relative_to(content).as_posix()
     ]
     assert list((content / ".git" / "kb-tmp").iterdir()) == []
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symbolic links need privilege")
+@pytest.mark.parametrize("relative", ["questions", "questions/open"])
+@pytest.mark.parametrize("target_kind", ["internal", "external"])
+def test_refuses_publication_through_a_symlinked_directory(
+    content: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    relative: str,
+    target_kind: str,
+) -> None:
+    external = content / "safe-area" if target_kind == "internal" else tmp_path / "external"
+    external.mkdir()
+    if relative == "questions":
+        external_open = external / "open"
+        external_open.mkdir()
+    else:
+        external_open = external
+    existing = external_open / "existing.md"
+    existing.write_text("keep", encoding="utf-8")
+    link = content / relative
+    link.rename(tmp_path / "original-directory")
+    try:
+        link.symlink_to(external, target_is_directory=True)
+    except (NotImplementedError, OSError) as error:
+        pytest.skip(f"symlink creation unavailable: {error}")
+    names = sorted(path.relative_to(external) for path in external.rglob("*"))
+    index = git(content, "ls-files", "--stage")
+    scan_calls: list[Path] = []
+
+    def track_scan(directory: Path, _text: str) -> list[tuple[str, int]]:
+        scan_calls.append(directory)
+        return []
+
+    monkeypatch.setattr(write, "_commit", lambda *_args: None)
+    monkeypatch.setattr(secrets, "findings", track_scan)
+
+    status, out, err = run_gap(
+        capsys,
+        "--title",
+        "Unsafe path",
+        "--body",
+        "Keep outside.",
+        "--context",
+        "infra",
+    )
+
+    assert (status, out) == (1, "")
+    assert "content directory is a symlink" in err
+    assert scan_calls == []
+    assert sorted(path.relative_to(external) for path in external.rglob("*")) == names
+    assert existing.read_text(encoding="utf-8") == "keep"
+    assert git(content, "ls-files", "--stage") == index

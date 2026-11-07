@@ -177,6 +177,11 @@ On success stdout is `Wrote: questions/open/<file>` and the exit status is 0.
 Usage errors print the usage line. Other failures print nothing to stdout, use
 the `gap:` prefix on stderr, and exit 1.
 
+`kb observe` and `kb gap` use the current UTC time for both `created` and the
+filename. Set `KB_NOW` to a timezone-aware ISO timestamp to fix that clock;
+offsets are normalized to UTC. An invalid value refuses the command before
+publication.
+
 ### Curation commands
 
 `kb lint`, `kb verify`, and `kb resolve` are curator commands. They do not
@@ -413,24 +418,36 @@ to it. Blocking findings refuse finish and are printed. Findings that already
 existed in unchanged articles print under `Preexisting (not blocking):` with
 their count and do not stop publication.
 
+Before creating a new finish commit, every completed archive must still match
+its recorded hash and have no pending copy. Incorporated and duplicate outcomes
+must still name the recorded destination locators and headings. Missing or
+changed archives and destinations refuse publication without changing files or
+staging. A retry after the publication commit already exists publishes that
+commit instead of creating another.
+
 Finish stages exactly the publication set, checks the staged paths against it,
 and commits once. The message lists the counts, each article changed, every
 outcome with its locator or reason, and each question resolved. The commit runs
-the content hook. If the commit fails, finish unstages only the paths it staged
-and leaves every file as it was. After the commit, finish fetches, rebases, and
-pushes. A rebase conflict or a failed push exits 1 with `Committed locally; not
-published`. Resolve the cause, then run `kb sync` or repeat `kb curate finish
-RUN`; the repeat pushes the existing commit and makes no other. `--no-push`
-stops after the commit. Success prints the commit hash and `Published:
-origin/BRANCH`. A repeated finish after publication prints `Already published`.
+the content hook. If the commit fails before it is created, finish unstages
+only the paths it staged and leaves worktree bytes unchanged. If Git cannot
+unstage them, finish preserves the files and reports the paths that need
+inspection. When an interrupted commit's outcome cannot be established, finish
+preserves its files and index and directs you to inspect Git status and HEAD
+before retrying. After the commit, finish fetches, rebases, and pushes. A rebase
+conflict or a failed push exits 1 with `Committed locally; not published`.
+Resolve the cause, then run `kb sync` or repeat `kb curate finish RUN`; the
+repeat pushes the existing commit and makes no other. `--no-push` stops after
+the commit. Success prints the commit hash and `Published: origin/BRANCH`. A
+repeated finish after publication prints `Already published`.
 
 `kb curate status` reports the publication state from local refs: unpublished,
 committed locally, or published as the commit that holds the manifest.
 
 ### Content pre-commit hook
 
-`kb hook pre-commit` is the content repository's Git pre-commit hook. Git runs
-it with the content repository as the working directory. `kb setup` installs a
+`kb hook pre-commit` is the content repository's Git pre-commit hook. Git may
+run it from the repository root; the hook reads the configured content root and
+converts Git paths before validating staged articles. `kb setup` installs a
 three-line script that calls this command by its absolute path. See
 [`kb setup`](#kb-setup).
 
@@ -438,14 +455,26 @@ three-line script that calls this command by its absolute path. See
   `sources/`, or an archive, exits at once without output.
 - An article staged with unstaged worktree changes refuses the commit. Stage or
   discard the other changes first.
-- Staged articles are validated as `kb curate finish` validates them. Blocking
-  findings reject the commit and modify nothing.
+- The hook validates the effective Git index, including a temporary index for
+  a path-limited commit. Untracked targets and anchors present only in unstaged
+  edits cannot satisfy references. `kb curate finish` validates the worktree
+  before staging. Blocking findings reject the commit and modify nothing.
+- An unchanged article's reference blocks publication when it was valid in HEAD
+  and becomes invalid in the proposed snapshot, including after section removal
+  or a target rename. References that were already invalid remain preexisting.
 - After validation, `updated` is set to today's UTC date on each staged article
   whose value differs, and the article is staged again. A missing `updated` is
   not added, and `verified` and `ttl` are never changed.
 - A commit made through a temporary index, as `git commit -- PATH` does, is
   validated but not stamped. The hook reports each article that keeps its older
   value.
+- Article symlinks must resolve inside the content root in the selected snapshot.
+  Relative Markdown links use the article link's directory as their base, even
+  when its target is in another directory. Internal links retain their link text.
+  Stamping writes the target only when Git reports no unstaged target changes.
+  When the target is also in the
+  staged article set, its stamp is staged; otherwise the target's stamp remains
+  an unstaged worktree change. Staging a link never stages unrelated target edits.
 - The hook takes no writer lock. Commands that already hold the lock can commit
   through it without waiting.
 
@@ -498,7 +527,18 @@ The write takes one lock: an exclusive kernel lock on `<git dir>/kb.lock`, which
 kernel releases when the process exits.
 
 Temporary files for a write live in `<git dir>/kb-tmp` and are removed on every
-path.
+path. Writers acquire the common lock before creating or scanning shared scratch.
+Files that hold supplied or transcript text use mode `0600` on POSIX. Scratch
+files are created exclusively; a name collision leaves the existing file
+untouched. `sync --dry-run` uses a standalone private temporary directory and
+does not acquire the writer lock.
+
+After a staging or commit error, `observe`, `gap`, and `sync` remove new files
+only after confirming that Git did not commit them. If Git cannot establish the
+outcome, the commands preserve the files and index and report that you must
+inspect Git status and HEAD before retrying. If Git cannot remove the staged
+paths during rollback, the commands keep the working files and report which
+paths need inspection.
 
 ### `kb sync`
 
@@ -551,6 +591,41 @@ run stops before its observation commit, the next run removes that run's
 uncommitted transcript observations and temporary scanner files, then retries
 from the source transcripts. Re-running after a successful harvest does not
 duplicate committed messages.
+
+Transcript identity preserves explicit message IDs and UUIDs. When they are
+missing, shell calls use the host's tool-call identity where available. A
+synthetic command identity includes the app, original timestamp, role, retained
+text, and ordered commands in an unambiguous encoding. Repeated identical calls
+without host IDs receive stable occurrence IDs within that identity group.
+Appending records does not renumber earlier calls. Text-only synthetic IDs and
+Goose identities retain their previous rules.
+
+New transcript observations record the complete ordered `message_ids` list as
+well as the existing first and last pointers. This additive field identifies
+exactly which messages the observation owns; old files remain unchanged. A
+malformed list refuses harvesting rather than silently discarding saved state.
+
+For older observations without the list, reconstruction uses the old identity
+and first-occurrence deduplication rules to identify the messages actually
+retained. The parsers keep transient legacy identities for this comparison.
+Calls previously dropped by an identity collision are recovered separately,
+including calls before a saved endpoint or at the same timestamp. If the
+original transcript is absent, an available copy of its prefix with matching
+legacy endpoints supplies the range. With no matching copy, the existing
+endpoint-only ownership fallback remains.
+
+Subsequent harvests exclude the exact messages already committed for that
+session. Recovered holes in a shared legacy prefix do not turn the rest of that
+prefix into new fork content. Ordinary nonleading shared IDs retain their
+existing behavior. A genuinely missing pointer still produces the existing
+rewrite warning and timestamp fallback; timestamp fallback does not implement
+identity compatibility.
+
+Writers and sync recovery validate fixed content directories before scanning
+or changing them. A symlink in a directory component, whether it points inside
+or outside the content root, is refused. Recovery leaves individual symlink
+entries inside `observations/pending` untouched. This rule applies to fixed
+writable paths; readable article symlinks follow their own rules.
 
 Options:
 
@@ -743,6 +818,12 @@ gather its facts reports why, and the other checks still run.
 | `skills` | both packaged skills at both host destinations match the package | a skill is missing, differs, or is unmanaged | |
 | `allow-rules` | each host has every working-agent rule for its available shell tools and no broader `kb` rule | a rule is missing, a broader rule exists, or a Codex rules file is a symbolic link | |
 
+Decoded cache records are checked before reuse. Malformed fields make the cache
+stale and rebuild it from source files, even when its fingerprint and file stats
+match. Valid warm records are checked without tokenizing their source again.
+The cache is a trusted local pickle; these checks run after unpickling and do
+not make an untrusted pickle safe to load.
+
 - `capture` reports Claude Code's `cleanupPeriodDays`, which defaults to 30.
   Codex retention is reported as `unknown`, because its configuration documents
   no retention setting. Goose's sessions directory is checked with the other
@@ -825,6 +906,12 @@ just eval           # Score retrieval against the question sets under tests/fixt
 ```
 
 Run `just` to list every recipe.
+
+Test coverage includes branches and Python subprocesses, including CLI and Git
+hook executions. The E2E harness passes coverage's configuration into its isolated
+environments. `just test tests/e2e --cov-fail-under=0` reports E2E coverage alone;
+`just check` enforces the 90% floor across the full suite. `just package-check`
+separately validates the installed wheel in a clean environment.
 
 ## Releasing
 

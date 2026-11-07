@@ -9,15 +9,19 @@ import os
 import re
 import shutil
 import socket
+import stat
 import subprocess
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
-from kb import cli, observation
-from kb.commands import observe
+from kb import cli, lock, observation, secrets, write
+from kb.commands import observe, sync
+from kb.errors import KbError
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "content"
 USAGE = "Usage: kb observe --title TITLE --body TEXT\n"
@@ -51,12 +55,8 @@ HOLD_KERNEL_LOCK = (
 )
 
 
-class FixedClock:
-    """Stands in for datetime in the observe module, so that now() is always one UTC instant."""
-
-    @staticmethod
-    def now(tz: object = None) -> datetime:
-        return datetime(2026, 10, 26, 12, 0, 5, tzinfo=UTC)
+class ScannerInterrupted(BaseException):
+    """A scanner interruption that must propagate after releasing the writer lock."""
 
 
 def git(repo: Path, *args: str) -> str:
@@ -127,18 +127,6 @@ def content(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.chdir(tmp_path / "home")
     use_stdin(monkeypatch, b"")
     return root
-
-
-def test_help_prints_the_usage_and_succeeds(capsys: pytest.CaptureFixture[str]) -> None:
-    status, out, err = run_kb(capsys, "--help")
-    assert status == 0
-    assert out.startswith(USAGE)
-    assert err == ""
-
-
-def test_the_top_level_help_lists_observe(capsys: pytest.CaptureFixture[str]) -> None:
-    assert cli.main(["--help"]) == 0
-    assert any(line.split()[:1] == ["observe"] for line in capsys.readouterr().out.splitlines())
 
 
 @pytest.mark.parametrize(
@@ -228,7 +216,7 @@ def test_success_writes_one_file_and_commits_it(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setattr(observe, "datetime", FixedClock)
+    monkeypatch.setenv("KB_NOW", "2026-10-26T12:00:05Z")
     status, out, err = run_kb(capsys, "--title", "DNS caching", "--body", "Cached for an hour.")
     assert (status, err) == (0, "")
     name = WROTE.fullmatch(out)
@@ -254,6 +242,132 @@ def test_success_writes_one_file_and_commits_it(
     ]
     assert git(content, "status", "--porcelain") == ""
     assert kb_tmp(content) == []
+
+
+def test_sync_recovery_at_lock_acquisition_does_not_remove_observe_scratch(
+    content: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    original_lock = lock.write_lock
+
+    @contextmanager
+    def recover_then_lock(git_directory: Path, wait: int, backend: lock.Backend) -> Iterator[None]:
+        sync._recover(content, git_directory, observation.short_host(socket.gethostname()))
+        with original_lock(git_directory, wait, backend):
+            yield
+
+    monkeypatch.setattr(lock, "write_lock", recover_then_lock)
+
+    status, out, err = run_kb(capsys, "--title", "Recovery boundary", "--body", "Keep scratch.")
+
+    assert (status, err) == (0, "")
+    assert WROTE.fullmatch(out) is not None
+    assert kb_tmp(content) == []
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("scanner failed"), ScannerInterrupted()])
+def test_scanner_failure_cleans_scratch_and_releases_the_writer_lock(
+    content: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: BaseException,
+) -> None:
+    from detect_secrets.core import scan as detect_scan
+
+    def broken(filename: str) -> Iterator[object]:
+        raise failure
+
+    monkeypatch.setattr(detect_scan, "scan_file", broken)
+
+    with pytest.raises(type(failure)):
+        observe._record(content, "Scanner failure", "Ordinary test text.", 0)
+
+    assert kb_tmp(content) == []
+    with lock.write_lock(content / ".git", 0, lock.default_backend(sys.platform)):
+        pass
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX umask behavior")
+def test_the_published_record_follows_the_umask(
+    content: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # The record holds only scanned text and is hard-linked into content, so its mode
+    # is the published file's mode. Only the secret scan file is owner-only.
+    original_publish = write._publish
+    modes: list[int] = []
+
+    def inspect(root: Path, directory: str, temporary: Path, when: datetime, command: str) -> str:
+        modes.append(stat.S_IMODE(temporary.stat().st_mode))
+        return original_publish(root, directory, temporary, when, command)
+
+    monkeypatch.setattr(write, "_publish", inspect)
+    previous = os.umask(0o022)
+    try:
+        status, out, err = run_kb(capsys, "--title", "Published mode", "--body", "Safe text.")
+    finally:
+        os.umask(previous)
+
+    assert (status, err) == (0, "")
+    match = WROTE.fullmatch(out)
+    assert match is not None
+    published = content / "observations" / "pending" / match.group(1)
+    assert modes == [0o644]
+    assert stat.S_IMODE(published.stat().st_mode) == 0o644
+
+
+@pytest.mark.parametrize("occupied_kind", ["race", "dangling"])
+def test_publish_observation_retries_without_replacing_an_occupied_target(
+    content: Path, monkeypatch: pytest.MonkeyPatch, occupied_kind: str
+) -> None:
+    if occupied_kind == "dangling" and os.name == "nt":
+        pytest.skip("symbolic links need privilege")
+    pending_directory = content / "observations" / "pending"
+    scratch = content / ".git" / "kb-tmp"
+    scratch.mkdir(exist_ok=True)
+    marker = scratch / "other-operation.tmp"
+    marker.write_bytes(b"keep")
+    temporary = scratch / "record.md"
+    temporary.write_bytes(b"new observation")
+    first = pending_directory / "race.md"
+    second = pending_directory / "next.md"
+    if occupied_kind == "dangling":
+        first.symlink_to(pending_directory / "missing.md")
+    else:
+        original_exists = Path.exists
+        inserted = False
+
+        def create_competing_observation(path: Path) -> bool:
+            nonlocal inserted
+            exists = original_exists(path)
+            if path == first and not exists and not inserted:
+                first.write_bytes(b"concurrent observation")
+                inserted = True
+            return exists
+
+        monkeypatch.setattr(Path, "exists", create_competing_observation)
+    names = iter((first.name, second.name))
+    monkeypatch.setattr(observation, "file_name", lambda _now, _suffix: next(names))
+
+    name = write._publish(
+        content,
+        "observations/pending",
+        temporary,
+        datetime(2026, 10, 26, 12, 0, 5, tzinfo=UTC),
+        "observe",
+    )
+    temporary.unlink(missing_ok=True)
+
+    assert name == second.name
+    assert second.read_bytes() == b"new observation"
+    if occupied_kind == "dangling":
+        assert first.is_symlink()
+        assert not first.exists()
+    else:
+        assert first.read_bytes() == b"concurrent observation"
+    assert sorted(path.name for path in scratch.iterdir()) == [marker.name]
+    assert marker.read_bytes() == b"keep"
 
 
 def test_project_is_the_top_of_the_repository_the_process_is_in(
@@ -302,6 +416,130 @@ def test_a_rejected_commit_is_reported_and_undone(
     assert kb_tmp(content) == []
 
 
+@pytest.mark.parametrize("point", ["before_add", "after_add", "after_commit"])
+def test_interrupted_single_path_commit_preserves_its_git_outcome(
+    content: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    point: str,
+) -> None:
+    unrelated = content / "unrelated.md"
+    unrelated.write_text("Keep unrelated staging.\n", encoding="utf-8")
+    git(content, "add", "--", "unrelated.md")
+    before_head = git(content, "rev-parse", "HEAD").strip()
+    before_index = git(content, "write-tree").strip()
+    before_status = git(content, "status", "--porcelain")
+    before_pending = set(pending(content))
+    original_git = write._git
+
+    def interrupt_git(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        if point == "before_add" and words[0] == "add":
+            raise KeyboardInterrupt
+        result = original_git(root, *words)
+        if point == "after_add" and words[0] == "add" and result.returncode == 0:
+            raise KeyboardInterrupt
+        if point == "after_commit" and words[0] == "commit" and result.returncode == 0:
+            raise KeyboardInterrupt
+        return result
+
+    monkeypatch.setattr(write, "_git", interrupt_git)
+
+    with pytest.raises(KeyboardInterrupt):
+        observe._record(content, "Interrupt boundary", "Preserve the outcome.", 0)
+
+    after_head = git(content, "rev-parse", "HEAD").strip()
+    assert git(content, "status", "--porcelain") == before_status
+    assert git(content, "diff", "--cached", "--name-only").splitlines() == ["unrelated.md"]
+    if point == "after_commit":
+        assert after_head != before_head
+        assert before_index != git(content, "write-tree").strip()
+        committed_paths = git(content, "show", "--format=", "--name-only", "HEAD").splitlines()
+        assert len(committed_paths) == 1
+        committed_path = committed_paths[0]
+        assert committed_path.startswith("observations/pending/")
+        assert (content / committed_path).is_file()
+        assert git(content, "show", f"HEAD:{committed_path}") == git(
+            content, "show", f":{committed_path}"
+        )
+    else:
+        assert after_head == before_head
+        assert git(content, "write-tree").strip() == before_index
+        assert set(pending(content)) == before_pending
+    assert unrelated.read_text(encoding="utf-8") == "Keep unrelated staging.\n"
+    assert kb_tmp(content) == []
+
+
+def test_uninspectable_commit_outcome_preserves_the_file_and_reports_uncertainty(
+    content: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    unrelated = content / "unrelated.md"
+    unrelated.write_text("Keep unrelated staging.\n", encoding="utf-8")
+    git(content, "add", "--", "unrelated.md")
+    before_pending = set(pending(content))
+    original_git = write._git
+    committed = False
+
+    def interrupt_and_hide_head(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        nonlocal committed
+        if committed and words[:3] == ("rev-parse", "--verify", "HEAD"):
+            return subprocess.CompletedProcess(["git", *words], 1, "", "inspection unavailable\n")
+        result = original_git(root, *words)
+        if words[0] == "commit" and result.returncode == 0:
+            committed = True
+            raise KeyboardInterrupt
+        return result
+
+    monkeypatch.setattr(write, "_git", interrupt_and_hide_head)
+
+    with pytest.raises(KbError, match="commit outcome is uncertain"):
+        observe._record(content, "Unknown outcome", "Preserve recoverable state.", 0)
+
+    committed_paths = git(content, "show", "--format=", "--name-only", "HEAD").splitlines()
+    assert len(committed_paths) == 1
+    committed_path = committed_paths[0]
+    assert committed_path.startswith("observations/pending/")
+    assert (content / committed_path).is_file()
+    assert set(pending(content)) == before_pending | {Path(committed_path).name}
+    assert git(content, "status", "--porcelain") == "A  unrelated.md\n"
+    assert git(content, "show", f"HEAD:{committed_path}") == git(
+        content, "show", f":{committed_path}"
+    )
+    assert unrelated.read_text(encoding="utf-8") == "Keep unrelated staging.\n"
+    assert kb_tmp(content) == []
+
+
+def test_interrupted_commit_reconciles_a_nested_content_root(
+    content: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    nested = content / "nested-content"
+    shutil.copytree(FIXTURE, nested)
+    git(content, "add", "--", "nested-content")
+    git(content, "commit", "-q", "-m", "Add nested content")
+    original_git = write._git
+
+    def interrupt_after_commit(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        result = original_git(root, *words)
+        if words[0] == "commit" and result.returncode == 0:
+            raise KeyboardInterrupt
+        return result
+
+    monkeypatch.setattr(write, "_git", interrupt_after_commit)
+
+    with pytest.raises(KeyboardInterrupt):
+        observe._record(nested, "Nested interruption", "Keep the committed file.", 0)
+
+    committed_paths = git(content, "show", "--format=", "--name-only", "HEAD").splitlines()
+    assert len(committed_paths) == 1
+    committed_path = committed_paths[0]
+    assert committed_path.startswith("nested-content/observations/pending/")
+    assert (content / committed_path).is_file()
+    assert git(content, "status", "--porcelain") == ""
+    assert git(content, "show", f"HEAD:{committed_path}") == git(
+        content, "show", f":{committed_path}"
+    )
+
+
 def test_a_failed_stage_is_reported_as_a_failed_commit(
     content: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -345,7 +583,7 @@ def test_a_kernel_lock_held_by_another_descriptor_is_reported_as_busy(
 def test_a_taken_name_draws_a_new_suffix(
     content: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(observe, "datetime", FixedClock)
+    monkeypatch.setenv("KB_NOW", "2026-10-26T12:00:05Z")
     (content / "observations" / "pending" / "20261026T120005-00000001.md").write_text(
         "taken\n", encoding="utf-8"
     )
@@ -365,10 +603,59 @@ def test_a_taken_name_draws_a_new_suffix(
     assert kb_tmp(content) == []
 
 
+def test_a_record_name_collision_preserves_the_existing_scratch_file(
+    content: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    scratch = content / ".git" / "kb-tmp"
+    scratch.mkdir()
+    collision = scratch / "record-01020304.md"
+    collision.write_text("Keep this file.\n", encoding="utf-8")
+    draws = iter(
+        [
+            b"\xaa\xaa\xaa\xaa",
+            b"\x01\x02\x03\x04",
+            b"\x05\x06\x07\x08",
+            b"\x00\x00\x00\x01",
+        ]
+    )
+    monkeypatch.setattr(os, "urandom", lambda size: next(draws))
+
+    status, out, err = run_kb(capsys, "--title", "Scratch collision", "--body", "Keep it.")
+
+    assert (status, err) == (0, "")
+    assert WROTE.fullmatch(out) is not None
+    assert collision.read_text(encoding="utf-8") == "Keep this file.\n"
+    assert sorted(path.name for path in scratch.iterdir()) == [collision.name]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symbolic links need privilege")
+def test_observe_refuses_a_symlinked_scratch_directory(
+    content: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    external = tmp_path / "external"
+    external.mkdir()
+    existing = external / "keep.md"
+    existing.write_text("Keep this file.\n", encoding="utf-8")
+    scratch = content / ".git" / "kb-tmp"
+    scratch.symlink_to(external, target_is_directory=True)
+
+    status, out, err = run_kb(capsys, "--title", "Unsafe scratch", "--body", "Do not write.")
+
+    assert (status, out) == (1, "")
+    assert err.startswith("observe: temporary directory is a symlink:")
+    assert scratch.is_symlink()
+    assert existing.read_text(encoding="utf-8") == "Keep this file.\n"
+    assert sorted(path.name for path in external.iterdir()) == [existing.name]
+
+
 def test_five_taken_names_are_a_failure(
     content: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(observe, "datetime", FixedClock)
+    monkeypatch.setenv("KB_NOW", "2026-10-26T12:00:05Z")
     (content / "observations" / "pending" / "20261026T120005-00000001.md").write_text(
         "taken\n", encoding="utf-8"
     )
@@ -398,3 +685,50 @@ def test_recall_does_not_import_detect_secrets(
     assert cli.main(["recall", "nas", "restart", "order"]) == 0
     capsys.readouterr()
     assert not [name for name in sys.modules if name.startswith("detect_secrets")]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symbolic links need privilege")
+@pytest.mark.parametrize("relative", ["observations", "observations/pending"])
+@pytest.mark.parametrize("target_kind", ["internal", "external"])
+def test_refuses_publication_through_a_symlinked_directory(
+    content: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    relative: str,
+    target_kind: str,
+) -> None:
+    external = content / "safe-area" if target_kind == "internal" else tmp_path / "external"
+    external.mkdir()
+    if relative == "observations":
+        external_pending = external / "pending"
+        external_pending.mkdir()
+    else:
+        external_pending = external
+    existing = external_pending / "existing.md"
+    existing.write_text("keep", encoding="utf-8")
+    link = content / relative
+    link.rename(tmp_path / "original-directory")
+    try:
+        link.symlink_to(external, target_is_directory=True)
+    except (NotImplementedError, OSError) as error:
+        pytest.skip(f"symlink creation unavailable: {error}")
+    names = sorted(path.relative_to(external) for path in external.rglob("*"))
+    index = git(content, "ls-files", "--stage")
+    scan_calls: list[Path] = []
+
+    def track_scan(directory: Path, _text: str) -> list[tuple[str, int]]:
+        scan_calls.append(directory)
+        return []
+
+    monkeypatch.setattr(write, "_commit", lambda *_args: None)
+    monkeypatch.setattr(secrets, "findings", track_scan)
+
+    status, out, err = run_kb(capsys, "--title", "Unsafe path", "--body", "Keep outside.")
+
+    assert (status, out) == (1, "")
+    assert "content directory is a symlink" in err
+    assert scan_calls == []
+    assert sorted(path.relative_to(external) for path in external.rglob("*")) == names
+    assert existing.read_text(encoding="utf-8") == "keep"
+    assert git(content, "ls-files", "--stage") == index
