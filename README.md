@@ -585,6 +585,35 @@ uncommitted transcript observations and temporary scanner files, then retries
 from the source transcripts. Re-running after a successful harvest does not
 duplicate committed messages.
 
+Transcript identity preserves explicit message IDs and UUIDs. When they are
+missing, shell calls use the host's tool-call identity where available. A
+synthetic command identity includes the app, original timestamp, role, retained
+text, and ordered commands in an unambiguous encoding. Repeated identical calls
+without host IDs receive stable occurrence IDs within that identity group.
+Appending records does not renumber earlier calls. Text-only synthetic IDs and
+Goose identities retain their previous rules.
+
+New transcript observations record the complete ordered `message_ids` list as
+well as the existing first and last pointers. This additive field identifies
+exactly which messages the observation owns; old files remain unchanged. A
+malformed list refuses harvesting rather than silently discarding saved state.
+
+For older observations without the list, reconstruction uses the old identity
+and first-occurrence deduplication rules to identify the messages actually
+retained. The parsers keep transient legacy identities for this comparison.
+Calls previously dropped by an identity collision are recovered separately,
+including calls before a saved endpoint or at the same timestamp. If the
+original transcript is absent, an available copy of its prefix with matching
+legacy endpoints supplies the range. With no matching copy, the existing
+endpoint-only ownership fallback remains.
+
+Subsequent harvests exclude the exact messages already committed for that
+session. Recovered holes in a shared legacy prefix do not turn the rest of that
+prefix into new fork content. Ordinary nonleading shared IDs retain their
+existing behavior. A genuinely missing pointer still produces the existing
+rewrite warning and timestamp fallback; timestamp fallback does not implement
+identity compatibility.
+
 Writers and sync recovery validate fixed content directories before scanning
 or changing them. A symlink in a directory component, whether it points inside
 or outside the content root, is refused. Recovery leaves individual symlink

@@ -573,6 +573,18 @@ def _record_from_document(document: model.Document) -> harvest.HarvestRecord | N
     session_id = document.scalar("session")
     part_text = document.scalar("part")
     part = int(part_text) if part_text and part_text.isascii() and part_text.isdigit() else None
+    message_ids = document.front.get("message_ids")
+    if message_ids is not None and (
+        not isinstance(message_ids, tuple)
+        or not message_ids
+        or not all(message_ids)
+        or len(set(message_ids)) != len(message_ids)
+        or message_ids[0] != document.scalar("first_message")
+        or message_ids[-1] != document.scalar("last_message")
+        or len(message_ids) != sum(section.level == 2 for section in document.sections)
+    ):
+        raise KbError(f"sync: invalid message_ids in committed observation {document.path}")
+    assert message_ids is None or isinstance(message_ids, tuple)
     return harvest.HarvestRecord(
         source=source,
         host=host,
@@ -585,6 +597,7 @@ def _record_from_document(document: model.Document) -> harvest.HarvestRecord | N
         ended=parse_timestamp(document.scalar("ended")),
         created=parse_timestamp(document.scalar("created")),
         forked_from=document.scalar("forked_from"),
+        message_ids=message_ids,
     )
 
 

@@ -1549,3 +1549,20 @@ def test_sync_remote_handles_ahead_behind_and_push_modes(
     assert sync._sync_remote(Path(), status, no_push) == (actions, errors)
     if errors and "rebase" in errors[0]:
         assert calls[-1] == ("rebase", "--abort")
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        'message_ids: "message-1"\n',
+        "message_ids:\n",
+        'message_ids:\n  - "other"\n',
+        'message_ids:\n  - "message-1"\n  - "message-1"\n',
+        'message_ids:\n  - ""\n',
+    ],
+)
+def test_malformed_exact_message_membership_refuses_committed_state(field: str) -> None:
+    text = observation_text().replace("part: 1\n", "part: 1\n" + field)
+    text = text.replace("Body.", "## 1. user, 2026-10-26T09:00:00Z\n\nBody.")
+    with pytest.raises(KbError, match="invalid message_ids in committed observation"):
+        sync._record_from_document(model.parse("saved.md", text))

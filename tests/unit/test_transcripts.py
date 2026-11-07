@@ -137,3 +137,14 @@ def test_read_store_scans_each_path_and_counts_the_unreadable_ones(tmp_path: Pat
     store = read_store([good, bad], scan)
     assert seen == ["good.jsonl"]
     assert (store.files, store.unreadable, store.calls) == (2, 1, ())
+
+
+def test_command_identity_distinguishes_command_boundaries_and_order() -> None:
+    from kb.transcripts import synthetic_command_id
+
+    values = (("a", "b"), ("a\x00b",), ("b", "a"), ("a", "b", ""))
+    identities = [
+        synthetic_command_id("codex", "2026-10-25T08:00:00Z", "assistant", "", commands)
+        for commands in values
+    ]
+    assert len(set(identities)) == len(values)

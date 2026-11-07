@@ -126,6 +126,8 @@ def render(
             f"part: {part}",
             f'first_message: "{escape(messages[0].id)}"',
             f'last_message: "{escape(messages[-1].id)}"',
+            "message_ids:",
+            *(f'  - "{escape(message.id)}"' for message in messages),
             f"started: {started}",
             f"ended: {ended}",
             f"created: {timestamp_text(created)}",
@@ -176,6 +178,8 @@ def validate(
         for field, expected_value in expected.items()
         if document.front.get(field) != expected_value
     ]
+    if document.front.get("message_ids") != tuple(message.id for message in messages):
+        failures.append("message_ids")
     for optional in ("parent_session", "forked_from"):
         if optional not in expected and optional in document.front:
             failures.append(optional)

@@ -1,8 +1,9 @@
 """The neutral model shared by the host transcript parsers and sync logic."""
 
 import hashlib
+import json
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -24,6 +25,9 @@ class Message:
     role: Role
     text: str
     commands: tuple[str, ...] = ()
+    legacy_id: str | None = None
+    synthetic_command: bool = False
+    legacy_duplicate: bool = False
 
 
 @dataclass(frozen=True)
@@ -79,17 +83,42 @@ def synthetic_id(app: App, timestamp: str, role: Role, text: str) -> str:
 
 
 def unique_messages(messages: Sequence[Message]) -> tuple[tuple[Message, ...], int]:
-    """Keep the first occurrence of each message ID and return the duplicate count."""
+    """Deduplicate host IDs; count anonymous calls and retain their old identity membership."""
     seen: set[str] = set()
+    legacy_seen: set[str] = set()
+    occurrences: dict[str, int] = {}
     kept: list[Message] = []
     duplicates = 0
     for message in messages:
+        if message.synthetic_command:
+            occurrence = occurrences.get(message.id, 0) + 1
+            occurrences[message.id] = occurrence
+            message = replace(message, id=f"{message.id}-{occurrence}")
         if message.id in seen:
             duplicates += 1
             continue
         seen.add(message.id)
+        legacy = message.legacy_id or message.id
+        message = replace(message, legacy_duplicate=legacy in legacy_seen)
+        legacy_seen.add(legacy)
         kept.append(message)
     return tuple(kept), duplicates
+
+
+def synthetic_command_id(
+    app: App, timestamp: str, role: Role, text: str, commands: tuple[str, ...]
+) -> str:
+    """Hash structured retained content; unique_messages adds a stable occurrence suffix."""
+    material = json.dumps((app, timestamp, role, text, commands), ensure_ascii=True).encode("utf-8")
+    return "cmd-" + hashlib.sha256(material).hexdigest()[:16]
+
+
+def tool_call_id(ids: Sequence[str]) -> str:
+    """Use one host call ID verbatim, or an unambiguous identity for an ordered group."""
+    if len(ids) == 1:
+        return ids[0]
+    material = json.dumps(tuple(ids), ensure_ascii=True).encode("utf-8")
+    return "tools-" + hashlib.sha256(material).hexdigest()[:16]
 
 
 def text_of(value: object) -> str | None:

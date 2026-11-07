@@ -1,0 +1,6 @@
+{"type":"user","uuid":"user","timestamp":"2026-10-25T07:59:00Z","message":{"role":"user","content":[{"type":"text","text":"Start the task."}]}}
+{"type":"assistant","timestamp":"2026-10-25T08:00:00Z","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"echo first"}}]}}
+{"type":"assistant","timestamp":"2026-10-25T08:00:00Z","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"echo second"}}]}}
+{"type":"assistant","timestamp":"2026-10-25T08:00:00Z","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"echo first"}}]}}
+{"type":"assistant","uuid":"answer","timestamp":"2026-10-25T08:01:00Z","message":{"role":"assistant","content":[{"type":"text","text":"Finished the original task."}]}}
+{"type":"user","uuid":"fork-only","timestamp":"2026-10-25T08:02:00Z","message":{"role":"user","content":[{"type":"text","text":"Only in the fork."}]}}
