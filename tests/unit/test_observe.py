@@ -21,6 +21,7 @@ import pytest
 
 from kb import cli, lock, observation, secrets, write
 from kb.commands import observe, sync
+from kb.errors import KbError
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "content"
 USAGE = "Usage: kb observe --title TITLE --body TEXT\n"
@@ -375,6 +376,130 @@ def test_a_rejected_commit_is_reported_and_undone(
     assert pending(content) == before
     assert git(content, "diff", "--cached", "--name-only") == ""
     assert kb_tmp(content) == []
+
+
+@pytest.mark.parametrize("point", ["before_add", "after_add", "after_commit"])
+def test_interrupted_single_path_commit_preserves_its_git_outcome(
+    content: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    point: str,
+) -> None:
+    unrelated = content / "unrelated.md"
+    unrelated.write_text("Keep unrelated staging.\n", encoding="utf-8")
+    git(content, "add", "--", "unrelated.md")
+    before_head = git(content, "rev-parse", "HEAD").strip()
+    before_index = git(content, "write-tree").strip()
+    before_status = git(content, "status", "--porcelain")
+    before_pending = set(pending(content))
+    original_git = write._git
+
+    def interrupt_git(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        if point == "before_add" and words[0] == "add":
+            raise KeyboardInterrupt
+        result = original_git(root, *words)
+        if point == "after_add" and words[0] == "add" and result.returncode == 0:
+            raise KeyboardInterrupt
+        if point == "after_commit" and words[0] == "commit" and result.returncode == 0:
+            raise KeyboardInterrupt
+        return result
+
+    monkeypatch.setattr(write, "_git", interrupt_git)
+
+    with pytest.raises(KeyboardInterrupt):
+        observe._record(content, "Interrupt boundary", "Preserve the outcome.", 0)
+
+    after_head = git(content, "rev-parse", "HEAD").strip()
+    assert git(content, "status", "--porcelain") == before_status
+    assert git(content, "diff", "--cached", "--name-only").splitlines() == ["unrelated.md"]
+    if point == "after_commit":
+        assert after_head != before_head
+        assert before_index != git(content, "write-tree").strip()
+        committed_paths = git(content, "show", "--format=", "--name-only", "HEAD").splitlines()
+        assert len(committed_paths) == 1
+        committed_path = committed_paths[0]
+        assert committed_path.startswith("observations/pending/")
+        assert (content / committed_path).is_file()
+        assert git(content, "show", f"HEAD:{committed_path}") == git(
+            content, "show", f":{committed_path}"
+        )
+    else:
+        assert after_head == before_head
+        assert git(content, "write-tree").strip() == before_index
+        assert set(pending(content)) == before_pending
+    assert unrelated.read_text(encoding="utf-8") == "Keep unrelated staging.\n"
+    assert kb_tmp(content) == []
+
+
+def test_uninspectable_commit_outcome_preserves_the_file_and_reports_uncertainty(
+    content: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    unrelated = content / "unrelated.md"
+    unrelated.write_text("Keep unrelated staging.\n", encoding="utf-8")
+    git(content, "add", "--", "unrelated.md")
+    before_pending = set(pending(content))
+    original_git = write._git
+    committed = False
+
+    def interrupt_and_hide_head(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        nonlocal committed
+        if committed and words[:3] == ("rev-parse", "--verify", "HEAD"):
+            return subprocess.CompletedProcess(["git", *words], 1, "", "inspection unavailable\n")
+        result = original_git(root, *words)
+        if words[0] == "commit" and result.returncode == 0:
+            committed = True
+            raise KeyboardInterrupt
+        return result
+
+    monkeypatch.setattr(write, "_git", interrupt_and_hide_head)
+
+    with pytest.raises(KbError, match="commit outcome is uncertain"):
+        observe._record(content, "Unknown outcome", "Preserve recoverable state.", 0)
+
+    committed_paths = git(content, "show", "--format=", "--name-only", "HEAD").splitlines()
+    assert len(committed_paths) == 1
+    committed_path = committed_paths[0]
+    assert committed_path.startswith("observations/pending/")
+    assert (content / committed_path).is_file()
+    assert set(pending(content)) == before_pending | {Path(committed_path).name}
+    assert git(content, "status", "--porcelain") == "A  unrelated.md\n"
+    assert git(content, "show", f"HEAD:{committed_path}") == git(
+        content, "show", f":{committed_path}"
+    )
+    assert unrelated.read_text(encoding="utf-8") == "Keep unrelated staging.\n"
+    assert kb_tmp(content) == []
+
+
+def test_interrupted_commit_reconciles_a_nested_content_root(
+    content: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    nested = content / "nested-content"
+    shutil.copytree(FIXTURE, nested)
+    git(content, "add", "--", "nested-content")
+    git(content, "commit", "-q", "-m", "Add nested content")
+    original_git = write._git
+
+    def interrupt_after_commit(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        result = original_git(root, *words)
+        if words[0] == "commit" and result.returncode == 0:
+            raise KeyboardInterrupt
+        return result
+
+    monkeypatch.setattr(write, "_git", interrupt_after_commit)
+
+    with pytest.raises(KeyboardInterrupt):
+        observe._record(nested, "Nested interruption", "Keep the committed file.", 0)
+
+    committed_paths = git(content, "show", "--format=", "--name-only", "HEAD").splitlines()
+    assert len(committed_paths) == 1
+    committed_path = committed_paths[0]
+    assert committed_path.startswith("nested-content/observations/pending/")
+    assert (content / committed_path).is_file()
+    assert git(content, "status", "--porcelain") == ""
+    assert git(content, "show", f"HEAD:{committed_path}") == git(
+        content, "show", f":{committed_path}"
+    )
 
 
 def test_a_failed_stage_is_reported_as_a_failed_commit(

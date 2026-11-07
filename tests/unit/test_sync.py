@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from kb import config, dates, harvest, lock, model, observation, remote, secrets
+from kb import config, dates, harvest, lock, model, observation, remote, secrets, write
 from kb.commands import sync
 from kb.errors import KbError
 from kb.transcript_observation import ContentLine
@@ -1200,6 +1200,83 @@ def test_commit_observations_cleans_up_staging_and_paths_on_failure(
     monkeypatch.setattr(sync, "_git", lambda *args: next(calls))
     assert sync._commit_observations(root, (path,)) == "sync: commit failed"
     assert not (root / path).exists()
+
+
+def test_commit_observations_preserves_a_commit_with_an_interrupted_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = make_repo(tmp_path / "content")
+    for key, value in GIT_ENV.items():
+        monkeypatch.setenv(key, value)
+    paths = (
+        "observations/pending/first.md",
+        "observations/pending/second.md",
+    )
+    for index, path in enumerate(paths):
+        destination = root / path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(f"observation {index}\n", encoding="utf-8")
+    unrelated = root / "unrelated.md"
+    unrelated.write_text("staged separately\n", encoding="utf-8")
+    git(root, "add", "unrelated.md")
+    old_head = git(root, "rev-parse", "HEAD").strip()
+
+    run_git = sync._git
+
+    def interrupt_after_commit(worktree: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        result = run_git(worktree, *words)
+        if words[:2] == ("commit", "-q") and result.returncode == 0:
+            return completed(128, stderr="commit result interrupted")
+        return result
+
+    monkeypatch.setattr(sync, "_git", interrupt_after_commit)
+    assert sync._commit_observations(root, paths) is None
+
+    assert git(root, "rev-parse", "HEAD").strip() != old_head
+    for path in paths:
+        assert git(root, "show", f"HEAD:{path}") == (root / path).read_text(encoding="utf-8")
+        assert git(root, "show", f":{path}") == (root / path).read_text(encoding="utf-8")
+    assert git(root, "status", "--porcelain") == "A  unrelated.md\n"
+
+
+def test_commit_observations_preserves_files_when_outcome_inspection_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = make_repo(tmp_path / "content")
+    for key, value in GIT_ENV.items():
+        monkeypatch.setenv(key, value)
+    path = "observations/pending/uncertain.md"
+    destination = root / path
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text("preserve this observation\n", encoding="utf-8")
+    original_sync_git = sync._git
+    original_write_git = write._git
+    committed = False
+
+    def report_interrupted_commit(worktree: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        nonlocal committed
+        result = original_sync_git(worktree, *words)
+        if words[:2] == ("commit", "-q") and result.returncode == 0:
+            committed = True
+            return completed(128, stderr="commit result interrupted")
+        return result
+
+    def fail_head_inspection(worktree: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        if committed and words[:3] == ("rev-parse", "--verify", "HEAD"):
+            return completed(1, stderr="HEAD inspection unavailable\n")
+        return original_write_git(worktree, *words)
+
+    monkeypatch.setattr(sync, "_git", report_interrupted_commit)
+    monkeypatch.setattr(write, "_git", fail_head_inspection)
+    result = sync._commit_observations(root, (path,))
+
+    assert result is not None
+    assert "commit outcome is uncertain" in result
+    assert "HEAD inspection unavailable" in result
+    assert destination.read_text(encoding="utf-8") == "preserve this observation\n"
+    assert git(root, "show", f"HEAD:{path}") == destination.read_text(encoding="utf-8")
+    assert git(root, "show", f":{path}") == destination.read_text(encoding="utf-8")
+    assert git(root, "status", "--porcelain") == ""
 
 
 @pytest.mark.parametrize(

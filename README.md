@@ -505,6 +505,11 @@ files are created exclusively; a name collision leaves the existing file
 untouched. `sync --dry-run` uses a standalone private temporary directory and
 does not acquire the writer lock.
 
+After a staging or commit error, `observe`, `gap`, and `sync` remove new files
+only after confirming that Git did not commit them. If Git cannot establish the
+outcome, the commands preserve the files and index and report that you must
+inspect Git status and HEAD before retrying.
+
 ### `kb sync`
 
 `kb sync` harvests finished Claude Code, Codex, and Goose transcripts, commits
