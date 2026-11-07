@@ -266,3 +266,130 @@ def test_run_reports_usage_help_and_filesystem_errors(
     monkeypatch.setattr(hook, "pre_commit", unreadable)
     with pytest.raises(KbError, match="hook: disk unavailable"):
         hook.run(["pre-commit"])
+
+
+@pytest.mark.parametrize("target_state", ["untracked", "unstaged-anchor"])
+def test_references_must_resolve_in_the_index(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], target_state: str
+) -> None:
+    files = {"knowledge/a.md": ARTICLE.encode()}
+    if target_state == "unstaged-anchor":
+        files["knowledge/target.md"] = ARTICLE.encode()
+    root = repo(tmp_path / "content", files)
+    target = root / "knowledge/target.md"
+    target.write_text(ARTICLE + "\n## 2. Only in worktree\n", encoding="utf-8")
+    source = ARTICLE + "\nSee [target](target.md#2).\n"
+    stage_text(root, "knowledge/a.md", source)
+    before = git(root, "write-tree")
+
+    assert hook.pre_commit(root, NOW) == 1
+
+    assert "missing" in capsys.readouterr().err
+    assert git(root, "write-tree") == before
+    assert (root / "knowledge/a.md").read_text(encoding="utf-8") == source
+    assert target.read_text(encoding="utf-8") == ARTICLE + "\n## 2. Only in worktree\n"
+
+
+def test_external_article_symlinks_are_refused_without_writing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = repo(tmp_path / "content", {"knowledge/a.md": ARTICLE.encode()})
+    outside = tmp_path / "external.md"
+    outside.write_text(ARTICLE, encoding="utf-8")
+    link = root / "knowledge/alias.md"
+    link.symlink_to(outside)
+    git(root, "add", "--", "knowledge/alias.md")
+    before = git(root, "write-tree")
+
+    assert hook.pre_commit(root, NOW) == 1
+
+    assert "outside" in capsys.readouterr().err
+    assert outside.read_text(encoding="utf-8") == ARTICLE
+    assert link.is_symlink()
+    assert git(root, "write-tree") == before
+
+
+def test_internal_link_with_unstaged_target_is_refused(tmp_path: Path) -> None:
+    root = repo(tmp_path / "content", {"knowledge/real.md": ARTICLE.encode()})
+    link = root / "knowledge/alias.md"
+    link.symlink_to("real.md")
+    git(root, "add", "--", "knowledge/alias.md")
+    target = root / "knowledge/real.md"
+    edited = ARTICLE.replace("Nightly.", "Unstaged edit.")
+    target.write_text(edited, encoding="utf-8")
+    before = git(root, "write-tree")
+
+    assert hook.pre_commit(root, NOW) == 1
+
+    assert target.read_text(encoding="utf-8") == edited
+    assert git(root, "write-tree") == before
+    assert link.is_symlink()
+
+
+def test_an_internal_link_stamps_only_the_worktree_target_outside_the_change_set(
+    tmp_path: Path,
+) -> None:
+    root = repo(tmp_path / "content", {"knowledge/real.md": ARTICLE.encode()})
+    link = root / "knowledge/alias.md"
+    link.symlink_to("real.md")
+    git(root, "add", "--", "knowledge/alias.md")
+
+    assert hook.pre_commit(root, NOW) == 0
+
+    assert git(root, "show", ":knowledge/real.md") == ARTICLE
+    assert git(root, "show", ":knowledge/alias.md") == "real.md"
+    assert git(root, "diff", "--cached", "--name-only") == "knowledge/alias.md\n"
+    assert git(root, "diff", "--name-only") == "knowledge/real.md\n"
+    assert (root / "knowledge/real.md").read_text(encoding="utf-8") == ARTICLE.replace(
+        "updated: 2026-10-20", f"updated: {TODAY}"
+    )
+
+
+@pytest.mark.parametrize("target_state", ["head", "staged"])
+def test_references_to_indexed_targets_pass(tmp_path: Path, target_state: str) -> None:
+    root = repo(
+        tmp_path / "content",
+        {"knowledge/a.md": ARTICLE.encode(), "knowledge/target.md": ARTICLE.encode()},
+    )
+    fragment = "1"
+    if target_state == "staged":
+        fragment = "2"
+        stage_text(root, "knowledge/target.md", ARTICLE + "\n## 2. New section\n")
+    stage_text(root, "knowledge/a.md", ARTICLE + f"\nSee [target](target.md#{fragment}).\n")
+
+    assert hook.pre_commit(root, NOW) == 0
+
+
+def test_internal_link_and_its_staged_target_are_both_preserved(tmp_path: Path) -> None:
+    root = repo(tmp_path / "content", {"knowledge/real.md": ARTICLE.encode()})
+    link = root / "knowledge/alias.md"
+    link.symlink_to("real.md")
+    stage_text(root, "knowledge/real.md", ARTICLE.replace("Nightly.", "Weekly."))
+    git(root, "add", "--", "knowledge/alias.md")
+
+    assert hook.pre_commit(root, NOW) == 0
+
+    assert link.is_symlink()
+    assert git(root, "show", ":knowledge/alias.md") == "real.md"
+    expected = ARTICLE.replace("Nightly.", "Weekly.").replace(
+        "updated: 2026-10-20", f"updated: {TODAY}"
+    )
+    assert git(root, "show", ":knowledge/real.md") == expected
+    assert git(root, "diff", "--name-only") == ""
+
+
+def test_stamping_preserves_worktree_crlf_when_git_normalizes_the_index(tmp_path: Path) -> None:
+    root = repo(tmp_path / "content", {"knowledge/a.md": ARTICLE.encode()})
+    git(root, "config", "core.autocrlf", "true")
+    path = root / "knowledge/a.md"
+    edited = ARTICLE.replace("Nightly.", "Weekly.").replace("\n", "\r\n")
+    path.write_bytes(edited.encode())
+    git(root, "add", "--", "knowledge/a.md")
+    assert git(root, "diff", "--name-only") == ""
+
+    assert hook.pre_commit(root, NOW) == 0
+
+    expected = edited.replace("updated: 2026-10-20", f"updated: {TODAY}")
+    assert path.read_bytes() == expected.encode()
+    assert git(root, "show", ":knowledge/a.md") == expected.replace("\r\n", "\n")
+    assert git(root, "diff", "--name-only") == ""

@@ -249,3 +249,24 @@ def test_observe_and_gap_commits_run_the_hook_without_waiting_for_the_lock(
     assert result.returncode == 0, result.stderr
     assert "busy" not in result.stderr
     assert run_git(git_kb.content, "status", "--porcelain") == ""
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_commit_references_use_the_effective_index(git_kb: Kb, partial: bool) -> None:
+    _install_hook(git_kb)
+    source_path = "knowledge/infra/index-only.md"
+    source = ARTICLE + "\nSee [target](untracked-target.md#1).\n"
+    _write(git_kb, source_path, source)
+    target = _write(git_kb, "knowledge/infra/untracked-target.md", ARTICLE)
+    run_git(git_kb.content, "add", "--", source_path)
+    before = run_git(git_kb.content, "write-tree")
+    head = run_git(git_kb.content, "rev-parse", "HEAD")
+
+    result = _commit(git_kb, "Reject an absent indexed target", *([source_path] if partial else []))
+
+    assert result.returncode == 1
+    assert "missing local Markdown link target" in result.stderr
+    assert run_git(git_kb.content, "rev-parse", "HEAD") == head
+    assert run_git(git_kb.content, "write-tree") == before
+    assert (git_kb.content / source_path).read_text(encoding="utf-8") == source
+    assert target.read_text(encoding="utf-8") == ARTICLE

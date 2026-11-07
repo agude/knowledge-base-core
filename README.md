@@ -443,14 +443,21 @@ three-line script that calls this command by its absolute path. See
   `sources/`, or an archive, exits at once without output.
 - An article staged with unstaged worktree changes refuses the commit. Stage or
   discard the other changes first.
-- Staged articles are validated as `kb curate finish` validates them. Blocking
-  findings reject the commit and modify nothing.
+- The hook validates the effective Git index, including a temporary index for
+  a path-limited commit. Untracked targets and anchors present only in unstaged
+  edits cannot satisfy references. `kb curate finish` validates the worktree
+  before staging. Blocking findings reject the commit and modify nothing.
 - After validation, `updated` is set to today's UTC date on each staged article
   whose value differs, and the article is staged again. A missing `updated` is
   not added, and `verified` and `ttl` are never changed.
 - A commit made through a temporary index, as `git commit -- PATH` does, is
   validated but not stamped. The hook reports each article that keeps its older
   value.
+- Article symlinks must resolve inside the content root in the selected snapshot.
+  Internal links retain their link text. Stamping writes the target only when
+  Git reports no unstaged target changes. When the target is also in the
+  staged article set, its stamp is staged; otherwise the target's stamp remains
+  an unstaged worktree change. Staging a link never stages unrelated target edits.
 - The hook takes no writer lock. Commands that already hold the lock can commit
   through it without waiting.
 

@@ -12,7 +12,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from kb import args, dates, git_paths, lint, model, publish
+from kb import args, dates, git_paths, lint, model, publish, snapshot
 from kb.args import Spec
 from kb.context import load
 from kb.errors import KbError
@@ -55,12 +55,13 @@ def pre_commit(root: Path, environ: Mapping[str, str]) -> int:
     articles = publish.changed_articles(changes)
     if not articles and not publish.topology_change(changes):
         return 0
-    unstaged = _unstaged_articles(root, articles)
+    content = snapshot.read_index(root)
+    unstaged = _unstaged_articles(root, articles, content)
     if unstaged:
         for relpath in unstaged:
             _say(f"{relpath} has unstaged changes; stage or discard the unstaged changes")
         return 1
-    verdict = publish.validate(root, changes)
+    verdict = publish.validate(root, changes, content=content)
     if verdict.blocking:
         for finding in verdict.blocking:
             _say(_finding_line(finding))
@@ -117,8 +118,8 @@ def _staged_changes(root: Path) -> list[publish.Change]:
     ]
 
 
-def _unstaged_articles(root: Path, articles: Sequence[str]) -> list[str]:
-    """Staged articles whose worktree bytes differ from the staged blob."""
+def _unstaged_articles(root: Path, articles: Sequence[str], content: snapshot.Index) -> list[str]:
+    """Refuse unstaged article or link-target changes before any stamping."""
     if not articles:
         return []
     result = _git(root, "diff", "--name-only", "-z", "--no-ext-diff")
@@ -127,6 +128,19 @@ def _unstaged_articles(root: Path, articles: Sequence[str]) -> list[str]:
     differing = {
         git_paths.to_content_path(path, prefix) for path in result.stdout.split("\0") if path
     }
+    for relpath in articles:
+        try:
+            target = content.resolve(relpath)
+        except ValueError:
+            # Validation reports an escaping or cyclic indexed link without reading its target.
+            continue
+        worktree_path = root / relpath
+        if (
+            worktree_path.resolve() != root / target
+            or not worktree_path.is_file()
+            or target in differing
+        ):
+            differing.add(relpath)
     return [relpath for relpath in articles if relpath in differing]
 
 

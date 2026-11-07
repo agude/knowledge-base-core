@@ -2,10 +2,10 @@
 
 import re
 from dataclasses import dataclass
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Literal
 
-from kb import corpus, links, locators
+from kb import corpus, links, locators, model, snapshot
 from kb.dates import parse_date
 from kb.freshness import MAX_TTL_DAYS, NAMED_TTL_DAYS
 from kb.model import Document, Section
@@ -101,22 +101,21 @@ def reference_findings(
     root: Path,
     source: Document,
     documents: dict[str, Document],
+    *,
+    content: snapshot.Content | None = None,
 ) -> list[Finding]:
     """Check one document's local links and sources, caching each Markdown target."""
     findings: list[Finding] = []
+    content = snapshot.Worktree(root) if content is None else content
     for reference in references(source):
         path, has_fragment, fragment = reference.destination.partition("#")
         if _external_or_absolute(reference.destination, path):
             continue
 
-        source_file = root / source.path
-        if reference.kind == "link":
-            target = (source_file.parent / path).resolve() if path else source_file.resolve()
-        else:
-            target = (root / path).resolve()
-
         try:
-            relpath = target.relative_to(root).as_posix()
+            source_file = PurePosixPath(content.resolve(source.path))
+            target = str(source_file.parent / path) if path else str(source_file)
+            relpath = content.resolve(target if reference.kind == "link" else path)
         except ValueError:
             message = (
                 f"local Markdown link escapes content root: {reference.destination}"
@@ -126,7 +125,7 @@ def reference_findings(
             findings.append(Finding(reference.source_path, reference.line, "error", message))
             continue
 
-        if not target.is_file():
+        if not content.is_file(relpath):
             message = (
                 f"missing local Markdown link target: {reference.destination}"
                 if reference.kind == "link"
@@ -136,12 +135,12 @@ def reference_findings(
                 Finding(reference.source_path, reference.line, "error", message, relpath)
             )
             continue
-        if not has_fragment or not fragment or target.suffix != ".md":
+        if not has_fragment or not fragment or not relpath.endswith(".md"):
             continue
 
         target_document = documents.get(relpath)
         if target_document is None:
-            target_document = corpus.read_document(root, relpath)
+            target_document = model.parse(relpath, corpus.decode_text(content.read_bytes(relpath)))
             documents[relpath] = target_document
         if not fragment_resolves(target_document, fragment):
             message = (

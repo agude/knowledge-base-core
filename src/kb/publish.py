@@ -10,7 +10,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from kb import corpus, curation, lint, model
+from kb import corpus, curation, lint, model, snapshot
 
 ARTICLES = "knowledge"
 SOURCES = "sources"
@@ -121,28 +121,36 @@ def classify(
     return Verdict(tuple(blocking), tuple(preexisting))
 
 
-def validate(root: Path, changes: Sequence[Change]) -> Verdict:
-    """Lint every article against the worktree, then classify the findings.
+def validate(
+    root: Path, changes: Sequence[Change], *, content: snapshot.Content | None = None
+) -> Verdict:
+    """Lint every article against the selected snapshot (the worktree by default).
 
     Changed articles are linted with a required TTL and must decode as UTF-8. Every
     article's references are checked, so a removed target is found wherever it is cited.
     """
     changed = frozenset(changed_articles(changes))
     vanished = vanished_paths(changes)
-    documents: dict[str, model.Document] = {
-        relpath: corpus.read_document(root, relpath)
-        for relpath in corpus.markdown_files(root, ARTICLES)
-    }
+    content = snapshot.Worktree(root) if content is None else content
+    documents: dict[str, model.Document] = {}
     findings: list[lint.Finding] = []
-    for relpath in list(documents):
+    for relpath in sorted(set(content.markdown_files()) | changed):
+        try:
+            raw = content.read_bytes(relpath)
+        except (ValueError, OSError) as error:
+            findings.append(lint.Finding(relpath, 1, "error", f"cannot read article: {error}"))
+            continue
+        documents[relpath] = model.parse(relpath, corpus.decode_text(raw))
         if relpath in changed:
             try:
-                (root / relpath).read_bytes().decode("utf-8")
+                raw.decode("utf-8")
             except UnicodeDecodeError:
                 findings.append(lint.Finding(relpath, 1, "error", "article is not valid UTF-8"))
         findings.extend(lint.check_document(documents[relpath], require_ttl=relpath in changed))
     for relpath in list(documents):
-        findings.extend(lint.reference_findings(root, documents[relpath], documents))
+        findings.extend(
+            lint.reference_findings(root, documents[relpath], documents, content=content)
+        )
     return classify(findings, changed, vanished)
 
 
