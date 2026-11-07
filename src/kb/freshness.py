@@ -41,7 +41,8 @@ def _sources_status(document: Document, section: Section | None) -> str:
 
 def _knowledge_status(document: Document, section: Section | None, today: date) -> str:
     raw_ttl = document.scalar("ttl", section) or ""
-    if raw_ttl.isascii() and raw_ttl.isdigit() and int(raw_ttl) > MAX_TTL_DAYS:
+    days = ttl_days(raw_ttl)
+    if days is None and raw_ttl.isascii() and raw_ttl.isdigit():
         return "invalid"
     raw = document.scalar("verified", section)
     if raw is None:
@@ -49,16 +50,22 @@ def _knowledge_status(document: Document, section: Section | None, today: date) 
     verified = parse_date(raw)
     if verified is None:
         return "invalid"
-    days = _ttl_days(raw_ttl)
+    if days is None:
+        days = DEFAULT_TTL_DAYS
     if (today - verified).days > days:
         return f"stale, verified {raw} (ttl {days})"
     return f"fresh, verified {raw}"
 
 
-def _ttl_days(raw: str) -> int:
-    """The threshold in days: a named ttl, a day count, or the default for anything else."""
+def ttl_days(raw: str) -> int | None:
+    """Parse a named or bounded nonnegative TTL; writers separately reject zero."""
     if raw in NAMED_TTL_DAYS:
         return NAMED_TTL_DAYS[raw]
     if raw.isascii() and raw.isdigit():
-        return int(raw)
-    return DEFAULT_TTL_DAYS
+        significant = raw.lstrip("0") or "0"
+        maximum = str(MAX_TTL_DAYS)
+        if len(significant) < len(maximum) or (
+            len(significant) == len(maximum) and significant <= maximum
+        ):
+            return int(significant)
+    return None

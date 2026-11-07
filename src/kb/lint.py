@@ -7,7 +7,7 @@ from typing import Literal
 
 from kb import corpus, links, locators, model, snapshot
 from kb.dates import parse_date
-from kb.freshness import MAX_TTL_DAYS, NAMED_TTL_DAYS
+from kb.freshness import ttl_days
 from kb.model import Document, Section
 
 MAX_H2_LINES = 50
@@ -466,16 +466,8 @@ def valid_ttl(value: object) -> bool:
     """Whether a TTL is named or a positive integer within the supported limit."""
     if not isinstance(value, str):
         return False
-    if value in NAMED_TTL_DAYS:
-        return True
-    if not value.isascii() or not value.isdigit():
-        return False
-    significant = value.lstrip("0")
-    maximum = str(MAX_TTL_DAYS)
-    return bool(significant) and (
-        len(significant) < len(maximum)
-        or (len(significant) == len(maximum) and significant <= maximum)
-    )
+    days = ttl_days(value)
+    return days is not None and days > 0
 
 
 def _add(
