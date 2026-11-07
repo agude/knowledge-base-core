@@ -55,14 +55,6 @@ HOLD_KERNEL_LOCK = (
 )
 
 
-class FixedClock:
-    """Stands in for datetime in the observe module, so that now() is always one UTC instant."""
-
-    @staticmethod
-    def now(tz: object = None) -> datetime:
-        return datetime(2026, 10, 26, 12, 0, 5, tzinfo=UTC)
-
-
 class ScannerInterrupted(BaseException):
     """A scanner interruption that must propagate after releasing the writer lock."""
 
@@ -236,7 +228,7 @@ def test_success_writes_one_file_and_commits_it(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setattr(observe, "datetime", FixedClock)
+    monkeypatch.setenv("KB_NOW", "2026-10-26T12:00:05Z")
     status, out, err = run_kb(capsys, "--title", "DNS caching", "--body", "Cached for an hour.")
     assert (status, err) == (0, "")
     name = WROTE.fullmatch(out)
@@ -365,7 +357,13 @@ def test_publish_observation_retries_without_replacing_an_occupied_target(
     names = iter((first.name, second.name))
     monkeypatch.setattr(observation, "file_name", lambda _now, _suffix: next(names))
 
-    name = write._publish(content, "observations/pending", temporary, FixedClock.now(), "observe")
+    name = write._publish(
+        content,
+        "observations/pending",
+        temporary,
+        datetime(2026, 10, 26, 12, 0, 5, tzinfo=UTC),
+        "observe",
+    )
     temporary.unlink(missing_ok=True)
 
     assert name == second.name
@@ -592,7 +590,7 @@ def test_a_kernel_lock_held_by_another_descriptor_is_reported_as_busy(
 def test_a_taken_name_draws_a_new_suffix(
     content: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(observe, "datetime", FixedClock)
+    monkeypatch.setenv("KB_NOW", "2026-10-26T12:00:05Z")
     (content / "observations" / "pending" / "20261026T120005-00000001.md").write_text(
         "taken\n", encoding="utf-8"
     )
@@ -664,7 +662,7 @@ def test_observe_refuses_a_symlinked_scratch_directory(
 def test_five_taken_names_are_a_failure(
     content: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(observe, "datetime", FixedClock)
+    monkeypatch.setenv("KB_NOW", "2026-10-26T12:00:05Z")
     (content / "observations" / "pending" / "20261026T120005-00000001.md").write_text(
         "taken\n", encoding="utf-8"
     )

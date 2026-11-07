@@ -177,6 +177,11 @@ On success stdout is `Wrote: questions/open/<file>` and the exit status is 0.
 Usage errors print the usage line. Other failures print nothing to stdout, use
 the `gap:` prefix on stderr, and exit 1.
 
+`kb observe` and `kb gap` use the current UTC time for both `created` and the
+filename. Set `KB_NOW` to a timezone-aware ISO timestamp to fix that clock;
+offsets are normalized to UTC. An invalid value refuses the command before
+publication.
+
 ### Curation commands
 
 `kb lint`, `kb verify`, and `kb resolve` are curator commands. They do not

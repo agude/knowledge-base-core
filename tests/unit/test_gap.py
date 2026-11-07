@@ -9,7 +9,6 @@ import subprocess
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -27,14 +26,6 @@ GIT_ENV = {
     "GIT_COMMITTER_NAME": "Test Committer",
     "GIT_COMMITTER_EMAIL": "committer@example.invalid",
 }
-
-
-class FixedClock:
-    """A fixed instant for stable question filenames and metadata."""
-
-    @staticmethod
-    def now(tz: object = None) -> datetime:
-        return datetime(2026, 10, 26, 12, 0, 5, tzinfo=UTC)
 
 
 class FakeFcntl:
@@ -245,7 +236,7 @@ def test_success_writes_exact_bytes_commits_one_path_and_reads_back(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setattr(gap, "datetime", FixedClock)
+    monkeypatch.setenv("KB_NOW", "2026-10-26T12:00:05Z")
     monkeypatch.setattr(socket, "gethostname", lambda: "test-host.local")
     title = 'Say "hi" \\ café'
     body = "The owner is not listed."
@@ -344,7 +335,7 @@ def test_question_filename_collision_uses_a_new_random_suffix(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setattr(gap, "datetime", FixedClock)
+    monkeypatch.setenv("KB_NOW", "2026-10-26T12:00:05Z")
     first = content / "questions" / "open" / "20261026T120005-00000001.md"
     first.write_text("Existing collision.\n", encoding="utf-8")
     draws = iter(
