@@ -286,4 +286,5 @@ def test_help_lists_observe_and_observe_help_exits_zero(kb: Kb) -> None:
     assert any(line.split()[:1] == ["observe"] for line in lines)
     result = kb("observe", "--help")
     assert result.returncode == 0
+    assert result.stderr == ""
     assert result.stdout.startswith(USAGE)

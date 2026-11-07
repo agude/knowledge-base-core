@@ -129,13 +129,6 @@ def content(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return root
 
 
-def test_help_prints_the_usage_and_succeeds(capsys: pytest.CaptureFixture[str]) -> None:
-    status, out, err = run_kb(capsys, "--help")
-    assert status == 0
-    assert out.startswith(USAGE)
-    assert err == ""
-
-
 @pytest.mark.parametrize(
     "words",
     [

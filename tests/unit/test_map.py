@@ -96,11 +96,6 @@ def test_depth_must_be_one_two_or_three(content: Path, depth: str) -> None:
         map_command.run(["--depth", depth])
 
 
-def test_help_prints_the_usage(capsys: pytest.CaptureFixture[str]) -> None:
-    assert map_command.run(["-h"]) == 0
-    assert capsys.readouterr().out.startswith("Usage: kb map [PATH] [--depth 1|2|3]\n")
-
-
 def test_a_path_that_resolves_outside_the_repository_is_refused(
     content: Path, tmp_path: Path
 ) -> None:

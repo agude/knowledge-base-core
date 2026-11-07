@@ -99,7 +99,8 @@ def test_two_paths_is_a_usage_error(kb: Kb) -> None:
     assert result.stderr == "Usage: kb map [PATH] [--depth 1|2|3]\n"
 
 
-def test_help_names_the_command(kb: Kb) -> None:
-    result = kb("map", "--help")
+@pytest.mark.parametrize("flag", ["-h", "--help"])
+def test_help_names_the_command(kb: Kb, flag: str) -> None:
+    result = kb("map", flag)
     assert result.returncode == 0
-    assert result.stdout.startswith("Usage: kb map")
+    assert result.stdout.startswith("Usage: kb map [PATH] [--depth 1|2|3]\n")
