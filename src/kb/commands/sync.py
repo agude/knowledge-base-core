@@ -830,7 +830,7 @@ def _detector_counts(counts: Mapping[str, set[ContentLine | str]]) -> dict[str, 
 
 
 def _publish(root: Path, scan_directory: Path, text: str, now: datetime) -> str:
-    """Write a temporary observation, rename it into pending, and return its relative path."""
+    """Publish a temporary observation without replacing a target, then return its content path."""
     pending = fixed_directory(root, PENDING, command="sync", create=True)
     assert pending is not None
     temporary = scratch.create_file(scan_directory, "observation-", ".md", text.encode("utf-8"))
@@ -840,7 +840,10 @@ def _publish(root: Path, scan_directory: Path, text: str, now: datetime) -> str:
             destination = pending / name
             if destination.exists():
                 continue
-            temporary.rename(destination)
+            try:
+                os.link(temporary, destination)
+            except FileExistsError:
+                continue
             return f"{PENDING}/{name}"
         raise KbError(f"no free file name in {PENDING}")
     finally:

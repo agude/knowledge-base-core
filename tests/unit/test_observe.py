@@ -332,6 +332,53 @@ def test_record_scratch_file_is_owner_only_with_a_group_readable_umask(
     assert modes == [0o600]
 
 
+@pytest.mark.parametrize("occupied_kind", ["race", "dangling"])
+def test_publish_observation_retries_without_replacing_an_occupied_target(
+    content: Path, monkeypatch: pytest.MonkeyPatch, occupied_kind: str
+) -> None:
+    if occupied_kind == "dangling" and os.name == "nt":
+        pytest.skip("symbolic links need privilege")
+    pending_directory = content / "observations" / "pending"
+    scratch = content / ".git" / "kb-tmp"
+    scratch.mkdir(exist_ok=True)
+    marker = scratch / "other-operation.tmp"
+    marker.write_bytes(b"keep")
+    temporary = scratch / "record.md"
+    temporary.write_bytes(b"new observation")
+    first = pending_directory / "race.md"
+    second = pending_directory / "next.md"
+    if occupied_kind == "dangling":
+        first.symlink_to(pending_directory / "missing.md")
+    else:
+        original_exists = Path.exists
+        inserted = False
+
+        def create_competing_observation(path: Path) -> bool:
+            nonlocal inserted
+            exists = original_exists(path)
+            if path == first and not exists and not inserted:
+                first.write_bytes(b"concurrent observation")
+                inserted = True
+            return exists
+
+        monkeypatch.setattr(Path, "exists", create_competing_observation)
+    names = iter((first.name, second.name))
+    monkeypatch.setattr(observation, "file_name", lambda _now, _suffix: next(names))
+
+    name = write._publish(content, "observations/pending", temporary, FixedClock.now(), "observe")
+    temporary.unlink(missing_ok=True)
+
+    assert name == second.name
+    assert second.read_bytes() == b"new observation"
+    if occupied_kind == "dangling":
+        assert first.is_symlink()
+        assert not first.exists()
+    else:
+        assert first.read_bytes() == b"concurrent observation"
+    assert sorted(path.name for path in scratch.iterdir()) == [marker.name]
+    assert marker.read_bytes() == b"keep"
+
+
 def test_project_is_the_top_of_the_repository_the_process_is_in(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -74,14 +74,19 @@ def project() -> str:
 
 
 def _publish(root: Path, directory: str, temporary: Path, when: datetime, command: str) -> str:
-    """Rename the temporary file to a free timestamped name in directory."""
+    """Link the temporary file to a free timestamped name without replacing a target."""
     destination = fixed_directory(root, directory, command=command, create=True)
     assert destination is not None
     for _ in range(MAX_NAME_TRIES):
         name = observation.file_name(when, os.urandom(4).hex())
-        if not (destination / name).exists():
-            temporary.rename(destination / name)
-            return name
+        target = destination / name
+        if target.exists():
+            continue
+        try:
+            os.link(temporary, target)
+        except FileExistsError:
+            continue
+        return name
     raise KbError(f"{command}: no free file name in {directory}")
 
 

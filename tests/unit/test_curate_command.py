@@ -731,6 +731,47 @@ def test_archive_publication_never_replaces_a_file_created_after_precheck(
     assert not list((root / ".git" / "kb-tmp").glob("*"))
 
 
+def test_manifest_publication_preserves_a_target_created_after_precheck(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _original, _batch = _completion_fixture(tmp_path)
+    target = root / "observations" / "batches" / "new.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    original_exists = Path.exists
+    inserted = False
+
+    def create_competing_manifest(path: Path) -> bool:
+        nonlocal inserted
+        exists = original_exists(path)
+        if path == target and not exists and not inserted:
+            target.write_bytes(b"concurrent manifest")
+            inserted = True
+        return exists
+
+    monkeypatch.setattr(Path, "exists", create_competing_manifest)
+
+    with pytest.raises(KbError, match="batch manifest already exists"):
+        curate._publish_manifest(root / ".git", target, "new manifest")
+
+    assert target.read_bytes() == b"concurrent manifest"
+    assert not list((root / ".git" / "kb-tmp").iterdir())
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symbolic links need privilege")
+def test_manifest_publication_preserves_an_existing_dangling_symlink(tmp_path: Path) -> None:
+    root, _original, _batch = _completion_fixture(tmp_path)
+    target = root / "observations" / "batches" / "dangling.json"
+    target.symlink_to(target.parent / "missing.json")
+    link = target.readlink()
+
+    with pytest.raises(KbError, match="batch manifest already exists"):
+        curate._publish_manifest(root / ".git", target, "new manifest")
+
+    assert target.is_symlink()
+    assert target.readlink() == link
+    assert not list((root / ".git" / "kb-tmp").iterdir())
+
+
 def test_complete_rejects_conflicting_retries_and_preserves_recovery_commands(
     tmp_path: Path,
 ) -> None:

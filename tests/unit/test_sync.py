@@ -1132,6 +1132,51 @@ def test_publish_tries_again_after_a_name_collision(
     assert (root / path).read_text(encoding="utf-8") == "new"
 
 
+@pytest.mark.parametrize("occupied_kind", ["race", "dangling"])
+def test_publish_observation_retries_without_replacing_an_occupied_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, occupied_kind: str
+) -> None:
+    if occupied_kind == "dangling" and os.name == "nt":
+        pytest.skip("symbolic links need privilege")
+    root = make_repo(tmp_path / "content")
+    scan = tmp_path / "scanner"
+    scan.mkdir()
+    marker = scan / "other-operation.tmp"
+    marker.write_bytes(b"keep")
+    pending = root / sync.PENDING
+    pending.mkdir(parents=True)
+    first = pending / "race.md"
+    second = pending / "next.md"
+    if occupied_kind == "dangling":
+        first.symlink_to(pending / "missing.md")
+    else:
+        original_exists = Path.exists
+        inserted = False
+
+        def create_competing_observation(path: Path) -> bool:
+            nonlocal inserted
+            exists = original_exists(path)
+            if path == first and not exists and not inserted:
+                first.write_bytes(b"concurrent observation")
+                inserted = True
+            return exists
+
+        monkeypatch.setattr(Path, "exists", create_competing_observation)
+    names = iter((first.name, second.name))
+    monkeypatch.setattr(observation, "file_name", lambda _now, _suffix: next(names))
+
+    path = sync._publish(root, scan, "new observation", NOW)
+
+    assert path == f"{sync.PENDING}/{second.name}"
+    assert (pending / second.name).read_text(encoding="utf-8") == "new observation"
+    if occupied_kind == "dangling":
+        assert first.is_symlink()
+        assert not first.exists()
+    else:
+        assert first.read_bytes() == b"concurrent observation"
+    assert list(scan.iterdir()) == [marker]
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="symbolic links need privilege")
 @pytest.mark.parametrize("target_kind", ["internal", "external"])
 def test_publish_refuses_a_symlinked_pending_directory(tmp_path: Path, target_kind: str) -> None:

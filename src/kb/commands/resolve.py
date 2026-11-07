@@ -4,6 +4,7 @@ import os
 import stat
 import sys
 from collections.abc import Sequence
+from contextlib import suppress
 from pathlib import Path
 from typing import Literal
 
@@ -131,7 +132,7 @@ def _resolve(
 
         target_relpath = source_relpath.replace(f"{OPEN}/", f"{RESOLVED}/", 1)
         target = root / target_relpath
-        if target.exists():
+        if target.exists() or target.is_symlink():
             raise KbError(f"{WHO}: resolved copy already exists: {target_relpath}")
 
         scan_directory = scratch.shared_directory(git, WHO)
@@ -209,7 +210,7 @@ def _publish(
     target.parent.mkdir(parents=True, exist_ok=True)
     if not target.resolve().is_relative_to(root_resolved):
         raise KbError(f"{WHO}: resolved question path escapes the content repository")
-    if target.exists():
+    if target.exists() or target.is_symlink():
         raise KbError(f"{WHO}: resolved copy already exists: {target.relative_to(root).as_posix()}")
 
     temporary = scratch.create_file(scratch_directory, "resolve-", ".md", rendered)
@@ -219,13 +220,18 @@ def _publish(
     try:
         temporary.chmod(mode)
         publication_attempted = True
-        temporary.replace(target)
+        try:
+            os.link(temporary, target)
+        except FileExistsError as error:
+            relpath = target.relative_to(root).as_posix()
+            raise KbError(f"{WHO}: resolved copy already exists: {relpath}") from error
         published = True
         source.unlink()
     except BaseException:
-        ours = published or (
-            publication_attempted and target.is_file() and target.read_bytes() == rendered
-        )
+        ours = published
+        if publication_attempted and not ours and not target.is_symlink():
+            with suppress(OSError):
+                ours = temporary.samefile(target)
         if ours:
             try:
                 if not source.is_file() or source.read_bytes() != original:

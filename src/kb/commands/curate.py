@@ -1823,6 +1823,9 @@ def _publish_manifest(git_directory: Path, target: Path, text: str) -> None:
     try:
         if target.exists() or target.is_symlink():
             raise KbError(f"{WHO}: batch manifest already exists: {target.name}")
-        temporary.replace(target)
+        try:
+            os.link(temporary, target)
+        except FileExistsError as error:
+            raise KbError(f"{WHO}: batch manifest already exists: {target.name}") from error
     finally:
         temporary.unlink(missing_ok=True)
