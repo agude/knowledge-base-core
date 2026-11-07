@@ -41,6 +41,15 @@ HOLD_KERNEL_LOCK = (
 )
 
 
+def coverage_environment() -> dict[str, str]:
+    """Carry coverage's serialized configuration and optional core into isolated children."""
+    return {
+        name: os.environ[name]
+        for name in ("COVERAGE_PROCESS_CONFIG", "COVERAGE_CORE")
+        if name in os.environ
+    }
+
+
 def run_git(repo: Path, *args: str) -> str:
     """Run git in repo, isolated from the user's configuration, and return its stdout.
 
@@ -49,7 +58,12 @@ def run_git(repo: Path, *args: str) -> str:
     result = subprocess.run(
         ["git", *args],
         cwd=repo,
-        env={"PATH": os.environ.get("PATH", ""), "HOME": str(repo), **GIT_ISOLATION},
+        env={
+            "PATH": os.environ.get("PATH", ""),
+            "HOME": str(repo),
+            **GIT_ISOLATION,
+            **coverage_environment(),
+        },
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -127,6 +141,7 @@ class Kb:
             "LC_ALL": "C.UTF-8",
             "PYTHONIOENCODING": "utf-8",
             **GIT_ISOLATION,
+            **coverage_environment(),
         }
         for name, value in overrides.items():
             if value is None:

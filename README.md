@@ -905,6 +905,12 @@ just eval           # Score retrieval against the question sets under tests/fixt
 
 Run `just` to list every recipe.
 
+Test coverage includes branches and Python subprocesses, including CLI and Git
+hook executions. The E2E harness passes coverage's configuration into its isolated
+environments. `just test tests/e2e --cov-fail-under=0` reports E2E coverage alone;
+`just check` enforces the 90% floor across the full suite. `just package-check`
+separately validates the installed wheel in a clean environment.
+
 ## Releasing
 
 ```sh

@@ -1,7 +1,7 @@
 """kb doctor's gatherers in process, on a configured machine built in a temporary directory.
 
-These run the Git and host-file gatherers directly, so their branches count toward coverage.
-The end-to-end tests run the same checks in a subprocess, which coverage does not measure.
+These exercise Git and host-file gatherers directly, including unavailable resources
+and fault injection. End-to-end subprocess executions also contribute coverage.
 """
 
 import os

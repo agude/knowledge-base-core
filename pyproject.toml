@@ -84,3 +84,4 @@ addopts = ["--cov=kb", "--cov-report=term-missing", "--cov-fail-under=90"]
 
 [tool.coverage.run]
 branch = true
+patch = ["subprocess"]
