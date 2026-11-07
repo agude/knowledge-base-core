@@ -47,7 +47,11 @@ def publish_and_commit(
         if found:
             raise KbError("\n".join(refusal_lines(found)))
 
-        temporary = scratch.create_file(scratch_directory, "record-", ".md", text.encode("utf-8"))
+        # The scanned record becomes the published file through a hard link, so it takes
+        # the umask's mode rather than the scan file's owner-only mode.
+        temporary = scratch.create_file(
+            scratch_directory, "record-", ".md", text.encode("utf-8"), mode=0o666
+        )
         try:
             name = _publish(root, directory, temporary, when, command)
             _commit(root, f"{directory}/{name}", subject, command)

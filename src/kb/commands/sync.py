@@ -841,7 +841,10 @@ def _publish(root: Path, scan_directory: Path, text: str, now: datetime) -> str:
     """Publish a temporary observation without replacing a target, then return its content path."""
     pending = fixed_directory(root, PENDING, command="sync", create=True)
     assert pending is not None
-    temporary = scratch.create_file(scan_directory, "observation-", ".md", text.encode("utf-8"))
+    # The scanned observation is hard-linked into content, so it takes the umask's mode.
+    temporary = scratch.create_file(
+        scan_directory, "observation-", ".md", text.encode("utf-8"), mode=0o666
+    )
     try:
         for _ in range(MAX_NAME_TRIES):
             name = observation.file_name(now, os.urandom(4).hex())

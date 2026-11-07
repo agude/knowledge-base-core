@@ -288,11 +288,13 @@ def test_scanner_failure_cleans_scratch_and_releases_the_writer_lock(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX umask behavior")
-def test_record_scratch_file_is_owner_only_with_a_group_readable_umask(
+def test_the_published_record_follows_the_umask(
     content: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    # The record holds only scanned text and is hard-linked into content, so its mode
+    # is the published file's mode. Only the secret scan file is owner-only.
     original_publish = write._publish
     modes: list[int] = []
 
@@ -303,13 +305,16 @@ def test_record_scratch_file_is_owner_only_with_a_group_readable_umask(
     monkeypatch.setattr(write, "_publish", inspect)
     previous = os.umask(0o022)
     try:
-        status, out, err = run_kb(capsys, "--title", "Private scratch", "--body", "Safe text.")
+        status, out, err = run_kb(capsys, "--title", "Published mode", "--body", "Safe text.")
     finally:
         os.umask(previous)
 
     assert (status, err) == (0, "")
-    assert WROTE.fullmatch(out) is not None
-    assert modes == [0o600]
+    match = WROTE.fullmatch(out)
+    assert match is not None
+    published = content / "observations" / "pending" / match.group(1)
+    assert modes == [0o644]
+    assert stat.S_IMODE(published.stat().st_mode) == 0o644
 
 
 @pytest.mark.parametrize("occupied_kind", ["race", "dangling"])

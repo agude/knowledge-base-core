@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import socket
 import sqlite3
+import stat
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -1130,6 +1131,19 @@ def test_publish_tries_again_after_a_name_collision(
     path = sync._publish(root, scan, "new", NOW)
     assert path.endswith("00000001.md")
     assert (root / path).read_text(encoding="utf-8") == "new"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX umask behavior")
+def test_a_published_observation_follows_the_umask(tmp_path: Path) -> None:
+    root = make_repo(tmp_path / "content")
+    scan = tmp_path / "scanner"
+    scan.mkdir()
+    previous = os.umask(0o022)
+    try:
+        path = sync._publish(root, scan, "new", NOW)
+    finally:
+        os.umask(previous)
+    assert stat.S_IMODE((root / path).stat().st_mode) == 0o644
 
 
 @pytest.mark.parametrize("occupied_kind", ["race", "dangling"])
