@@ -3,7 +3,6 @@
 import os
 import stat
 import sys
-import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
@@ -107,7 +106,6 @@ def _resolve(
     git = lock.git_dir(root, WHO)
     backend = lock.default_backend(sys.platform)
     with lock.write_lock(git, wait, backend):
-        scratch.shared_directory(git, WHO)
         source_relpath = _question_path(root, question_word)
         source = root / source_relpath
         try:
@@ -136,9 +134,9 @@ def _resolve(
         if target.exists():
             raise KbError(f"{WHO}: resolved copy already exists: {target_relpath}")
 
+        scan_directory = scratch.shared_directory(git, WHO)
         found = secrets.findings(
-            Path(tempfile.gettempdir()),
-            question.resolution_scan_text(answer, canonical_destination),
+            scan_directory, question.resolution_scan_text(answer, canonical_destination)
         )
         if found:
             raise KbError("\n".join(question.resolution_refusal_lines(found)))

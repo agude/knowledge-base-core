@@ -6,7 +6,6 @@ import shlex
 import socket
 import stat
 import sys
-import tempfile
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -952,7 +951,7 @@ def _complete(
 ) -> str:
     """Record an outcome and finish or resume its durable archive intent."""
     root = context.root
-    _scan_completion_text(destination_words, reason)
+    _scan_completion_text(git_directory, destination_words, reason)
     member = next((item for item in batch.members if item.filename == filename), None)
     if member is None:
         raise KbError(f"{WHO}: not a batch member")
@@ -1058,7 +1057,7 @@ def _transition_member(
     outcome: str,
 ) -> str:
     """Defer an unchanged input or drop a changed/missing one in the manifest only."""
-    _scan_completion_text((), reason)
+    _scan_completion_text(git_directory, (), reason)
     if not reason.strip() or "\n" in reason or "\r" in reason:
         raise KbError(f"{WHO}: {outcome} reason must be nonempty and single-line")
     member = next((item for item in batch.members if item.filename == filename), None)
@@ -1219,13 +1218,18 @@ def _same_outcome(
     return member.disposition == disposition and member.reason == reason and stored == requested
 
 
-def _scan_completion_text(destination_words: Sequence[str], reason: str | None) -> None:
+def _scan_completion_text(
+    git_directory: Path, destination_words: Sequence[str], reason: str | None
+) -> None:
     """Scan supplied locators and reasons before diagnostics or state writes."""
     entries = [(f"destination {index}", word) for index, word in enumerate(destination_words, 1)]
     if reason is not None:
         entries.append(("--reason", reason))
+    if not entries:
+        return
+    scan_directory = scratch.shared_directory(git_directory, WHO)
     for label, value in entries:
-        findings = secrets.findings(Path(tempfile.gettempdir()), value)
+        findings = secrets.findings(scan_directory, value)
         if findings:
             detectors = ", ".join(sorted({detector for detector, _line in findings}))
             raise KbError(f"{WHO}: possible secret in {label}: {detectors}")

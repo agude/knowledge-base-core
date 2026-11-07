@@ -8,7 +8,6 @@ import shlex
 import socket
 import subprocess
 import sys
-import tempfile
 import urllib.request
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
@@ -519,9 +518,14 @@ def test_complete_scans_supplied_text_and_cleans_secret_scan_files(
     batch = curation.make_batch(RUN, datetime(2026, 10, 28, tzinfo=UTC), 1000, [member])
     manifest = batches / f"{RUN}.json"
     manifest.write_text(curation.render_batch(batch), encoding="utf-8", newline="")
-    scan_directory = tmp_path / "secret-scan"
-    scan_directory.mkdir()
-    monkeypatch.setattr(tempfile, "gettempdir", lambda: scan_directory)
+    scan_calls: list[Path] = []
+    original_findings = secrets.findings
+
+    def track_scan(directory: Path, text: str) -> list[tuple[str, int]]:
+        scan_calls.append(directory)
+        return original_findings(directory, text)
+
+    monkeypatch.setattr(secrets, "findings", track_scan)
     secret = 'password = "hunter2hunter2"'
     destinations = [secret] if supplied == "destination" else []
     reason = secret if supplied == "reason" else "Temporary"
@@ -539,7 +543,8 @@ def test_complete_scans_supplied_text_and_cleans_secret_scan_files(
 
     assert secret not in str(refusal.value)
     assert "Secret Keyword" in str(refusal.value)
-    assert sorted(path.name for path in scan_directory.iterdir()) == []
+    assert scan_calls == [root / ".git" / "kb-tmp"]
+    assert list((root / ".git" / "kb-tmp").iterdir()) == []
     assert (root / "observations" / "pending" / filename).read_text(encoding="utf-8") == content
     assert manifest.read_text(encoding="utf-8") == curation.render_batch(batch)
     assert not (root / "observations" / "archived" / filename).exists()

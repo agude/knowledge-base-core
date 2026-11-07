@@ -30,7 +30,7 @@ def _environment(content: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("KB_LOCK_WAIT", "0")
 
 
-def test_scans_the_ttl_and_uses_the_common_git_directory(
+def test_checks_ttl_without_scanning_and_uses_the_common_git_directory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -56,28 +56,34 @@ def test_scans_the_ttl_and_uses_the_common_git_directory(
 
     assert status == 0
     assert capsys.readouterr().out == "Verified: knowledge/article.md (ttl domain)\n"
-    assert len(scanned) == 1
+    assert scanned == []
     assert git_calls == [(content, "verify")]
-    assert scanned[0][1] == "domain"
-    assert scanned[0][0].is_dir()
     assert b"verified: 2026-10-26" in article.read_bytes()
     assert list((content / ".git" / "kb-tmp").iterdir()) == []
 
 
-def test_secret_refusal_leaves_the_article_and_content_temp_directory_untouched(
+def test_invalid_stored_ttl_is_refused_before_mutation_or_scanning(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     content, article = _content(tmp_path)
     _environment(content, monkeypatch)
+    article.write_bytes(article.read_bytes().replace(b"ttl: domain", b"ttl: weekly"))
     before = article.read_bytes()
-    monkeypatch.setattr(secrets, "findings", lambda *_: [("Secret Keyword", 1)])
+    scans: list[Path] = []
 
-    with pytest.raises(KbError, match="secrets check"):
+    def scan(directory: Path, text: str) -> list[tuple[str, int]]:
+        scans.append(directory)
+        return []
+
+    monkeypatch.setattr(secrets, "findings", scan)
+
+    with pytest.raises(KbError, match="no valid ttl"):
         verify.run(["knowledge/article.md"])
 
     assert capsys.readouterr().out == ""
+    assert scans == []
     assert article.read_bytes() == before
     assert not (content / ".git" / "kb-tmp").exists()
 

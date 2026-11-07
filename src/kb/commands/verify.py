@@ -3,11 +3,10 @@
 import os
 import stat
 import sys
-import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
-from kb import args, corpus, lint, lock, model, scratch, secrets
+from kb import args, corpus, lint, lock, model, scratch
 from kb.args import Spec
 from kb.context import Context, load
 from kb.errors import KbError
@@ -148,11 +147,6 @@ def _verify(
                 f"  {finding.path}:{finding.line}: {finding.message}" for finding in errors
             )
             raise KbError(f"{WHO}: proposed result has lint errors:\n{details}")
-
-        secret_findings = secrets.findings(Path(tempfile.gettempdir()), ttl)
-        if secret_findings:
-            detail = ", ".join(f"{name} at line {line}" for name, line in secret_findings)
-            raise KbError(f"{WHO}: --ttl was refused by the secrets check: {detail}")
 
         result = proposed_text_with_bom.encode("utf-8")
         if result == original:
