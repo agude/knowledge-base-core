@@ -401,7 +401,7 @@ def excerpt(lines: Sequence[str], terms: Sequence[str]) -> str:
         (
             match.start()
             for match in TOKEN.finditer(best.lower())
-            if _stem(match.group(0)) in wanted
+            if wanted.intersection(index_tokens(match.group(0)))
         ),
         0,
     )

@@ -344,3 +344,21 @@ def test_a_numeric_identifier_qualifies_only_the_units_that_hold_it() -> None:
         search.make_unit("", [], [], ["50 apples and 59 pears"]),
     ]
     assert [hit.index for hit in search.rank(units, search.query_terms(["50-59"]))] == [0]
+
+
+@pytest.mark.parametrize(
+    ("query", "ending", "expected"),
+    [
+        ("rename", "run --rename now", "--rename"),
+        ("59", "folder 50-59 contains files", "50-59"),
+    ],
+)
+def test_long_line_excerpts_center_on_expanded_tokens(
+    query: str, ending: str, expected: str
+) -> None:
+    line = "padding " * 30 + ending
+
+    result = search.excerpt([line], search.query_terms([query]))
+
+    assert expected in result
+    assert result.startswith("...")
