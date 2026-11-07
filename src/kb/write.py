@@ -155,15 +155,16 @@ def _commit_snapshot(root: Path, path: str, command: str) -> CommitSnapshot:
 
 
 def _read_head(root: Path, *, allow_unborn: bool) -> tuple[str | None, str | None]:
-    """Read HEAD, recognizing an empty symbolic branch only for the pre-commit snapshot."""
+    """Read HEAD, recognizing an unborn branch only when its named reference is absent."""
     result = _git(root, "rev-parse", "--verify", "HEAD")
     if result.returncode == 0 and result.stdout.strip():
         return result.stdout.strip(), None
     if allow_unborn:
         symbolic = _git(root, "symbolic-ref", "-q", "HEAD")
-        status = _git(root, "status", "--porcelain")
-        if symbolic.returncode == 0 and status.returncode == 0:
-            return None, None
+        if symbolic.returncode == 0 and symbolic.stdout.strip():
+            reference = _git(root, "show-ref", "--verify", "--quiet", symbolic.stdout.strip())
+            if reference.returncode == 1:
+                return None, None
     detail = result.stderr.rstrip("\n")
     return None, detail or "Git did not return HEAD"
 
