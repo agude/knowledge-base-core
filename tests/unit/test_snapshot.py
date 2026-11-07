@@ -50,14 +50,14 @@ def test_index_follows_internal_links_without_reading_worktree_targets(
         "knowledge/real.md": ("100644", ARTICLE.encode()),
         "sources/real.md": ("100644", ARTICLE.encode()),
     }
-    content = snapshot.Index(tmp_path, files)
+    content = snapshot.GitFiles(tmp_path, files)
 
     assert content.read_bytes("knowledge/alias.md") == ARTICLE.encode()
     assert content.is_file("knowledge/alias.md")
 
 
 def test_index_rebases_absolute_internal_links(tmp_path: Path) -> None:
-    content = snapshot.Index(
+    content = snapshot.GitFiles(
         tmp_path,
         {
             "knowledge/alias.md": ("120000", str(tmp_path / "sources/real.md").encode()),
@@ -71,14 +71,14 @@ def test_index_rebases_absolute_internal_links(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("link", [b"../../external.md", b"/outside.md", b"alias.md"])
 def test_index_refuses_escaping_and_cyclic_links(tmp_path: Path, link: bytes) -> None:
-    content = snapshot.Index(tmp_path, {"knowledge/alias.md": ("120000", link)})
+    content = snapshot.GitFiles(tmp_path, {"knowledge/alias.md": ("120000", link)})
 
     with pytest.raises(ValueError):
         content.read_bytes("knowledge/alias.md")
 
 
 def test_index_refuses_a_missing_link_target(tmp_path: Path) -> None:
-    content = snapshot.Index(tmp_path, {"knowledge/alias.md": ("120000", b"missing.md")})
+    content = snapshot.GitFiles(tmp_path, {"knowledge/alias.md": ("120000", b"missing.md")})
 
     assert not content.is_file("knowledge/alias.md")
     with pytest.raises(FileNotFoundError):
@@ -98,3 +98,29 @@ def test_unmerged_entries_are_not_a_valid_publication_snapshot(tmp_path: Path) -
 
     with pytest.raises(KbError, match="unmerged index"):
         snapshot.read_index(root)
+
+
+def test_head_snapshot_uses_committed_bytes_and_content_relative_paths(tmp_path: Path) -> None:
+    root = repo(tmp_path / "repo", {"content/knowledge/a.md": ARTICLE.encode(), "outside.md": b"x"})
+    nested = root / "content"
+    (nested / "knowledge/a.md").write_bytes(b"unstaged")
+
+    baseline = snapshot.read_head(nested, "curate")
+
+    assert baseline.markdown_files() == ["knowledge/a.md"]
+    assert baseline.read_bytes("knowledge/a.md") == ARTICLE.encode()
+    assert not baseline.is_file("outside.md")
+
+
+def test_an_unborn_head_has_an_empty_baseline(tmp_path: Path) -> None:
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+
+    assert snapshot.read_head(tmp_path, "hook").files == {}
+
+
+def test_an_unreadable_head_is_not_an_empty_baseline(tmp_path: Path) -> None:
+    root = repo(tmp_path / "repo", {"knowledge/a.md": ARTICLE.encode()})
+    (root / ".git/HEAD").write_text("invalid head\n", encoding="utf-8")
+
+    with pytest.raises(KbError, match="curate: cannot read publication baseline HEAD"):
+        snapshot.read_head(root, "curate")

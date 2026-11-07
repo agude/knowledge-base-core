@@ -33,6 +33,7 @@ from kb import (
     remote,
     scratch,
     secrets,
+    snapshot,
 )
 from kb.args import Spec
 from kb.commands import recall as recall_command
@@ -510,7 +511,7 @@ def _finish(root: Path, git_directory: Path, run_id: str, *, no_push: bool) -> i
         return _resume_publication(root, committed, branch, no_push=no_push)
     _require_index_clean(root)
     changes = _publication_changes(root, batch)
-    verdict = publish.validate(root, changes)
+    verdict = publish.validate(root, changes, baseline=snapshot.read_head(root, WHO))
     if verdict.blocking:
         lines = [f"{WHO}: validation refused publication; nothing was written"]
         lines.extend(f"  {_finding_text(finding)}" for finding in verdict.blocking)

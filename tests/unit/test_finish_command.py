@@ -708,3 +708,28 @@ def test_git_queries_report_absence_outside_a_repository(tmp_path: Path) -> None
 )
 def test_worktree_codes_map_to_git_status_letters(code: str, status: str) -> None:
     assert curate._change_status(code) == status
+
+
+def test_finish_refuses_newly_broken_incoming_anchors_before_staging(
+    make_content: Callable[..., Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = make_content(origin=False)
+    source = ARTICLE + "\nSee [workflow](workflow.md#2).\n"
+    (root / "knowledge/index.md").write_text(source, encoding="utf-8")
+    (root / "knowledge/workflow.md").write_text(ARTICLE + "\n## 2. Second\n", encoding="utf-8")
+    git(root, "add", "--all")
+    git(root, "commit", "-q", "-m", "Seed valid incoming reference")
+    run = _settled(root, capsys)
+    (root / "knowledge/workflow.md").write_text(ARTICLE, encoding="utf-8")
+    before = git(root, "write-tree")
+    head = git(root, "rev-parse", "HEAD")
+
+    code, out, err = _run(capsys, "finish", run, "--no-push")
+
+    assert code == 1
+    assert out == ""
+    assert "missing local Markdown link anchor '#2'" in err
+    assert git(root, "write-tree") == before
+    assert git(root, "rev-parse", "HEAD") == head
+    assert (root / "knowledge/index.md").read_text(encoding="utf-8") == source
+    assert (root / "knowledge/workflow.md").read_text(encoding="utf-8") == ARTICLE

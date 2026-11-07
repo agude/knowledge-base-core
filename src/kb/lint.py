@@ -27,6 +27,8 @@ class Finding:
 
     target is the content-relative file that a reference finding names, when it resolves
     inside the repository. Publication uses it to tell whether a change removed that file.
+    reference identifies its kind and original destination across snapshots, regardless
+    of line number or the particular validation error.
     """
 
     path: str
@@ -34,6 +36,7 @@ class Finding:
     severity: str
     message: str
     target: str | None = None
+    reference: tuple[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -122,7 +125,15 @@ def reference_findings(
                 if reference.kind == "link"
                 else f"local source reference escapes content root: {reference.destination}"
             )
-            findings.append(Finding(reference.source_path, reference.line, "error", message))
+            findings.append(
+                Finding(
+                    reference.source_path,
+                    reference.line,
+                    "error",
+                    message,
+                    reference=(reference.kind, reference.destination),
+                )
+            )
             continue
 
         if not content.is_file(relpath):
@@ -132,7 +143,14 @@ def reference_findings(
                 else f"missing local source reference: {reference.destination}"
             )
             findings.append(
-                Finding(reference.source_path, reference.line, "error", message, relpath)
+                Finding(
+                    reference.source_path,
+                    reference.line,
+                    "error",
+                    message,
+                    relpath,
+                    (reference.kind, reference.destination),
+                )
             )
             continue
         if not has_fragment or not fragment or not relpath.endswith(".md"):
@@ -149,7 +167,14 @@ def reference_findings(
                 else f"missing source reference anchor '#{fragment}': {reference.destination}"
             )
             findings.append(
-                Finding(reference.source_path, reference.line, "error", message, relpath)
+                Finding(
+                    reference.source_path,
+                    reference.line,
+                    "error",
+                    message,
+                    relpath,
+                    (reference.kind, reference.destination),
+                )
             )
     return findings
 

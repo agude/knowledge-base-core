@@ -447,6 +447,9 @@ three-line script that calls this command by its absolute path. See
   a path-limited commit. Untracked targets and anchors present only in unstaged
   edits cannot satisfy references. `kb curate finish` validates the worktree
   before staging. Blocking findings reject the commit and modify nothing.
+- An unchanged article's reference blocks publication when it was valid in HEAD
+  and becomes invalid in the proposed snapshot, including after section removal
+  or a target rename. References that were already invalid remain preexisting.
 - After validation, `updated` is set to today's UTC date on each staged article
   whose value differs, and the article is staged again. A missing `updated` is
   not added, and `verified` and `ttl` are never changed.

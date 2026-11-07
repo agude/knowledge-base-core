@@ -61,7 +61,9 @@ def pre_commit(root: Path, environ: Mapping[str, str]) -> int:
         for relpath in unstaged:
             _say(f"{relpath} has unstaged changes; stage or discard the unstaged changes")
         return 1
-    verdict = publish.validate(root, changes, content=content)
+    verdict = publish.validate(
+        root, changes, content=content, baseline=snapshot.read_head(root, WHO)
+    )
     if verdict.blocking:
         for finding in verdict.blocking:
             _say(_finding_line(finding))
@@ -118,7 +120,9 @@ def _staged_changes(root: Path) -> list[publish.Change]:
     ]
 
 
-def _unstaged_articles(root: Path, articles: Sequence[str], content: snapshot.Index) -> list[str]:
+def _unstaged_articles(
+    root: Path, articles: Sequence[str], content: snapshot.GitFiles
+) -> list[str]:
     """Refuse unstaged article or link-target changes before any stamping."""
     if not articles:
         return []

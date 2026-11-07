@@ -393,3 +393,58 @@ def test_stamping_preserves_worktree_crlf_when_git_normalizes_the_index(tmp_path
     assert path.read_bytes() == expected.encode()
     assert git(root, "show", ":knowledge/a.md") == expected.replace("\r\n", "\n")
     assert git(root, "diff", "--name-only") == ""
+
+
+def test_section_removal_blocks_an_unchanged_incoming_reference(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = ARTICLE + "\nSee [b](b.md#2).\n"
+    root = repo(
+        tmp_path / "content",
+        {
+            "knowledge/a.md": source.encode(),
+            "knowledge/b.md": (ARTICLE + "\n## 2. Second\n").encode(),
+        },
+    )
+    stage_text(root, "knowledge/b.md", ARTICLE)
+    before = git(root, "write-tree")
+
+    assert hook.pre_commit(root, NOW) == 1
+
+    assert "missing local Markdown link anchor '#2'" in capsys.readouterr().err
+    assert git(root, "write-tree") == before
+    assert (root / "knowledge/a.md").read_text(encoding="utf-8") == source
+    assert (root / "knowledge/b.md").read_text(encoding="utf-8") == ARTICLE
+
+
+def test_an_invalid_incoming_reference_is_not_newly_broken_by_target_removal(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = ARTICLE + "\nSee [b](b.md#99).\n"
+    root = repo(
+        tmp_path / "content",
+        {"knowledge/a.md": source.encode(), "knowledge/b.md": ARTICLE.encode()},
+    )
+    git(root, "rm", "-q", "--", "knowledge/b.md")
+    before = git(root, "write-tree")
+
+    assert hook.pre_commit(root, NOW) == 0
+
+    assert "Preexisting (not blocking): 1" in capsys.readouterr().err
+    assert git(root, "write-tree") == before
+
+
+def test_renaming_a_target_refuses_the_unchanged_incoming_reference(tmp_path: Path) -> None:
+    source = ARTICLE + "\nSee [b](b.md#1).\n"
+    root = repo(
+        tmp_path / "content",
+        {"knowledge/a.md": source.encode(), "knowledge/b.md": ARTICLE.encode()},
+    )
+    git(root, "mv", "knowledge/b.md", "knowledge/renamed.md")
+    before = git(root, "write-tree")
+
+    assert hook.pre_commit(root, NOW) == 1
+
+    assert git(root, "write-tree") == before
+    assert (root / "knowledge/renamed.md").read_text(encoding="utf-8") == ARTICLE
+    assert (root / "knowledge/a.md").read_text(encoding="utf-8") == source

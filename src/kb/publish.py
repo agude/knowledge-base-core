@@ -104,17 +104,22 @@ def classify(
     findings: Iterable[lint.Finding],
     changed: frozenset[str],
     vanished: frozenset[str],
+    *,
+    previously_invalid: frozenset[tuple[str, str, str]] | None = None,
 ) -> Verdict:
     """Split findings into those that block publication and those that already existed.
 
-    A finding in a changed article blocks. A reference finding in any other article blocks
-    when its target is a path this change removed. Every other finding is preexisting.
+    A finding in a changed article blocks. With a baseline, an unchanged article's
+    reference blocks only if it was valid before. Without one, removed targets block.
     """
     blocking: list[lint.Finding] = []
     preexisting: list[lint.Finding] = []
     for finding in findings:
-        removed_target = finding.target is not None and finding.target in vanished
-        if finding.path in changed or removed_target:
+        blocks_reference = finding.target is not None and finding.target in vanished
+        if previously_invalid is not None and finding.reference is not None:
+            kind, destination = finding.reference
+            blocks_reference = (finding.path, kind, destination) not in previously_invalid
+        if finding.path in changed or blocks_reference:
             blocking.append(finding)
         else:
             preexisting.append(finding)
@@ -122,7 +127,11 @@ def classify(
 
 
 def validate(
-    root: Path, changes: Sequence[Change], *, content: snapshot.Content | None = None
+    root: Path,
+    changes: Sequence[Change],
+    *,
+    content: snapshot.Content | None = None,
+    baseline: snapshot.Content | None = None,
 ) -> Verdict:
     """Lint every article against the selected snapshot (the worktree by default).
 
@@ -151,7 +160,26 @@ def validate(
         findings.extend(
             lint.reference_findings(root, documents[relpath], documents, content=content)
         )
-    return classify(findings, changed, vanished)
+    previously_invalid = None if baseline is None else _invalid_references(root, baseline)
+    return classify(findings, changed, vanished, previously_invalid=previously_invalid)
+
+
+def _invalid_references(root: Path, content: snapshot.Content) -> frozenset[tuple[str, str, str]]:
+    """Identify invalid baseline references independently of line numbers or error wording."""
+    documents: dict[str, model.Document] = {}
+    for path in content.markdown_files():
+        try:
+            raw = content.read_bytes(path)
+        except (ValueError, OSError):
+            continue
+        documents[path] = model.parse(path, corpus.decode_text(raw))
+    invalid: set[tuple[str, str, str]] = set()
+    for path in list(documents):
+        for finding in lint.reference_findings(root, documents[path], documents, content=content):
+            if finding.reference is not None:
+                kind, destination = finding.reference
+                invalid.add((finding.path, kind, destination))
+    return frozenset(invalid)
 
 
 def render_message(run_id: str, batch: curation.Batch, changes: Iterable[Change]) -> str:
