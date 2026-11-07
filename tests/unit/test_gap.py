@@ -7,13 +7,15 @@ import shutil
 import socket
 import subprocess
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from kb import cli, lock, observation, secrets, write
-from kb.commands import gap
+from kb.commands import gap, sync
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "content"
 USAGE = "Usage: kb gap --title TITLE --body TEXT --context PATH\n"
@@ -279,6 +281,36 @@ def test_success_writes_exact_bytes_commits_one_path_and_reads_back(
     assert body in read_output
 
 
+def test_sync_recovery_at_lock_acquisition_does_not_remove_gap_scratch(
+    content: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    original_lock = lock.write_lock
+
+    @contextmanager
+    def recover_then_lock(git_directory: Path, wait: int, backend: lock.Backend) -> Iterator[None]:
+        sync._recover(content, git_directory, observation.short_host(socket.gethostname()))
+        with original_lock(git_directory, wait, backend):
+            yield
+
+    monkeypatch.setattr(lock, "write_lock", recover_then_lock)
+
+    status, out, err = run_gap(
+        capsys,
+        "--title",
+        "Recovery boundary",
+        "--body",
+        "Keep scratch.",
+        "--context",
+        "infra",
+    )
+
+    assert (status, err) == (0, "")
+    assert out.startswith("Wrote: questions/open/")
+    assert list((content / ".git" / "kb-tmp").iterdir()) == []
+
+
 def test_secrets_in_each_supplied_field_are_refused_without_publication(
     content: Path,
     capsys: pytest.CaptureFixture[str],
@@ -329,6 +361,41 @@ def test_question_filename_collision_uses_a_new_random_suffix(
     assert git(content, "show", "--name-only", "--format=", "HEAD").split() == [
         "questions/open/20261026T120005-00000002.md"
     ]
+
+
+def test_a_record_name_collision_preserves_the_existing_scratch_file(
+    content: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    scratch = content / ".git" / "kb-tmp"
+    scratch.mkdir()
+    collision = scratch / "record-01020304.md"
+    collision.write_text("Keep this file.\n", encoding="utf-8")
+    draws = iter(
+        [
+            b"\xaa\xaa\xaa\xaa",
+            b"\x01\x02\x03\x04",
+            b"\x05\x06\x07\x08",
+            b"\x00\x00\x00\x01",
+        ]
+    )
+    monkeypatch.setattr(os, "urandom", lambda size: next(draws))
+
+    status, out, err = run_gap(
+        capsys,
+        "--title",
+        "Scratch collision",
+        "--body",
+        "Keep it.",
+        "--context",
+        "infra",
+    )
+
+    assert (status, err) == (0, "")
+    assert out.startswith("Wrote: questions/open/")
+    assert collision.read_text(encoding="utf-8") == "Keep this file.\n"
+    assert sorted(path.name for path in scratch.iterdir()) == [collision.name]
 
 
 def test_failed_staging_removes_the_new_question_and_preserves_existing_questions(

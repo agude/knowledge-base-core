@@ -255,4 +255,4 @@ def test_kernel_lock_blocks_gap_before_publication(git_kb: Kb) -> None:
     assert sorted(path.name for path in (git_kb.content / "questions/open").glob("*.md")) == (
         before_questions
     )
-    assert list((git_kb.content / ".git" / "kb-tmp").iterdir()) == []
+    assert not (git_kb.content / ".git" / "kb-tmp").exists()

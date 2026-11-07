@@ -499,7 +499,11 @@ The write takes one lock: an exclusive kernel lock on `<git dir>/kb.lock`, which
 kernel releases when the process exits.
 
 Temporary files for a write live in `<git dir>/kb-tmp` and are removed on every
-path.
+path. Writers acquire the common lock before creating or scanning shared scratch.
+Files that hold supplied or transcript text use mode `0600` on POSIX. Scratch
+files are created exclusively; a name collision leaves the existing file
+untouched. `sync --dry-run` uses a standalone private temporary directory and
+does not acquire the writer lock.
 
 ### `kb sync`
 

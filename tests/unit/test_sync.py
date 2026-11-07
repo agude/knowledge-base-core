@@ -803,6 +803,24 @@ def test_recover_skips_missing_pending_and_symlink_entries(tmp_path: Path) -> No
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="symbolic links need privilege")
+def test_recover_refuses_a_symlinked_scratch_directory(tmp_path: Path) -> None:
+    root = make_repo(tmp_path / "content")
+    git_dir = root / ".git"
+    external = tmp_path / "external"
+    external.mkdir()
+    existing = external / "active.md"
+    existing.write_text("Keep active scratch.\n", encoding="utf-8")
+    scratch = git_dir / sync.TMP
+    scratch.symlink_to(external, target_is_directory=True)
+
+    with pytest.raises(KbError, match="temporary directory is a symlink"):
+        sync._recover(root, git_dir, "test-host")
+
+    assert scratch.is_symlink()
+    assert existing.read_text(encoding="utf-8") == "Keep active scratch.\n"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symbolic links need privilege")
 @pytest.mark.parametrize("relative", ["observations", "observations/pending"])
 @pytest.mark.parametrize("target_kind", ["internal", "external"])
 def test_recover_refuses_symlinked_fixed_directories_without_mutation(
@@ -892,25 +910,25 @@ def test_empty_directory_handles_symlinks_files_and_nested_dirs(
 def test_scanner_workspace_preserves_or_cleans_and_rejects_symlink(tmp_path: Path) -> None:
     git_dir = tmp_path / ".git"
     git_dir.mkdir()
-    with sync._scanner_workspace(git_dir, preserve=True) as directory:
+    with sync._scanner_workspace(git_dir, standalone=True) as directory:
         assert directory.is_dir()
     assert not (git_dir / sync.TMP).exists()
     scratch = git_dir / sync.TMP
     scratch.mkdir()
     before = scratch.stat().st_mtime_ns
-    with sync._scanner_workspace(git_dir, preserve=True):
+    with sync._scanner_workspace(git_dir, standalone=True):
         pass
     assert scratch.is_dir() and scratch.stat().st_mtime_ns == before
-    with sync._scanner_workspace(git_dir, preserve=False):
+    with sync._scanner_workspace(git_dir, standalone=False):
         pass
     assert scratch.is_dir() and list(scratch.iterdir()) == []
-    with pytest.raises(RuntimeError), sync._scanner_workspace(git_dir, preserve=True):
+    with pytest.raises(RuntimeError), sync._scanner_workspace(git_dir, standalone=True):
         raise RuntimeError("leave")
     scratch.rmdir()
     scratch.symlink_to(git_dir)
     with (
         pytest.raises(KbError, match="symbolic link"),
-        sync._scanner_workspace(git_dir, preserve=True),
+        sync._scanner_workspace(git_dir, standalone=False),
     ):
         pass
 

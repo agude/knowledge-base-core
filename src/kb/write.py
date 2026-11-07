@@ -6,7 +6,7 @@ from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
 
-from kb import lock, observation, secrets
+from kb import lock, observation, scratch, secrets
 from kb.content_paths import fixed_directory
 from kb.errors import KbError
 
@@ -29,22 +29,19 @@ def publish_and_commit(
     """Scan, publish, and commit one new file under the shared writer protections."""
     fixed_directory(root, directory, command=command, create=False, optional=True)
     git_directory = lock.git_dir(root, command)
-    scratch = git_directory / "kb-tmp"
-    scratch.mkdir(parents=True, exist_ok=True)
-    found = secrets.findings(scratch, scan_text)
-    if found:
-        raise KbError("\n".join(refusal_lines(found)))
+    backend = lock.default_backend(platform)
+    with lock.write_lock(git_directory, wait, backend):
+        scratch_directory = scratch.shared_directory(git_directory, command)
+        found = secrets.findings(scratch_directory, scan_text)
+        if found:
+            raise KbError("\n".join(refusal_lines(found)))
 
-    temporary = scratch / f"record-{os.urandom(4).hex()}.md"
-    try:
-        with temporary.open("x", encoding="utf-8", newline="") as handle:
-            handle.write(text)
-        backend = lock.default_backend(platform)
-        with lock.write_lock(git_directory, wait, backend):
+        temporary = scratch.create_file(scratch_directory, "record-", ".md", text.encode("utf-8"))
+        try:
             name = _publish(root, directory, temporary, when, command)
             _commit(root, f"{directory}/{name}", subject, command)
-    finally:
-        temporary.unlink(missing_ok=True)
+        finally:
+            temporary.unlink(missing_ok=True)
     return name
 
 

@@ -6,11 +6,11 @@ contain a path that Git or the operating system reported.
 """
 
 import json
-import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from kb import scratch
 from kb.errors import KbError
 
 SCHEMA_VERSION = 1
@@ -98,13 +98,16 @@ def write(git_directory: Path, state: SyncState) -> None:
     The caller holds the writer lock. A failure leaves the previous record in place.
     """
     destination = path(git_directory)
-    scratch = git_directory / TMP
-    scratch.mkdir(parents=True, exist_ok=True)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = scratch / f"sync-state-{os.urandom(4).hex()}.json"
+    scratch_directory = scratch.shared_directory(git_directory, "sync")
+    temporary = scratch.create_file(
+        scratch_directory,
+        "sync-state-",
+        ".json",
+        render(state).encode("utf-8"),
+        mode=0o666,
+    )
     try:
-        with temporary.open("x", encoding="utf-8", newline="") as handle:
-            handle.write(render(state))
         temporary.replace(destination)
     finally:
         temporary.unlink(missing_ok=True)

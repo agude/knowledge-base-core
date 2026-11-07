@@ -6,8 +6,9 @@ scan file in a directory that the caller names, scanned there, and deleted on ev
 Nothing here makes a network call.
 """
 
-import os
 from pathlib import Path
+
+from kb import scratch
 
 
 def findings(directory: Path, text: str) -> list[tuple[str, int]]:
@@ -19,10 +20,8 @@ def findings(directory: Path, text: str) -> list[tuple[str, int]]:
     from detect_secrets.core.scan import scan_file
     from detect_secrets.settings import default_settings
 
-    path = directory / f"scan-{os.urandom(4).hex()}.md"
+    path = scratch.create_file(directory, "scan-", ".md", text.encode("utf-8"))
     try:
-        with path.open("x", encoding="utf-8", newline="") as handle:
-            handle.write(text)
         with default_settings():
             return [(secret.type, secret.line_number) for secret in scan_file(str(path))]
     finally:

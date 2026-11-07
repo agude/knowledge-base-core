@@ -23,6 +23,7 @@ from kb import (
     model,
     observation,
     remote,
+    scratch,
     secrets,
     sync_state,
     token_cache,
@@ -178,7 +179,7 @@ def recover_and_harvest(
         errors.append(f"sync: recovery failed: {error}")
 
     if harvest_since is not None:
-        with _scanner_workspace(git_directory, preserve=False) as scan_directory:
+        with _scanner_workspace(git_directory, standalone=False) as scan_directory:
             candidates = _scan_transcripts(environ)
             errors.extend(_failure_text(failure) for failure in candidates.failures)
             records = _head_records(root)
@@ -383,7 +384,7 @@ def _dry_run(
         sys.stdout.write("Totals: 0 sessions, 0 messages, 0 bytes, 0 redacted lines\n")
         return 0
     try:
-        with _scanner_workspace(git_directory, preserve=True) as scan_directory:
+        with _scanner_workspace(git_directory, standalone=True) as scan_directory:
             scanned = _scan_transcripts(environ)
             records = _head_records(root)
             state = harvest.reconstruct_state(records, _sessions(scanned.candidates), host)
@@ -589,7 +590,10 @@ def _record_from_document(document: model.Document) -> harvest.HarvestRecord | N
 def _recover(root: Path, git_directory: Path, host: str) -> None:
     """Remove this host's uncommitted transcript observations and empty kb-tmp."""
     pending = fixed_directory(root, PENDING, command="sync", create=False, optional=True)
-    _empty_directory(git_directory / TMP)
+    scratch_directory = git_directory / TMP
+    if scratch_directory.is_symlink():
+        raise KbError(f"temporary directory is a symlink: {scratch_directory}")
+    _empty_directory(scratch_directory)
     if pending is None:
         return
     prefix = git_paths.repository_prefix(root, "sync")
@@ -667,22 +671,19 @@ def _empty_directory(path: Path) -> None:
 
 
 @contextmanager
-def _scanner_workspace(git_directory: Path, preserve: bool) -> Iterator[Path]:
-    """Yield a private scanner directory under git/kb-tmp and remove it on exit."""
-    scratch = git_directory / TMP
-    if scratch.is_symlink():
-        raise KbError(f"{scratch} must not be a symbolic link")
-    original = scratch.stat() if preserve and scratch.exists() else None
-    scratch.mkdir(parents=True, exist_ok=True)
-    try:
-        with tempfile.TemporaryDirectory(prefix="sync-", dir=scratch) as directory:
+def _scanner_workspace(git_directory: Path, *, standalone: bool) -> Iterator[Path]:
+    """Yield private scratch; dry-runs keep it outside Git, writers use shared scratch."""
+    if standalone:
+        with tempfile.TemporaryDirectory(prefix="sync-") as directory:
             yield Path(directory)
-    finally:
-        if preserve:
-            if original is None:
-                scratch.rmdir()
-            else:
-                os.utime(scratch, ns=(original.st_atime_ns, original.st_mtime_ns))
+        return
+
+    scratch_path = git_directory / TMP
+    if scratch_path.is_symlink():
+        raise KbError(f"{scratch_path} must not be a symbolic link")
+    scratch_directory = scratch.shared_directory(git_directory, "sync")
+    with tempfile.TemporaryDirectory(prefix="sync-", dir=scratch_directory) as directory:
+        yield Path(directory)
 
 
 def _write_selection(
@@ -827,12 +828,10 @@ def _detector_counts(counts: Mapping[str, set[ContentLine | str]]) -> dict[str, 
 
 def _publish(root: Path, scan_directory: Path, text: str, now: datetime) -> str:
     """Write a temporary observation, rename it into pending, and return its relative path."""
-    temporary = scan_directory / observation.temporary_name(os.urandom(4).hex())
     pending = fixed_directory(root, PENDING, command="sync", create=True)
     assert pending is not None
+    temporary = scratch.create_file(scan_directory, "observation-", ".md", text.encode("utf-8"))
     try:
-        with temporary.open("x", encoding="utf-8", newline="") as handle:
-            handle.write(text)
         for _ in range(MAX_NAME_TRIES):
             name = observation.file_name(now, os.urandom(4).hex())
             destination = pending / name

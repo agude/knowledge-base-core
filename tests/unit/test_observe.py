@@ -9,15 +9,18 @@ import os
 import re
 import shutil
 import socket
+import stat
 import subprocess
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
-from kb import cli, observation, secrets, write
-from kb.commands import observe
+from kb import cli, lock, observation, secrets, write
+from kb.commands import observe, sync
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "content"
 USAGE = "Usage: kb observe --title TITLE --body TEXT\n"
@@ -57,6 +60,10 @@ class FixedClock:
     @staticmethod
     def now(tz: object = None) -> datetime:
         return datetime(2026, 10, 26, 12, 0, 5, tzinfo=UTC)
+
+
+class ScannerInterrupted(BaseException):
+    """A scanner interruption that must propagate after releasing the writer lock."""
 
 
 def git(repo: Path, *args: str) -> str:
@@ -256,6 +263,74 @@ def test_success_writes_one_file_and_commits_it(
     assert kb_tmp(content) == []
 
 
+def test_sync_recovery_at_lock_acquisition_does_not_remove_observe_scratch(
+    content: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    original_lock = lock.write_lock
+
+    @contextmanager
+    def recover_then_lock(git_directory: Path, wait: int, backend: lock.Backend) -> Iterator[None]:
+        sync._recover(content, git_directory, observation.short_host(socket.gethostname()))
+        with original_lock(git_directory, wait, backend):
+            yield
+
+    monkeypatch.setattr(lock, "write_lock", recover_then_lock)
+
+    status, out, err = run_kb(capsys, "--title", "Recovery boundary", "--body", "Keep scratch.")
+
+    assert (status, err) == (0, "")
+    assert WROTE.fullmatch(out) is not None
+    assert kb_tmp(content) == []
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("scanner failed"), ScannerInterrupted()])
+def test_scanner_failure_cleans_scratch_and_releases_the_writer_lock(
+    content: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: BaseException,
+) -> None:
+    from detect_secrets.core import scan as detect_scan
+
+    def broken(filename: str) -> Iterator[object]:
+        raise failure
+
+    monkeypatch.setattr(detect_scan, "scan_file", broken)
+
+    with pytest.raises(type(failure)):
+        observe._record(content, "Scanner failure", "Ordinary test text.", 0)
+
+    assert kb_tmp(content) == []
+    with lock.write_lock(content / ".git", 0, lock.default_backend(sys.platform)):
+        pass
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX umask behavior")
+def test_record_scratch_file_is_owner_only_with_a_group_readable_umask(
+    content: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    original_publish = write._publish
+    modes: list[int] = []
+
+    def inspect(root: Path, directory: str, temporary: Path, when: datetime, command: str) -> str:
+        modes.append(stat.S_IMODE(temporary.stat().st_mode))
+        return original_publish(root, directory, temporary, when, command)
+
+    monkeypatch.setattr(write, "_publish", inspect)
+    previous = os.umask(0o022)
+    try:
+        status, out, err = run_kb(capsys, "--title", "Private scratch", "--body", "Safe text.")
+    finally:
+        os.umask(previous)
+
+    assert (status, err) == (0, "")
+    assert WROTE.fullmatch(out) is not None
+    assert modes == [0o600]
+
+
 def test_project_is_the_top_of_the_repository_the_process_is_in(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -363,6 +438,55 @@ def test_a_taken_name_draws_a_new_suffix(
         encoding="utf-8"
     ) == "taken\n"
     assert kb_tmp(content) == []
+
+
+def test_a_record_name_collision_preserves_the_existing_scratch_file(
+    content: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    scratch = content / ".git" / "kb-tmp"
+    scratch.mkdir()
+    collision = scratch / "record-01020304.md"
+    collision.write_text("Keep this file.\n", encoding="utf-8")
+    draws = iter(
+        [
+            b"\xaa\xaa\xaa\xaa",
+            b"\x01\x02\x03\x04",
+            b"\x05\x06\x07\x08",
+            b"\x00\x00\x00\x01",
+        ]
+    )
+    monkeypatch.setattr(os, "urandom", lambda size: next(draws))
+
+    status, out, err = run_kb(capsys, "--title", "Scratch collision", "--body", "Keep it.")
+
+    assert (status, err) == (0, "")
+    assert WROTE.fullmatch(out) is not None
+    assert collision.read_text(encoding="utf-8") == "Keep this file.\n"
+    assert sorted(path.name for path in scratch.iterdir()) == [collision.name]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symbolic links need privilege")
+def test_observe_refuses_a_symlinked_scratch_directory(
+    content: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    external = tmp_path / "external"
+    external.mkdir()
+    existing = external / "keep.md"
+    existing.write_text("Keep this file.\n", encoding="utf-8")
+    scratch = content / ".git" / "kb-tmp"
+    scratch.symlink_to(external, target_is_directory=True)
+
+    status, out, err = run_kb(capsys, "--title", "Unsafe scratch", "--body", "Do not write.")
+
+    assert (status, out) == (1, "")
+    assert err.startswith("observe: temporary directory is a symlink:")
+    assert scratch.is_symlink()
+    assert existing.read_text(encoding="utf-8") == "Keep this file.\n"
+    assert sorted(path.name for path in external.iterdir()) == [existing.name]
 
 
 def test_five_taken_names_are_a_failure(

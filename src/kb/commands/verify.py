@@ -1,12 +1,13 @@
 """kb verify: set an article's verification date and a required valid TTL."""
 
 import os
+import stat
 import sys
 import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
-from kb import args, corpus, lint, lock, model, secrets
+from kb import args, corpus, lint, lock, model, scratch, secrets
 from kb.args import Spec
 from kb.context import Context, load
 from kb.errors import KbError
@@ -157,13 +158,11 @@ def _verify(
         if result == original:
             return ttl
 
-        scratch = git / "kb-tmp"
-        scratch.mkdir(parents=True, exist_ok=True)
-        temporary = scratch / f"verify-{os.urandom(4).hex()}.md"
+        scratch_directory = scratch.shared_directory(git, WHO)
+        temporary = scratch.create_file(
+            scratch_directory, "verify-", ".md", result, mode=stat.S_IMODE(article.stat().st_mode)
+        )
         try:
-            with temporary.open("xb") as handle:
-                handle.write(result)
-            temporary.chmod(article.stat().st_mode & 0o7777)
             temporary.replace(article)
         finally:
             temporary.unlink(missing_ok=True)

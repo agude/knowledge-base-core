@@ -32,6 +32,7 @@ from kb import (
     observation,
     publish,
     remote,
+    scratch,
     secrets,
 )
 from kb.args import Spec
@@ -1279,6 +1280,7 @@ def _replace_manifest(git_directory: Path, target: Path, batch: curation.Batch) 
     try:
         if target.is_symlink() or not target.is_file():
             raise KbError(f"{WHO}: batch manifest is missing or unsafe: {target.name}")
+        temporary.chmod(stat.S_IMODE(target.stat().st_mode))
         temporary.replace(target)
     finally:
         temporary.unlink(missing_ok=True)
@@ -1310,22 +1312,8 @@ def _publish_archive(
 
 def _write_scratch_file(git_directory: Path, content: bytes) -> Path:
     """Write and fsync temporary bytes under the common Git scratch directory."""
-    scratch = git_directory / "kb-tmp"
-    if scratch.is_symlink():
-        raise KbError(f"{WHO}: temporary directory is a symlink: {scratch}")
-    scratch.mkdir(parents=True, exist_ok=True)
-    if not scratch.resolve().is_relative_to(git_directory.resolve()):
-        raise KbError(f"{WHO}: temporary directory escapes the Git directory")
-    temporary = scratch / f"curate-{os.urandom(8).hex()}.tmp"
-    try:
-        with temporary.open("xb") as handle:
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-    except BaseException:
-        temporary.unlink(missing_ok=True)
-        raise
-    return temporary
+    directory = scratch.shared_directory(git_directory, WHO)
+    return scratch.create_file(directory, "curate-", ".tmp", content, flush=True)
 
 
 def _remove_pending(root: Path, member: curation.Member) -> None:
@@ -1757,18 +1745,11 @@ def _fixed_directory(
 
 def _publish_manifest(git_directory: Path, target: Path, text: str) -> None:
     """Publish one manifest atomically from the common Git directory's scratch area."""
-    scratch = git_directory / "kb-tmp"
-    if scratch.is_symlink():
-        raise KbError(f"{WHO}: temporary directory is a symlink: {scratch}")
-    scratch.mkdir(parents=True, exist_ok=True)
-    if not scratch.resolve().is_relative_to(git_directory.resolve()):
-        raise KbError(f"{WHO}: temporary directory escapes the Git directory")
-    temporary = scratch / f"curate-{os.urandom(8).hex()}.json"
+    directory = scratch.shared_directory(git_directory, WHO)
+    temporary = scratch.create_file(
+        directory, "curate-", ".json", text.encode("utf-8"), mode=0o666, flush=True
+    )
     try:
-        with temporary.open("xb") as handle:
-            handle.write(text.encode("utf-8"))
-            handle.flush()
-            os.fsync(handle.fileno())
         if target.exists() or target.is_symlink():
             raise KbError(f"{WHO}: batch manifest already exists: {target.name}")
         temporary.replace(target)
