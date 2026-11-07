@@ -209,23 +209,19 @@ def _commit_outcome(root: Path, snapshot: CommitSnapshot, subject: str) -> tuple
     if snapshot.repository_path not in changed.stdout.splitlines():
         return "unknown", "the new commit does not contain the transaction path"
 
-    head_content = _git(root, "show", f"{head}:{snapshot.repository_path}")
-    if head_content.returncode != 0:
-        return "unknown", _detail(head_content.stderr, "cannot read the committed file")
-    index_content = _git(root, "show", f":{snapshot.repository_path}")
-    if index_content.returncode != 0:
-        return "unknown", _detail(index_content.stderr, "cannot read the indexed file")
+    head_content, head_error = _git_blob(root, f"{head}:{snapshot.repository_path}")
+    if head_content is None:
+        return "unknown", _detail(head_error, "cannot read the committed file")
+    index_content, index_error = _git_blob(root, f":{snapshot.repository_path}")
+    if index_content is None:
+        return "unknown", _detail(index_error, "cannot read the indexed file")
     try:
         worktree_content = (root / snapshot.path).read_bytes()
     except OSError as error:
         return "unknown", f"cannot read the worktree file: {error}"
 
     expected = snapshot.content
-    if (
-        head_content.stdout.encode("utf-8") != expected
-        or index_content.stdout.encode("utf-8") != expected
-        or worktree_content != expected
-    ):
+    if head_content != expected or index_content != expected or worktree_content != expected:
         return "unknown", "HEAD, index, and worktree do not match the saved file bytes"
     return "committed", ""
 
@@ -262,6 +258,22 @@ def _git(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
         encoding="utf-8",
         check=False,
     )
+
+
+def _git_blob(root: Path, revision: str) -> tuple[bytes | None, str]:
+    """Read one blob as raw bytes, or return None and Git's error text.
+
+    Text mode would translate CRLF to LF on Windows and alter the content.
+    """
+    result = subprocess.run(
+        ["git", "show", revision],
+        cwd=root,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None, result.stderr.decode("utf-8", errors="replace").replace("\r\n", "\n")
+    return result.stdout, ""
 
 
 def _unstage_paths(

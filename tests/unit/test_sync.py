@@ -1383,8 +1383,9 @@ def test_write_selection_reports_failed_cleanup_after_publish_error(
     assert (root / first_path).read_text(encoding="utf-8") == "published before failure\n"
 
 
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
 def test_commit_observations_preserves_a_commit_with_an_interrupted_result(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, newline: str
 ) -> None:
     root = make_repo(tmp_path / "content")
     for key, value in GIT_ENV.items():
@@ -1396,7 +1397,7 @@ def test_commit_observations_preserves_a_commit_with_an_interrupted_result(
     for index, path in enumerate(paths):
         destination = root / path
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(f"observation {index}\n", encoding="utf-8")
+        destination.write_bytes(f"observation {index}{newline}".encode())
     unrelated = root / "unrelated.md"
     unrelated.write_text("staged separately\n", encoding="utf-8")
     git(root, "add", "unrelated.md")

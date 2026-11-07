@@ -124,8 +124,8 @@ def test_unmerged_entries_are_not_a_valid_publication_snapshot(tmp_path: Path) -
     subprocess.run(
         ["git", "update-index", "--index-info"],
         cwd=root,
-        input=f"100644 {object_id} 1\tknowledge/a.md\n",
-        text=True,
+        # Bytes keep Windows text mode from sending "a.md\r" as the path.
+        input=f"100644 {object_id} 1\tknowledge/a.md\n".encode(),
         check=True,
     )
 
