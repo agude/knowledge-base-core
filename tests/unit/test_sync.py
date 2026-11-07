@@ -1202,6 +1202,128 @@ def test_commit_observations_cleans_up_staging_and_paths_on_failure(
     assert not (root / path).exists()
 
 
+def test_rejected_hook_edits_do_not_leave_deleted_staged_batch_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = make_repo(tmp_path / "content")
+    for key, value in GIT_ENV.items():
+        monkeypatch.setenv(key, value)
+    paths = (
+        "observations/pending/first.md",
+        "observations/pending/second.md",
+    )
+    for index, path in enumerate(paths):
+        destination = root / path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(f"observation {index}\n", encoding="utf-8")
+    unrelated = root / "unrelated.md"
+    unrelated.write_text("keep this staged file\n", encoding="utf-8")
+    git(root, "add", "unrelated.md")
+    hook = root / ".git" / "hooks" / "pre-commit"
+    hook.write_text(
+        "#!/bin/sh\n"
+        "printf 'hook edit one\\n' > observations/pending/first.md\n"
+        "printf 'hook edit two\\n' > observations/pending/second.md\n"
+        "echo 'reject after editing' >&2\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    hook.chmod(0o755)
+
+    result = sync._commit_observations(root, paths)
+
+    assert result is not None and "commit failed" in result
+    assert git(root, "status", "--porcelain") == "A  unrelated.md\n"
+    assert all(not (root / path).exists() for path in paths)
+    assert unrelated.read_text(encoding="utf-8") == "keep this staged file\n"
+
+
+@pytest.mark.parametrize("failed_command", ["ls-files", "rm"])
+def test_sync_retains_batch_files_when_index_cleanup_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failed_command: str
+) -> None:
+    root = make_repo(tmp_path / "content")
+    for key, value in GIT_ENV.items():
+        monkeypatch.setenv(key, value)
+    paths = (
+        "observations/pending/first.md",
+        "observations/pending/second.md",
+    )
+    expected = {}
+    for index, path in enumerate(paths):
+        destination = root / path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        content = f"observation {index}\n"
+        destination.write_text(content, encoding="utf-8")
+        expected[path] = content
+    unrelated = root / "unrelated.md"
+    unrelated.write_text("keep this staged file\n", encoding="utf-8")
+    git(root, "add", "unrelated.md")
+    hook = root / ".git" / "hooks" / "pre-commit"
+    hook.write_text("#!/bin/sh\necho 'reject commit' >&2\nexit 1\n", encoding="utf-8")
+    hook.chmod(0o755)
+    run_git = sync._git
+
+    def fail_index_cleanup(worktree: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        if words[0] == failed_command:
+            return completed(128, stderr="index unavailable\n")
+        return run_git(worktree, *words)
+
+    monkeypatch.setattr(sync, "_git", fail_index_cleanup)
+    result = sync._commit_observations(root, paths)
+
+    assert result is not None and "rollback failed" in result
+    assert all(path in result for path in paths)
+    assert "index unavailable" in result
+    assert {path: (root / path).read_text(encoding="utf-8") for path in paths} == expected
+    assert git(root, "status", "--porcelain") == (
+        "A  observations/pending/first.md\nA  observations/pending/second.md\nA  unrelated.md\n"
+    )
+    assert unrelated.read_text(encoding="utf-8") == "keep this staged file\n"
+
+
+def test_write_selection_reports_failed_cleanup_after_publish_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = make_repo(tmp_path / "content")
+    scan = tmp_path / "scanner"
+    scan.mkdir()
+    first_path = "observations/pending/first.md"
+    first = make_plan()
+    second = make_plan(make_session("second"))
+    monkeypatch.setattr(sync, "_prepare", lambda *args: sync.Prepared("text", None, 1, {}))
+    calls = 0
+
+    def publish_once(worktree: Path, *_args: object) -> str:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("second publication failed")
+        destination = worktree / first_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text("published before failure\n", encoding="utf-8")
+        return first_path
+
+    monkeypatch.setattr(sync, "_publish", publish_once)
+    run_git = sync._git
+
+    def fail_index_inspection(worktree: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        if words[0] == "ls-files":
+            return completed(128, stderr="index unavailable\n")
+        return run_git(worktree, *words)
+
+    monkeypatch.setattr(sync, "_git", fail_index_inspection)
+    result, *_ = sync._write_selection(root, (first, second), scan, "host", NOW)
+
+    assert result.count == 0
+    assert len(result.failures) == 2
+    assert "second publication failed" in result.failures[0]
+    assert "rollback failed" in result.failures[1]
+    assert first_path in result.failures[1]
+    assert "index unavailable" in result.failures[1]
+    assert (root / first_path).read_text(encoding="utf-8") == "published before failure\n"
+
+
 def test_commit_observations_preserves_a_commit_with_an_interrupted_result(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

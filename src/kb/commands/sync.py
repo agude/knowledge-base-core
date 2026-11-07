@@ -710,7 +710,9 @@ def _write_selection(
             path = _publish(root, scan_directory, result.text, now)
         except (OSError, UnicodeError, KbError) as error:
             failures.append(_failure_text(Failure(plan.session.id or "unknown", str(error))))
-            _remove_paths(root, paths)
+            cleanup_error = _remove_paths(root, paths)
+            if cleanup_error is not None:
+                failures.append(cleanup_error)
             return WriteResult(0, tuple(failures)), 0, 0, 0, {}
         paths.append(path)
     if paths:
@@ -877,7 +879,9 @@ def _commit_observations(root: Path, paths: Sequence[str]) -> str | None:
         if outcome == "unknown":
             message = _uncertain_observation_commit(paths, detail)
             raise KbError(message) from error
-        _remove_paths(root, paths)
+        cleanup_error = _remove_paths(root, paths)
+        if cleanup_error is not None:
+            raise KbError(f"{cleanup_error}; original failure: {error}") from error
         raise
 
 
@@ -908,8 +912,9 @@ def _finish_failed_observation_commit(
         return None
     if outcome == "unknown":
         return _uncertain_observation_commit(paths, detail)
-    _remove_paths(root, paths)
-    return f"sync: commit failed: {detail}" if detail else "sync: commit failed"
+    failure = f"sync: commit failed: {detail}" if detail else "sync: commit failed"
+    cleanup_error = _remove_paths(root, paths)
+    return f"{failure}; {cleanup_error}" if cleanup_error is not None else failure
 
 
 def _observation_failure_detail(reported: str, inspection: str, outcome: str) -> str:
@@ -931,11 +936,24 @@ def _uncertain_observation_commit(paths: Sequence[str], detail: str) -> str:
     return f"{message}: {detail}" if detail else message
 
 
-def _remove_paths(root: Path, paths: Sequence[str]) -> None:
-    """Unstage and delete only the observation paths supplied by this run."""
-    _git(root, "rm", "-q", "--cached", "--ignore-unmatch", "--", *paths)
+def _remove_paths(root: Path, paths: Sequence[str]) -> str | None:
+    """Unstage all transaction paths before deleting any of their published files."""
+    error = write._unstage_paths(root, paths, "sync", _git)
+    if error is not None:
+        return error
+    failures: list[str] = []
     for relative in paths:
-        (root / relative).unlink(missing_ok=True)
+        try:
+            (root / relative).unlink(missing_ok=True)
+        except OSError as error:
+            failures.append(f"{relative}: {error}")
+    if not failures:
+        return None
+    return (
+        "sync: rollback could not remove "
+        + ", ".join(failures)
+        + "; inspect Git status before retrying"
+    )
 
 
 def _totals(

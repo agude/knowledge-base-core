@@ -228,15 +228,9 @@ def _detail(stderr: str, fallback: str) -> str:
 
 def _rollback(root: Path, path: str, command: str) -> None:
     """Unstage the new file before deleting it; retain it if index cleanup fails."""
-    # An interrupted add may have staged the file before returning to Python.
-    result = _git(root, "ls-files", "-z", "--", path)
-    if result.returncode == 0 and result.stdout:
-        # A rejecting hook may have changed the file after it was staged.
-        result = _git(root, "rm", "-q", "-f", "--cached", "--", path)
-    if result.returncode != 0:
-        detail = result.stderr.rstrip("\n")
-        message = f"{command}: rollback failed for {path}; inspect Git status before retrying"
-        raise KbError(f"{message}: {detail}" if detail else message)
+    error = _unstage_paths(root, (path,), command)
+    if error is not None:
+        raise KbError(error)
     (root / path).unlink(missing_ok=True)
 
 
@@ -258,3 +252,28 @@ def _git(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
         encoding="utf-8",
         check=False,
     )
+
+
+def _unstage_paths(
+    root: Path,
+    paths: Sequence[str],
+    command: str,
+    run_git: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+) -> str | None:
+    """Remove only these paths from the index, reporting errors before callers delete files."""
+    if not paths:
+        return None
+    git = _git if run_git is None else run_git
+    result = git(root, "ls-files", "-z", "--", *paths)
+    if result.returncode == 0 and result.stdout:
+        # A rejecting hook may have changed a staged file; force only these paths out of the index.
+        result = git(root, "rm", "-q", "-f", "--cached", "--ignore-unmatch", "--", *paths)
+    if result.returncode == 0:
+        return None
+    detail = result.stderr.rstrip("\n")
+    listed = ", ".join(paths)
+    message = (
+        f"{command}: rollback failed for {listed}; files were preserved; "
+        "inspect Git status before retrying"
+    )
+    return f"{message}: {detail}" if detail else message

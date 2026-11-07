@@ -508,7 +508,9 @@ does not acquire the writer lock.
 After a staging or commit error, `observe`, `gap`, and `sync` remove new files
 only after confirming that Git did not commit them. If Git cannot establish the
 outcome, the commands preserve the files and index and report that you must
-inspect Git status and HEAD before retrying.
+inspect Git status and HEAD before retrying. If Git cannot remove the staged
+paths during rollback, the commands keep the working files and report which
+paths need inspection.
 
 ### `kb sync`
 
