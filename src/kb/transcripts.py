@@ -66,7 +66,10 @@ def parse_timestamp(value: object) -> datetime | None:
         return None
     if timestamp.tzinfo is None:
         return None
-    return timestamp.astimezone(UTC)
+    try:
+        return timestamp.astimezone(UTC)
+    except OverflowError:
+        return None
 
 
 def timestamp_text(value: datetime) -> str:

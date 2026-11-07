@@ -90,7 +90,13 @@ def parse_harvest_since(text: str, config: Path) -> datetime | None:
             f"knowledge base: invalid config file {config}: "
             "harvest_since must be a time-zone-aware TOML datetime"
         )
-    return value.astimezone(UTC)
+    try:
+        return value.astimezone(UTC)
+    except OverflowError as error:
+        raise KbError(
+            f"knowledge base: invalid config file {config}: "
+            "harvest_since must normalize to a representable UTC timestamp"
+        ) from error
 
 
 def set_harvest_since(text: str, moment: datetime, config: Path) -> str:
@@ -118,10 +124,15 @@ def set_harvest_since(text: str, moment: datetime, config: Path) -> str:
                 f"knowledge base: invalid config file {config}: "
                 "harvest_since must be a time-zone-aware TOML datetime"
             )
+        # Existing cutoffs must also be representable when the reader uses them.
+        parse_harvest_since(text, config)
         return text
     if moment.tzinfo is None or moment.utcoffset() is None:
         raise KbError("harvest_since requires a time-zone-aware current time")
-    cutoff = moment.astimezone(UTC).replace(microsecond=0)
+    try:
+        cutoff = moment.astimezone(UTC).replace(microsecond=0)
+    except OverflowError as error:
+        raise KbError("harvest_since requires a representable UTC current time") from error
     stamp = cutoff.isoformat(timespec="seconds").replace("+00:00", "Z")
     lines = text.splitlines(keepends=True)
     first_table = next(

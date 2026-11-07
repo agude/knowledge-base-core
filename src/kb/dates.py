@@ -46,4 +46,9 @@ def now(environ: Mapping[str, str]) -> datetime:
         raise KbError(
             f"knowledge base: KB_NOW must be a time-zone-aware ISO timestamp, not {fixed}"
         )
-    return parsed.astimezone(UTC)
+    try:
+        return parsed.astimezone(UTC)
+    except OverflowError as error:
+        raise KbError(
+            f"knowledge base: KB_NOW must normalize to a representable UTC timestamp, not {fixed}"
+        ) from error

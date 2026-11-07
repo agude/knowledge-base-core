@@ -276,7 +276,10 @@ def _updated(value: object) -> datetime | None:
         moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
-    return moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment.astimezone(UTC)
+    try:
+        return moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment.astimezone(UTC)
+    except OverflowError:
+        return None
 
 
 @dataclass

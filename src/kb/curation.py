@@ -138,7 +138,13 @@ def make_run_id(when: datetime, suffix: str) -> str:
         raise StateError("batch timestamp must be timezone-aware")
     if not re.fullmatch(r"[0-9a-f]{8}", suffix):
         raise StateError("batch suffix must be eight lowercase hexadecimal digits")
-    return f"{when.astimezone(UTC):%Y%m%dT%H%M%S}-{suffix}"
+    try:
+        normalized = when.astimezone(UTC)
+    except OverflowError as error:
+        raise StateError(
+            "batch timestamp must normalize to a representable UTC timestamp"
+        ) from error
+    return f"{normalized:%Y%m%dT%H%M%S}-{suffix}"
 
 
 def make_member(filename: str, content: bytes) -> Member:
@@ -225,7 +231,13 @@ def make_batch(
     """Create a validated batch with byte totals derived from its members."""
     if created.tzinfo is None or created.utcoffset() is None:
         raise StateError("batch created timestamp must be timezone-aware")
-    timestamp = created.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+    try:
+        normalized = created.astimezone(UTC)
+    except OverflowError as error:
+        raise StateError(
+            "batch created timestamp must normalize to a representable UTC timestamp"
+        ) from error
+    timestamp = normalized.isoformat(timespec="seconds").replace("+00:00", "Z")
     ordered_members = tuple(members)
     total = sum(member.original_bytes for member in ordered_members)
     return Batch(
