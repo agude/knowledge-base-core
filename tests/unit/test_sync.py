@@ -708,6 +708,44 @@ def test_recover_cleans_temp_and_only_this_hosts_uncommitted_observations(
     assert calls == ["observations/pending/owned.md"]
 
 
+@pytest.mark.parametrize("staged", [False, True])
+def test_recover_preserves_candidates_when_the_committed_tree_cannot_be_inspected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, staged: bool
+) -> None:
+    root = make_repo(tmp_path / "content")
+    pending = root / sync.PENDING
+    pending.mkdir(parents=True)
+    record = pending / "interrupted.md"
+    record.write_text(observation_text("interrupted"), encoding="utf-8")
+    if staged:
+        git(root, "add", "--", "observations/pending/interrupted.md")
+    original = record.read_bytes()
+    index = git(root, "write-tree")
+    calls: list[tuple[str, ...]] = []
+    original_git = sync._git
+
+    def track(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        if args[:1] == ("rm",):
+            calls.append(args)
+        return original_git(repo, *args)
+
+    monkeypatch.setattr(
+        sync,
+        "_git_bytes",
+        lambda *_args, **_kwargs: completed_bytes(1, b"", b"tree unavailable"),
+    )
+    monkeypatch.setattr(sync, "_git", track)
+
+    with pytest.raises(
+        KbError, match="cannot inspect committed observation paths: tree unavailable"
+    ):
+        sync._recover(root, root / ".git", "test-host")
+
+    assert record.read_bytes() == original
+    assert git(root, "write-tree") == index
+    assert calls == []
+
+
 @pytest.mark.parametrize("layout", ["root", "subdirectory", "linked-worktree"])
 def test_recover_preserves_committed_observations_in_repository_layouts(
     tmp_path: Path, layout: str

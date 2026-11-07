@@ -593,24 +593,60 @@ def _recover(root: Path, git_directory: Path, host: str) -> None:
     if pending is None:
         return
     prefix = git_paths.repository_prefix(root, "sync")
+    candidates: list[tuple[Path, str]] = []
     for path in sorted(pending.glob("*.md")):
         if path.is_symlink() or not path.is_file():
             continue
         relative = path.relative_to(root).as_posix()
-        repository_relative = git_paths.to_repository_path(relative, prefix)
-        committed = _git(root, "cat-file", "-e", f"HEAD:{repository_relative}")
-        if committed.returncode == 0:
-            continue
         try:
             document = model.parse(relative, path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError):
             continue
         if document.scalar("source") != "session-transcript" or document.scalar("host") != host:
             continue
+        candidates.append((path, relative))
+
+    if not candidates:
+        return
+    committed = _committed_pending_paths(root, prefix)
+    for path, relative in candidates:
+        if relative in committed:
+            continue
         unstaged = _git(root, "rm", "-q", "--cached", "--ignore-unmatch", "--", relative)
         if unstaged.returncode != 0:
             raise KbError(f"cannot unstage interrupted observation {relative}")
         path.unlink(missing_ok=True)
+
+
+def _committed_pending_paths(root: Path, prefix: str) -> set[str]:
+    """The content-relative pending paths in a successfully inspected HEAD tree."""
+    repository_pending = git_paths.to_repository_path(PENDING, prefix)
+    tree = _git_bytes(
+        root,
+        "ls-tree",
+        "-r",
+        "-z",
+        "--full-tree",
+        "HEAD",
+        "--",
+        repository_pending,
+    )
+    if tree.returncode != 0:
+        detail = tree.stderr.decode("utf-8", errors="replace").rstrip("\n")
+        raise KbError(f"cannot inspect committed observation paths: {detail}")
+    paths: set[str] = set()
+    for entry in tree.stdout.split(b"\0"):
+        if not entry:
+            continue
+        _metadata, encoded_path = entry.split(b"\t", 1)
+        repository_relative = os.fsdecode(encoded_path)
+        relative = git_paths.to_content_path(repository_relative, prefix)
+        if relative == ".." or relative.startswith("../"):
+            raise KbError(
+                f"committed observation is outside the content root: {repository_relative}"
+            )
+        paths.add(relative)
+    return paths
 
 
 def _empty_directory(path: Path) -> None:
