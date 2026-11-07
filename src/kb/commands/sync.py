@@ -102,11 +102,6 @@ class Prepared:
         return 0 if self.text is None else len(self.text.encode("utf-8"))
 
 
-# The seams that the sync tests replace. The remote steps live in kb.remote.
-_dirty_paths = remote.dirty_paths
-_fetch_status = remote.fetch_status
-
-
 def run(words: Sequence[str]) -> int:
     """Run sync, status, or dry-run and return its exit status."""
     parsed = args.parse(SPEC, words)
@@ -249,14 +244,14 @@ def _integrate(
     for message in errors:
         sys.stderr.write(f"{message}\n")
 
-    dirty = _dirty_paths(root)
+    dirty = remote.dirty_paths(root)
     if dirty:
         sys.stderr.write(f"sync: uncommitted changes in {root}; not pulling or pushing\n")
         for path in dirty[:10]:
             sys.stderr.write(f"  {path}\n")
         return True, list(errors)
 
-    status, fetch_error = _fetch_status(root)
+    status, fetch_error = remote.fetch_status(root)
     if fetch_error is not None:
         sys.stderr.write(f"{fetch_error}\n")
         return False, [*errors, fetch_error]
@@ -358,7 +353,7 @@ def _status(
         found = backlog(root, environ, host, now, harvest_since)
         errors.extend(_failure_text(failure) for failure in found.scan.failures)
         ready, waiting = found.selection.ready_count, found.selection.waiting_count
-    fetched, fetch_error = _fetch_status(root)
+    fetched, fetch_error = remote.fetch_status(root)
     if fetch_error is not None:
         errors.append(fetch_error)
     else:

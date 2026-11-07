@@ -238,8 +238,8 @@ def test_sync_without_harvesting_runs_recovery_and_syncs_remote(
     root = make_repo(tmp_path / "content")
     calls: list[str] = []
     monkeypatch.setattr(sync, "_recover", lambda *args: calls.append("recover"))
-    monkeypatch.setattr(sync, "_dirty_paths", lambda _: ())
-    monkeypatch.setattr(sync, "_fetch_status", lambda _: (sync.RemoteStatus("main", 0, 0), None))
+    monkeypatch.setattr(remote, "dirty_paths", lambda _: ())
+    monkeypatch.setattr(remote, "fetch_status", lambda _: (sync.RemoteStatus("main", 0, 0), None))
     monkeypatch.setattr(
         sync,
         "_sync_remote",
@@ -255,7 +255,7 @@ def test_sync_reports_dirty_paths_and_recovery_errors(
 ) -> None:
     root = make_repo(tmp_path / "content")
     monkeypatch.setattr(sync, "_recover", lambda *args: (_ for _ in ()).throw(KbError("broken")))
-    monkeypatch.setattr(sync, "_dirty_paths", lambda _: tuple(f"file-{i}" for i in range(12)))
+    monkeypatch.setattr(remote, "dirty_paths", lambda _: tuple(f"file-{i}" for i in range(12)))
     assert sync._sync(root, root / ".git", {}, "test-host", NOW, None, False) == 1
     captured = capsys.readouterr()
     assert "sync: recovery failed: broken" in captured.err
@@ -267,7 +267,7 @@ def test_dirty_worktree_without_other_errors_exits_successfully(
 ) -> None:
     root = make_repo(tmp_path / "content")
     monkeypatch.setattr(sync, "_recover", lambda *args: None)
-    monkeypatch.setattr(sync, "_dirty_paths", lambda _: ("local.md",))
+    monkeypatch.setattr(remote, "dirty_paths", lambda _: ("local.md",))
     assert sync._sync(root, root / ".git", {}, "host", NOW, None, False) == 0
     assert "not pulling or pushing" in capsys.readouterr().err
 
@@ -277,8 +277,8 @@ def test_sync_returns_fetch_error_and_combines_harvest_errors(
 ) -> None:
     root = make_repo(tmp_path / "content")
     monkeypatch.setattr(sync, "_recover", lambda *args: None)
-    monkeypatch.setattr(sync, "_dirty_paths", lambda _: ())
-    monkeypatch.setattr(sync, "_fetch_status", lambda _: (None, "sync: fetch failed"))
+    monkeypatch.setattr(remote, "dirty_paths", lambda _: ())
+    monkeypatch.setattr(remote, "fetch_status", lambda _: (None, "sync: fetch failed"))
     assert sync._sync(root, root / ".git", {}, "test-host", NOW, None, False) == 1
     assert "sync: fetch failed" in capsys.readouterr().err
 
@@ -308,8 +308,8 @@ def test_sync_harvests_reports_record_counts_and_completes_remote_step(
         "_write_selection",
         lambda *args: (sync.WriteResult(1, ()), 2, 20, 1, {"Secret": 1}),
     )
-    monkeypatch.setattr(sync, "_dirty_paths", lambda _: ())
-    monkeypatch.setattr(sync, "_fetch_status", lambda _: (sync.RemoteStatus("main", 0, 0), None))
+    monkeypatch.setattr(remote, "dirty_paths", lambda _: ())
+    monkeypatch.setattr(remote, "fetch_status", lambda _: (sync.RemoteStatus("main", 0, 0), None))
     monkeypatch.setattr(sync, "_sync_remote", lambda *args: ((), ("sync: push failed",)))
     assert sync._sync(root, root / ".git", {}, "host", NOW, START, False) == 1
     captured = capsys.readouterr()
@@ -342,8 +342,8 @@ def test_sync_pushes_after_a_session_is_skipped_then_exits_one(
             {},
         ),
     )
-    monkeypatch.setattr(sync, "_dirty_paths", lambda _: ())
-    monkeypatch.setattr(sync, "_fetch_status", lambda _: (sync.RemoteStatus("main", 1, 0), None))
+    monkeypatch.setattr(remote, "dirty_paths", lambda _: ())
+    monkeypatch.setattr(remote, "fetch_status", lambda _: (sync.RemoteStatus("main", 1, 0), None))
     monkeypatch.setattr(sync, "_sync_remote", lambda *args: (("Pushed: 1 commit(s)",), ()))
     assert sync._sync(root, root / ".git", {}, "host", NOW, START, False) == 1
     captured = capsys.readouterr()
@@ -365,8 +365,8 @@ def test_sync_with_harvest_and_dirty_tree_stops_remote_sync(
         "_write_selection",
         lambda *args: (sync.WriteResult(0, ("sync: skipped session x",)), 0, 0, 0, {}),
     )
-    monkeypatch.setattr(sync, "_dirty_paths", lambda _: ("local",))
-    monkeypatch.setattr(sync, "_fetch_status", lambda _: pytest.fail("dirty tree fetched"))
+    monkeypatch.setattr(remote, "dirty_paths", lambda _: ("local",))
+    monkeypatch.setattr(remote, "fetch_status", lambda _: pytest.fail("dirty tree fetched"))
     assert sync._sync(root, root / ".git", {}, "host", NOW, START, True) == 1
 
 
@@ -374,14 +374,14 @@ def test_status_reports_backlog_and_remote_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = make_repo(tmp_path / "content")
-    monkeypatch.setattr(sync, "_fetch_status", lambda _: (None, "sync: remote failed"))
+    monkeypatch.setattr(remote, "fetch_status", lambda _: (None, "sync: remote failed"))
     assert sync._status(root, {}, "test-host", NOW, None) == 1
     assert "sync: remote failed" in capsys.readouterr().err
 
     candidate = harvest.Candidate(make_session(), START)
     monkeypatch.setattr(sync, "_scan_transcripts", lambda _: sync.ScanResult((candidate,), ()))
     monkeypatch.setattr(sync, "_head_records", lambda _: ())
-    monkeypatch.setattr(sync, "_fetch_status", lambda _: (sync.RemoteStatus("main", 2, 3), None))
+    monkeypatch.setattr(remote, "fetch_status", lambda _: (sync.RemoteStatus("main", 2, 3), None))
     assert sync._status(root, {}, "test-host", NOW, START - timedelta(days=1)) == 0
     captured = capsys.readouterr().out
     assert "Ready: 1" in captured and "Ahead: 2" in captured and "Behind: 3" in captured
@@ -1460,9 +1460,9 @@ def test_dirty_paths_handles_changes_renames_and_errors(
     monkeypatch.setattr(remote, "repository_prefix", lambda *_args: "")
     if expected == "error":
         with pytest.raises(KbError, match="cannot inspect working tree: broken"):
-            sync._dirty_paths(Path())
+            remote.dirty_paths(Path())
     else:
-        assert sync._dirty_paths(Path()) == expected
+        assert remote.dirty_paths(Path()) == expected
 
 
 @pytest.mark.parametrize(
@@ -1489,7 +1489,7 @@ def test_fetch_status_reports_git_failures(
 ) -> None:
     queued = iter(completed(*result) for result in results)
     monkeypatch.setattr(remote, "_git", lambda *args: next(queued))
-    status, error = sync._fetch_status(Path())
+    status, error = remote.fetch_status(Path())
     assert status is None and expected in (error or "")
 
 
@@ -1504,7 +1504,7 @@ def test_fetch_status_parses_valid_counts(monkeypatch: pytest.MonkeyPatch) -> No
         )
     )
     monkeypatch.setattr(remote, "_git", lambda *args: next(queued))
-    assert sync._fetch_status(Path()) == (sync.RemoteStatus("main", 2, 4), None)
+    assert remote.fetch_status(Path()) == (sync.RemoteStatus("main", 2, 4), None)
 
 
 @pytest.mark.parametrize(
