@@ -469,8 +469,10 @@ three-line script that calls this command by its absolute path. See
   validated but not stamped. The hook reports each article that keeps its older
   value.
 - Article symlinks must resolve inside the content root in the selected snapshot.
-  Internal links retain their link text. Stamping writes the target only when
-  Git reports no unstaged target changes. When the target is also in the
+  Relative Markdown links use the article link's directory as their base, even
+  when its target is in another directory. Internal links retain their link text.
+  Stamping writes the target only when Git reports no unstaged target changes.
+  When the target is also in the
   staged article set, its stamp is staged; otherwise the target's stamp remains
   an unstaged worktree change. Staging a link never stages unrelated target edits.
 - The hook takes no writer lock. Commands that already hold the lock can commit

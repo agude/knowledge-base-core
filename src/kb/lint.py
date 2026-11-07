@@ -116,7 +116,7 @@ def reference_findings(
             continue
 
         try:
-            source_file = PurePosixPath(content.resolve(source.path))
+            source_file = PurePosixPath(source.path)
             target = str(source_file.parent / path) if path else str(source_file)
             relpath = content.resolve(target if reference.kind == "link" else path)
         except ValueError:

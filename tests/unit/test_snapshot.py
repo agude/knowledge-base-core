@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from kb import snapshot
+from kb import lint, model, snapshot
 from kb.errors import KbError
 
 from .test_hook import ARTICLE, git, repo
@@ -83,6 +83,39 @@ def test_index_refuses_a_missing_link_target(tmp_path: Path) -> None:
     assert not content.is_file("knowledge/alias.md")
     with pytest.raises(FileNotFoundError):
         content.read_bytes("knowledge/alias.md")
+
+
+@pytest.mark.parametrize("indexed", [False, True])
+@pytest.mark.parametrize("sibling_has_anchor", [False, True])
+def test_article_link_references_use_the_link_directory(
+    tmp_path: Path, indexed: bool, sibling_has_anchor: bool
+) -> None:
+    article = ARTICLE + "\nSee [sibling](sibling.md#unique-anchor).\n"
+    root = repo(
+        tmp_path / "repo",
+        {
+            "sources/real.md": article.encode(),
+            "sources/sibling.md": (
+                ARTICLE if sibling_has_anchor else ARTICLE + "\n## Unique anchor\n"
+            ).encode(),
+            "knowledge/sibling.md": (
+                ARTICLE + "\n## Unique anchor\n" if sibling_has_anchor else ARTICLE
+            ).encode(),
+        },
+    )
+    (root / "knowledge/alias.md").symlink_to("../sources/real.md")
+    git(root, "add", "--", "knowledge/alias.md")
+    content = snapshot.read_index(root) if indexed else snapshot.Worktree(root)
+    document = model.parse("knowledge/alias.md", article)
+
+    findings = lint.reference_findings(root, document, {}, content=content)
+
+    if sibling_has_anchor:
+        assert findings == []
+    else:
+        assert len(findings) == 1
+        assert findings[0].target == "knowledge/sibling.md"
+        assert "missing local Markdown link anchor" in findings[0].message
 
 
 def test_unmerged_entries_are_not_a_valid_publication_snapshot(tmp_path: Path) -> None:
