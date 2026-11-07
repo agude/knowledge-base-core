@@ -416,13 +416,17 @@ their count and do not stop publication.
 Finish stages exactly the publication set, checks the staged paths against it,
 and commits once. The message lists the counts, each article changed, every
 outcome with its locator or reason, and each question resolved. The commit runs
-the content hook. If the commit fails, finish unstages only the paths it staged
-and leaves every file as it was. After the commit, finish fetches, rebases, and
-pushes. A rebase conflict or a failed push exits 1 with `Committed locally; not
-published`. Resolve the cause, then run `kb sync` or repeat `kb curate finish
-RUN`; the repeat pushes the existing commit and makes no other. `--no-push`
-stops after the commit. Success prints the commit hash and `Published:
-origin/BRANCH`. A repeated finish after publication prints `Already published`.
+the content hook. If the commit fails before it is created, finish unstages
+only the paths it staged and leaves worktree bytes unchanged. If Git cannot
+unstage them, finish preserves the files and reports the paths that need
+inspection. When an interrupted commit's outcome cannot be established, finish
+preserves its files and index and directs you to inspect Git status and HEAD
+before retrying. After the commit, finish fetches, rebases, and pushes. A rebase
+conflict or a failed push exits 1 with `Committed locally; not published`.
+Resolve the cause, then run `kb sync` or repeat `kb curate finish RUN`; the
+repeat pushes the existing commit and makes no other. `--no-push` stops after
+the commit. Success prints the commit hash and `Published: origin/BRANCH`. A
+repeated finish after publication prints `Already published`.
 
 `kb curate status` reports the publication state from local refs: unpublished,
 committed locally, or published as the commit that holds the manifest.

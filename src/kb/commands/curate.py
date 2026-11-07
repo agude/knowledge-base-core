@@ -632,13 +632,18 @@ def _commit_publication(
     batch: curation.Batch,
     paths: Sequence[str],
 ) -> str:
-    """Stage exactly the publication set, commit it once, and unstage on failure.
+    """Stage exactly the publication set and reconcile every failure before commit success.
 
     The message is rendered from the staged set, where Git detects renames that the
     worktree status reports as a deletion and an addition.
     """
+    previous_head = _head_commit(root)
     pathspec = _write_scratch_file(git_directory, _nul_terminated(paths))
     text: Path | None = None
+    commit_attempted = False
+    expected_tree = ""
+    subject = ""
+    commit_result: CompletedProcess[str] | None = None
     try:
         staged = _git_quiet(
             root,
@@ -649,7 +654,6 @@ def _commit_publication(
             "--pathspec-file-nul",
         )
         if staged.returncode != 0:
-            _unstage(root, git_directory, paths)
             detail = staged.stderr.rstrip("\n")
             raise KbError(f"{WHO}: cannot stage the publication set: {detail}")
         names = _git_output(
@@ -664,7 +668,6 @@ def _commit_publication(
         prefix = git_paths.repository_prefix(root, WHO)
         staged_names = {git_paths.to_content_path(name, prefix) for name in names if name}
         if staged_names != set(paths):
-            _unstage(root, git_directory, paths)
             extra = sorted(staged_names - set(paths))
             missing = sorted(set(paths) - staged_names)
             raise KbError(
@@ -693,24 +696,88 @@ def _commit_publication(
             )
         ]
         message = publish.render_message(batch.id, batch, staged_changes)
-        try:
-            _scan_message(git_directory, message)
-        except KbError:
-            _unstage(root, git_directory, paths)
-            raise
+        subject = message.splitlines()[0]
+        _scan_message(git_directory, message)
         text = _write_scratch_file(git_directory, message.encode("utf-8"))
-        committed = _git_quiet(root, "commit", "-q", "-F", str(text))
-        if committed.returncode != 0:
-            _unstage(root, git_directory, paths)
-            detail = (committed.stderr or committed.stdout).rstrip("\n")
-            raise KbError(f"{WHO}: commit failed: {detail}")
-        return _git_output(
-            root, "rev-parse", "--verify", "HEAD", message="cannot read HEAD"
+        expected_tree = _git_output(
+            root, "write-tree", message="cannot snapshot the staged publication"
         ).strip()
+        commit_attempted = True
+        commit_result = _git_quiet(root, "commit", "-q", "-F", str(text))
+        if commit_result.returncode != 0:
+            detail = (commit_result.stderr or commit_result.stdout).rstrip("\n")
+            raise KbError(f"{WHO}: commit failed: {detail}")
+        return _head_commit(root)
+    except BaseException as error:
+        if commit_attempted:
+            outcome, committed_head, detail = _publication_commit_outcome(
+                root, previous_head, expected_tree, subject
+            )
+            if outcome == "committed":
+                if commit_result is not None and commit_result.returncode != 0:
+                    assert committed_head is not None
+                    return committed_head
+                raise
+            if outcome == "unknown":
+                message = (
+                    f"{WHO}: commit outcome is uncertain for {_listing(paths)}; the publication "
+                    "files and index were preserved; inspect Git status and HEAD before retrying"
+                )
+                raise KbError(f"{message}: {detail}" if detail else message) from error
+        try:
+            _unstage(root, git_directory, paths)
+        except BaseException as rollback_error:
+            detail = str(rollback_error) or "cleanup was interrupted"
+            if not detail.startswith(f"{WHO}:"):
+                detail = f"{WHO}: cannot unstage the publication set; inspect Git status: {detail}"
+            raise KbError(f"{detail}; original failure: {error}") from rollback_error
+        raise
     finally:
         pathspec.unlink(missing_ok=True)
         if text is not None:
             text.unlink(missing_ok=True)
+
+
+def _publication_commit_outcome(
+    root: Path, previous_head: str, expected_tree: str, subject: str
+) -> tuple[str, str | None, str]:
+    """Confirm the expected publication commit, a failed attempt, or an uncertain state."""
+    try:
+        head_result = _git_quiet(root, "rev-parse", "--verify", "HEAD")
+        if head_result.returncode != 0 or not head_result.stdout.strip():
+            detail = head_result.stderr.rstrip("\n") or "cannot inspect HEAD"
+            return "unknown", None, detail
+        head = head_result.stdout.strip()
+        if head == previous_head:
+            return "failed", None, "HEAD is unchanged"
+
+        metadata = _git_quiet(root, "show", "-s", "--format=%P%x00%s", head)
+        if metadata.returncode != 0:
+            detail = metadata.stderr.rstrip("\n") or "cannot inspect the new commit"
+            return "unknown", None, detail
+        fields = metadata.stdout.rstrip("\n").split("\0", 1)
+        if len(fields) != 2:
+            return "unknown", None, "Git returned malformed commit metadata"
+        if fields[0].split() != [previous_head] or fields[1] != subject:
+            return "unknown", None, "HEAD changed but does not identify this publication commit"
+
+        tree = _git_quiet(root, "rev-parse", "--verify", f"{head}^{{tree}}")
+        if tree.returncode != 0 or tree.stdout.strip() != expected_tree:
+            detail = tree.stderr.rstrip("\n") or "the new commit tree differs from the staged set"
+            return "unknown", None, detail
+        index = _git_quiet(root, "write-tree")
+        if index.returncode != 0 or index.stdout.strip() != expected_tree:
+            detail = index.stderr.rstrip("\n") or "the index differs from the staged set"
+            return "unknown", None, detail
+        status = _git_quiet(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+        if status.returncode != 0 or status.stdout:
+            detail = (
+                status.stderr.rstrip("\n") or "the worktree differs from the committed publication"
+            )
+            return "unknown", None, detail
+        return "committed", head, ""
+    except BaseException as error:
+        return "unknown", None, str(error) or "commit outcome inspection was interrupted"
 
 
 def _unstage(root: Path, git_directory: Path, paths: Sequence[str]) -> None:
