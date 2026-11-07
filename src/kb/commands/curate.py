@@ -24,6 +24,7 @@ from kb import (
     evidence,
     freshness,
     git_paths,
+    git_status,
     lint,
     locators,
     lock,
@@ -608,21 +609,27 @@ def _publication_changes(root: Path, batch: curation.Batch) -> list[publish.Chan
     }
     changes: list[publish.Change] = []
     refused: list[str] = []
-    for code, path in _worktree_entries(root):
-        status = _change_status(code)
-        if publish.is_published(path) or path == manifest or path in archives:
-            changes.append(publish.Change(status, path))
-        elif path in removable and status == "D":
-            changes.append(publish.Change("D", path))
-        else:
-            refused.append(path)
+    for entry in _worktree_entries(root):
+        paths = [(_change_status(entry.code), entry.path)]
+        if entry.old_path is not None:
+            # Finish stages both sides explicitly; Git detects the staged rename later.
+            paths = [("A", entry.path)]
+            if "R" in entry.code:
+                paths.append(("D", entry.old_path))
+        for status, path in paths:
+            if publish.is_published(path) or path == manifest or path in archives:
+                changes.append(publish.Change(status, path))
+            elif path in removable and status == "D":
+                changes.append(publish.Change("D", path))
+            else:
+                refused.append(path)
     if refused:
         raise KbError(f"{WHO}: uncommitted changes outside the batch: {_listing(refused)}")
     return sorted(changes, key=lambda change: change.path)
 
 
-def _worktree_entries(root: Path) -> list[tuple[str, str]]:
-    """Each changed or untracked path with its two-letter Git status."""
+def _worktree_entries(root: Path) -> list[git_status.Entry]:
+    """Status records with both rename paths converted to content-relative names."""
     output = _git_output(
         root,
         "status",
@@ -632,13 +639,14 @@ def _worktree_entries(root: Path) -> list[tuple[str, str]]:
         message="cannot inspect Git status",
     )
     prefix = git_paths.repository_prefix(root, WHO)
-    entries: list[tuple[str, str]] = []
-    for record in output.split("\0"):
-        if not record:
-            continue
-        path = git_paths.to_content_path(record[3:], prefix)
-        entries.append((record[:2], path))
-    return entries
+    return [
+        git_status.Entry(
+            entry.code,
+            git_paths.to_content_path(entry.path, prefix),
+            None if entry.old_path is None else git_paths.to_content_path(entry.old_path, prefix),
+        )
+        for entry in git_status.parse_porcelain(output, command=WHO)
+    ]
 
 
 def _change_status(code: str) -> str:
@@ -1688,24 +1696,12 @@ def _require_clean_tree(root: Path) -> None:
         detail = result.stderr.decode("utf-8", errors="replace").strip()
         raise KbError(f"{WHO}: cannot inspect Git status" + (f": {detail}" if detail else ""))
     prefix = git_paths.repository_prefix(root, WHO)
-    records = result.stdout.split(b"\0")
-    dirty: list[str] = []
-    index = 0
-    while index < len(records):
-        record = records[index]
-        index += 1
-        if not record:
-            continue
-        if len(record) < 4 or record[2:3] != b" ":
-            raise KbError(f"{WHO}: Git returned malformed NUL-delimited status")
-        status = record[:2]
-        paths = [git_paths.to_content_path(os.fsdecode(record[3:]), prefix)]
-        if b"R" in status or b"C" in status:
-            if index >= len(records) or not records[index]:
-                raise KbError(f"{WHO}: Git returned malformed rename status")
-            paths.append(git_paths.to_content_path(os.fsdecode(records[index]), prefix))
-            index += 1
-        dirty.extend(paths)
+    dirty = [
+        git_paths.to_content_path(path, prefix)
+        for entry in git_status.parse_porcelain(os.fsdecode(result.stdout), command=WHO)
+        for path in (entry.path, entry.old_path)
+        if path is not None
+    ]
     if dirty:
         listing = ", ".join(sorted(set(dirty)))
         raise KbError(f"{WHO}: content repository has uncommitted changes: {listing}")

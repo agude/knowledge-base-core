@@ -24,6 +24,7 @@ from kb import (
     config,
     dates,
     diagnosis,
+    git_status,
     observation,
     setup_rules,
     skills,
@@ -158,17 +159,7 @@ def _dirty_count(root: Path) -> int:
     result = _git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
     if result.returncode != 0:
         raise KbError(f"cannot inspect working tree: {result.stderr.rstrip()}")
-    records = result.stdout.split("\0")
-    count = index = 0
-    while index < len(records):
-        record = records[index]
-        index += 1
-        if not record:
-            continue
-        count += 1
-        if "R" in record[:2] or "C" in record[:2]:
-            index += 1
-    return count
+    return len(git_status.parse_porcelain(result.stdout))
 
 
 def _gitattributes(root: Path) -> Check:

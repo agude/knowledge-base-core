@@ -5,13 +5,13 @@ commits. Each function reports what it did; a failure names the Git step that
 stopped it.
 """
 
-import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 from kb.errors import KbError
 from kb.git_paths import repository_prefix, to_content_path
+from kb.git_status import parse_porcelain
 
 
 @dataclass(frozen=True)
@@ -47,20 +47,7 @@ def dirty_paths(root: Path) -> tuple[str, ...]:
         detail = result.stderr.rstrip("\n")
         raise KbError(f"cannot inspect working tree: {detail}")
     prefix = repository_prefix(root, "sync")
-    paths: list[str] = []
-    records = result.stdout.split("\0")
-    index = 0
-    while index < len(records):
-        record = records[index]
-        index += 1
-        if not record:
-            continue
-        if len(record) < 4 or record[2:3] != " ":
-            raise KbError("git returned malformed NUL-delimited status")
-        paths.append(to_content_path(os.fsdecode(record[3:]), prefix))
-        if "R" in record[:2] or "C" in record[:2]:
-            index += 1
-    return tuple(paths)
+    return tuple(to_content_path(entry.path, prefix) for entry in parse_porcelain(result.stdout))
 
 
 def fetch_status(root: Path) -> tuple[RemoteStatus | None, str | None]:
