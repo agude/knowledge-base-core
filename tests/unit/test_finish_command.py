@@ -733,3 +733,83 @@ def test_finish_refuses_newly_broken_incoming_anchors_before_staging(
     assert git(root, "rev-parse", "HEAD") == head
     assert (root / "knowledge/index.md").read_text(encoding="utf-8") == source
     assert (root / "knowledge/workflow.md").read_text(encoding="utf-8") == ARTICLE
+
+
+@pytest.mark.parametrize("problem", ["modified", "missing", "pending"])
+def test_finish_rechecks_completed_archives_before_staging(
+    make_content: Callable[..., Path], capsys: pytest.CaptureFixture[str], problem: str
+) -> None:
+    root = make_content(origin=False)
+    run = _settled(root, capsys)
+    archive = root / "observations/archived/one.md"
+    pending = root / "observations/pending/one.md"
+    if problem == "modified":
+        archive.write_bytes(archive.read_bytes() + b"\nChanged after completion.\n")
+    elif problem == "missing":
+        archive.unlink()
+    else:
+        pending.write_text(git(root, "show", "HEAD:observations/pending/one.md"), encoding="utf-8")
+    before = git(root, "write-tree")
+    head = git(root, "rev-parse", "HEAD")
+    files = {
+        path.relative_to(root): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file() and ".git" not in path.relative_to(root).parts
+    }
+
+    code, out, err = _run(capsys, "finish", run, "--no-push")
+
+    assert code == 1, (out, err)
+    assert out == ""
+    assert "one.md" in err
+    assert git(root, "write-tree") == before
+    assert git(root, "rev-parse", "HEAD") == head
+    assert {
+        path.relative_to(root): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file() and ".git" not in path.relative_to(root).parts
+    } == files
+
+
+@pytest.mark.parametrize("problem", ["heading", "missing"])
+def test_finish_rechecks_destinations_recorded_at_completion(
+    make_content: Callable[..., Path], capsys: pytest.CaptureFixture[str], problem: str
+) -> None:
+    root = make_content(origin=False)
+    _observe(root, "one.md")
+    run = _start(capsys, "one.md")
+    code, _, err = _run(
+        capsys,
+        "complete",
+        run,
+        "one.md",
+        "--disposition",
+        "incorporated",
+        "knowledge/workflow.md#1",
+    )
+    assert code == 0, err
+    article = root / "knowledge/workflow.md"
+    if problem == "heading":
+        article.write_text(ARTICLE.replace("## 1. Fact", "## 1. Renamed"), encoding="utf-8")
+    else:
+        article.unlink()
+    before = git(root, "write-tree")
+    head = git(root, "rev-parse", "HEAD")
+    archive = root / "observations/archived/one.md"
+    archived = archive.read_bytes()
+    manifest = root / "observations/batches" / f"{run}.json"
+    manifest_bytes = manifest.read_bytes()
+
+    code, out, err = _run(capsys, "finish", run, "--no-push")
+
+    assert code == 1, (out, err)
+    assert out == ""
+    assert "destination" in err
+    assert git(root, "write-tree") == before
+    assert git(root, "rev-parse", "HEAD") == head
+    assert archive.read_bytes() == archived
+    assert manifest.read_bytes() == manifest_bytes
+    if problem == "heading":
+        assert article.read_text(encoding="utf-8") == ARTICLE.replace("## 1. Fact", "## 1. Renamed")
+    else:
+        assert not article.exists()

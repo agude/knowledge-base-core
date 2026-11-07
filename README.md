@@ -413,6 +413,13 @@ to it. Blocking findings refuse finish and are printed. Findings that already
 existed in unchanged articles print under `Preexisting (not blocking):` with
 their count and do not stop publication.
 
+Before creating a new finish commit, every completed archive must still match
+its recorded hash and have no pending copy. Incorporated and duplicate outcomes
+must still name the recorded destination locators and headings. Missing or
+changed archives and destinations refuse publication without changing files or
+staging. A retry after the publication commit already exists publishes that
+commit instead of creating another.
+
 Finish stages exactly the publication set, checks the staged paths against it,
 and commits once. The message lists the counts, each article changed, every
 outcome with its locator or reason, and each question resolved. The commit runs

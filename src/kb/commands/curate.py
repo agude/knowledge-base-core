@@ -510,6 +510,7 @@ def _finish(root: Path, git_directory: Path, run_id: str, *, no_push: bool) -> i
     if committed is not None:
         return _resume_publication(root, committed, branch, no_push=no_push)
     _require_index_clean(root)
+    _require_completed_members(root, batch)
     changes = _publication_changes(root, batch)
     verdict = publish.validate(root, changes, baseline=snapshot.read_head(root, WHO))
     if verdict.blocking:
@@ -525,6 +526,32 @@ def _finish(root: Path, git_directory: Path, run_id: str, *, no_push: bool) -> i
         sys.stdout.write(f"Commit: {commit}\nCommitted locally; not published\n")
         return 0
     return _publish(root, commit, branch, new_commit=True)
+
+
+def _require_completed_members(root: Path, batch: curation.Batch) -> None:
+    """Recheck completed archives and recorded destinations before staging a new commit."""
+    for member in batch.members:
+        if member.status != "complete":
+            continue
+        if _member_file_exists(root, PENDING, member.filename):
+            raise KbError(
+                f"{WHO}: completed member {member.filename} still has a pending copy; inspect manually"
+            )
+        if not _matches_snapshot(root, ARCHIVED, member, archive=True):
+            raise KbError(
+                f"{WHO}: completed archive {member.filename} is missing or changed; inspect manually"
+            )
+        if member.disposition in {"incorporated", "duplicate"}:
+            destinations = _requested_destinations(
+                root,
+                [item.locator for item in member.destinations],
+                member.disposition,
+                member.reason,
+            )
+            if destinations != member.destinations:
+                raise KbError(
+                    f"{WHO}: a destination heading changed for {member.filename}; inspect manually"
+                )
 
 
 def _resume_publication(root: Path, commit: str, branch: str, *, no_push: bool) -> int:
