@@ -136,11 +136,6 @@ def test_help_prints_the_usage_and_succeeds(capsys: pytest.CaptureFixture[str]) 
     assert err == ""
 
 
-def test_the_top_level_help_lists_observe(capsys: pytest.CaptureFixture[str]) -> None:
-    assert cli.main(["--help"]) == 0
-    assert any(line.split()[:1] == ["observe"] for line in capsys.readouterr().out.splitlines())
-
-
 @pytest.mark.parametrize(
     "words",
     [

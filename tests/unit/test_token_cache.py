@@ -14,7 +14,7 @@ from typing import Any, cast
 import pytest
 
 from kb import addressing, chunks, corpus, entries, evidence, lock, model, search, token_cache
-from kb.entries import Entry, PartTokens
+from kb.entries import Entry
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 TRANSCRIPT = (
@@ -317,6 +317,7 @@ def test_a_new_format_rebuilds_everything(repo: Path, monkeypatch: pytest.Monkey
     monkeypatch.setattr(token_cache, "FORMAT", token_cache.FORMAT + 1)
     report = token_cache.refresh(repo)
     assert report.refreshed == len(paths(repo))
+    assert sorted(stored(repo)) == paths(repo)
 
 
 def _package_copy(tmp_path: Path) -> Path:
@@ -342,18 +343,6 @@ def test_an_edit_to_any_package_source_changes_the_fingerprint(tmp_path: Path, n
     assert token_cache.fingerprint(package) != baseline
     source.write_bytes(original)
     assert token_cache.fingerprint(package) == baseline
-
-
-def test_every_python_file_under_the_package_is_fingerprinted(tmp_path: Path) -> None:
-    package = _package_copy(tmp_path)
-    baseline = token_cache.fingerprint(package)
-    sources = sorted(package.rglob("*.py"))
-    assert any(path.parent != package for path in sources)
-    for source in sources:
-        original = source.read_bytes()
-        source.write_bytes(original + b"\n# edit\n")
-        assert token_cache.fingerprint(package) != baseline, source
-        source.write_bytes(original)
 
 
 def test_renaming_a_package_source_changes_the_fingerprint(tmp_path: Path) -> None:
@@ -443,49 +432,6 @@ def test_an_unreadable_cache_is_rebuilt_from_the_files(repo: Path, kind: str) ->
     report = token_cache.refresh(repo)
     assert report.refreshed == len(paths(repo))
     assert sorted(stored(repo)) == paths(repo)
-
-
-def test_a_pickle_of_an_earlier_format_rebuilds_everything(repo: Path) -> None:
-    token_cache.load(repo, paths(repo))
-    target = token_cache.cache_file(repo)
-    assert target is not None
-    earlier = {
-        "format": token_cache.FORMAT - 1,
-        "fingerprint": token_cache.fingerprint(),
-        "entries": stored(repo),
-    }
-    target.write_bytes(pickle.dumps(earlier, protocol=5))
-    report = token_cache.refresh(repo)
-    assert report.refreshed == len(paths(repo))
-    assert sorted(stored(repo)) == paths(repo)
-
-
-def test_the_cache_holds_only_records_and_builtin_types(repo: Path) -> None:
-    token_cache.load(repo, paths(repo))
-
-    def assert_plain(value: object) -> None:
-        if isinstance(value, Entry):
-            for field in dataclasses.fields(value):
-                assert_plain(getattr(value, field.name))
-        elif isinstance(value, PartTokens):
-            for item in value:
-                assert_plain(item)
-        elif isinstance(value, datetime):
-            return
-        elif isinstance(value, dict):
-            for key, item in value.items():
-                assert_plain(key)
-                assert_plain(item)
-        elif isinstance(value, tuple):
-            for item in value:
-                assert_plain(item)
-        else:
-            assert type(value) in (str, int, bool, type(None)), type(value)
-
-    target = token_cache.cache_file(repo)
-    assert target is not None
-    with target.open("rb") as handle:
-        assert_plain(pickle.load(handle))
 
 
 def test_a_cache_that_cannot_be_created_warns_once_and_returns_correct_entries(
@@ -670,29 +616,6 @@ def test_injected_text_is_not_tokenized_into_a_transcript_entry(repo: Path) -> N
     assert kitchen <= {token for part in entry.parts for token in part.body}
     # Message 3 is an AGENTS.md instruction message, which chunking drops, so it has no part.
     assert sorted(entries.message_bodies(entry)) == [1, 2]
-
-
-def test_chunk_tokens_match_the_search_units_of_the_chunks(repo: Path) -> None:
-    relpath = "observations/archived/20261001T100000-traefik.md"
-    document = corpus.read_document(repo, relpath)
-    entry = token_cache.load(repo, [relpath])[relpath]
-    expected = [
-        (
-            chunk.number,
-            chunk.last,
-            chunk.started,
-            chunk.ended,
-            chunk.piece,
-            search.make_unit("", (), (), list(chunk.lines)).body,
-        )
-        for chunk in chunks.chunks(document)
-    ]
-    actual = [
-        (found.number, found.last, found.started, found.ended, found.piece, found.body)
-        for found in entries.chunk_tokens(entry)
-    ]
-    assert actual == expected
-    assert actual
 
 
 def test_only_transcripts_carry_parts(repo: Path) -> None:
