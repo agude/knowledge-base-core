@@ -30,7 +30,7 @@ def case(**overrides: object) -> dict[str, object]:
     return base
 
 
-def test_load_cases_reads_each_field(tmp_path: Path) -> None:
+def test_load_set_reads_each_field(tmp_path: Path) -> None:
     path = write_set(
         tmp_path / "q.json",
         [
@@ -38,7 +38,8 @@ def test_load_cases_reads_each_field(tmp_path: Path) -> None:
             case(id="two", expected=[], unanswerable=True, query="none"),
         ],
     )
-    cases = evaluate.load_cases(path)
+    cases, modes = evaluate.load_set(path)
+    assert modes == ("curated",)
     assert cases[0] == evaluate.Case("one", "alpha", ("a.md#1", "b.md#2"), True)
     assert cases[1].unanswerable
     assert cases[1].requires_all is False
@@ -53,35 +54,35 @@ def test_load_cases_reads_each_field(tmp_path: Path) -> None:
         ("kb-retrieval-questions", {"expected": [1]}),
     ],
 )
-def test_load_cases_rejects_bad_sets(tmp_path: Path, fmt: str, bad: dict[str, object]) -> None:
+def test_load_set_rejects_bad_sets(tmp_path: Path, fmt: str, bad: dict[str, object]) -> None:
     path = write_set(tmp_path / "q.json", [case(**bad)], fmt=fmt)
     with pytest.raises(KbError):
-        evaluate.load_cases(path)
+        evaluate.load_set(path)
 
 
-def test_load_cases_rejects_invalid_json_and_missing_files(tmp_path: Path) -> None:
+def test_load_set_rejects_invalid_json_and_missing_files(tmp_path: Path) -> None:
     broken = tmp_path / "broken.json"
     broken.write_text("{", encoding="utf-8")
     with pytest.raises(KbError):
-        evaluate.load_cases(broken)
+        evaluate.load_set(broken)
     with pytest.raises(KbError):
-        evaluate.load_cases(tmp_path / "missing.json")
+        evaluate.load_set(tmp_path / "missing.json")
 
 
-def test_load_cases_rejects_a_case_that_is_not_an_object(tmp_path: Path) -> None:
+def test_load_set_rejects_a_case_that_is_not_an_object(tmp_path: Path) -> None:
     path = tmp_path / "q.json"
     path.write_text(
         json.dumps({"format": evaluate.FORMAT, "version": 1, "cases": ["x"]}), encoding="utf-8"
     )
     with pytest.raises(KbError, match="every case must be an object"):
-        evaluate.load_cases(path)
+        evaluate.load_set(path)
 
 
-def test_load_cases_rejects_a_set_that_is_not_an_object(tmp_path: Path) -> None:
+def test_load_set_rejects_a_set_that_is_not_an_object(tmp_path: Path) -> None:
     path = tmp_path / "q.json"
     path.write_text("[1, 2]", encoding="utf-8")
     with pytest.raises(KbError, match="not a kb-retrieval-questions"):
-        evaluate.load_cases(path)
+        evaluate.load_set(path)
 
 
 def test_outcome_rank_is_the_best_expected_position() -> None:

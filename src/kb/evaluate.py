@@ -119,11 +119,6 @@ class Outcome:
         return superseded is None or current < superseded
 
 
-def load_cases(path: Path) -> list[Case]:
-    """The cases of a question set. Raises KbError when the file is not in the format."""
-    return load_set(path)[0]
-
-
 def load_set(path: Path) -> tuple[list[Case], tuple[str, ...]]:
     """The cases of a question set and the modes it is scored in. Raises KbError when invalid."""
     try:
