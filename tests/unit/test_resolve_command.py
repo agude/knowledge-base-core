@@ -1,6 +1,7 @@
 """Rollback and cleanup behavior for kb resolve."""
 
 import os
+import subprocess
 import sys
 from datetime import date
 from pathlib import Path
@@ -22,7 +23,7 @@ def test_failure_after_publication_restores_open_question_and_releases_locks(
     git = root / ".git"
     source = root / "questions" / "open" / "question.md"
     source.parent.mkdir(parents=True)
-    git.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
     original = b"---\ntitle: Old\n---\n\nQuestion.\n"
     source.write_bytes(original)
     original_unlink = Path.unlink

@@ -229,7 +229,7 @@ def test_start_command_holds_the_shared_lock_and_wraps_runtime_errors(
     git_directory.mkdir()
     observed: list[object] = []
     monkeypatch.setattr(curate, "load", lambda *_args: context)
-    monkeypatch.setattr(lock, "git_dir_path", lambda *_args: git_directory)
+    monkeypatch.setattr(lock, "git_dir", lambda *_args: git_directory)
     monkeypatch.setattr(lock, "default_backend", lambda *_args: object())
     monkeypatch.setattr(lock, "write_lock", lambda *_args: contextlib.nullcontext())
 
@@ -1009,7 +1009,7 @@ def test_transition_commands_run_under_shared_lock_and_handle_usage_and_busy(
     context = _context(root)
     git_directory = root / ".git"
     monkeypatch.setattr(curate, "load", lambda *_args: context)
-    monkeypatch.setattr(lock, "git_dir_path", lambda *_args: git_directory)
+    monkeypatch.setattr(lock, "git_dir", lambda *_args: git_directory)
     monkeypatch.setattr(lock, "default_backend", lambda *_args: object())
     monkeypatch.setattr(lock, "write_lock", lambda *_args: contextlib.nullcontext())
     monkeypatch.setenv("KB_LOCK_WAIT", "1")

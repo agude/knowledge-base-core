@@ -5,11 +5,13 @@ commits. Each function reports what it did; a failure names the Git step that
 stopped it.
 """
 
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 from kb.errors import KbError
+from kb.git_paths import repository_prefix, to_content_path
 
 
 @dataclass(frozen=True)
@@ -40,16 +42,24 @@ class Result:
 
 def dirty_paths(root: Path) -> tuple[str, ...]:
     """Paths changed in the worktree or index."""
-    result = _git(root, "status", "--porcelain", "--untracked-files=all")
+    result = _git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
     if result.returncode != 0:
         detail = result.stderr.rstrip("\n")
         raise KbError(f"cannot inspect working tree: {detail}")
+    prefix = repository_prefix(root, "sync")
     paths: list[str] = []
-    for line in result.stdout.splitlines():
-        path = line[3:] if len(line) > 3 else line
-        if " -> " in path:
-            path = path.split(" -> ", 1)[1]
-        paths.append(path)
+    records = result.stdout.split("\0")
+    index = 0
+    while index < len(records):
+        record = records[index]
+        index += 1
+        if not record:
+            continue
+        if len(record) < 4 or record[2:3] != " ":
+            raise KbError("git returned malformed NUL-delimited status")
+        paths.append(to_content_path(os.fsdecode(record[3:]), prefix))
+        if "R" in record[:2] or "C" in record[:2]:
+            index += 1
     return tuple(paths)
 
 

@@ -11,7 +11,7 @@ from subprocess import CompletedProcess
 
 import pytest
 
-from .harness import Kb, run_git
+from .harness import Kb, make_subdirectory_kb, run_git
 
 TODAY = "2026-10-26"
 ARTICLE = (
@@ -22,7 +22,17 @@ ARTICLE = (
 
 def _install_hook(kb: Kb) -> Path:
     """Write the one-line hook that calls this interpreter's kb, as phase 4 setup will."""
-    hook = kb.content / ".git" / "hooks" / "pre-commit"
+    hooks = Path(
+        run_git(
+            kb.content,
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-path",
+            "hooks",
+        ).strip()
+    )
+    hook = hooks / "pre-commit"
+    hooks.mkdir(parents=True, exist_ok=True)
     hook.write_text(f'#!/bin/sh\nexec "{sys.executable}" -m kb hook pre-commit\n', encoding="utf-8")
     hook.chmod(0o755)
     return hook
@@ -65,6 +75,39 @@ def test_a_commit_without_knowledge_changes_passes_silently(git_kb: Kb) -> None:
 
     assert result.returncode == 0, result.stderr
     assert result.stderr == ""
+
+
+def test_hook_reads_staged_paths_from_a_configured_content_subdirectory(git_kb: Kb) -> None:
+    nested = make_subdirectory_kb(git_kb)
+    _install_hook(nested)
+    broken = ARTICLE + "\n# Second title\n"
+    path = nested.content / "knowledge/infra/hook-paths.md"
+    path.write_text(broken, encoding="utf-8")
+    run_git(nested.content, "add", "--", "knowledge/infra/hook-paths.md")
+    head = run_git(nested.content, "rev-parse", "HEAD")
+
+    result = _commit(nested, "Reject an invalid nested article")
+
+    assert result.returncode == 1
+    assert "hook: knowledge/infra/hook-paths.md:" in result.stderr
+    assert run_git(nested.content, "rev-parse", "HEAD") == head
+    assert path.read_text(encoding="utf-8") == broken
+
+
+def test_hook_ignores_staged_articles_outside_the_configured_content_root(git_kb: Kb) -> None:
+    nested = make_subdirectory_kb(git_kb)
+    _install_hook(nested)
+    outside = nested.content.parent / "knowledge/infra/outside-hook.md"
+    outside.parent.mkdir(parents=True, exist_ok=True)
+    outside.write_text(ARTICLE + "\n# Second title\n", encoding="utf-8")
+    repository = Path(run_git(nested.content, "rev-parse", "--show-toplevel").strip())
+    run_git(repository, "add", "--", "knowledge/infra/outside-hook.md")
+
+    result = _commit(nested, "Commit an outside article")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    assert "outside-hook.md" in run_git(repository, "show", "--format=", "--name-only", "HEAD")
 
 
 def test_an_invalid_article_is_rejected_and_nothing_is_changed(git_kb: Kb) -> None:

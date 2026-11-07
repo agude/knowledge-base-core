@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from .harness import FIXTURE_TRANSCRIPTS, HOLD_KERNEL_LOCK, Kb, run_git
+from .harness import FIXTURE_CONTENT, FIXTURE_TRANSCRIPTS, HOLD_KERNEL_LOCK, Kb, run_git
 
 HOST = socket.gethostname().split(".", 1)[0]
 SINCE = "2026-10-24T00:00:00Z"
@@ -886,6 +886,32 @@ def test_recovery_removes_this_hosts_uncommitted_transcript_observation(
         observation_text(path) for path in pending(remote_git_kb)
     )
     assert remote_git_kb.git("status", "--porcelain", "--untracked-files=all") == ""
+
+
+def test_recovery_preserves_a_committed_observation_under_a_content_subdirectory(
+    remote_git_kb: Kb,
+) -> None:
+    nested_content = remote_git_kb.content / "content"
+    shutil.copytree(FIXTURE_CONTENT, nested_content)
+    run_git(remote_git_kb.content, "add", "content")
+    run_git(remote_git_kb.content, "commit", "-q", "-m", "Add nested content root")
+    nested_kb = replace(remote_git_kb, content=nested_content)
+    config(nested_kb, harvest_since=None)
+    committed = seed_session_observation(nested_kb, "subdir-session")
+    relative = committed.relative_to(remote_git_kb.content).as_posix()
+    original = committed.read_bytes()
+    run_git(remote_git_kb.content, "add", relative)
+    run_git(remote_git_kb.content, "commit", "-q", "-m", "Commit nested observation")
+    head = nested_kb.git("rev-parse", "HEAD").strip()
+    index = nested_kb.git("write-tree").strip()
+
+    result = nested_kb("sync", "--no-push")
+
+    assert result.returncode == 0, result.stderr
+    assert committed.read_bytes() == original
+    assert nested_kb.git("rev-parse", "HEAD").strip() == head
+    assert nested_kb.git("write-tree").strip() == index
+    assert nested_kb.git("status", "--porcelain", "--untracked-files=all") == ""
 
 
 def test_recovery_refuses_a_symlinked_pending_directory_without_deleting_outside(

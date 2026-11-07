@@ -5,11 +5,13 @@ import shutil
 import stat
 import subprocess
 import sys
+from datetime import date
 from pathlib import Path
 
 import pytest
 
 from kb.commands import hook
+from kb.context import Context
 from kb.errors import KbError
 
 TODAY = "2026-10-26"
@@ -260,6 +262,7 @@ def test_run_reports_usage_help_and_filesystem_errors(
         raise OSError("disk unavailable")
 
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(hook, "load", lambda *_args: Context(tmp_path, date(2026, 10, 26)))
     monkeypatch.setattr(hook, "pre_commit", unreadable)
     with pytest.raises(KbError, match="hook: disk unavailable"):
         hook.run(["pre-commit"])

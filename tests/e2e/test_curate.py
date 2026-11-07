@@ -278,7 +278,7 @@ def test_empty_queue_fails_without_publishing(git_kb: Kb) -> None:
 
 def test_start_requires_git_metadata(kb: Kb) -> None:
     no_git = kb("curate", "start", "--no-sync", "--max-bytes", "10000")
-    _failure(no_git, "Git directory")
+    _failure(no_git, "not a git repository")
 
 
 def test_start_requires_a_clean_index_and_worktree(git_kb: Kb) -> None:
@@ -1084,7 +1084,7 @@ def test_complete_requires_git_metadata_for_the_shared_writer_lock(kb: Kb) -> No
         "Temporary",
     )
 
-    _failure(result, "cannot locate the Git directory")
+    _failure(result, "not a git repository")
     assert pending.read_bytes() == content
     assert manifest.read_bytes() == before
     assert not (kb.content / "observations/archived" / filename).exists()

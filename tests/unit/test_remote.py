@@ -227,6 +227,21 @@ def test_dirty_paths_lists_changes_and_renames(
     assert sorted(remote.dirty_paths(local)) == ["new.md", "renamed.txt"]
 
 
+def test_dirty_paths_are_content_relative_and_keep_outside_paths_distinct(
+    pair: tuple[Path, Path],
+) -> None:
+    local, _ = pair
+    content = local / "content"
+    content.mkdir()
+    (content / "seed.txt").write_text("content\n", encoding="utf-8")
+    git(local, "add", "content/seed.txt")
+    git(local, "commit", "-q", "-m", "Add content subdirectory")
+    (content / "inside.md").write_text("inside\n", encoding="utf-8")
+    (local / "outside.md").write_text("outside\n", encoding="utf-8")
+
+    assert sorted(remote.dirty_paths(content)) == ["../outside.md", "inside.md"]
+
+
 def test_dirty_paths_reports_a_directory_that_is_not_a_repository(tmp_path: Path) -> None:
     with pytest.raises(KbError, match="cannot inspect working tree"):
         remote.dirty_paths(tmp_path)

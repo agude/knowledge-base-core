@@ -155,11 +155,20 @@ def _content(root: Path) -> Check:
 
 def _dirty_count(root: Path) -> int:
     """The changed or untracked paths in the worktree."""
-    result = _git(root, "status", "--porcelain", "--untracked-files=all")
+    result = _git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
     if result.returncode != 0:
         raise KbError(f"cannot inspect working tree: {result.stderr.rstrip()}")
-    paths = [line[3:] for line in result.stdout.splitlines()]
-    return len(paths)
+    records = result.stdout.split("\0")
+    count = index = 0
+    while index < len(records):
+        record = records[index]
+        index += 1
+        if not record:
+            continue
+        count += 1
+        if "R" in record[:2] or "C" in record[:2]:
+            index += 1
+    return count
 
 
 def _gitattributes(root: Path) -> Check:

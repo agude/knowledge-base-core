@@ -129,7 +129,7 @@ def _patch_run_setup(monkeypatch: pytest.MonkeyPatch, root: Path) -> None:
     monkeypatch.setattr(config, "read_harvest_since", lambda _: None)
     monkeypatch.setattr(dates, "now", lambda _: NOW)
     monkeypatch.setattr(socket, "gethostname", lambda: "test-host.local")
-    monkeypatch.setattr(lock, "git_dir", lambda _: root / ".git")
+    monkeypatch.setattr(lock, "git_dir", lambda *_args: root / ".git")
 
 
 def test_run_dry_run_dispatches_without_lock(
@@ -550,6 +550,31 @@ def test_head_records_reads_committed_observation_and_ignores_old_fields(tmp_pat
     assert records[0].session == "saved" and records[0].part == 1
 
 
+def test_head_records_passes_content_relative_paths_to_the_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository = make_repo(tmp_path / "repository")
+    root = repository / "content"
+    pending = root / "observations" / "pending"
+    pending.mkdir(parents=True)
+    (pending / "saved.md").write_text(observation_text(), encoding="utf-8")
+    git(repository, "add", "content/observations")
+    git(repository, "commit", "-q", "-m", "Save nested transcript")
+    original_parse = model.parse
+    parsed_paths: list[str] = []
+
+    def capture(path: str, text: str) -> model.Document:
+        parsed_paths.append(path)
+        return original_parse(path, text)
+
+    monkeypatch.setattr(model, "parse", capture)
+
+    records = sync._head_records(root)
+
+    assert len(records) == 1
+    assert parsed_paths == ["observations/pending/saved.md"]
+
+
 def test_head_records_handles_tree_and_batch_errors_and_empty_trees(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -681,6 +706,48 @@ def test_recover_cleans_temp_and_only_this_hosts_uncommitted_observations(
     assert list(scratch.iterdir()) == []
     assert not owned.exists() and other.exists() and committed.exists()
     assert calls == ["observations/pending/owned.md"]
+
+
+@pytest.mark.parametrize("layout", ["root", "subdirectory", "linked-worktree"])
+def test_recover_preserves_committed_observations_in_repository_layouts(
+    tmp_path: Path, layout: str
+) -> None:
+    repository = make_repo(tmp_path / "repository")
+    if layout == "root":
+        root = repository
+        working_repository = repository
+    else:
+        (repository / "content").mkdir()
+        (repository / "content" / "seed.txt").write_text("content\n", encoding="utf-8")
+        git(repository, "add", "content/seed.txt")
+        git(repository, "commit", "-q", "-m", "Add content directory")
+        if layout == "linked-worktree":
+            working_repository = tmp_path / "linked-worktree"
+            git(repository, "worktree", "add", "--quiet", "--detach", str(working_repository))
+        else:
+            working_repository = repository
+        root = working_repository / "content"
+
+    pending = root / sync.PENDING
+    pending.mkdir(parents=True, exist_ok=True)
+    record = pending / "committed.md"
+    record.write_text(observation_text("committed"), encoding="utf-8")
+    relative = record.relative_to(working_repository).as_posix()
+    git(working_repository, "add", relative)
+    git(working_repository, "commit", "-q", "-m", "Commit transcript observation")
+    original = record.read_bytes()
+    head = git(working_repository, "rev-parse", "HEAD").strip()
+    index = git(working_repository, "write-tree").strip()
+
+    sync._recover(root, lock.git_dir(root, "sync"), "test-host")
+
+    assert (
+        record.exists(),
+        record.read_bytes() if record.exists() else None,
+        git(working_repository, "rev-parse", "HEAD").strip(),
+        git(working_repository, "write-tree").strip(),
+        git(working_repository, "status", "--porcelain").strip(),
+    ) == (True, original, head, index, "")
 
 
 def test_recover_skips_missing_pending_and_symlink_entries(tmp_path: Path) -> None:
@@ -1082,7 +1149,7 @@ def test_commit_observations_cleans_up_staging_and_paths_on_failure(
 @pytest.mark.parametrize(
     ("status", "stdout", "stderr", "expected"),
     [
-        ("R  old -> new\n", 0, "", ("new",)),
+        ("R  new\0old\0", 0, "", ("new",)),
         ("", 1, "broken", "error"),
     ],
 )
@@ -1090,6 +1157,7 @@ def test_dirty_paths_handles_changes_renames_and_errors(
     monkeypatch: pytest.MonkeyPatch, status: str, stdout: int, stderr: str, expected: object
 ) -> None:
     monkeypatch.setattr(remote, "_git", lambda *args: completed(stdout, status, stderr))
+    monkeypatch.setattr(remote, "repository_prefix", lambda *_args: "")
     if expected == "error":
         with pytest.raises(KbError, match="cannot inspect working tree: broken"):
             sync._dirty_paths(Path())

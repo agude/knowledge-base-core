@@ -104,7 +104,7 @@ def _resolve(
 ) -> str:
     """Validate, scan, and publish a resolved copy while holding both writer locks."""
     root = context.root
-    git = lock.git_dir_path(root, WHO)
+    git = lock.git_dir(root, WHO)
     backend = lock.default_backend(sys.platform)
     with lock.write_lock(git, wait, backend):
         source_relpath = _question_path(root, question_word)

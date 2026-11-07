@@ -3,7 +3,6 @@
 import subprocess
 import sys
 from pathlib import Path
-from typing import NoReturn
 
 import pytest
 
@@ -14,8 +13,7 @@ from kb.errors import KbError
 
 def _content(root: Path) -> tuple[Path, Path]:
     content = root / "content"
-    git = content / ".git"
-    git.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(content)], check=True)
     article = content / "knowledge" / "article.md"
     article.parent.mkdir()
     article.write_text(
@@ -32,7 +30,7 @@ def _environment(content: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("KB_LOCK_WAIT", "0")
 
 
-def test_scans_the_ttl_and_makes_no_git_calls(
+def test_scans_the_ttl_and_uses_the_common_git_directory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -45,17 +43,21 @@ def test_scans_the_ttl_and_makes_no_git_calls(
         scanned.append((directory, text))
         return []
 
-    def forbidden(*args: object, **kwargs: object) -> NoReturn:
-        pytest.fail("kb verify must not call Git")
+    git_calls: list[tuple[Path, str]] = []
+
+    def common_directory(root: Path, command: str) -> Path:
+        git_calls.append((root, command))
+        return root / ".git"
 
     monkeypatch.setattr(secrets, "findings", scan)
-    monkeypatch.setattr(subprocess, "run", forbidden)
+    monkeypatch.setattr(lock, "git_dir", common_directory)
 
     status = verify.run(["knowledge/article.md"])
 
     assert status == 0
     assert capsys.readouterr().out == "Verified: knowledge/article.md (ttl domain)\n"
     assert len(scanned) == 1
+    assert git_calls == [(content, "verify")]
     assert scanned[0][1] == "domain"
     assert scanned[0][0].is_dir()
     assert b"verified: 2026-10-26" in article.read_bytes()

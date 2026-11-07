@@ -17,6 +17,7 @@ from kb import (
     args,
     config,
     dates,
+    git_paths,
     harvest,
     lock,
     model,
@@ -125,7 +126,7 @@ def run(words: Sequence[str]) -> int:
         harvest_since = config.read_harvest_since(configuration)
         now = dates.now(environ)
         host = observation.short_host(socket.gethostname())
-        git_directory = lock.git_dir(root)
+        git_directory = lock.git_dir(root, "sync")
     except KbError as error:
         raise KbError(f"sync: {error}") from None
     except (OSError, UnicodeError) as error:
@@ -490,7 +491,10 @@ def _sessions(candidates: Sequence[harvest.Candidate]) -> tuple[Session, ...]:
 
 def _head_records(root: Path) -> tuple[harvest.HarvestRecord, ...]:
     """Read transcript observation front matter from HEAD, never from the worktree or index."""
-    tree = _git_bytes(root, "ls-tree", "-r", "-z", "--full-tree", "HEAD", "--", PENDING, ARCHIVED)
+    prefix = git_paths.repository_prefix(root, "sync")
+    pending = git_paths.to_repository_path(PENDING, prefix)
+    archived = git_paths.to_repository_path(ARCHIVED, prefix)
+    tree = _git_bytes(root, "ls-tree", "-r", "-z", "--full-tree", "HEAD", "--", pending, archived)
     if tree.returncode != 0:
         detail = tree.stderr.decode("utf-8", errors="replace").rstrip("\n")
         raise KbError(f"cannot list committed observations: {detail}")
@@ -503,9 +507,14 @@ def _head_records(root: Path) -> tuple[harvest.HarvestRecord, ...]:
         if kind != "blob" or not encoded_path.endswith(b".md"):
             continue
         try:
-            relative = encoded_path.decode("utf-8")
+            repository_relative = encoded_path.decode("utf-8")
         except UnicodeDecodeError:
             continue
+        relative = git_paths.to_content_path(repository_relative, prefix)
+        if relative == ".." or relative.startswith("../"):
+            raise KbError(
+                f"committed observation is outside the content root: {repository_relative}"
+            )
         entries.append((object_id, relative))
     if not entries:
         return ()
@@ -583,11 +592,13 @@ def _recover(root: Path, git_directory: Path, host: str) -> None:
     _empty_directory(git_directory / TMP)
     if pending is None:
         return
+    prefix = git_paths.repository_prefix(root, "sync")
     for path in sorted(pending.glob("*.md")):
         if path.is_symlink() or not path.is_file():
             continue
         relative = path.relative_to(root).as_posix()
-        committed = _git(root, "cat-file", "-e", f"HEAD:{relative}")
+        repository_relative = git_paths.to_repository_path(relative, prefix)
+        committed = _git(root, "cat-file", "-e", f"HEAD:{repository_relative}")
         if committed.returncode == 0:
             continue
         try:

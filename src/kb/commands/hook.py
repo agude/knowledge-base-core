@@ -12,8 +12,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from kb import args, dates, lint, model, publish
+from kb import args, dates, git_paths, lint, model, publish
 from kb.args import Spec
+from kb.context import load
 from kb.errors import KbError
 
 WHO = "hook"
@@ -21,7 +22,7 @@ SPEC = Spec(
     usage="hook pre-commit",
     summary=(
         "Validate staged knowledge articles, stamp updated, and refuse unvalidated staging. "
-        "Git runs it with the content repository as the working directory."
+        "Git may run it from the repository root; a configured content root in that worktree is used."
     ),
 )
 
@@ -43,7 +44,7 @@ def run(words: Sequence[str]) -> int:
     if parsed.words != ["pre-commit"] or parsed.values or parsed.switches:
         raise SPEC.usage_error()
     try:
-        return pre_commit(Path.cwd(), os.environ)
+        return pre_commit(_content_root(os.environ), os.environ)
     except (OSError, UnicodeError) as error:
         raise KbError(f"{WHO}: {error}") from None
 
@@ -80,11 +81,40 @@ def pre_commit(root: Path, environ: Mapping[str, str]) -> int:
     return 0
 
 
+def _content_root(environ: Mapping[str, str]) -> Path:
+    """Use the configured root only when it belongs to the worktree running the hook."""
+    worktree = Path.cwd()
+    try:
+        configured = load(environ, sys.platform, Path.home()).root
+    except KbError as error:
+        if "no content repository" in str(error):
+            return worktree
+        raise
+    hook_repository = _git(worktree, "rev-parse", "--show-toplevel")
+    content_repository = _git(configured, "rev-parse", "--show-toplevel")
+    if hook_repository.returncode != 0 or content_repository.returncode != 0:
+        return worktree
+    if (
+        Path(hook_repository.stdout.strip()).resolve()
+        == Path(content_repository.stdout.strip()).resolve()
+    ):
+        return configured
+    return worktree
+
+
 def _staged_changes(root: Path) -> list[publish.Change]:
     """The index against HEAD, with renames detected and paths read as NUL-delimited fields."""
     result = _git(root, "diff", "--cached", "--name-status", "-z", "-M", "--no-ext-diff")
     _require_success(result, "cannot read the staged changes")
-    return publish.parse_name_status(result.stdout)
+    prefix = git_paths.repository_prefix(root, WHO)
+    return [
+        publish.Change(
+            change.status,
+            git_paths.to_content_path(change.path, prefix),
+            None if change.old_path is None else git_paths.to_content_path(change.old_path, prefix),
+        )
+        for change in publish.parse_name_status(result.stdout)
+    ]
 
 
 def _unstaged_articles(root: Path, articles: Sequence[str]) -> list[str]:
@@ -93,7 +123,10 @@ def _unstaged_articles(root: Path, articles: Sequence[str]) -> list[str]:
         return []
     result = _git(root, "diff", "--name-only", "-z", "--no-ext-diff")
     _require_success(result, "cannot read the unstaged changes")
-    differing = set(result.stdout.split("\0"))
+    prefix = git_paths.repository_prefix(root, WHO)
+    differing = {
+        git_paths.to_content_path(path, prefix) for path in result.stdout.split("\0") if path
+    }
     return [relpath for relpath in articles if relpath in differing]
 
 

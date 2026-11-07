@@ -112,24 +112,62 @@ def test_any_other_wait_is_refused(value: str) -> None:
 
 def test_git_dir_is_the_git_directory_of_the_repository(tmp_path: Path) -> None:
     repo = make_repo(tmp_path / "repo")
-    assert lock.git_dir(repo) == (repo / ".git").resolve()
+    assert lock.git_dir(repo, "verify") == (repo / ".git").resolve()
 
 
 def test_git_dir_refuses_a_directory_outside_any_repository(tmp_path: Path) -> None:
     with pytest.raises(KbError, match="not a git repository"):
-        lock.git_dir(tmp_path)
+        lock.git_dir(tmp_path, "sync")
 
 
-def test_git_dir_path_reads_worktree_metadata_without_running_git(tmp_path: Path) -> None:
-    content = tmp_path / "worktree"
-    git = tmp_path / ".git"
-    worktree_git = git / "worktrees" / "worktree"
+def test_git_dir_requires_an_explicit_command_label() -> None:
+    assert lock.git_dir.__defaults__ is None
+
+
+def test_common_lock_directory_is_distinct_from_worktree_index_directory(
+    tmp_path: Path,
+) -> None:
+    repository = make_repo(tmp_path / "repository")
+    content = repository / "content"
     content.mkdir()
-    worktree_git.mkdir(parents=True)
-    (content / ".git").write_text(f"gitdir: {worktree_git}\n", encoding="utf-8")
-    (worktree_git / "commondir").write_text("../..\n", encoding="utf-8")
+    (content / "seed.txt").write_text("seed\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repository), "add", "content/seed.txt"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repository),
+            "-c",
+            "user.name=Lock Test",
+            "-c",
+            "user.email=lock@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "Add content subdirectory",
+        ],
+        check=True,
+    )
+    worktree = tmp_path / "linked-worktree"
+    subprocess.run(
+        ["git", "-C", str(repository), "worktree", "add", "-q", "-b", "linked", str(worktree)],
+        check=True,
+    )
 
-    assert lock.git_dir_path(content, "verify") == git.resolve()
+    common = lock.git_dir(worktree / "content", "resolve")
+    result = subprocess.run(
+        ["git", "rev-parse", "--absolute-git-dir"],
+        cwd=worktree / "content",
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+    worktree_git = Path(result.stdout.strip())
+
+    assert common == (repository / ".git").resolve()
+    assert worktree_git != common
+    assert worktree_git.parent.parent == common
 
 
 def test_flock_backend_takes_then_releases_an_exclusive_lock() -> None:
@@ -272,35 +310,3 @@ def test_write_lock_refuses_when_the_kernel_lock_stays_busy(tmp_path: Path) -> N
     git.mkdir()
     with pytest.raises(LockBusy), lock.write_lock(git, 0, FakeBackend(busy=1)):
         pass
-
-
-def test_git_dir_path_rejects_a_gitfile_without_a_gitdir_line(tmp_path: Path) -> None:
-    content = tmp_path / "worktree"
-    content.mkdir()
-    (content / ".git").write_text("not a gitfile\n", encoding="utf-8")
-
-    with pytest.raises(KbError, match="cannot locate the Git directory"):
-        lock.git_dir_path(content, "verify")
-
-
-def test_git_dir_path_resolves_a_relative_gitdir(tmp_path: Path) -> None:
-    content = tmp_path / "worktree"
-    content.mkdir()
-    (tmp_path / "git").mkdir()
-    (content / ".git").write_text("gitdir: ../git\n", encoding="utf-8")
-
-    assert lock.git_dir_path(content, "verify") == (tmp_path / "git").resolve()
-
-
-def test_git_dir_path_rejects_a_gitdir_that_does_not_exist(tmp_path: Path) -> None:
-    content = tmp_path / "worktree"
-    content.mkdir()
-    (content / ".git").write_text(f"gitdir: {tmp_path / 'absent'}\n", encoding="utf-8")
-
-    with pytest.raises(KbError, match="cannot locate the Git directory"):
-        lock.git_dir_path(content, "verify")
-
-
-def test_git_dir_path_rejects_a_root_without_git_metadata(tmp_path: Path) -> None:
-    with pytest.raises(KbError, match="cannot locate the Git directory"):
-        lock.git_dir_path(tmp_path, "verify")

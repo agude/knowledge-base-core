@@ -24,6 +24,7 @@ from kb import (
     dates,
     evidence,
     freshness,
+    git_paths,
     lint,
     locators,
     lock,
@@ -163,7 +164,7 @@ def _start_command(words: Sequence[str]) -> int:
 
     try:
         context = load(os.environ, sys.platform, Path.home())
-        git_directory = lock.git_dir_path(context.root, WHO)
+        git_directory = lock.git_dir(context.root, WHO)
         backend = lock.default_backend(sys.platform)
         synchronize = "--no-sync" not in parsed.switches
         with lock.write_lock(git_directory, wait, backend):
@@ -253,7 +254,7 @@ def _complete_command(words: Sequence[str]) -> int:
 
     try:
         context = load(os.environ, sys.platform, Path.home())
-        git_directory = lock.git_dir_path(context.root, WHO)
+        git_directory = lock.git_dir(context.root, WHO)
         backend = lock.default_backend(sys.platform)
         with lock.write_lock(git_directory, wait, backend):
             batch = _read_batch(context.root, parsed.words[0])
@@ -306,7 +307,7 @@ def _transition_command(words: Sequence[str], spec: Spec, outcome: str) -> int:
 
     try:
         context = load(os.environ, sys.platform, Path.home())
-        git_directory = lock.git_dir_path(context.root, WHO)
+        git_directory = lock.git_dir(context.root, WHO)
         backend = lock.default_backend(sys.platform)
         with lock.write_lock(git_directory, wait, backend):
             batch = _read_batch(context.root, parsed.words[0])
@@ -472,7 +473,7 @@ def _finish_command(words: Sequence[str]) -> int:
 
     try:
         context = load(os.environ, sys.platform, Path.home())
-        git_directory = lock.git_dir_path(context.root, WHO)
+        git_directory = lock.git_dir(context.root, WHO)
         backend = lock.default_backend(sys.platform)
         with lock.write_lock(git_directory, wait, backend):
             return _finish(context.root, git_directory, parsed.words[0], no_push=no_push)
@@ -602,11 +603,12 @@ def _worktree_entries(root: Path) -> list[tuple[str, str]]:
         "--untracked-files=all",
         message="cannot inspect Git status",
     )
+    prefix = git_paths.repository_prefix(root, WHO)
     entries: list[tuple[str, str]] = []
     for record in output.split("\0"):
         if not record:
             continue
-        path = record[3:]
+        path = git_paths.to_content_path(record[3:], prefix)
         entries.append((record[:2], path))
     return entries
 
@@ -659,7 +661,8 @@ def _commit_publication(
             "-z",
             message="cannot read the staged set",
         ).split("\0")
-        staged_names = {name for name in names if name}
+        prefix = git_paths.repository_prefix(root, WHO)
+        staged_names = {git_paths.to_content_path(name, prefix) for name in names if name}
         if staged_names != set(paths):
             _unstage(root, git_directory, paths)
             extra = sorted(staged_names - set(paths))
@@ -668,18 +671,27 @@ def _commit_publication(
                 f"{WHO}: staged set differs from the publication set (extra: {extra}; "
                 f"missing: {missing}); nothing committed"
             )
-        staged_changes = publish.parse_name_status(
-            _git_output(
-                root,
-                "diff",
-                "--cached",
-                "--name-status",
-                "-M",
-                "-z",
-                "--no-ext-diff",
-                message="cannot read the staged set",
+        staged_changes = [
+            publish.Change(
+                change.status,
+                git_paths.to_content_path(change.path, prefix),
+                None
+                if change.old_path is None
+                else git_paths.to_content_path(change.old_path, prefix),
             )
-        )
+            for change in publish.parse_name_status(
+                _git_output(
+                    root,
+                    "diff",
+                    "--cached",
+                    "--name-status",
+                    "-M",
+                    "-z",
+                    "--no-ext-diff",
+                    message="cannot read the staged set",
+                )
+            )
+        ]
         message = publish.render_message(batch.id, batch, staged_changes)
         try:
             _scan_message(git_directory, message)
@@ -731,13 +743,11 @@ def _scan_message(git_directory: Path, message: str) -> None:
 
 
 def _require_index_clean(root: Path) -> None:
-    staged = [
-        name
-        for name in _git_output(
-            root, "diff", "--cached", "--name-only", "-z", message="cannot read the index"
-        ).split("\0")
-        if name
-    ]
+    output = _git_output(
+        root, "diff", "--cached", "--name-only", "-z", message="cannot read the index"
+    )
+    prefix = git_paths.repository_prefix(root, WHO)
+    staged = [git_paths.to_content_path(name, prefix) for name in output.split("\0") if name]
     if staged:
         raise KbError(
             f"{WHO}: the index has staged changes: {_listing(staged)}; commit or unstage them first"
@@ -1590,6 +1600,7 @@ def _require_clean_tree(root: Path) -> None:
     if result.returncode != 0:
         detail = result.stderr.decode("utf-8", errors="replace").strip()
         raise KbError(f"{WHO}: cannot inspect Git status" + (f": {detail}" if detail else ""))
+    prefix = git_paths.repository_prefix(root, WHO)
     records = result.stdout.split(b"\0")
     dirty: list[str] = []
     index = 0
@@ -1601,11 +1612,11 @@ def _require_clean_tree(root: Path) -> None:
         if len(record) < 4 or record[2:3] != b" ":
             raise KbError(f"{WHO}: Git returned malformed NUL-delimited status")
         status = record[:2]
-        paths = [os.fsdecode(record[3:])]
+        paths = [git_paths.to_content_path(os.fsdecode(record[3:]), prefix)]
         if b"R" in status or b"C" in status:
             if index >= len(records) or not records[index]:
                 raise KbError(f"{WHO}: Git returned malformed rename status")
-            paths.append(os.fsdecode(records[index]))
+            paths.append(git_paths.to_content_path(os.fsdecode(records[index]), prefix))
             index += 1
         dirty.extend(paths)
     if dirty:

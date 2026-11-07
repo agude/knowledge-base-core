@@ -6,7 +6,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .harness import GIT_ISOLATION, Kb, run_git
+from .harness import (
+    GIT_ISOLATION,
+    Kb,
+    make_linked_worktree_kb,
+    make_subdirectory_kb,
+    run_git,
+)
 
 RUN_RE = re.compile(r"Created batch: ([0-9]{8}T[0-9]{6}-[0-9a-f]{8})\n")
 COMMIT_RE = re.compile(r"Commit: ([0-9a-f]{40})\n")
@@ -138,6 +144,31 @@ def test_finish_commits_the_publication_set_once_and_publishes_it(remote_git_kb:
     status = kb("curate", "status", run)
     assert status.returncode == 0, status.stderr
     assert f"Batch is published as {_head(kb)}." in status.stdout
+
+
+def test_finish_supports_a_content_subdirectory_in_a_linked_worktree(git_kb: Kb) -> None:
+    nested = make_linked_worktree_kb(make_subdirectory_kb(git_kb))
+    run = _settled_batch(nested)
+
+    result = nested("curate", "finish", run, "--no-push")
+
+    assert result.returncode == 0, result.stderr
+    assert "Committed locally; not published" in result.stdout
+    assert run_git(nested.content, "status", "--porcelain", "--untracked-files=all") == ""
+
+
+def test_finish_does_not_treat_paths_outside_content_as_publication_paths(git_kb: Kb) -> None:
+    nested = make_subdirectory_kb(git_kb)
+    run = _settled_batch(nested)
+    outside = nested.content.parent / "knowledge" / "outside.md"
+    outside.write_text("Outside the configured content root.\n", encoding="utf-8")
+
+    result = nested("curate", "finish", run, "--no-push")
+
+    assert result.returncode == 1
+    assert "uncommitted changes outside the batch: ../knowledge/outside.md" in result.stderr
+    assert outside.read_text(encoding="utf-8") == "Outside the configured content root.\n"
+    assert run_git(nested.content, "status", "--porcelain", "--untracked-files=all")
 
 
 def test_the_commit_message_renders_every_outcome_and_the_resolved_question(

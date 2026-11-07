@@ -40,7 +40,7 @@ def run(words: Sequence[str]) -> int:
     try:
         context = load(os.environ, sys.platform, Path.home())
         relpath = _article_path(context.root, parsed.words[0])
-        git = lock.git_dir_path(context.root, WHO)
+        git = lock.git_dir(context.root, WHO)
         ttl = _verify(context, relpath, git, ttl_override, wait)
     except lock.LockBusy as busy:
         raise KbError(

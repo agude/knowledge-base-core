@@ -429,8 +429,9 @@ committed locally, or published as the commit that holds the manifest.
 
 ### Content pre-commit hook
 
-`kb hook pre-commit` is the content repository's Git pre-commit hook. Git runs
-it with the content repository as the working directory. `kb setup` installs a
+`kb hook pre-commit` is the content repository's Git pre-commit hook. Git may
+run it from the repository root; the hook reads the configured content root and
+converts Git paths before validating staged articles. `kb setup` installs a
 three-line script that calls this command by its absolute path. See
 [`kb setup`](#kb-setup).
 
