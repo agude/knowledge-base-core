@@ -7,6 +7,8 @@ and reuses them while the file's bytes are unchanged.
 The cache is one pickle of the records in kb.entries. It lives in cache/ at the top of each
 worktree, which the content repository's .gitignore must ignore, so it is never committed or
 synced. It can be deleted at any time. An unreadable or stale cache is rebuilt.
+Pickles must come from trusted local storage: validation after loading does not
+make unpickling untrusted bytes safe.
 """
 
 import hashlib
@@ -17,6 +19,7 @@ import sys
 import tempfile
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
+from datetime import datetime, timedelta
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
@@ -342,17 +345,101 @@ def _decode(target: Path, version: str) -> dict[str, Entry] | None:
     try:
         with target.open("rb") as handle:
             data = pickle.load(handle)
-        if not isinstance(data, dict) or data["format"] != FORMAT or data["fingerprint"] != version:
+        if (
+            not isinstance(data, dict)
+            or type(data["format"]) is not int
+            or data["format"] != FORMAT
+            or data["fingerprint"] != version
+        ):
             return None
         stored = data["entries"]
         if not isinstance(stored, dict):
             return None
         for key, entry in stored.items():
-            if not isinstance(entry, Entry) or entry.path != key:
+            if (
+                not isinstance(key, str)
+                or not isinstance(entry, Entry)
+                or entry.path != key
+                or not _valid_entry(entry)
+            ):
                 return None
         return stored
     except Exception:
         return None
+
+
+def _valid_entry(entry: Entry) -> bool:
+    """Check the shapes and invariants used by cache status, grouping, and ranking."""
+    if not isinstance(entry.path, str) or not entry.path or entry.path == ".":
+        return False
+    path = Path(entry.path)
+    if not path.parts or path.anchor or ".." in path.parts:
+        return False
+    if type(entry.mtime_ns) is not int or type(entry.size) is not int or entry.size < 0:
+        return False
+    if (
+        not isinstance(entry.digest, str)
+        or len(entry.digest) != 64
+        or any(character not in "0123456789abcdef" for character in entry.digest)
+    ):
+        return False
+    if not isinstance(entry.scalars, dict) or any(
+        name not in SCALAR_FIELDS or not isinstance(value, str)
+        for name, value in entry.scalars.items()
+    ):
+        return False
+    if not _valid_tokens(entry.title) or not _valid_tokens(entry.body):
+        return False
+    if type(entry.addressable) is not bool or not _valid_parts(entry.parts, entry.addressable):
+        return False
+    transcript = evidence.evidence_kind(entry.path, entry.scalars.get("source")) == "transcript"
+    if transcript:
+        return entry.body == ()
+    return entry.parts == () and not entry.addressable
+
+
+def _valid_tokens(value: object) -> bool:
+    """A token collection is an immutable sequence of strings, including the empty tuple."""
+    return isinstance(value, tuple) and all(isinstance(token, str) for token in value)
+
+
+def _valid_parts(value: object, addressable: bool) -> bool:
+    """Validate message/piece counters and UTC timestamps without retokenizing source text."""
+    if not isinstance(value, tuple):
+        return False
+    previous: PartTokens | None = None
+    for part in value:
+        if not isinstance(part, PartTokens) or not all(
+            type(number) is int and number >= 0 for number in (part.number, part.piece, part.size)
+        ):
+            return False
+        if not _valid_tokens(part.body):
+            return False
+        if addressable:
+            if part.number < 1 or not isinstance(part.timestamp, datetime):
+                return False
+            if part.timestamp.utcoffset() != timedelta(0):
+                return False
+            if previous is not None and (
+                part.number < previous.number
+                or (
+                    part.number == previous.number
+                    and (
+                        previous.piece == 0
+                        or part.piece != previous.piece + 1
+                        or part.timestamp != previous.timestamp
+                    )
+                )
+            ):
+                return False
+        elif part.number != 0 or part.timestamp is not None:
+            return False
+        if part.piece > 1 and (
+            previous is None or part.number != previous.number or part.piece != previous.piece + 1
+        ):
+            return False
+        previous = part
+    return True
 
 
 def _write(target: Path, version: str, entries: dict[str, Entry]) -> bool:

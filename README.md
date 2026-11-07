@@ -816,6 +816,12 @@ gather its facts reports why, and the other checks still run.
 | `skills` | both packaged skills at both host destinations match the package | a skill is missing, differs, or is unmanaged | |
 | `allow-rules` | each host has every working-agent rule for its available shell tools and no broader `kb` rule | a rule is missing, a broader rule exists, or a Codex rules file is a symbolic link | |
 
+Decoded cache records are checked before reuse. Malformed fields make the cache
+stale and rebuild it from source files, even when its fingerprint and file stats
+match. Valid warm records are checked without tokenizing their source again.
+The cache is a trusted local pickle; these checks run after unpickling and do
+not make an untrusted pickle safe to load.
+
 - `capture` reports Claude Code's `cleanupPeriodDays`, which defaults to 30.
   Codex retention is reported as `unknown`, because its configuration documents
   no retention setting. Goose's sessions directory is checked with the other

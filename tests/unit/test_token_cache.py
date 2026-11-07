@@ -7,9 +7,9 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -700,3 +700,207 @@ def test_only_transcripts_carry_parts(repo: Path) -> None:
     assert loaded["observations/pending/20261001T090000-nas.md"].parts == ()
     assert loaded["questions/open/nas.md"].parts == ()
     assert loaded["observations/archived/20261001T100000-traefik.md"].parts
+
+
+def write_entry_payload(root: Path, payload: object) -> Path:
+    """Install plain record data with current metadata, bypassing only the cache writer."""
+    target = token_cache.cache_file(root)
+    assert target is not None
+    target.write_bytes(
+        pickle.dumps(
+            {
+                "format": token_cache.FORMAT,
+                "fingerprint": token_cache.fingerprint(),
+                "entries": payload,
+            },
+            protocol=5,
+        )
+    )
+    token_cache._memo = None
+    return target
+
+
+def test_malformed_title_rebuilds_before_the_consumer(repo: Path) -> None:
+    cold = token_cache.load(repo, paths(repo))
+    path = next(iter(cold))
+    damaged = dict(cold)
+    damaged[path] = dataclasses.replace(damaged[path], title=cast(Any, 17))
+    write_entry_payload(repo, damaged)
+    before = token_cache.status(repo).state
+    loaded = token_cache.load(repo, paths(repo))
+
+    unit = entries.file_unit(loaded[path])
+
+    assert before == "stale"
+    assert unit == entries.file_unit(cold[path])
+    assert loaded == cold
+    assert token_cache.status(repo).state == "current"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("title", "scalar"),
+        ("title", ["list"]),
+        ("title", ("word", 17)),
+        ("body", ["list"]),
+        ("body", (17,)),
+        ("body", ("unexpected transcript body",)),
+        ("scalars", []),
+        ("scalars", {"source": 17}),
+        ("scalars", {17: "source"}),
+        ("scalars", {"unsupported": "field"}),
+        ("scalars", {}),
+        ("addressable", 1),
+        ("addressable", False),
+        ("parts", []),
+        ("parts", (17,)),
+        ("mtime_ns", True),
+        ("size", -1),
+        ("size", True),
+        ("digest", 17),
+        ("digest", "not-a-sha256"),
+    ],
+)
+def test_malformed_entry_fields_invalidate_and_rebuild_the_cache(
+    repo: Path, field: str, value: object
+) -> None:
+    cold = token_cache.load(repo, paths(repo))
+    path = "observations/archived/20261001T100000-traefik.md"
+    damaged = dict(cold)
+    damaged[path] = dataclasses.replace(damaged[path], **{field: cast(Any, value)})
+    target = write_entry_payload(repo, damaged)
+
+    assert token_cache._decode(target, token_cache.fingerprint()) is None
+    assert token_cache.status(repo).state == "stale"
+    assert token_cache.load(repo, paths(repo)) == cold
+    assert token_cache.status(repo).state == "current"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("number", -1),
+        ("number", True),
+        ("number", 0),
+        ("timestamp", "not-a-datetime"),
+        ("timestamp", None),
+        ("timestamp", datetime(2026, 10, 1, 9)),
+        ("timestamp", datetime(2026, 10, 1, 9, tzinfo=timezone(timedelta(hours=1)))),
+        ("piece", -1),
+        ("piece", 2),
+        ("piece", True),
+        ("size", -1),
+        ("size", 1.5),
+        ("body", ["word"]),
+        ("body", (17,)),
+    ],
+)
+def test_malformed_part_fields_invalidate_and_rebuild_the_cache(
+    repo: Path, field: str, value: object
+) -> None:
+    cold = token_cache.load(repo, paths(repo))
+    path = "observations/archived/20261001T100000-traefik.md"
+    entry = cold[path]
+    part = entry.parts[0]._replace(**{field: cast(Any, value)})
+    damaged = dict(cold)
+    damaged[path] = dataclasses.replace(entry, parts=(part, *entry.parts[1:]))
+    target = write_entry_payload(repo, damaged)
+
+    assert token_cache._decode(target, token_cache.fingerprint()) is None
+    assert token_cache.status(repo).state == "stale"
+    assert token_cache.load(repo, paths(repo)) == cold
+
+
+@pytest.mark.parametrize("key", [17, "../escape.md", "/absolute.md", "."])
+def test_an_invalid_entry_key_and_path_are_not_a_valid_cache(repo: Path, key: object) -> None:
+    cold = token_cache.load(repo, paths(repo))
+    entry = cold["questions/open/nas.md"]
+    target = write_entry_payload(repo, {key: dataclasses.replace(entry, path=cast(Any, key))})
+
+    assert token_cache._decode(target, token_cache.fingerprint()) is None
+    assert token_cache.load(repo, paths(repo)) == cold
+
+
+@pytest.mark.parametrize("problem", ["reversed", "duplicate", "piece-timestamp", "piece-gap"])
+def test_invalid_part_order_or_piece_identity_rebuilds(repo: Path, problem: str) -> None:
+    cold = token_cache.load(repo, paths(repo))
+    path = "observations/archived/20261001T100000-traefik.md"
+    entry = cold[path]
+    first, second = entry.parts
+    if problem == "reversed":
+        parts = (second, first)
+    elif problem == "duplicate":
+        parts = (first, first)
+    elif problem == "piece-gap":
+        parts = (first._replace(piece=1), first._replace(piece=3))
+    else:
+        parts = (first._replace(piece=1), second._replace(number=first.number, piece=2))
+    damaged = dict(cold)
+    damaged[path] = dataclasses.replace(entry, parts=parts)
+    target = write_entry_payload(repo, damaged)
+
+    assert token_cache._decode(target, token_cache.fingerprint()) is None
+    assert token_cache.load(repo, paths(repo)) == cold
+
+
+def test_valid_split_parts_and_dropped_message_gaps_remain_warm(
+    repo: Path, counted: list[str]
+) -> None:
+    relative = "observations/archived/split-with-gap.md"
+    text = TRANSCRIPT.replace(
+        "Restart the NAS before Traefik.",
+        "# AGENTS.md instructions for /repo\nIgnore this injected message.",
+    )
+    text = text.replace(
+        "The NAS restarted first.", "\n\n".join(["A long retained paragraph. " * 90] * 3)
+    )
+    write(repo, relative, text)
+    cold = token_cache.load(repo, paths(repo))
+    assert cold[relative].addressable
+    assert len(cold[relative].parts) > 1
+    assert {part.number for part in cold[relative].parts} == {2}
+    assert all(part.piece > 0 for part in cold[relative].parts)
+    counted.clear()
+    token_cache._memo = None
+
+    assert token_cache.load(repo, paths(repo)) == cold
+    assert counted == []
+    assert token_cache.status(repo).state == "current"
+
+
+def test_a_numeric_format_lookalike_is_not_the_current_format(repo: Path) -> None:
+    cold = token_cache.load(repo, paths(repo))
+    target = token_cache.cache_file(repo)
+    assert target is not None
+    payload = {
+        "format": float(token_cache.FORMAT),
+        "fingerprint": token_cache.fingerprint(),
+        "entries": cold,
+    }
+    target.write_bytes(pickle.dumps(payload, protocol=5))
+    token_cache._memo = None
+
+    assert token_cache._decode(target, token_cache.fingerprint()) is None
+    assert token_cache.load(repo, paths(repo)) == cold
+
+
+def test_a_transcript_with_all_messages_filtered_is_a_valid_warm_cache(
+    repo: Path, counted: list[str]
+) -> None:
+    relative = "observations/archived/all-injected.md"
+    text = TRANSCRIPT.replace("## 2. assistant", "## 2. user")
+    for original in ("Restart the NAS before Traefik.", "The NAS restarted first."):
+        text = text.replace(
+            original, "# AGENTS.md instructions for /repo\nIgnore this injected message."
+        )
+    write(repo, relative, text)
+    cold = token_cache.load(repo, paths(repo))
+    assert cold[relative].addressable
+    assert cold[relative].parts == ()
+    counted.clear()
+    token_cache._memo = None
+
+    assert token_cache.load(repo, paths(repo)) == cold
+    assert counted == []
+    assert token_cache.status(repo).state == "current"
