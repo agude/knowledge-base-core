@@ -35,6 +35,38 @@ def test_writes_an_attributed_question_for_a_missing_area(git_kb: Kb) -> None:
     assert git_kb.git("show", "--name-only", "--format=", "HEAD").split() == [relative]
 
 
+def test_refuses_to_publish_through_a_symlinked_open_directory(git_kb: Kb, tmp_path: Path) -> None:
+    open_directory = git_kb.content / "questions" / "open"
+    open_directory.rename(tmp_path / "open-original")
+    external = tmp_path / "external"
+    external.mkdir()
+    existing = external / "existing.md"
+    existing.write_text("keep", encoding="utf-8")
+    try:
+        open_directory.symlink_to(external, target_is_directory=True)
+    except (NotImplementedError, OSError) as error:
+        pytest.skip(f"symlink creation unavailable: {error}")
+    names = sorted(path.name for path in external.iterdir())
+    index = git_kb.git("ls-files", "--stage")
+
+    result = git_kb(
+        "gap",
+        "--title",
+        "Unsafe path",
+        "--body",
+        "Keep outside.",
+        "--context",
+        "infra",
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "content directory is a symlink" in result.stderr
+    assert sorted(path.name for path in external.iterdir()) == names
+    assert existing.read_text(encoding="utf-8") == "keep"
+    assert git_kb.git("ls-files", "--stage") == index
+
+
 def test_reads_stdin_and_normalizes_a_resolvable_context(git_kb: Kb) -> None:
     result = git_kb(
         "gap",

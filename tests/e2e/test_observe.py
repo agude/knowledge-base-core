@@ -11,6 +11,7 @@ import socket
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -120,6 +121,32 @@ def test_success_writes_one_file_and_commits_only_that_file(git_kb: Kb) -> None:
     )
     assert pending_files(git_kb) == sorted([*before, name])
     assert int(git_kb.git("rev-list", "--count", "HEAD")) == commits + 1
+
+
+def test_refuses_to_publish_through_a_symlinked_pending_directory(
+    git_kb: Kb, tmp_path: Path
+) -> None:
+    pending = git_kb.content / "observations" / "pending"
+    pending.rename(tmp_path / "pending-original")
+    external = tmp_path / "external"
+    external.mkdir()
+    existing = external / "existing.md"
+    existing.write_text("keep", encoding="utf-8")
+    try:
+        pending.symlink_to(external, target_is_directory=True)
+    except (NotImplementedError, OSError) as error:
+        pytest.skip(f"symlink creation unavailable: {error}")
+    names = sorted(path.name for path in external.iterdir())
+    index = git_kb.git("ls-files", "--stage")
+
+    result = git_kb("observe", "--title", "Unsafe path", "--body", "Keep outside.")
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "content directory is a symlink" in result.stderr
+    assert sorted(path.name for path in external.iterdir()) == names
+    assert existing.read_text(encoding="utf-8") == "keep"
+    assert git_kb.git("ls-files", "--stage") == index
 
 
 @pytest.mark.parametrize(

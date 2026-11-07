@@ -552,6 +552,12 @@ uncommitted transcript observations and temporary scanner files, then retries
 from the source transcripts. Re-running after a successful harvest does not
 duplicate committed messages.
 
+Writers and sync recovery validate fixed content directories before scanning
+or changing them. A symlink in a directory component, whether it points inside
+or outside the content root, is refused. Recovery leaves individual symlink
+entries inside `observations/pending` untouched. This rule applies to fixed
+writable paths; readable article symlinks follow their own rules.
+
 Options:
 
 - `--status` fetches `origin` and reports `Ready`, `Waiting`, `Ahead`, and

@@ -6,6 +6,7 @@ import os
 import socket
 import sqlite3
 import subprocess
+import sys
 from collections.abc import Iterator
 from contextlib import closing, contextmanager, nullcontext
 from datetime import UTC, datetime, timedelta
@@ -696,6 +697,48 @@ def test_recover_skips_missing_pending_and_symlink_entries(tmp_path: Path) -> No
     assert target.read_text(encoding="utf-8") == "keep"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="symbolic links need privilege")
+@pytest.mark.parametrize("relative", ["observations", "observations/pending"])
+@pytest.mark.parametrize("target_kind", ["internal", "external"])
+def test_recover_refuses_symlinked_fixed_directories_without_mutation(
+    tmp_path: Path, relative: str, target_kind: str
+) -> None:
+    root = make_repo(tmp_path / "content")
+    (root / "observations" / "pending").mkdir(parents=True)
+    external = root / "safe-area" if target_kind == "internal" else tmp_path / "external"
+    external.mkdir()
+    if relative == "observations":
+        external_pending = external / "pending"
+        external_pending.mkdir()
+        link = root / relative
+    else:
+        external_pending = external
+        link = root / relative
+    interrupted = external_pending / "interrupted.md"
+    interrupted.write_text(observation_text(), encoding="utf-8")
+    link.rename(tmp_path / "original-directory")
+    try:
+        link.symlink_to(external, target_is_directory=True)
+    except (NotImplementedError, OSError) as error:
+        pytest.skip(f"symlink creation unavailable: {error}")
+
+    scratch = root / ".git" / "kb-tmp"
+    scratch.mkdir()
+    scratch_file = scratch / "active.md"
+    scratch_file.write_text("keep", encoding="utf-8")
+    external_names = sorted(path.relative_to(external) for path in external.rglob("*"))
+    external_bytes = interrupted.read_bytes()
+    index = git(root, "ls-files", "--stage")
+
+    with pytest.raises(KbError, match="content directory is a symlink"):
+        sync._recover(root, root / ".git", "test-host")
+
+    assert sorted(path.relative_to(external) for path in external.rglob("*")) == external_names
+    assert interrupted.read_bytes() == external_bytes
+    assert scratch_file.read_text(encoding="utf-8") == "keep"
+    assert git(root, "ls-files", "--stage") == index
+
+
 def test_recover_reports_unstage_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = make_repo(tmp_path / "content")
     pending = root / sync.PENDING
@@ -964,6 +1007,35 @@ def test_publish_tries_again_after_a_name_collision(
     path = sync._publish(root, scan, "new", NOW)
     assert path.endswith("00000001.md")
     assert (root / path).read_text(encoding="utf-8") == "new"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symbolic links need privilege")
+@pytest.mark.parametrize("target_kind", ["internal", "external"])
+def test_publish_refuses_a_symlinked_pending_directory(tmp_path: Path, target_kind: str) -> None:
+    root = make_repo(tmp_path / "content")
+    scan = tmp_path / "scanner"
+    scan.mkdir()
+    pending = root / sync.PENDING
+    pending.mkdir(parents=True)
+    pending.rename(tmp_path / "pending-original")
+    external = root / "safe-area" if target_kind == "internal" else tmp_path / "external"
+    external.mkdir()
+    existing = external / "existing.md"
+    existing.write_text("keep", encoding="utf-8")
+    try:
+        pending.symlink_to(external, target_is_directory=True)
+    except (NotImplementedError, OSError) as error:
+        pytest.skip(f"symlink creation unavailable: {error}")
+    names = sorted(path.name for path in external.iterdir())
+    index = git(root, "ls-files", "--stage")
+
+    with pytest.raises(KbError, match="content directory is a symlink"):
+        sync._publish(root, scan, "new", NOW)
+
+    assert sorted(path.name for path in external.iterdir()) == names
+    assert existing.read_text(encoding="utf-8") == "keep"
+    assert list(scan.iterdir()) == []
+    assert git(root, "ls-files", "--stage") == index
 
 
 def test_publish_fails_after_all_names_collide(

@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from kb import lock, observation, secrets
+from kb.content_paths import fixed_directory
 from kb.errors import KbError
 
 MAX_NAME_TRIES = 5
@@ -26,6 +27,7 @@ def publish_and_commit(
     refusal_lines: RefusalLines,
 ) -> str:
     """Scan, publish, and commit one new file under the shared writer protections."""
+    fixed_directory(root, directory, command=command, create=False, optional=True)
     git_directory = lock.git_dir(root, command)
     scratch = git_directory / "kb-tmp"
     scratch.mkdir(parents=True, exist_ok=True)
@@ -65,8 +67,8 @@ def project() -> str:
 
 def _publish(root: Path, directory: str, temporary: Path, when: datetime, command: str) -> str:
     """Rename the temporary file to a free timestamped name in directory."""
-    destination = root / directory
-    destination.mkdir(parents=True, exist_ok=True)
+    destination = fixed_directory(root, directory, command=command, create=True)
+    assert destination is not None
     for _ in range(MAX_NAME_TRIES):
         name = observation.file_name(when, os.urandom(4).hex())
         if not (destination / name).exists():

@@ -36,6 +36,7 @@ from kb import (
 from kb.args import Spec
 from kb.commands import recall as recall_command
 from kb.commands import sync as sync_command
+from kb.content_paths import fixed_directory
 from kb.context import Context, load
 from kb.errors import KbError
 from kb.platform import config_file
@@ -1740,21 +1741,7 @@ def _fixed_directory(
     optional: bool = False,
 ) -> Path | None:
     """Resolve a fixed content directory without following symlink components."""
-    root_resolved = root.resolve()
-    path = root
-    for component in relative.split("/"):
-        path = path / component
-        if path.is_symlink():
-            raise KbError(f"{WHO}: content directory is a symlink: {relative}")
-        if not path.exists():
-            if not create:
-                if optional:
-                    return None
-                raise KbError(f"{WHO}: content directory is missing: {relative}")
-            path.mkdir()
-        if not path.is_dir() or not path.resolve().is_relative_to(root_resolved):
-            raise KbError(f"{WHO}: unsafe content directory: {relative}")
-    return path
+    return fixed_directory(root, relative, command=WHO, create=create, optional=optional)
 
 
 def _publish_manifest(git_directory: Path, target: Path, text: str) -> None:

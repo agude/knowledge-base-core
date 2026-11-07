@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from kb import cli, lock, observation, write
+from kb import cli, lock, observation, secrets, write
 from kb.commands import gap
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "content"
@@ -418,3 +418,58 @@ def test_rollback_failure_is_reported_and_keeps_the_question_for_recovery(
         question.relative_to(content).as_posix()
     ]
     assert list((content / ".git" / "kb-tmp").iterdir()) == []
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symbolic links need privilege")
+@pytest.mark.parametrize("relative", ["questions", "questions/open"])
+@pytest.mark.parametrize("target_kind", ["internal", "external"])
+def test_refuses_publication_through_a_symlinked_directory(
+    content: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    relative: str,
+    target_kind: str,
+) -> None:
+    external = content / "safe-area" if target_kind == "internal" else tmp_path / "external"
+    external.mkdir()
+    if relative == "questions":
+        external_open = external / "open"
+        external_open.mkdir()
+    else:
+        external_open = external
+    existing = external_open / "existing.md"
+    existing.write_text("keep", encoding="utf-8")
+    link = content / relative
+    link.rename(tmp_path / "original-directory")
+    try:
+        link.symlink_to(external, target_is_directory=True)
+    except (NotImplementedError, OSError) as error:
+        pytest.skip(f"symlink creation unavailable: {error}")
+    names = sorted(path.relative_to(external) for path in external.rglob("*"))
+    index = git(content, "ls-files", "--stage")
+    scan_calls: list[Path] = []
+
+    def track_scan(directory: Path, _text: str) -> list[tuple[str, int]]:
+        scan_calls.append(directory)
+        return []
+
+    monkeypatch.setattr(write, "_commit", lambda *_args: None)
+    monkeypatch.setattr(secrets, "findings", track_scan)
+
+    status, out, err = run_gap(
+        capsys,
+        "--title",
+        "Unsafe path",
+        "--body",
+        "Keep outside.",
+        "--context",
+        "infra",
+    )
+
+    assert (status, out) == (1, "")
+    assert "content directory is a symlink" in err
+    assert scan_calls == []
+    assert sorted(path.relative_to(external) for path in external.rglob("*")) == names
+    assert existing.read_text(encoding="utf-8") == "keep"
+    assert git(content, "ls-files", "--stage") == index

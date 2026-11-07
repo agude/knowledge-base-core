@@ -28,6 +28,7 @@ from kb import (
 )
 from kb.args import Spec
 from kb.config import content_root
+from kb.content_paths import fixed_directory
 from kb.errors import KbError
 from kb.hosts import claude, codex, goose
 from kb.platform import config_file, goose_sessions
@@ -578,9 +579,9 @@ def _record_from_document(document: model.Document) -> harvest.HarvestRecord | N
 
 def _recover(root: Path, git_directory: Path, host: str) -> None:
     """Remove this host's uncommitted transcript observations and empty kb-tmp."""
+    pending = fixed_directory(root, PENDING, command="sync", create=False, optional=True)
     _empty_directory(git_directory / TMP)
-    pending = root / PENDING
-    if not pending.is_dir():
+    if pending is None:
         return
     for path in sorted(pending.glob("*.md")):
         if path.is_symlink() or not path.is_file():
@@ -780,8 +781,8 @@ def _detector_counts(counts: Mapping[str, set[ContentLine | str]]) -> dict[str, 
 def _publish(root: Path, scan_directory: Path, text: str, now: datetime) -> str:
     """Write a temporary observation, rename it into pending, and return its relative path."""
     temporary = scan_directory / observation.temporary_name(os.urandom(4).hex())
-    pending = root / PENDING
-    pending.mkdir(parents=True, exist_ok=True)
+    pending = fixed_directory(root, PENDING, command="sync", create=True)
+    assert pending is not None
     try:
         with temporary.open("x", encoding="utf-8", newline="") as handle:
             handle.write(text)
