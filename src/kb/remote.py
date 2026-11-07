@@ -29,8 +29,8 @@ class Result:
 
     pulled counts commits rebased from origin, and pushed counts local commits sent
     to origin. skipped_dirty lists the changed paths that stopped the step before any
-    fetch. errors holds one message per failure. A rebase conflict is aborted, so the
-    local commits stay in place.
+    fetch. errors holds one message per failure. A rebase conflict is aborted when
+    possible; an abort failure is reported separately and stops integration.
     """
 
     pulled: int = 0
@@ -103,7 +103,15 @@ def integrate(root: Path, remote: RemoteStatus, *, push: bool) -> Result:
     if remote.behind:
         rebased = _git(root, "rebase", target)
         if rebased.returncode != 0:
-            _git(root, "rebase", "--abort")
+            aborted = _git(root, "rebase", "--abort")
+            if aborted.returncode != 0:
+                detail = aborted.stderr.rstrip("\n") or "no diagnostic available"
+                return Result(
+                    errors=(
+                        f"sync: rebase onto {target} failed",
+                        f"sync: rebase --abort failed: {detail}; inspect git status and recover manually before continuing",
+                    )
+                )
             return Result(errors=(f"sync: rebase onto {target} failed; local commits kept",))
         pulled = remote.behind
     if not (remote.ahead and push):
