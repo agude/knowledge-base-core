@@ -230,11 +230,11 @@ def test_the_git_helper_never_asks_for_optional_locks(
 ) -> None:
     seen: list[Mapping[str, str]] = []
 
-    def record(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def record(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
         env = kwargs["env"]
         assert isinstance(env, dict)
         seen.append(env)
-        return subprocess.CompletedProcess(command, 0, "", "")
+        return subprocess.CompletedProcess(command, 0, b"", b"")
 
     monkeypatch.setattr(subprocess, "run", record)
 

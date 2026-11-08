@@ -3,6 +3,9 @@
 import os
 import subprocess
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 from kb import git
 
@@ -70,3 +73,28 @@ def test_nonzero_exit_returns_a_result(tmp_path: Path) -> None:
     result = git.run(root, "rev-parse", "--verify", "no-such-ref")
 
     assert result.returncode != 0
+
+
+def test_run_sends_input_text_as_exact_utf8_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = make_repo(tmp_path / "repo")
+    sent: list[object] = []
+    real_run = subprocess.run
+
+    def record(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        sent.append(kwargs.get("input"))
+        return real_run(command, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", record)
+
+    git.run(root, "hash-object", "--stdin", input_text="é\nb\n")
+
+    assert sent == ["é\nb\n".encode()]
+
+
+def test_run_translates_output_newlines_like_text_mode(tmp_path: Path) -> None:
+    root = make_repo(tmp_path / "repo")
+    commit(root, "f.txt", b"a\r\nb\rc\n")
+
+    assert git.run(root, "show", "HEAD:f.txt").stdout == "a\nb\nc\n"
