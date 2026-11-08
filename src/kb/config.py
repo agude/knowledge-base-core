@@ -37,27 +37,17 @@ def content_root(environ: Mapping[str, str], config: Path) -> Path:
 
 def read_content_setting(config: Path) -> Path | None:
     """The content key in the config file, or None when the file or key is absent."""
-    if not config.is_file():
+    text = _read_text(config)
+    if text is None:
         return None
-    try:
-        text = config.read_text(encoding="utf-8")
-    except OSError as error:
-        raise KbError(
-            f"knowledge base: cannot read config file {config}: {error.strerror}"
-        ) from error
     return parse_content_setting(text, config)
 
 
 def read_harvest_since(config: Path) -> datetime | None:
     """The optional harvest cutoff from the config file, normalized to UTC."""
-    if not config.is_file():
+    text = _read_text(config)
+    if text is None:
         return None
-    try:
-        text = config.read_text(encoding="utf-8")
-    except OSError as error:
-        raise KbError(
-            f"knowledge base: cannot read config file {config}: {error.strerror}"
-        ) from error
     return parse_harvest_since(text, config)
 
 
@@ -172,6 +162,18 @@ def write_config(config: Path, edit: Callable[[str], str]) -> tuple[str, str]:
     finally:
         temporary.unlink(missing_ok=True)
     return ("updated" if existed else "created"), new
+
+
+def _read_text(config: Path) -> str | None:
+    """The config file's UTF-8 text, or None when it is not a file."""
+    if not config.is_file():
+        return None
+    try:
+        return config.read_text(encoding="utf-8")
+    except OSError as error:
+        raise KbError(
+            f"knowledge base: cannot read config file {config}: {error.strerror}"
+        ) from error
 
 
 def _has_nested_harvest_since(data: dict[str, object]) -> bool:

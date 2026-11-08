@@ -87,6 +87,22 @@ def test_an_unreadable_config_file_is_reported(
     )
 
 
+def test_an_invalid_harvest_since_does_not_block_the_content_root(tmp_path: Path) -> None:
+    root = tmp_path / "kb"
+    root.mkdir()
+    config_path = write(
+        tmp_path / "config.toml",
+        f'content = "{root.as_posix()}"\nharvest_since = "not a date"\n',
+    )
+    assert config.content_root({}, config_path) == root.resolve()
+    with pytest.raises(KbError) as error:
+        config.read_harvest_since(config_path)
+    assert str(error.value) == (
+        f"knowledge base: invalid config file {config_path}: "
+        "harvest_since must be a time-zone-aware TOML datetime"
+    )
+
+
 def test_a_missing_config_file_has_no_setting(tmp_path: Path) -> None:
     assert config.read_content_setting(tmp_path / "config.toml") is None
 
