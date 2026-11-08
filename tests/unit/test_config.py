@@ -1,5 +1,6 @@
 """Tests for finding the content repository."""
 
+import tomllib
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path, PureWindowsPath
 
@@ -236,3 +237,15 @@ def test_set_harvest_since_inserts_before_a_bom_table(tmp_path: Path) -> None:
     edited = config.set_harvest_since(text, datetime(2026, 10, 26, 12, tzinfo=UTC), path)
 
     assert edited == "\ufeffharvest_since = 2026-10-26T12:00:00Z\n[other]\nvalue = 1\n"
+
+
+def test_set_harvest_since_inserts_before_a_table_after_a_nested_array(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    text = "x = [\n  [1, 2],\n]\n[t]\na = 1\n"
+
+    edited = config.set_harvest_since(text, datetime(2026, 10, 26, 12, tzinfo=UTC), path)
+
+    assert edited == "x = [\n  [1, 2],\n]\nharvest_since = 2026-10-26T12:00:00Z\n[t]\na = 1\n"
+    parsed = tomllib.loads(edited)
+    assert parsed.pop("harvest_since") == datetime(2026, 10, 26, 12, tzinfo=UTC)
+    assert parsed == tomllib.loads(text)

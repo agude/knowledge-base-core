@@ -14,6 +14,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, Literal
 
+from kb import toml_edit
 from kb.errors import KbError
 from kb.platform import WINDOWS
 
@@ -32,7 +33,6 @@ HOOK_MARKER = "# Installed by kb setup. Do not edit; run kb setup again to updat
 UNQUOTABLE = ("'", "\r", "\n", "\0")
 VERSION_OUTPUT = re.compile(r"kb [0-9][0-9A-Za-z.+-]*\n?")
 CONTENT_LINE = re.compile(r'[ \t]*content[ \t]*=[ \t]*"(?:[^"\\\r\n]|\\.)*"[ \t]*(?:#[^\r\n]*)?')
-TABLE_HEADER = re.compile(r"[ \t]*\[")
 
 
 class HookAction(Enum):
@@ -159,32 +159,18 @@ def set_content(text: str, value: str) -> str:
     before = _parse(text)
     lines = text.splitlines(keepends=True)
     assignment = f"content = {toml_string(value)}"
-    first_table = next(
-        (
-            index
-            for index, line in enumerate(lines)
-            if TABLE_HEADER.match(line.removeprefix("\ufeff"))
-        ),
-        len(lines),
-    )
+    first_table = toml_edit.first_table_line(lines)
     index = _top_level_content_line(lines, first_table)
     if index is not None:
         line = lines[index]
         body = line.rstrip("\r\n")
         bom = "\ufeff" if body.startswith("\ufeff") else ""
         lines[index] = bom + assignment + line[len(body) :]
+        result = "".join(lines)
     else:
         if "content" in before:
             raise KbError("the content key must be a single-line basic string")
-        newline = "\r\n" if "\r\n" in text else "\n"
-        if first_table == len(lines) and lines and not lines[-1].endswith(("\n", "\r")):
-            lines[-1] += newline
-        line = assignment + newline
-        if first_table == 0 and lines and lines[0].startswith("\ufeff"):
-            lines[0] = lines[0].removeprefix("\ufeff")
-            line = "\ufeff" + line
-        lines.insert(first_table, line)
-    result = "".join(lines)
+        result = toml_edit.insert_line(text, lines, first_table, assignment)
     _verify(before, _parse(result), value)
     return result
 

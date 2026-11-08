@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping
 from datetime import datetime
 from pathlib import Path
 
-from kb import dates
+from kb import dates, toml_edit
 from kb.errors import KbError
 
 NO_CONTENT = (
@@ -136,18 +136,9 @@ def set_harvest_since(text: str, moment: datetime, config: Path) -> str:
     cutoff = utc.replace(microsecond=0)
     stamp = cutoff.isoformat(timespec="seconds").replace("+00:00", "Z")
     lines = text.splitlines(keepends=True)
-    first_table = next(
-        (index for index, line in enumerate(lines) if _is_table_header(line)), len(lines)
+    result = toml_edit.insert_line(
+        text, lines, toml_edit.first_table_line(lines), f"harvest_since = {stamp}"
     )
-    if first_table == len(lines) and lines and not lines[-1].endswith(("\n", "\r")):
-        lines[-1] += "\r\n" if "\r\n" in text else "\n"
-    newline = "\r\n" if "\r\n" in text else "\n"
-    assignment = f"harvest_since = {stamp}{newline}"
-    if first_table == 0 and lines and lines[0].startswith("\ufeff"):
-        lines[0] = lines[0].removeprefix("\ufeff")
-        assignment = "\ufeff" + assignment
-    lines.insert(first_table, assignment)
-    result = "".join(lines)
     try:
         after = tomllib.loads(result.removeprefix("\ufeff"))
     except tomllib.TOMLDecodeError as error:
@@ -194,11 +185,6 @@ def _has_nested_harvest_since(data: dict[str, object]) -> bool:
         return False
 
     return any(nested(value) for key, value in data.items() if key != "harvest_since")
-
-
-def _is_table_header(line: str) -> bool:
-    """Whether a physical line starts a TOML table, ignoring a file's leading BOM."""
-    return line.removeprefix("\ufeff").lstrip().startswith("[")
 
 
 def _without_harvest_since(data: dict[str, object]) -> dict[str, object]:

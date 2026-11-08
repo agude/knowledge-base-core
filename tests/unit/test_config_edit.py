@@ -139,3 +139,22 @@ def test_an_unchanged_content_line_produces_identical_text() -> None:
     text = f'content = "{ROOT}"\n{HARVEST}\n'
 
     assert setup_rules.set_content(text, ROOT) == text
+
+
+NESTED_ARRAY = "x = [\n  [1, 2],\n]\n"
+
+
+def test_a_content_line_is_inserted_before_a_table_after_a_nested_array() -> None:
+    text = f"{NESTED_ARRAY}[t]\na = 1\n"
+
+    edited = setup_rules.set_content(text, ROOT)
+
+    assert edited == f'{NESTED_ARRAY}content = "{ROOT}"\n[t]\na = 1\n'
+
+
+def test_a_content_line_after_a_nested_array_is_replaced() -> None:
+    text = f'{NESTED_ARRAY}content = "/old"\n[t]\na = 1\n'
+
+    edited = setup_rules.set_content(text, ROOT)
+
+    assert edited == f'{NESTED_ARRAY}content = "{ROOT}"\n[t]\na = 1\n'
