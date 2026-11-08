@@ -315,7 +315,7 @@ def test_start_rejects_malformed_new_manifests_and_allows_settled_batches(git_kb
     malformed_id = "20261028T120000-a1b2c3d4"
     malformed = directory / f"{malformed_id}.json"
     malformed.write_text(
-        '{"schema_version": 1, "schema_version": 1}\n', encoding="utf-8", newline=""
+        '{"schema_version": 2, "schema_version": 2}\n', encoding="utf-8", newline=""
     )
     _commit(git_kb, f"observations/batches/{malformed.name}")
 
@@ -602,7 +602,7 @@ def test_status_rejects_malformed_manifest_and_path_like_run_id(kb: Kb) -> None:
     malformed = kb.content / "observations/batches/20261028T120000-a1b2c3d4.json"
     malformed.parent.mkdir(parents=True, exist_ok=True)
     malformed.write_text(
-        '{"schema_version": 1, "schema_version": 1}\n', encoding="utf-8", newline=""
+        '{"schema_version": 2, "schema_version": 2}\n', encoding="utf-8", newline=""
     )
 
     bad_json = kb("curate", "status", "20261028T120000-a1b2c3d4")

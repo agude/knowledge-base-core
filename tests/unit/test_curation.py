@@ -159,7 +159,7 @@ def test_manifest_loader_accepts_object_fields_in_any_order() -> None:
 @pytest.mark.parametrize(
     "text",
     [
-        '{"schema_version":1,"schema_version":1}',
+        '{"schema_version":2,"schema_version":2}',
         '{"schema_version":NaN}',
         "[]",
     ],
@@ -285,23 +285,16 @@ def test_replace_member_is_immutable_and_requires_membership() -> None:
         curation.replace_member(batch, pending("other.md"))
 
 
-def test_version_one_manifests_load_unsynchronized_and_render_version_two() -> None:
+def test_a_version_one_manifest_is_refused() -> None:
     value = json.loads(curation.render_batch(make_batch(pending())))
     legacy = {
         key: value[key]
         for key in ("schema_version", "id", "created", "max_bytes", "selected_bytes", "members")
     }
-    legacy["schema_version"] = curation.LEGACY_SCHEMA_VERSION
+    legacy["schema_version"] = 1
 
-    batch = curation.load_batch(json.dumps(legacy))
-
-    assert batch.schema_version == curation.SCHEMA_VERSION
-    assert batch.synchronized is False
-    assert batch.base_commit is None
-    rendered = json.loads(curation.render_batch(batch))
-    assert rendered["schema_version"] == curation.SCHEMA_VERSION
-    assert rendered["synchronized"] is False
-    assert rendered["base_commit"] is None
+    with pytest.raises(curation.StateError, match=r"^unsupported batch schema version: 1$"):
+        curation.load_batch(json.dumps(legacy))
 
 
 def test_synchronized_manifest_round_trips_its_base_commit() -> None:

@@ -12,8 +12,6 @@ from typing import Literal, cast
 from kb.locators import parse_locator
 
 SCHEMA_VERSION = 2
-# Version 1 manifests load as unsynchronized local batches with no base commit.
-LEGACY_SCHEMA_VERSION = 1
 MAX_REPORT_ITEMS = 8
 Disposition = Literal["incorporated", "duplicate", "ephemeral"]
 Status = Literal["pending", "archiving", "complete", "deferred", "dropped"]
@@ -31,14 +29,6 @@ _TOP_FIELDS = (
     "selected_bytes",
     "synchronized",
     "base_commit",
-    "members",
-)
-_LEGACY_TOP_FIELDS = (
-    "schema_version",
-    "id",
-    "created",
-    "max_bytes",
-    "selected_bytes",
     "members",
 )
 _MEMBER_FIELDS = (
@@ -271,18 +261,15 @@ def load_batch(text: str) -> Batch:
     if not isinstance(value, dict):
         raise StateError("batch must be a JSON object")
     version = value.get("schema_version")
-    if type(version) is not int or version not in (LEGACY_SCHEMA_VERSION, SCHEMA_VERSION):
+    if type(version) is not int or version != SCHEMA_VERSION:
         raise StateError(f"unsupported batch schema version: {version!r}")
-    _exact_fields(value, _TOP_FIELDS if version == SCHEMA_VERSION else _LEGACY_TOP_FIELDS, "batch")
+    _exact_fields(value, _TOP_FIELDS, "batch")
     members_value = value["members"]
     if not isinstance(members_value, list):
         raise StateError("batch members must be an array")
     members = tuple(_member_from_object(item) for item in members_value)
-    synchronized = False
-    base_commit = None
-    if version == SCHEMA_VERSION:
-        synchronized = _boolean(value["synchronized"], "batch synchronized")
-        base_commit = _nullable_string(value["base_commit"], "batch base_commit")
+    synchronized = _boolean(value["synchronized"], "batch synchronized")
+    base_commit = _nullable_string(value["base_commit"], "batch base_commit")
     return Batch(
         schema_version=SCHEMA_VERSION,
         id=_string(value["id"], "batch id"),

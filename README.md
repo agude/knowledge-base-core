@@ -331,9 +331,8 @@ conflicts (the rebase is aborted and local commits are kept), or the push
 fails. The message names the failing step and says `no batch created`. Use
 `--no-sync` for offline work. It creates an unpublished local batch and prints
 `Not synchronized: local batch`. The manifest records `synchronized` and
-`base_commit`, the HEAD the batch started from. Version 1 manifests load as
-unsynchronized batches with no base commit; the next change rewrites them as
-version 2.
+`base_commit`, the HEAD the batch started from. Version 1 manifests are
+refused; finish or abandon them with kb 0.4.2 or earlier before upgrading.
 
 The RUN below came from an isolated fixture repository. A real run prints its
 own RUN; use that value for every later command.

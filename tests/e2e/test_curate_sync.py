@@ -246,7 +246,7 @@ def test_no_sync_creates_a_local_batch_without_origin(git_kb: Kb) -> None:
     assert f"Base commit: {_head(git_kb)}" in status.stdout
 
 
-def test_version_one_manifests_load_as_unsynchronized_local_batches(git_kb: Kb) -> None:
+def test_a_version_one_manifest_is_refused_without_change(git_kb: Kb) -> None:
     name = "20261024T094659-8d6fecbe.md"
     content = (git_kb.content / "observations/pending" / name).read_bytes()
     run_id = "20261028T120000-a1b2c3d4"
@@ -272,13 +272,9 @@ def test_version_one_manifests_load_as_unsynchronized_local_batches(git_kb: Kb) 
     path = git_kb.content / BATCHES / f"{run_id}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    before = path.read_bytes()
 
     status = git_kb("curate", "status", run_id)
-    assert status.returncode == 0, status.stderr
-    assert "Synchronized: no" in status.stdout
-    assert "Base commit: none" in status.stdout
-
-    next_work = git_kb("curate", "next", run_id)
-    assert next_work.returncode == 0, next_work.stderr
-    assert name in next_work.stdout
-    assert path.read_text(encoding="utf-8") == json.dumps(manifest, indent=2) + "\n"
+    assert status.returncode != 0
+    assert "unsupported batch schema version: 1" in status.stderr
+    assert path.read_bytes() == before
