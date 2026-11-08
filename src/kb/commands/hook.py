@@ -12,7 +12,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from kb import args, dates, git_paths, lint, model, publish, snapshot
+from kb import args, dates, git, git_paths, lint, model, publish, snapshot
 from kb.args import Spec
 from kb.context import load
 from kb.errors import KbError
@@ -93,8 +93,8 @@ def _content_root(environ: Mapping[str, str]) -> Path:
         if "no content repository" in str(error):
             return worktree
         raise
-    hook_repository = _git(worktree, "rev-parse", "--show-toplevel")
-    content_repository = _git(configured, "rev-parse", "--show-toplevel")
+    hook_repository = git.run(worktree, "rev-parse", "--show-toplevel")
+    content_repository = git.run(configured, "rev-parse", "--show-toplevel")
     if hook_repository.returncode != 0 or content_repository.returncode != 0:
         return worktree
     if (
@@ -107,7 +107,7 @@ def _content_root(environ: Mapping[str, str]) -> Path:
 
 def _staged_changes(root: Path) -> list[publish.Change]:
     """The index against HEAD, with renames detected and paths read as NUL-delimited fields."""
-    result = _git(root, "diff", "--cached", "--name-status", "-z", "-M", "--no-ext-diff")
+    result = git.run(root, "diff", "--cached", "--name-status", "-z", "-M", "--no-ext-diff")
     _require_success(result, "cannot read the staged changes")
     prefix = git_paths.repository_prefix(root, WHO)
     return [
@@ -126,7 +126,7 @@ def _unstaged_articles(
     """Refuse unstaged article or link-target changes before any stamping."""
     if not articles:
         return []
-    result = _git(root, "diff", "--name-only", "-z", "--no-ext-diff")
+    result = git.run(root, "diff", "--name-only", "-z", "--no-ext-diff")
     _require_success(result, "cannot read the unstaged changes")
     prefix = git_paths.repository_prefix(root, WHO)
     differing = {
@@ -154,7 +154,7 @@ def _is_partial(root: Path, environ: Mapping[str, str]) -> bool:
     if not override:
         return False
     # --git-path index would return the override, so join the index name to the git directory.
-    result = _git(root, "rev-parse", "--absolute-git-dir")
+    result = git.run(root, "rev-parse", "--absolute-git-dir")
     _require_success(result, "cannot locate the Git directory")
     index = Path(result.stdout.strip()) / "index"
     return (root / override).resolve() != index.resolve()
@@ -196,7 +196,7 @@ def _stamp_edits(
 def _write_and_stage(root: Path, edit: _Edit) -> None:
     """Write through the existing path, so a symbolic link and its mode survive, then stage it."""
     (root / edit.relpath).write_bytes(edit.content)
-    result = _git(root, "add", "--", edit.relpath)
+    result = git.run(root, "add", "--", edit.relpath)
     _require_success(result, f"cannot stage {edit.relpath}")
 
 
@@ -212,15 +212,3 @@ def _require_success(result: subprocess.CompletedProcess[str], message: str) -> 
     if result.returncode != 0:
         detail = result.stderr.rstrip("\n")
         raise KbError(f"{WHO}: {message}" + (f": {detail}" if detail else ""))
-
-
-def _git(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
-    """Run Git in the content repository and capture its text output."""
-    return subprocess.run(
-        ["git", *words],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )

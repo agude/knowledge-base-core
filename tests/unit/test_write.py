@@ -8,6 +8,8 @@ import pytest
 from kb import write
 from kb.errors import KbError
 
+from . import git_fakes
+
 
 def git(root: Path, *words: str) -> str:
     return subprocess.run(
@@ -61,7 +63,8 @@ def test_initial_commit_is_preserved_when_head_inspection_fails_after_commit(
     root = make_repo(tmp_path / "repo")
     path = root / "record.md"
     path.write_bytes(b"new record\n")
-    run_git = write._git
+    fake = git_fakes.install(monkeypatch)
+    run_git = fake.real_run
     commit_finished = False
 
     def interrupt_commit(worktree: Path, *words: str) -> subprocess.CompletedProcess[str]:
@@ -75,7 +78,7 @@ def test_initial_commit_is_preserved_when_head_inspection_fails_after_commit(
             raise KeyboardInterrupt
         return result
 
-    monkeypatch.setattr(write, "_git", interrupt_commit)
+    fake.wrap(interrupt_commit)
 
     with pytest.raises((KbError, KeyboardInterrupt)) as caught:
         write._commit(root, "record.md", "Observe: initial", "observe")

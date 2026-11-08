@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from kb import git_paths, lock, observation, scratch, secrets
+from kb import git, git_paths, lock, observation, scratch, secrets
 from kb.content_paths import fixed_directory
 from kb.errors import KbError
 
@@ -63,14 +63,7 @@ def publish_and_commit(
 def project() -> str:
     """The top of the process's Git repository, or its working directory outside one."""
     here = Path.cwd()
-    top = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
-        cwd=here,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
+    top = git.run(here, "rev-parse", "--show-toplevel")
     if top.returncode == 0:
         # Git prints C:/ paths on Windows; Path gives them the native separator.
         return str(Path(top.stdout.removesuffix("\n")))
@@ -98,10 +91,10 @@ def _commit(root: Path, path: str, subject: str, command: str) -> None:
     """Commit one new file and reconcile an exception before any rollback."""
     snapshot = _commit_snapshot(root, path, command)
     try:
-        result = _git(root, "add", "--", path)
+        result = git.run(root, "add", "--", path)
         if result.returncode != 0:
             raise _commit_error(command, result.stderr)
-        result = _git(root, "commit", "-q", "-m", subject, "--", path)
+        result = git.run(root, "commit", "-q", "-m", subject, "--", path)
         if result.returncode != 0:
             raise _commit_error(command, result.stderr)
     except BaseException as error:
@@ -131,7 +124,7 @@ def _commit_snapshot(root: Path, path: str, command: str) -> CommitSnapshot:
         raise KbError(f"{command}: cannot save commit state for {path}: {error}")
 
     if head is not None:
-        result = _git(root, "ls-tree", "-z", "--full-tree", head, "--", repository_path)
+        result = git.run(root, "ls-tree", "-z", "--full-tree", head, "--", repository_path)
         if result.returncode != 0:
             detail = result.stderr.rstrip("\n")
             raise KbError(
@@ -141,7 +134,7 @@ def _commit_snapshot(root: Path, path: str, command: str) -> CommitSnapshot:
         if result.stdout:
             raise KbError(f"{command}: refusing to commit an existing HEAD path: {path}")
 
-    staged = _git(root, "diff", "--cached", "--name-only", "-z", "--", path)
+    staged = git.run(root, "diff", "--cached", "--name-only", "-z", "--", path)
     if staged.returncode != 0:
         detail = staged.stderr.rstrip("\n")
         raise KbError(
@@ -160,13 +153,13 @@ def _commit_snapshot(root: Path, path: str, command: str) -> CommitSnapshot:
 
 def _read_head(root: Path, *, allow_unborn: bool) -> tuple[str | None, str | None]:
     """Read HEAD, recognizing an unborn branch only when its named reference is absent."""
-    result = _git(root, "rev-parse", "--verify", "HEAD")
+    result = git.run(root, "rev-parse", "--verify", "HEAD")
     if result.returncode == 0 and result.stdout.strip():
         return result.stdout.strip(), None
     if allow_unborn:
-        symbolic = _git(root, "symbolic-ref", "-q", "HEAD")
+        symbolic = git.run(root, "symbolic-ref", "-q", "HEAD")
         if symbolic.returncode == 0 and symbolic.stdout.strip():
-            reference = _git(root, "show-ref", "--verify", "--quiet", symbolic.stdout.strip())
+            reference = git.run(root, "show-ref", "--verify", "--quiet", symbolic.stdout.strip())
             if reference.returncode == 1:
                 return None, None
     detail = result.stderr.rstrip("\n")
@@ -182,7 +175,7 @@ def _commit_outcome(root: Path, snapshot: CommitSnapshot, subject: str) -> tuple
         return "failed", "HEAD is unchanged"
     assert head is not None
 
-    metadata = _git(root, "show", "-s", "--format=%P%x00%s", head)
+    metadata = git.run(root, "show", "-s", "--format=%P%x00%s", head)
     if metadata.returncode != 0:
         return "unknown", _detail(metadata.stderr, "cannot inspect the new commit")
     fields = metadata.stdout.rstrip("\n").split("\0", 1)
@@ -193,7 +186,7 @@ def _commit_outcome(root: Path, snapshot: CommitSnapshot, subject: str) -> tuple
     if parents != expected_parents or fields[1] != subject:
         return "unknown", "HEAD changed but does not identify this transaction's commit"
 
-    changed = _git(
+    changed = git.run(
         root,
         "diff-tree",
         "--root",
@@ -248,18 +241,6 @@ def _commit_error(command: str, stderr: str) -> KbError:
     )
 
 
-def _git(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
-    """Run Git in the content repository and capture its output."""
-    return subprocess.run(
-        ["git", *words],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
-
-
 def _git_blob(root: Path, revision: str) -> tuple[bytes | None, str]:
     """Read one blob as raw bytes, or return None and Git's error text.
 
@@ -280,16 +261,14 @@ def _unstage_paths(
     root: Path,
     paths: Sequence[str],
     command: str,
-    run_git: Callable[..., subprocess.CompletedProcess[str]] | None = None,
 ) -> str | None:
     """Remove only these paths from the index, reporting errors before callers delete files."""
     if not paths:
         return None
-    git = _git if run_git is None else run_git
-    result = git(root, "ls-files", "-z", "--", *paths)
+    result = git.run(root, "ls-files", "-z", "--", *paths)
     if result.returncode == 0 and result.stdout:
         # A rejecting hook may have changed a staged file; force only these paths out of the index.
-        result = git(root, "rm", "-q", "-f", "--cached", "--ignore-unmatch", "--", *paths)
+        result = git.run(root, "rm", "-q", "-f", "--cached", "--ignore-unmatch", "--", *paths)
     if result.returncode == 0:
         return None
     detail = result.stderr.rstrip("\n")

@@ -40,6 +40,10 @@ class FakeGit:
 
         self.responders.append(respond)
 
+    def wrap(self, function: Callable[..., subprocess.CompletedProcess[Any]]) -> None:
+        """Answer every call with function(root, *words), which may call real_run itself."""
+        self.responders.append(lambda root, words: function(root, *words))
+
     def answer(
         self, root: Path, words: tuple[str, ...], keywords: dict[str, Any]
     ) -> subprocess.CompletedProcess[Any] | None:

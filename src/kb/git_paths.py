@@ -1,22 +1,15 @@
 """Convert between paths relative to Git's worktree and the configured content root."""
 
 import posixpath
-import subprocess
 from pathlib import Path
 
+from kb import git
 from kb.errors import KbError
 
 
 def repository_prefix(content: Path, command: str) -> str:
     """Return the repository-root prefix of a content directory, including its trailing slash."""
-    result = subprocess.run(
-        ["git", "rev-parse", "--show-prefix"],
-        cwd=content,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
+    result = git.run(content, "rev-parse", "--show-prefix")
     if result.returncode != 0:
         raise KbError(f"{command}: the content repository is not a git repository: {content}")
     return result.stdout.removesuffix("\n")

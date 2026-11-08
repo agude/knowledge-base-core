@@ -6,7 +6,6 @@ process exits, so it needs no stale-lock logic.
 
 import importlib
 import os
-import subprocess
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -14,6 +13,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Protocol, cast
 
+from kb import git
 from kb.errors import KbError
 from kb.platform import WINDOWS
 
@@ -118,14 +118,7 @@ def git_dir(content: Path, command: str) -> Path:
 
     Raises KbError when the content root is not inside a git repository.
     """
-    result = subprocess.run(
-        ["git", "rev-parse", "--git-common-dir"],
-        cwd=content,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
+    result = git.run(content, "rev-parse", "--git-common-dir")
     if result.returncode != 0:
         raise KbError(f"{command}: the content repository is not a git repository: {content}")
     return (content / result.stdout.removesuffix("\n")).resolve()

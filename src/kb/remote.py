@@ -5,10 +5,10 @@ commits. Each function reports what it did; a failure names the Git step that
 stopped it.
 """
 
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from kb import git
 from kb.errors import KbError
 from kb.git_paths import repository_prefix, to_content_path
 from kb.git_status import parse_porcelain
@@ -42,7 +42,7 @@ class Result:
 
 def dirty_paths(root: Path) -> tuple[str, ...]:
     """Paths changed in the worktree or index."""
-    result = _git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+    result = git.run(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
     if result.returncode != 0:
         detail = result.stderr.rstrip("\n")
         raise KbError(f"cannot inspect working tree: {detail}")
@@ -52,22 +52,22 @@ def dirty_paths(root: Path) -> tuple[str, ...]:
 
 def fetch_status(root: Path) -> tuple[RemoteStatus | None, str | None]:
     """Fetch origin's current branch and calculate ahead/behind without moving HEAD."""
-    branch_result = _git(root, "symbolic-ref", "--quiet", "--short", "HEAD")
+    branch_result = git.run(root, "symbolic-ref", "--quiet", "--short", "HEAD")
     if branch_result.returncode != 0:
         return None, "sync: current branch is detached"
     branch = branch_result.stdout.strip()
-    remote = _git(root, "remote", "get-url", "origin")
+    remote = git.run(root, "remote", "get-url", "origin")
     if remote.returncode != 0:
         return None, "sync: no origin remote"
-    fetched = _git(root, "fetch", "--no-write-fetch-head", "origin", branch)
+    fetched = git.run(root, "fetch", "--no-write-fetch-head", "origin", branch)
     if fetched.returncode != 0:
         detail = fetched.stderr.rstrip("\n")
         return None, f"sync: fetch origin/{branch} failed: {detail}"
     remote_ref = f"refs/remotes/origin/{branch}"
-    exists = _git(root, "show-ref", "--verify", "--quiet", remote_ref)
+    exists = git.run(root, "show-ref", "--verify", "--quiet", remote_ref)
     if exists.returncode != 0:
         return None, f"sync: origin/{branch} does not exist"
-    counts = _git(root, "rev-list", "--left-right", "--count", f"HEAD...{remote_ref}")
+    counts = git.run(root, "rev-list", "--left-right", "--count", f"HEAD...{remote_ref}")
     if counts.returncode != 0:
         detail = counts.stderr.rstrip("\n")
         return None, f"sync: cannot compare with origin/{branch}: {detail}"
@@ -88,9 +88,9 @@ def integrate(root: Path, remote: RemoteStatus, *, push: bool) -> Result:
         return Result(already_in_sync=True)
     pulled = 0
     if remote.behind:
-        rebased = _git(root, "rebase", target)
+        rebased = git.run(root, "rebase", target)
         if rebased.returncode != 0:
-            aborted = _git(root, "rebase", "--abort")
+            aborted = git.run(root, "rebase", "--abort")
             if aborted.returncode != 0:
                 detail = aborted.stderr.rstrip("\n") or "no diagnostic available"
                 return Result(
@@ -103,7 +103,7 @@ def integrate(root: Path, remote: RemoteStatus, *, push: bool) -> Result:
         pulled = remote.behind
     if not (remote.ahead and push):
         return Result(pulled=pulled)
-    pushed = _git(root, "push", "origin", remote.branch)
+    pushed = git.run(root, "push", "origin", remote.branch)
     if pushed.returncode != 0:
         detail = pushed.stderr.rstrip("\n")
         return Result(
@@ -123,15 +123,3 @@ def synchronize(root: Path, *, push: bool) -> Result:
         return Result(errors=(error,))
     assert remote is not None
     return integrate(root, remote, push=push)
-
-
-def _git(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
-    """Run one Git command in the content repository."""
-    return subprocess.run(
-        ["git", *words],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )

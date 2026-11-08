@@ -15,11 +15,13 @@ from pathlib import Path
 
 import pytest
 
-from kb import config, dates, harvest, lock, model, observation, remote, secrets, write
+from kb import config, dates, harvest, lock, model, observation, remote, secrets
 from kb.commands import sync
 from kb.errors import KbError
 from kb.transcript_observation import ContentLine
 from kb.transcripts import Message, Session
+
+from . import git_fakes
 
 NOW = datetime(2026, 10, 26, 12, tzinfo=UTC)
 START = NOW - timedelta(hours=3)
@@ -695,14 +697,15 @@ def test_recover_cleans_temp_and_only_this_hosts_uncommitted_observations(
     git(root, "add", str(committed.relative_to(root)))
     git(root, "commit", "-q", "-m", "Commit one")
     calls: list[str] = []
-    original = sync._git
+    fake = git_fakes.install(monkeypatch)
+    original = fake.real_run
 
     def track(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
         if args[:1] == ("rm",):
             calls.append(args[-1])
         return original(repo, *args)
 
-    monkeypatch.setattr(sync, "_git", track)
+    fake.wrap(track)
     sync._recover(root, git_dir, "test-host")
     assert list(scratch.iterdir()) == []
     assert not owned.exists() and other.exists() and committed.exists()
@@ -723,7 +726,8 @@ def test_recover_preserves_candidates_when_the_committed_tree_cannot_be_inspecte
     original = record.read_bytes()
     index = git(root, "write-tree")
     calls: list[tuple[str, ...]] = []
-    original_git = sync._git
+    fake = git_fakes.install(monkeypatch)
+    original_git = fake.real_run
 
     def track(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
         if args[:1] == ("rm",):
@@ -735,7 +739,7 @@ def test_recover_preserves_candidates_when_the_committed_tree_cannot_be_inspecte
         "_git_bytes",
         lambda *_args, **_kwargs: completed_bytes(1, b"", b"tree unavailable"),
     )
-    monkeypatch.setattr(sync, "_git", track)
+    fake.wrap(track)
 
     with pytest.raises(
         KbError, match="cannot inspect committed observation paths: tree unavailable"
@@ -868,8 +872,8 @@ def test_recover_reports_unstage_failure(tmp_path: Path, monkeypatch: pytest.Mon
     pending = root / sync.PENDING
     pending.mkdir(parents=True)
     (pending / "interrupted.md").write_text(observation_text("interrupted"), encoding="utf-8")
-    calls = iter((completed(1), completed(1)))
-    monkeypatch.setattr(sync, "_git", lambda *args: next(calls))
+    fake = git_fakes.install(monkeypatch)
+    fake.on(("rm",), completed(1))
     with pytest.raises(KbError, match="cannot unstage interrupted observation"):
         sync._recover(root, root / ".git", "test-host")
 
@@ -1249,14 +1253,17 @@ def test_commit_observations_cleans_up_staging_and_paths_on_failure(
     pending.mkdir(parents=True)
     path = "observations/pending/new.md"
     (root / path).write_text("new", encoding="utf-8")
-    calls = iter((completed(1, stderr="add failed\n"), completed()))
-    monkeypatch.setattr(sync, "_git", lambda *args: next(calls))
+    fake = git_fakes.install(monkeypatch)
+    fake.on(("add",), completed(1, stderr="add failed\n"))
+    fake.on(("ls-files",), completed())
     assert sync._commit_observations(root, (path,)) == "sync: commit failed: add failed"
     assert not (root / path).exists()
 
     (root / path).write_text("new", encoding="utf-8")
-    calls = iter((completed(), completed(1, stderr=""), completed()))
-    monkeypatch.setattr(sync, "_git", lambda *args: next(calls))
+    fake.responders.clear()
+    fake.on(("add",), completed())
+    fake.on(("commit",), completed(1, stderr=""))
+    fake.on(("ls-files",), completed())
     assert sync._commit_observations(root, (path,)) == "sync: commit failed"
     assert not (root / path).exists()
 
@@ -1321,14 +1328,15 @@ def test_sync_retains_batch_files_when_index_cleanup_fails(
     hook = root / ".git" / "hooks" / "pre-commit"
     hook.write_text("#!/bin/sh\necho 'reject commit' >&2\nexit 1\n", encoding="utf-8")
     hook.chmod(0o755)
-    run_git = sync._git
+    fake = git_fakes.install(monkeypatch)
+    run_git = fake.real_run
 
     def fail_index_cleanup(worktree: Path, *words: str) -> subprocess.CompletedProcess[str]:
         if words[0] == failed_command:
             return completed(128, stderr="index unavailable\n")
         return run_git(worktree, *words)
 
-    monkeypatch.setattr(sync, "_git", fail_index_cleanup)
+    fake.wrap(fail_index_cleanup)
     result = sync._commit_observations(root, paths)
 
     assert result is not None and "rollback failed" in result
@@ -1364,14 +1372,15 @@ def test_write_selection_reports_failed_cleanup_after_publish_error(
         return first_path
 
     monkeypatch.setattr(sync, "_publish", publish_once)
-    run_git = sync._git
+    fake = git_fakes.install(monkeypatch)
+    run_git = fake.real_run
 
     def fail_index_inspection(worktree: Path, *words: str) -> subprocess.CompletedProcess[str]:
         if words[0] == "ls-files":
             return completed(128, stderr="index unavailable\n")
         return run_git(worktree, *words)
 
-    monkeypatch.setattr(sync, "_git", fail_index_inspection)
+    fake.wrap(fail_index_inspection)
     result, *_ = sync._write_selection(root, (first, second), scan, "host", NOW)
 
     assert result.count == 0
@@ -1403,7 +1412,8 @@ def test_commit_observations_preserves_a_commit_with_an_interrupted_result(
     git(root, "add", "unrelated.md")
     old_head = git(root, "rev-parse", "HEAD").strip()
 
-    run_git = sync._git
+    fake = git_fakes.install(monkeypatch)
+    run_git = fake.real_run
 
     def interrupt_after_commit(worktree: Path, *words: str) -> subprocess.CompletedProcess[str]:
         result = run_git(worktree, *words)
@@ -1411,7 +1421,7 @@ def test_commit_observations_preserves_a_commit_with_an_interrupted_result(
             return completed(128, stderr="commit result interrupted")
         return result
 
-    monkeypatch.setattr(sync, "_git", interrupt_after_commit)
+    fake.wrap(interrupt_after_commit)
     assert sync._commit_observations(root, paths) is None
 
     assert git(root, "rev-parse", "HEAD").strip() != old_head
@@ -1431,8 +1441,8 @@ def test_commit_observations_preserves_files_when_outcome_inspection_fails(
     destination = root / path
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text("preserve this observation\n", encoding="utf-8")
-    original_sync_git = sync._git
-    original_write_git = write._git
+    fake = git_fakes.install(monkeypatch)
+    original_write_git = fake.real_run
     committed = False
 
     def report_interrupted_commit(worktree: Path, *words: str) -> subprocess.CompletedProcess[str]:
@@ -1448,8 +1458,8 @@ def test_commit_observations_preserves_files_when_outcome_inspection_fails(
             return completed(1, stderr="HEAD inspection unavailable\n")
         return original_write_git(worktree, *words)
 
-    monkeypatch.setattr(sync, "_git", report_interrupted_commit)
-    monkeypatch.setattr(write, "_git", fail_head_inspection)
+    original_sync_git = fail_head_inspection
+    fake.wrap(report_interrupted_commit)
     result = sync._commit_observations(root, (path,))
 
     assert result is not None
@@ -1471,7 +1481,7 @@ def test_commit_observations_preserves_files_when_outcome_inspection_fails(
 def test_dirty_paths_handles_changes_renames_and_errors(
     monkeypatch: pytest.MonkeyPatch, status: str, stdout: int, stderr: str, expected: object
 ) -> None:
-    monkeypatch.setattr(remote, "_git", lambda *args: completed(stdout, status, stderr))
+    git_fakes.install(monkeypatch).wrap(lambda *args: completed(stdout, status, stderr))
     monkeypatch.setattr(remote, "repository_prefix", lambda *_args: "")
     if expected == "error":
         with pytest.raises(KbError, match="cannot inspect working tree: broken"):
@@ -1503,7 +1513,7 @@ def test_fetch_status_reports_git_failures(
     expected: str,
 ) -> None:
     queued = iter(completed(*result) for result in results)
-    monkeypatch.setattr(remote, "_git", lambda *args: next(queued))
+    git_fakes.install(monkeypatch).wrap(lambda *args: next(queued))
     status, error = remote.fetch_status(Path())
     assert status is None and expected in (error or "")
 
@@ -1518,7 +1528,7 @@ def test_fetch_status_parses_valid_counts(monkeypatch: pytest.MonkeyPatch) -> No
             completed(0, "2 4\n"),
         )
     )
-    monkeypatch.setattr(remote, "_git", lambda *args: next(queued))
+    git_fakes.install(monkeypatch).wrap(lambda *args: next(queued))
     assert remote.fetch_status(Path()) == (sync.RemoteStatus("main", 2, 4), None)
 
 
@@ -1560,7 +1570,7 @@ def test_sync_remote_handles_ahead_behind_and_push_modes(
         calls.append(args)
         return next(queued)
 
-    monkeypatch.setattr(remote, "_git", run_git)
+    git_fakes.install(monkeypatch).wrap(run_git)
     assert sync._sync_remote(Path(), status, no_push) == (actions, errors)
     if errors and "rebase" in errors[0]:
         assert calls[-1] == ("rebase", "--abort")

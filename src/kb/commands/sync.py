@@ -17,6 +17,7 @@ from kb import (
     args,
     config,
     dates,
+    git,
     git_paths,
     harvest,
     lock,
@@ -625,7 +626,7 @@ def _recover(root: Path, git_directory: Path, host: str) -> None:
     for path, relative in candidates:
         if relative in committed:
             continue
-        unstaged = _git(root, "rm", "-q", "--cached", "--ignore-unmatch", "--", relative)
+        unstaged = git.run(root, "rm", "-q", "--cached", "--ignore-unmatch", "--", relative)
         if unstaged.returncode != 0:
             raise KbError(f"cannot unstage interrupted observation {relative}")
         path.unlink(missing_ok=True)
@@ -870,7 +871,7 @@ def _commit_observations(root: Path, paths: Sequence[str]) -> str | None:
         return f"sync: cannot save commit state: {error}"
 
     try:
-        staged = _git(root, "add", "--", *paths)
+        staged = git.run(root, "add", "--", *paths)
         if staged.returncode != 0:
             detail = staged.stderr.rstrip("\n")
             outcome, reason = _observation_commit_outcome(root, snapshots, subject)
@@ -878,7 +879,7 @@ def _commit_observations(root: Path, paths: Sequence[str]) -> str | None:
                 root, paths, outcome, _observation_failure_detail(detail, reason, outcome)
             )
 
-        committed = _git(root, "commit", "-q", "-m", subject, "--", *paths)
+        committed = git.run(root, "commit", "-q", "-m", subject, "--", *paths)
         if committed.returncode == 0:
             return None
         detail = committed.stderr.rstrip("\n")
@@ -952,7 +953,7 @@ def _uncertain_observation_commit(paths: Sequence[str], detail: str) -> str:
 
 def _remove_paths(root: Path, paths: Sequence[str]) -> str | None:
     """Unstage all transaction paths before deleting any of their published files."""
-    error = write._unstage_paths(root, paths, "sync", _git)
+    error = write._unstage_paths(root, paths, "sync")
     if error is not None:
         return error
     failures: list[str] = []
@@ -1031,18 +1032,6 @@ def _sync_remote(
     if result.already_in_sync:
         actions.append(f"Already in sync with origin/{status.branch}.")
     return tuple(actions), result.errors
-
-
-def _git(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
-    """Run one git command in the content repository."""
-    return subprocess.run(
-        ["git", *words],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
 
 
 def _git_bytes(root: Path, *words: str, input_text: str = "") -> subprocess.CompletedProcess[bytes]:

@@ -10,6 +10,8 @@ import pytest
 from kb import remote
 from kb.errors import KbError
 
+from . import git_fakes
+
 GIT_ENV = {
     "GIT_CONFIG_GLOBAL": os.devnull,
     "GIT_CONFIG_SYSTEM": os.devnull,
@@ -150,7 +152,7 @@ def test_failed_rebase_with_successful_abort_does_not_continue_integration(
             ["git", *words], 1 if words == ("rebase", "origin/main") else 0, "", "conflict\n"
         )
 
-    monkeypatch.setattr(remote, "_git", git_result)
+    git_fakes.install(monkeypatch).wrap(git_result)
 
     result = remote.integrate(local, remote.RemoteStatus("main", ahead=1, behind=1), push=True)
 
@@ -172,7 +174,7 @@ def test_failed_rebase_and_abort_report_abort_diagnostic_and_stop_integration(
             return subprocess.CompletedProcess(["git", *words], 1, "", "abort blocked\n")
         raise AssertionError(f"unexpected Git command: {words}")
 
-    monkeypatch.setattr(remote, "_git", git_result)
+    git_fakes.install(monkeypatch).wrap(git_result)
 
     result = remote.integrate(local, remote.RemoteStatus("main", ahead=1, behind=1), push=True)
 

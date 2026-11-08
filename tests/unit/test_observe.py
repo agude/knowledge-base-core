@@ -23,6 +23,8 @@ from kb import cli, lock, observation, secrets, write
 from kb.commands import observe, sync
 from kb.errors import KbError
 
+from . import git_fakes
+
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "content"
 USAGE = "Usage: kb observe --title TITLE --body TEXT\n"
 WROTE = re.compile(r"Wrote: observations/pending/([0-9]{8}T[0-9]{6}-[0-9a-f]{8}\.md)\n")
@@ -429,7 +431,8 @@ def test_interrupted_single_path_commit_preserves_its_git_outcome(
     before_index = git(content, "write-tree").strip()
     before_status = git(content, "status", "--porcelain")
     before_pending = set(pending(content))
-    original_git = write._git
+    fake = git_fakes.install(monkeypatch)
+    original_git = fake.real_run
 
     def interrupt_git(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
         if point == "before_add" and words[0] == "add":
@@ -441,7 +444,7 @@ def test_interrupted_single_path_commit_preserves_its_git_outcome(
             raise KeyboardInterrupt
         return result
 
-    monkeypatch.setattr(write, "_git", interrupt_git)
+    fake.wrap(interrupt_git)
 
     with pytest.raises(KeyboardInterrupt):
         observe._record(content, "Interrupt boundary", "Preserve the outcome.", 0)
@@ -476,7 +479,8 @@ def test_uninspectable_commit_outcome_preserves_the_file_and_reports_uncertainty
     unrelated.write_text("Keep unrelated staging.\n", encoding="utf-8")
     git(content, "add", "--", "unrelated.md")
     before_pending = set(pending(content))
-    original_git = write._git
+    fake = git_fakes.install(monkeypatch)
+    original_git = fake.real_run
     committed = False
 
     def interrupt_and_hide_head(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
@@ -489,7 +493,7 @@ def test_uninspectable_commit_outcome_preserves_the_file_and_reports_uncertainty
             raise KeyboardInterrupt
         return result
 
-    monkeypatch.setattr(write, "_git", interrupt_and_hide_head)
+    fake.wrap(interrupt_and_hide_head)
 
     with pytest.raises(KbError, match="commit outcome is uncertain"):
         observe._record(content, "Unknown outcome", "Preserve recoverable state.", 0)
@@ -516,7 +520,8 @@ def test_interrupted_commit_reconciles_a_nested_content_root(
     shutil.copytree(FIXTURE, nested)
     git(content, "add", "--", "nested-content")
     git(content, "commit", "-q", "-m", "Add nested content")
-    original_git = write._git
+    fake = git_fakes.install(monkeypatch)
+    original_git = fake.real_run
 
     def interrupt_after_commit(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
         result = original_git(root, *words)
@@ -524,7 +529,7 @@ def test_interrupted_commit_reconciles_a_nested_content_root(
             raise KeyboardInterrupt
         return result
 
-    monkeypatch.setattr(write, "_git", interrupt_after_commit)
+    fake.wrap(interrupt_after_commit)
 
     with pytest.raises(KeyboardInterrupt):
         observe._record(nested, "Nested interruption", "Keep the committed file.", 0)

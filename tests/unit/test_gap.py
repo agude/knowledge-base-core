@@ -16,6 +16,8 @@ import pytest
 from kb import cli, lock, observation, secrets, write
 from kb.commands import gap, sync
 
+from . import git_fakes
+
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "content"
 USAGE = "Usage: kb gap --title TITLE --body TEXT --context PATH\n"
 GIT_ENV = {
@@ -417,7 +419,8 @@ def test_interruption_removes_only_the_new_question_and_releases_locks(
     existing.write_text("---\ntitle: Existing\n---\n\nKeep me.\n", encoding="utf-8")
     git(content, "add", "questions/open/existing.md")
     before = open_questions(content)
-    original_git = write._git
+    fake = git_fakes.install(monkeypatch)
+    original_git = fake.real_run
 
     def interrupt_git(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
         if words[0] == interrupted_command:
@@ -426,7 +429,7 @@ def test_interruption_removes_only_the_new_question_and_releases_locks(
             raise KeyboardInterrupt
         return original_git(root, *words)
 
-    monkeypatch.setattr(write, "_git", interrupt_git)
+    fake.wrap(interrupt_git)
     with pytest.raises(KeyboardInterrupt):
         gap._record(content, "Interrupted", "knowledge/future", "Keep the old question.", 0)
 
@@ -447,14 +450,15 @@ def test_rollback_failure_is_reported_and_keeps_the_question_for_recovery(
     failed_command: str,
 ) -> None:
     before = set(open_questions(content))
-    original_git = write._git
+    fake = git_fakes.install(monkeypatch)
+    original_git = fake.real_run
 
     def fail_git(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
         if words[0] in ("commit", failed_command):
             return subprocess.CompletedProcess(["git", *words], 1, "", "index unavailable\n")
         return original_git(root, *words)
 
-    monkeypatch.setattr(write, "_git", fail_git)
+    fake.wrap(fail_git)
     status, out, err = run_gap(
         capsys,
         "--title",
