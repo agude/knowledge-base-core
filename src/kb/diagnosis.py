@@ -131,6 +131,10 @@ def sync_check(state: SyncState | None, problem: str | None, now: datetime) -> C
     if state.last_outcome != "ok":
         detail = f": {state.message}" if state.message else ""
         return Check("sync", "warn", f"last run ended {state.last_outcome}{detail}", "run kb sync")
+    if state.message:
+        return Check(
+            "sync", "warn", f"last run ended ok with a warning: {state.message}", "run kb sync"
+        )
     if state.last_exchange is None:
         return Check("sync", "warn", "no successful exchange recorded", "run kb sync")
     if now - state.last_exchange > SYNC_MAX_AGE:

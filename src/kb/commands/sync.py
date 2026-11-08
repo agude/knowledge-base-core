@@ -162,14 +162,17 @@ def recover_and_harvest(
     host: str,
     now: datetime,
     harvest_since: datetime | None,
-) -> tuple[tuple[str, ...], tuple[str, ...]]:
+) -> tuple[tuple[str, ...], tuple[str, ...], str | None]:
     """Recover this host's interrupted observations, then harvest finished transcripts.
 
     Prints the harvest totals and returns the warnings and the errors for the caller to
-    report. The caller holds the writer lock; this function takes none.
+    report, and, separately, the warning about a commit that Git reported as failed although
+    it exists, which is also among the warnings. The caller holds the writer lock; this
+    function takes none.
     """
     errors: list[str] = []
     warnings: list[str] = []
+    commit_warning: str | None = None
     try:
         _recover(root, git_directory, host)
     except (OSError, UnicodeError, KbError) as error:
@@ -188,6 +191,9 @@ def recover_and_harvest(
                 root, selection.plans, scan_directory, host, now
             )
             errors.extend(harvested.failures)
+            commit_warning = harvested.warning
+            if commit_warning is not None:
+                warnings.append(commit_warning)
         sys.stdout.write(f"Harvested: {harvested.count} session transcript(s)\n")
         if messages or byte_count or redacted:
             sys.stdout.write(
@@ -196,7 +202,7 @@ def recover_and_harvest(
             )
         if detectors:
             sys.stdout.write(f"Redacted by detector: {_format_counts(detectors)}\n")
-    return tuple(warnings), tuple(errors)
+    return tuple(warnings), tuple(errors), commit_warning
 
 
 def _sync(
@@ -213,7 +219,7 @@ def _sync(
     Records the outcome in the sync state file. Returns 1 when any step failed, else 0.
     """
     try:
-        dirty, failures = _integrate(
+        dirty, failures, commit_warning = _integrate(
             root, git_directory, environ, host, now, harvest_since, no_push
         )
     except (KbError, OSError, UnicodeError) as error:
@@ -222,7 +228,7 @@ def _sync(
     if failures:
         _record_outcome(git_directory, now, "error", failures[0])
         return 1
-    _record_outcome(git_directory, now, "dirty" if dirty else "ok", None)
+    _record_outcome(git_directory, now, "dirty" if dirty else "ok", commit_warning)
     return 0
 
 
@@ -234,12 +240,15 @@ def _integrate(
     now: datetime,
     harvest_since: datetime | None,
     no_push: bool,
-) -> tuple[bool, list[str]]:
+) -> tuple[bool, list[str], str | None]:
     """Harvest, then integrate with origin when the worktree is clean.
 
-    Prints what sync prints. Returns whether the worktree was dirty, and every failure line.
+    Prints what sync prints. Returns whether the worktree was dirty, every failure line, and
+    the warning about a commit that Git reported as failed although it exists.
     """
-    warnings, errors = recover_and_harvest(root, git_directory, environ, host, now, harvest_since)
+    warnings, errors, commit_warning = recover_and_harvest(
+        root, git_directory, environ, host, now, harvest_since
+    )
     for warning in warnings:
         sys.stderr.write(f"sync: warning: {warning}\n")
     for message in errors:
@@ -250,12 +259,12 @@ def _integrate(
         sys.stderr.write(f"sync: uncommitted changes in {root}; not pulling or pushing\n")
         for path in dirty[:10]:
             sys.stderr.write(f"  {path}\n")
-        return True, list(errors)
+        return True, list(errors), commit_warning
 
     status, fetch_error = remote.fetch_status(root)
     if fetch_error is not None:
         sys.stderr.write(f"{fetch_error}\n")
-        return False, [*errors, fetch_error]
+        return False, [*errors, fetch_error], commit_warning
     assert status is not None
     actions, sync_errors = _sync_remote(root, status, no_push)
     for action in actions:
@@ -263,7 +272,7 @@ def _integrate(
     for message in sync_errors:
         sys.stderr.write(f"{message}\n")
     _refresh_cache(root)
-    return False, [*errors, *sync_errors]
+    return False, [*errors, *sync_errors], commit_warning
 
 
 def _refresh_cache(root: Path) -> None:
@@ -279,7 +288,7 @@ def _refresh_cache(root: Path) -> None:
     )
 
 
-def _record_outcome(git_directory: Path, now: datetime, outcome: str, failure: str | None) -> None:
+def _record_outcome(git_directory: Path, now: datetime, outcome: str, message: str | None) -> None:
     """Replace the sync outcome record. A failed write is reported and changes no exit status.
 
     An ok run sets last_exchange to now. Other outcomes keep the previous exchange time. The
@@ -296,7 +305,7 @@ def _record_outcome(git_directory: Path, now: datetime, outcome: str, failure: s
         last_run=now,
         last_outcome=outcome,
         last_exchange=last_exchange,
-        message=None if failure is None else _first_line(failure),
+        message=None if message is None else _first_line(message),
     )
     try:
         sync_state.write(git_directory, state)
@@ -730,8 +739,9 @@ def _write_selection(
                 failures.append(cleanup_error)
             return WriteResult(0, tuple(failures)), 0, 0, 0, {}
         paths.append(path)
+    warning: str | None = None
     if paths:
-        commit_error = _commit_observations(root, paths)
+        commit_error, warning = _commit_observations(root, paths)
         if commit_error is not None:
             failures.append(commit_error)
             return WriteResult(0, tuple(failures)), 0, 0, 0, {}
@@ -740,7 +750,7 @@ def _write_selection(
         for detector, count in result.redacted_by_detector.items():
             detector_counts[detector] = detector_counts.get(detector, 0) + count
     return (
-        WriteResult(len(paths), tuple(failures)),
+        WriteResult(len(paths), tuple(failures), warning),
         sum(result.messages for _, result in prepared),
         sum(result.byte_count for _, result in prepared),
         sum(result.redacted_lines for _, result in prepared),
@@ -750,10 +760,11 @@ def _write_selection(
 
 @dataclass(frozen=True)
 class WriteResult:
-    """The count committed in one harvest transaction and its skipped sessions."""
+    """The count committed in one harvest transaction, its skipped sessions, and its warning."""
 
     count: int
     failures: tuple[str, ...]
+    warning: str | None = None
 
 
 def _prepare(plan: harvest.HarvestPlan, scan_directory: Path, host: str, now: datetime) -> Prepared:
@@ -868,13 +879,17 @@ def _publish(root: Path, scan_directory: Path, text: str, now: datetime) -> str:
         temporary.unlink(missing_ok=True)
 
 
-def _commit_observations(root: Path, paths: Sequence[str]) -> str | None:
-    """Commit this run's paths, reconciling a reported or raised commit failure first."""
+def _commit_observations(root: Path, paths: Sequence[str]) -> tuple[str | None, str | None]:
+    """Commit this run's paths, reconciling a reported or raised commit failure first.
+
+    Returns (failure, warning); at most one is set. The warning reports a commit that exists
+    although the commit command exited nonzero.
+    """
     subject = f"Observe: {len(paths)} session transcript(s)"
     try:
         previous_head, files = commit.save_new_files(root, paths, "sync")
     except KbError as error:
-        return f"sync: cannot save commit state: {error}"
+        return f"sync: cannot save commit state: {error}", None
 
     def inspect() -> commit.Inspection:
         """Count the batch as committed only when every file is proven in the new commit."""
@@ -892,24 +907,28 @@ def _commit_observations(root: Path, paths: Sequence[str]) -> str | None:
         if staged.returncode != 0:
             detail = staged.stderr.rstrip("\n")
             inspection = inspect()
-            return _finish_failed_observation_commit(
+            failure = _finish_failed_observation_commit(
                 root,
                 paths,
                 inspection.outcome,
                 _observation_failure_detail(detail, inspection.detail, inspection.outcome),
             )
+            return failure, None
 
         committed = git.run(root, "commit", "-q", "-m", subject, "--", *paths)
         if committed.returncode == 0:
-            return None
+            return None, None
         detail = committed.stderr.rstrip("\n")
         inspection = inspect()
-        return _finish_failed_observation_commit(
+        if inspection.outcome == "committed":
+            return None, commit.committed_with_error(detail)
+        failure = _finish_failed_observation_commit(
             root,
             paths,
             inspection.outcome,
             _observation_failure_detail(detail, inspection.detail, inspection.outcome),
         )
+        return failure, None
     except BaseException as error:
         inspection = inspect()
         if inspection.outcome == "committed":

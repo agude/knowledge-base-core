@@ -127,6 +127,17 @@ def test_the_sync_check_covers_every_record_state() -> None:
     assert (fresh.state, fresh.message) == ("pass", "last exchange 2026-10-26T12:00:00Z")
 
 
+def test_the_sync_check_warns_about_an_ok_run_with_a_warning() -> None:
+    warning = "committed, but Git reported an error: reported failure"
+
+    warned = diagnosis.sync_check(record("ok", NOW, warning), None, NOW)
+
+    assert warned == Check(
+        "sync", "warn", f"last run ended ok with a warning: {warning}", "run kb sync"
+    )
+    assert diagnosis.sync_check(record("ok", NOW, None), None, NOW).state == "pass"
+
+
 def test_the_scheduler_is_checked_on_linux_and_windows() -> None:
     assert diagnosis.scheduler_check("linux", ("enabled", "active"), None).state == "pass"
     darwin = diagnosis.scheduler_check("darwin", None, None)

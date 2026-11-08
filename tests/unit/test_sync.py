@@ -15,7 +15,17 @@ from pathlib import Path
 
 import pytest
 
-from kb import config, dates, harvest, lock, model, observation, remote, secrets
+from kb import (
+    config,
+    dates,
+    harvest,
+    lock,
+    model,
+    observation,
+    remote,
+    secrets,
+    sync_state,
+)
 from kb.commands import sync
 from kb.errors import KbError
 from kb.transcript_observation import ContentLine
@@ -966,7 +976,7 @@ def test_write_selection_collects_detector_counts_and_handles_no_plans(
         lambda *args: sync.Prepared("rendered", None, 3, {"Secret": 2}),
     )
     monkeypatch.setattr(sync, "_publish", lambda *args: "observations/pending/new.md")
-    monkeypatch.setattr(sync, "_commit_observations", lambda *args: None)
+    monkeypatch.setattr(sync, "_commit_observations", lambda *args: (None, None))
     result, messages, byte_count, redacted, detectors = sync._write_selection(
         root, (make_plan(),), scan, "host", NOW
     )
@@ -985,7 +995,7 @@ def test_write_selection_cleans_after_publish_and_commit_failures(
     monkeypatch.setattr(sync, "_prepare", lambda *args: sync.Prepared("text", None, 1, {}))
     published = iter(("observations/pending/first.md",))
     monkeypatch.setattr(sync, "_publish", lambda *args: next(published))
-    monkeypatch.setattr(sync, "_commit_observations", lambda *args: "sync: commit failed")
+    monkeypatch.setattr(sync, "_commit_observations", lambda *args: ("sync: commit failed", None))
     result, messages, byte_count, redacted, detectors = sync._write_selection(
         root, (make_plan(),), scan, "host", NOW
     )
@@ -1255,7 +1265,7 @@ def test_commit_observations_cleans_up_staging_and_paths_on_failure(
     fake = git_fakes.install(monkeypatch)
     fake.on(("add",), completed(1, stderr="add failed\n"))
     fake.on(("ls-files",), completed())
-    assert sync._commit_observations(root, (path,)) == "sync: commit failed: add failed"
+    assert sync._commit_observations(root, (path,)) == ("sync: commit failed: add failed", None)
     assert not (root / path).exists()
 
     (root / path).write_text("new", encoding="utf-8")
@@ -1263,7 +1273,7 @@ def test_commit_observations_cleans_up_staging_and_paths_on_failure(
     fake.on(("add",), completed())
     fake.on(("commit",), completed(1, stderr=""))
     fake.on(("ls-files",), completed())
-    assert sync._commit_observations(root, (path,)) == "sync: commit failed"
+    assert sync._commit_observations(root, (path,)) == ("sync: commit failed", None)
     assert not (root / path).exists()
 
 
@@ -1295,8 +1305,9 @@ def test_rejected_hook_edits_do_not_leave_deleted_staged_batch_files(
     )
     hook.chmod(0o755)
 
-    result = sync._commit_observations(root, paths)
+    result, warning = sync._commit_observations(root, paths)
 
+    assert warning is None
     assert result is not None and "commit failed" in result
     assert git(root, "status", "--porcelain") == "A  unrelated.md\n"
     assert all(not (root / path).exists() for path in paths)
@@ -1336,8 +1347,9 @@ def test_sync_retains_batch_files_when_index_cleanup_fails(
         return run_git(worktree, *words)
 
     fake.wrap(fail_index_cleanup)
-    result = sync._commit_observations(root, paths)
+    result, warning = sync._commit_observations(root, paths)
 
+    assert warning is None
     assert result is not None and "rollback failed" in result
     assert all(path in result for path in paths)
     assert "index unavailable" in result
@@ -1392,7 +1404,7 @@ def test_write_selection_reports_failed_cleanup_after_publish_error(
 
 
 @pytest.mark.parametrize("newline", ["\n", "\r\n"])
-def test_commit_observations_preserves_a_commit_with_an_interrupted_result(
+def test_commit_observations_warns_about_a_commit_git_reported_as_failed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, newline: str
 ) -> None:
     root = make_repo(tmp_path / "content")
@@ -1421,13 +1433,99 @@ def test_commit_observations_preserves_a_commit_with_an_interrupted_result(
         return result
 
     fake.wrap(interrupt_after_commit)
-    assert sync._commit_observations(root, paths) is None
+    assert sync._commit_observations(root, paths) == (
+        None,
+        "committed, but Git reported an error: commit result interrupted",
+    )
 
     assert git(root, "rev-parse", "HEAD").strip() != old_head
     for path in paths:
         assert git(root, "show", f"HEAD:{path}") == (root / path).read_text(encoding="utf-8")
         assert git(root, "show", f":{path}") == (root / path).read_text(encoding="utf-8")
     assert git(root, "status", "--porcelain") == "A  unrelated.md\n"
+
+
+def test_commit_observations_reraises_an_interrupt_after_a_real_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = make_repo(tmp_path / "content")
+    for key, value in GIT_ENV.items():
+        monkeypatch.setenv(key, value)
+    paths = (
+        "observations/pending/first.md",
+        "observations/pending/second.md",
+    )
+    for index, path in enumerate(paths):
+        destination = root / path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(f"observation {index}\n".encode())
+    unrelated = root / "unrelated.md"
+    unrelated.write_text("staged separately\n", encoding="utf-8")
+    git(root, "add", "unrelated.md")
+    old_head = git(root, "rev-parse", "HEAD").strip()
+
+    fake = git_fakes.install(monkeypatch)
+    run_git = fake.real_run
+
+    def interrupt_after_commit(worktree: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        result = run_git(worktree, *words)
+        if words[:2] == ("commit", "-q") and result.returncode == 0:
+            raise KeyboardInterrupt
+        return result
+
+    fake.wrap(interrupt_after_commit)
+    with pytest.raises(KeyboardInterrupt):
+        sync._commit_observations(root, paths)
+
+    assert git(root, "rev-parse", "HEAD").strip() != old_head
+    for path in paths:
+        assert git(root, "show", f"HEAD:{path}") == (root / path).read_text(encoding="utf-8")
+    assert git(root, "status", "--porcelain") == "A  unrelated.md\n"
+
+
+def test_a_sync_commit_git_reports_as_failed_succeeds_and_records_the_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = make_repo(tmp_path / "content")
+    for key, value in GIT_ENV.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr(secrets, "findings", lambda *args: [])
+    candidate = harvest.Candidate(make_session(), START)
+    monkeypatch.setattr(sync, "_recover", lambda *args: None)
+    monkeypatch.setattr(sync, "_scan_transcripts", lambda _: sync.ScanResult((candidate,), ()))
+    monkeypatch.setattr(sync, "_head_records", lambda _: ())
+    monkeypatch.setattr(harvest, "reconstruct_state", lambda *args: harvest.HarvestState({}, {}))
+    monkeypatch.setattr(
+        harvest, "select_candidates", lambda *args: harvest.Selection((make_plan(),), 0, 0, ())
+    )
+    monkeypatch.setattr(remote, "dirty_paths", lambda _: ())
+    monkeypatch.setattr(remote, "fetch_status", lambda _: (sync.RemoteStatus("main", 0, 0), None))
+    monkeypatch.setattr(sync, "_sync_remote", lambda *args: ((), ()))
+    old_head = git(root, "rev-parse", "HEAD").strip()
+    fake = git_fakes.install(monkeypatch)
+
+    def report_failure_after_commit(
+        worktree: Path, words: tuple[str, ...]
+    ) -> git_fakes.Result | None:
+        if words[:1] != ("commit",):
+            return None
+        result = fake.real_run(worktree, *words)
+        assert result.returncode == 0
+        return git_fakes.completed(1, "", "reported failure\n")
+
+    fake.responders.append(report_failure_after_commit)
+
+    assert sync._sync(root, root / ".git", {}, "test-host", NOW, START, False) == 0
+
+    captured = capsys.readouterr()
+    assert "Harvested: 1 session transcript(s)" in captured.out
+    assert "sync: warning: committed, but Git reported an error: reported failure" in captured.err
+    assert git(root, "rev-parse", "HEAD").strip() != old_head
+    assert git(root, "log", "-1", "--format=%s").strip() == "Observe: 1 session transcript(s)"
+    state = sync_state.read(root / ".git")
+    assert state is not None
+    assert state.last_outcome == "ok"
+    assert state.message == "committed, but Git reported an error: reported failure"
 
 
 def test_commit_observations_preserves_files_when_outcome_inspection_fails(
@@ -1459,8 +1557,9 @@ def test_commit_observations_preserves_files_when_outcome_inspection_fails(
 
     original_sync_git = fail_head_inspection
     fake.wrap(report_interrupted_commit)
-    result = sync._commit_observations(root, (path,))
+    result, warning = sync._commit_observations(root, (path,))
 
+    assert warning is None
     assert result is not None
     assert "commit outcome is uncertain" in result
     assert "HEAD inspection unavailable" in result
@@ -1621,5 +1720,6 @@ def test_an_uncertain_sync_commit_reports_the_exact_recovery_text(
     assert sync._commit_observations(root, paths) == (
         "sync: commit outcome is uncertain for observations/pending/first.md, "
         "observations/pending/second.md; the files and index were preserved; inspect Git "
-        "status and HEAD before retrying: commit result interrupted; HEAD inspection unavailable"
+        "status and HEAD before retrying: commit result interrupted; HEAD inspection unavailable",
+        None,
     )

@@ -422,7 +422,7 @@ def _synchronize(root: Path, git_directory: Path) -> None:
     configuration = config_file(os.environ, sys.platform, Path.home())
     harvest_since = config.read_harvest_since(configuration)
     host = observation.short_host(socket.gethostname())
-    warnings, errors = sync_command.recover_and_harvest(
+    warnings, errors, _ = sync_command.recover_and_harvest(
         root, git_directory, os.environ, host, dates.now(os.environ), harvest_since
     )
     for warning in warnings:

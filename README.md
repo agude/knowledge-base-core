@@ -662,9 +662,10 @@ pull and push for a later run.
 A regular `kb sync` also records its outcome in `<git dir>/kb/sync-state.json`,
 in the common Git directory, where Git never commits it. The record names the
 run's outcome (`ok`, `dirty`, or `error`), the time of the last successful
-exchange with `origin`, and the first line of any failure, unredacted. That
-line may contain a local path. The record stays in the common Git directory and
-is never committed. `kb sync --status` and `kb sync --dry-run` write nothing.
+exchange with `origin`, and the first line of any failure, or of a warning that
+a commit succeeded although Git reported an error, unredacted. That line may
+contain a local path. The record stays in the common Git directory and is never
+committed. `kb sync --status` and `kb sync --dry-run` write nothing.
 `kb doctor` reads this record.
 
 #### Install the user timer

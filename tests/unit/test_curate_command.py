@@ -1105,7 +1105,7 @@ def test_synchronize_prints_the_remote_outcome(
     expected: str,
 ) -> None:
     monkeypatch.setattr(config, "read_harvest_since", lambda _configuration: None)
-    monkeypatch.setattr(sync_command, "recover_and_harvest", lambda *_args: ((), ()))
+    monkeypatch.setattr(sync_command, "recover_and_harvest", lambda *_args: ((), (), None))
     monkeypatch.setattr(remote, "synchronize", lambda *_args, **_kwargs: outcome)
 
     curate._synchronize(tmp_path, tmp_path / ".git")
@@ -1122,7 +1122,11 @@ def test_synchronize_writes_harvest_warnings_and_errors_before_the_remote_step(
     monkeypatch.setattr(
         sync_command,
         "recover_and_harvest",
-        lambda *_args: (("rewritten transcript",), ("sync: skipped session one: reason",)),
+        lambda *_args: (
+            ("rewritten transcript",),
+            ("sync: skipped session one: reason",),
+            None,
+        ),
     )
     monkeypatch.setattr(
         remote, "synchronize", lambda *_args, **_kwargs: remote.Result(already_in_sync=True)
@@ -1157,7 +1161,7 @@ def test_synchronize_refuses_before_any_batch_is_created(
     message: str,
 ) -> None:
     monkeypatch.setattr(config, "read_harvest_since", lambda _configuration: None)
-    monkeypatch.setattr(sync_command, "recover_and_harvest", lambda *_args: ((), ()))
+    monkeypatch.setattr(sync_command, "recover_and_harvest", lambda *_args: ((), (), None))
     monkeypatch.setattr(remote, "synchronize", lambda *_args, **_kwargs: outcome)
 
     with pytest.raises(KbError) as refused:
@@ -1194,7 +1198,7 @@ def test_synchronized_start_takes_the_writer_lock_once(
 
     monkeypatch.setattr(lock, "write_lock", counting)
     monkeypatch.setattr(config, "read_harvest_since", lambda _configuration: None)
-    monkeypatch.setattr(sync_command, "recover_and_harvest", lambda *_args: ((), ()))
+    monkeypatch.setattr(sync_command, "recover_and_harvest", lambda *_args: ((), (), None))
     monkeypatch.setattr(
         remote, "synchronize", lambda *_args, **_kwargs: remote.Result(already_in_sync=True)
     )
