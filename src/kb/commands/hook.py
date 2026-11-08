@@ -12,7 +12,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from kb import args, dates, git, git_paths, lint, model, publish, snapshot
+from kb import args, corpus, dates, git, git_paths, lint, model, publish, snapshot
 from kb.args import Spec
 from kb.context import load
 from kb.errors import KbError
@@ -177,8 +177,7 @@ def _stamp_edits(
     for relpath in articles:
         raw = (root / relpath).read_bytes()
         text = raw.decode("utf-8")
-        prefix = "﻿" if text.startswith("﻿") else ""
-        body = text[len(prefix) :]
+        prefix, body = corpus.split_bom(text)
         current = model.parse(relpath, body).scalar("updated")
         if current is None or current == today:
             continue

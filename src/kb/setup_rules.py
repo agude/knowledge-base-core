@@ -14,7 +14,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, Literal
 
-from kb import toml_edit
+from kb import corpus, toml_edit
 from kb.errors import KbError
 from kb.platform import WINDOWS
 
@@ -164,7 +164,7 @@ def set_content(text: str, value: str) -> str:
     if index is not None:
         line = lines[index]
         body = line.rstrip("\r\n")
-        bom = "\ufeff" if body.startswith("\ufeff") else ""
+        bom, _ = corpus.split_bom(body)
         lines[index] = bom + assignment + line[len(body) :]
         result = "".join(lines)
     else:
@@ -178,7 +178,7 @@ def set_content(text: str, value: str) -> str:
 def _top_level_content_line(lines: list[str], limit: int) -> int | None:
     """The index of a single-line content assignment before the first table header, if any."""
     for index in range(limit):
-        candidate = lines[index].removeprefix("\ufeff")
+        candidate = corpus.strip_bom(lines[index])
         if CONTENT_LINE.fullmatch(candidate.rstrip("\r\n")):
             return index
     return None
@@ -187,7 +187,7 @@ def _top_level_content_line(lines: list[str], limit: int) -> int | None:
 def _parse(text: str) -> dict[str, Any]:
     """The config text as TOML data, or KbError."""
     try:
-        return tomllib.loads(text.removeprefix("\ufeff"))
+        return tomllib.loads(corpus.strip_bom(text))
     except tomllib.TOMLDecodeError as error:
         raise KbError(f"the file is not valid TOML: {error}") from None
 

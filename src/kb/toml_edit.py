@@ -2,7 +2,7 @@
 
 import tomllib
 
-BOM = "﻿"
+from kb.corpus import BOM
 
 
 def first_table_line(lines: list[str]) -> int:

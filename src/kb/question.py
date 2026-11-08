@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from datetime import date, datetime
 from typing import Literal
 
-from kb import model, observation
+from kb import corpus, model, observation
 
 REMOVE = "gap: remove or redact it, then run kb gap again"
 RESOLVE_REMOVE = "resolve: remove or redact it, then run kb resolve again"
@@ -64,8 +64,7 @@ def render_resolution(
     if (resolution == "answered") != (destination is not None):
         raise ValueError("answered resolutions need a destination; obsolete resolutions do not")
 
-    bom = "\ufeff" if original.startswith("\ufeff") else ""
-    text = original.removeprefix(bom)
+    bom, text = corpus.split_bom(original)
     document = model.parse("question.md", text)
     if not document.front_matter_opened or not document.front_matter_closed:
         raise model.FrontMatterEditError("front matter is missing or unclosed")

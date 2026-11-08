@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping
 from datetime import datetime
 from pathlib import Path
 
-from kb import dates, toml_edit
+from kb import corpus, dates, toml_edit
 from kb.errors import KbError
 
 NO_CONTENT = (
@@ -64,7 +64,7 @@ def read_harvest_since(config: Path) -> datetime | None:
 def parse_content_setting(text: str, config: Path) -> Path | None:
     """The content key in config text, with ~ expanded, or None when it is absent."""
     try:
-        data = tomllib.loads(text.removeprefix("\ufeff"))
+        data = tomllib.loads(corpus.strip_bom(text))
     except tomllib.TOMLDecodeError as error:
         raise KbError(f"knowledge base: invalid config file {config}: {error}") from error
     value = data.get("content")
@@ -80,7 +80,7 @@ def parse_content_setting(text: str, config: Path) -> Path | None:
 def parse_harvest_since(text: str, config: Path) -> datetime | None:
     """Parse an optional timezone-aware TOML datetime used as the transcript cutoff."""
     try:
-        data = tomllib.loads(text.removeprefix("\ufeff"))
+        data = tomllib.loads(corpus.strip_bom(text))
     except tomllib.TOMLDecodeError as error:
         raise KbError(f"knowledge base: invalid config file {config}: {error}") from error
     value = data.get("harvest_since")
@@ -107,7 +107,7 @@ def set_harvest_since(text: str, moment: datetime, config: Path) -> str:
     top-level value is refused because neither has the meaning the harvester reads.
     """
     try:
-        before = tomllib.loads(text.removeprefix("\ufeff"))
+        before = tomllib.loads(corpus.strip_bom(text))
     except tomllib.TOMLDecodeError as error:
         raise KbError(f"knowledge base: invalid config file {config}: {error}") from error
     if _has_nested_harvest_since(before):
@@ -140,7 +140,7 @@ def set_harvest_since(text: str, moment: datetime, config: Path) -> str:
         text, lines, toml_edit.first_table_line(lines), f"harvest_since = {stamp}"
     )
     try:
-        after = tomllib.loads(result.removeprefix("\ufeff"))
+        after = tomllib.loads(corpus.strip_bom(result))
     except tomllib.TOMLDecodeError as error:
         raise KbError(f"knowledge base: invalid config file {config}: {error}") from error
     if after.get("harvest_since") != cutoff:

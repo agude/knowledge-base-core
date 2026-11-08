@@ -98,8 +98,7 @@ def _verify(
         except UnicodeDecodeError as error:
             raise KbError(f"{WHO}: article is not valid UTF-8: {error.reason}") from error
 
-        bom = "\ufeff" if original_text.startswith("\ufeff") else ""
-        text = original_text.removeprefix(bom)
+        bom, text = corpus.split_bom(original_text)
         document = model.parse(relpath, text)
         if not document.front_matter_opened:
             raise KbError(f"{WHO}: unsafe front matter: front matter is missing")

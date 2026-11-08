@@ -981,7 +981,7 @@ def _next(context: Context, batch: curation.Batch, query_override: str | None) -
         text = content.decode("utf-8")
     except UnicodeDecodeError as error:
         raise KbError(f"{WHO}: pending observation is not valid UTF-8: {error.reason}") from error
-    document = model.parse(f"{PENDING}/{pending.filename}", text.removeprefix("\ufeff"))
+    document = model.parse(f"{PENDING}/{pending.filename}", corpus.strip_bom(text))
     query = query_override if query_override is not None else (document.title or "")
     query_words = [query] if query else []
     sections = recall_command.matching_sections(context, query_words, limit=3)
@@ -1588,7 +1588,7 @@ def _pending_entries(root: Path) -> list[QueueEntry]:
         curation.validate_filename(path.name)
         content = path.read_bytes()
         text = content.decode("utf-8")
-        document = model.parse(path.name, text.removeprefix("\ufeff"))
+        document = model.parse(path.name, corpus.strip_bom(text))
         created = evidence.created_date(document)
         warnings = []
         if created is None:

@@ -143,3 +143,29 @@ def test_is_curated_covers_knowledge_and_sources_only(relpath: str, curated: boo
 def test_markdown_files_skip_hidden_files(root: Path) -> None:
     (root / "knowledge" / ".draft.md").write_text("# Draft\n", encoding="utf-8")
     assert "knowledge/.draft.md" not in corpus.markdown_files(root, "knowledge")
+
+
+@pytest.mark.parametrize(
+    ("text", "stripped"),
+    [
+        pytest.param("text", "text", id="none"),
+        pytest.param("﻿text", "text", id="one"),
+        pytest.param("﻿﻿text", "﻿text", id="two"),
+        pytest.param("", "", id="empty"),
+    ],
+)
+def test_strip_bom_removes_one_leading_mark(text: str, stripped: str) -> None:
+    assert corpus.strip_bom(text) == stripped
+
+
+@pytest.mark.parametrize(
+    ("text", "parts"),
+    [
+        pytest.param("text", ("", "text"), id="none"),
+        pytest.param("﻿text", ("﻿", "text"), id="one"),
+        pytest.param("﻿﻿text", ("﻿", "﻿text"), id="two"),
+        pytest.param("", ("", ""), id="empty"),
+    ],
+)
+def test_split_bom_separates_one_leading_mark(text: str, parts: tuple[str, str]) -> None:
+    assert corpus.split_bom(text) == parts

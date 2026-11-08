@@ -76,12 +76,25 @@ def resolve_path(root: Path, path: str, who: str) -> str | None:
     return None
 
 
+BOM = "\ufeff"
+
+
+def strip_bom(text: str) -> str:
+    """The text without one leading byte order mark."""
+    return text.removeprefix(BOM)
+
+
+def split_bom(text: str) -> tuple[str, str]:
+    """The leading byte order mark, or "", and the rest of the text."""
+    return (BOM, text[1:]) if text.startswith(BOM) else ("", text)
+
+
 def decode_text(data: bytes) -> str:
     """The text of a file's bytes: UTF-8 with a leading byte-order mark removed.
 
     Bad bytes become U+FFFD, so every file decodes.
     """
-    return data.decode("utf-8", errors="replace").removeprefix("﻿")
+    return strip_bom(data.decode("utf-8", errors="replace"))
 
 
 def read_document(root: Path, relpath: str) -> model.Document:

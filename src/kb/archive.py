@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from typing import Literal
 
-from kb import curation, model
+from kb import corpus, curation, model
 
 Disposition = Literal["incorporated", "duplicate", "ephemeral"]
 _ARCHIVE_FIELDS = frozenset({"original_sha256", "curation_batch", "curation_reason"})
@@ -31,8 +31,7 @@ def render(
     )
     curation.validate_run_id(batch_id)
 
-    bom = "\ufeff" if original.startswith("\ufeff") else ""
-    text = original.removeprefix(bom)
+    bom, text = corpus.split_bom(original)
     document = model.parse("observation.md", text)
     if not document.front_matter_opened or not document.front_matter_closed:
         raise model.FrontMatterEditError("front matter is missing or unclosed")
