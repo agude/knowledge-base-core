@@ -759,6 +759,8 @@ def _commit_publication(
             if inspection.outcome == "committed":
                 if commit_result is not None and commit_result.returncode != 0:
                     assert inspection.head is not None
+                    detail = (commit_result.stderr or commit_result.stdout).rstrip("\n")
+                    sys.stderr.write(f"{WHO}: warning: {commit.committed_with_error(detail)}\n")
                     return inspection.head
                 raise
             if inspection.outcome == "unknown":

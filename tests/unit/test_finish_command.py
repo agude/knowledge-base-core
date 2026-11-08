@@ -499,6 +499,10 @@ def test_curation_preserves_a_commit_when_its_result_is_lost(
         assert code == 0, err
         assert out.startswith("Commit: ")
         assert out.endswith("Committed locally; not published\n")
+        assert (
+            "curate: warning: committed, but Git reported an error: commit result interrupted"
+            in err
+        )
 
     assert git(root, "rev-parse", "HEAD").strip() != before_head
     assert git(root, "status", "--porcelain") == ""
