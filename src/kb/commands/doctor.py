@@ -24,6 +24,7 @@ from kb import (
     config,
     dates,
     diagnosis,
+    git,
     git_status,
     observation,
     setup_rules,
@@ -134,19 +135,24 @@ def _config(context: Context) -> tuple[Check, Path | None]:
 
 def _content(root: Path) -> Check:
     """The Git state of the content root: repository, branch, origin, worktree, and origin."""
-    top = _git(root, "rev-parse", "--show-toplevel")
+    top = git.run(root, "rev-parse", "--show-toplevel", read_only=True)
     repo = top.returncode == 0 and Path(top.stdout.strip()).resolve() == root.resolve()
     if not repo:
         return diagnosis.content_check(False, None, False, 0, False, None, None)
-    branch_result = _git(root, "symbolic-ref", "--quiet", "--short", "HEAD")
+    branch_result = git.run(root, "symbolic-ref", "--quiet", "--short", "HEAD", read_only=True)
     branch = branch_result.stdout.strip() if branch_result.returncode == 0 else None
-    origin = _git(root, "remote", "get-url", "origin").returncode == 0
+    origin = git.run(root, "remote", "get-url", "origin", read_only=True).returncode == 0
     dirty = _dirty_count(root)
     fetched, ahead, behind = False, None, None
     if branch is not None:
         remote_ref = f"refs/remotes/origin/{branch}"
-        if _git(root, "show-ref", "--verify", "--quiet", remote_ref).returncode == 0:
-            counts = _git(root, "rev-list", "--left-right", "--count", f"HEAD...{remote_ref}")
+        if (
+            git.run(root, "show-ref", "--verify", "--quiet", remote_ref, read_only=True).returncode
+            == 0
+        ):
+            counts = git.run(
+                root, "rev-list", "--left-right", "--count", f"HEAD...{remote_ref}", read_only=True
+            )
             values = counts.stdout.split()
             if counts.returncode == 0 and len(values) == 2 and all(v.isdigit() for v in values):
                 fetched = True
@@ -156,7 +162,9 @@ def _content(root: Path) -> Check:
 
 def _dirty_count(root: Path) -> int:
     """The changed or untracked paths in the worktree."""
-    result = _git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+    result = git.run(
+        root, "status", "--porcelain=v1", "-z", "--untracked-files=all", read_only=True
+    )
     if result.returncode != 0:
         raise KbError(f"cannot inspect working tree: {result.stderr.rstrip()}")
     return len(git_status.parse_porcelain(result.stdout))
@@ -164,7 +172,7 @@ def _dirty_count(root: Path) -> int:
 
 def _gitattributes(root: Path) -> Check:
     """The text and eol attributes that Git resolves for a path in the content root."""
-    result = _git(root, "check-attr", "text", "eol", "--", "probe.md")
+    result = git.run(root, "check-attr", "text", "eol", "--", "probe.md", read_only=True)
     if result.returncode != 0:
         raise KbError(f"cannot read attributes: {result.stderr.rstrip()}")
     values: dict[str, str] = {}
@@ -179,7 +187,9 @@ def _gitattributes(root: Path) -> Check:
 
 def _hook(root: Path) -> Check:
     """The pre-commit hook at Git's hooks path: its kind, whether it is kb's, and its kb."""
-    result = _git(root, "rev-parse", "--path-format=absolute", "--git-path", "hooks")
+    result = git.run(
+        root, "rev-parse", "--path-format=absolute", "--git-path", "hooks", read_only=True
+    )
     if result.returncode != 0:
         raise KbError(f"cannot locate the hooks directory: {result.stderr.rstrip()}")
     hook = Path(result.stdout.strip()) / "pre-commit"
@@ -216,7 +226,9 @@ def _kb_problem(script: bytes) -> str | None:
 
 def _sync(root: Path, context: Context) -> Check:
     """The sync outcome record in the common Git directory."""
-    common = _git(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    common = git.run(
+        root, "rev-parse", "--path-format=absolute", "--git-common-dir", read_only=True
+    )
     if common.returncode != 0:
         raise KbError(f"cannot locate the Git directory: {common.stderr.rstrip()}")
     try:
@@ -404,19 +416,6 @@ def _store(environ: Mapping[str, str], name: str, default: Path) -> Path:
     """A host store root: the directory named in the environment, or the default."""
     value = environ.get(name, "")
     return Path(value).expanduser() if value else default
-
-
-def _git(root: Path, *words: str) -> subprocess.CompletedProcess[str]:
-    """Run one Git command in root without optional locks. Doctor never writes."""
-    return subprocess.run(
-        ["git", *words],
-        cwd=root,
-        env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
 
 
 def _stdout(command: Sequence[str]) -> str:

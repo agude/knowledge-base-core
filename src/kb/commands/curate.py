@@ -11,7 +11,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from subprocess import CompletedProcess
-from subprocess import run as run_process
 from typing import cast
 
 from kb import (
@@ -23,6 +22,7 @@ from kb import (
     dates,
     evidence,
     freshness,
+    git,
     git_paths,
     git_status,
     lint,
@@ -445,15 +445,7 @@ def _synchronize(root: Path, git_directory: Path) -> None:
 
 def _head_commit(root: Path) -> str:
     """The full identifier of HEAD, read without changing the repository."""
-    result = run_process(
-        ["git", "rev-parse", "--verify", "--quiet", "HEAD"],
-        cwd=root,
-        env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
+    result = git.run(root, "rev-parse", "--verify", "--quiet", "HEAD", read_only=True)
     commit = result.stdout.strip()
     if result.returncode != 0 or not curation.is_commit_id(commit):
         raise KbError(f"{WHO}: cannot read HEAD")
@@ -681,13 +673,14 @@ def _commit_publication(
     subject = ""
     commit_result: CompletedProcess[str] | None = None
     try:
-        staged = _git_quiet(
+        staged = git.run(
             root,
             "--literal-pathspecs",
             "add",
             "--all",
             f"--pathspec-from-file={pathspec}",
             "--pathspec-file-nul",
+            read_only=True,
         )
         if staged.returncode != 0:
             detail = staged.stderr.rstrip("\n")
@@ -739,7 +732,7 @@ def _commit_publication(
             root, "write-tree", message="cannot snapshot the staged publication"
         ).strip()
         commit_attempted = True
-        commit_result = _git_quiet(root, "commit", "-q", "-F", str(text))
+        commit_result = git.run(root, "commit", "-q", "-F", str(text), read_only=True)
         if commit_result.returncode != 0:
             detail = (commit_result.stderr or commit_result.stdout).rstrip("\n")
             raise KbError(f"{WHO}: commit failed: {detail}")
@@ -779,7 +772,7 @@ def _publication_commit_outcome(
 ) -> tuple[str, str | None, str]:
     """Confirm the expected publication commit, a failed attempt, or an uncertain state."""
     try:
-        head_result = _git_quiet(root, "rev-parse", "--verify", "HEAD")
+        head_result = git.run(root, "rev-parse", "--verify", "HEAD", read_only=True)
         if head_result.returncode != 0 or not head_result.stdout.strip():
             detail = head_result.stderr.rstrip("\n") or "cannot inspect HEAD"
             return "unknown", None, detail
@@ -787,7 +780,7 @@ def _publication_commit_outcome(
         if head == previous_head:
             return "failed", None, "HEAD is unchanged"
 
-        metadata = _git_quiet(root, "show", "-s", "--format=%P%x00%s", head)
+        metadata = git.run(root, "show", "-s", "--format=%P%x00%s", head, read_only=True)
         if metadata.returncode != 0:
             detail = metadata.stderr.rstrip("\n") or "cannot inspect the new commit"
             return "unknown", None, detail
@@ -797,15 +790,17 @@ def _publication_commit_outcome(
         if fields[0].split() != [previous_head] or fields[1] != subject:
             return "unknown", None, "HEAD changed but does not identify this publication commit"
 
-        tree = _git_quiet(root, "rev-parse", "--verify", f"{head}^{{tree}}")
+        tree = git.run(root, "rev-parse", "--verify", f"{head}^{{tree}}", read_only=True)
         if tree.returncode != 0 or tree.stdout.strip() != expected_tree:
             detail = tree.stderr.rstrip("\n") or "the new commit tree differs from the staged set"
             return "unknown", None, detail
-        index = _git_quiet(root, "write-tree")
+        index = git.run(root, "write-tree", read_only=True)
         if index.returncode != 0 or index.stdout.strip() != expected_tree:
             detail = index.stderr.rstrip("\n") or "the index differs from the staged set"
             return "unknown", None, detail
-        status = _git_quiet(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+        status = git.run(
+            root, "status", "--porcelain=v1", "-z", "--untracked-files=all", read_only=True
+        )
         if status.returncode != 0 or status.stdout:
             detail = (
                 status.stderr.rstrip("\n") or "the worktree differs from the committed publication"
@@ -820,13 +815,14 @@ def _unstage(root: Path, git_directory: Path, paths: Sequence[str]) -> None:
     """Remove only the paths that finish staged. The worktree bytes are left as they are."""
     pathspec = _write_scratch_file(git_directory, _nul_terminated(paths))
     try:
-        result = _git_quiet(
+        result = git.run(
             root,
             "--literal-pathspecs",
             "reset",
             "-q",
             f"--pathspec-from-file={pathspec}",
             "--pathspec-file-nul",
+            read_only=True,
         )
     finally:
         pathspec.unlink(missing_ok=True)
@@ -867,7 +863,9 @@ def _committed_batch(root: Path, batch: curation.Batch) -> str | None:
     revision = "HEAD"
     if batch.base_commit is not None and _is_ancestor(root, batch.base_commit, "HEAD"):
         revision = f"{batch.base_commit}..HEAD"
-    result = _git_quiet(root, "log", "--diff-filter=A", "--format=%H", revision, "--", relative)
+    result = git.run(
+        root, "log", "--diff-filter=A", "--format=%H", revision, "--", relative, read_only=True
+    )
     if result.returncode != 0:
         return None
     found = result.stdout.split()
@@ -886,12 +884,12 @@ def _publication_line(root: Path, batch: curation.Batch) -> str:
 
 
 def _branch(root: Path) -> str | None:
-    result = _git_quiet(root, "symbolic-ref", "--quiet", "--short", "HEAD")
+    result = git.run(root, "symbolic-ref", "--quiet", "--short", "HEAD", read_only=True)
     return result.stdout.strip() if result.returncode == 0 else None
 
 
 def _has_origin(root: Path) -> bool:
-    return _git_quiet(root, "remote", "get-url", "origin").returncode == 0
+    return git.run(root, "remote", "get-url", "origin", read_only=True).returncode == 0
 
 
 def _is_published(root: Path, commit: str, branch: str) -> bool:
@@ -900,24 +898,12 @@ def _is_published(root: Path, commit: str, branch: str) -> bool:
 
 
 def _is_ancestor(root: Path, ancestor: str, descendant: str) -> bool:
-    return _git_quiet(root, "merge-base", "--is-ancestor", ancestor, descendant).returncode == 0
-
-
-def _git_quiet(root: Path, *words: str) -> CompletedProcess[str]:
-    """Run Git without taking its optional locks, capturing text output."""
-    return run_process(
-        ["git", *words],
-        cwd=root,
-        env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
+    result = git.run(root, "merge-base", "--is-ancestor", ancestor, descendant, read_only=True)
+    return result.returncode == 0
 
 
 def _git_output(root: Path, *words: str, message: str) -> str:
-    result = _git_quiet(root, *words)
+    result = git.run(root, *words, read_only=True)
     if result.returncode != 0:
         detail = result.stderr.rstrip("\n")
         raise KbError(f"{WHO}: {message}" + (f": {detail}" if detail else ""))
@@ -1685,12 +1671,8 @@ def _related_stale(
 
 def _require_clean_tree(root: Path) -> None:
     """Refuse selection when the index or worktree contains non-lock changes."""
-    result = run_process(
-        ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
-        cwd=root,
-        env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
-        capture_output=True,
-        check=False,
+    result = git.run_bytes(
+        root, "status", "--porcelain=v1", "-z", "--untracked-files=all", read_only=True
     )
     if result.returncode != 0:
         detail = result.stderr.decode("utf-8", errors="replace").strip()

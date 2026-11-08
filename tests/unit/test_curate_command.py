@@ -21,6 +21,8 @@ from kb.commands import sync as sync_command
 from kb.context import Context
 from kb.errors import KbError
 
+from . import git_fakes
+
 RUN = "20261028T120000-a1b2c3d4"
 
 
@@ -306,7 +308,7 @@ def test_status_does_not_write_call_git_lock_scan_secrets_or_network(
     def unexpected(*_args: object, **_kwargs: object) -> None:
         pytest.fail("status attempted an external or writing operation")
 
-    monkeypatch.setattr(curate, "run_process", unexpected)
+    git_fakes.install(monkeypatch).responders.append(lambda *_args: unexpected())
     monkeypatch.setattr(lock, "write_lock", unexpected)
     monkeypatch.setattr(secrets, "findings", unexpected)
     monkeypatch.setattr(socket, "create_connection", unexpected)
@@ -351,7 +353,7 @@ def test_next_is_read_only_and_does_not_call_git_lock_or_network(
 
     monkeypatch.setattr(curate, "load", lambda *_args: context)
     monkeypatch.setattr(curate, "_read_batch", lambda *_args: batch)
-    monkeypatch.setattr(curate, "run_process", unexpected)
+    git_fakes.install(monkeypatch).responders.append(lambda *_args: unexpected())
     monkeypatch.setattr(lock, "write_lock", unexpected)
     monkeypatch.setattr(secrets, "findings", unexpected)
     monkeypatch.setattr(socket, "create_connection", unexpected)

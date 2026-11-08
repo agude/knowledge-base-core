@@ -238,7 +238,7 @@ def test_the_git_helper_never_asks_for_optional_locks(
 
     monkeypatch.setattr(subprocess, "run", record)
 
-    doctor._git(tmp_path, "status")
+    doctor._content(tmp_path)
 
     assert seen[0]["GIT_OPTIONAL_LOCKS"] == "0"
 

@@ -20,6 +20,8 @@ from kb import curation, lock, remote, secrets
 from kb.commands import curate
 from kb.errors import KbError
 
+from . import git_fakes
+
 NOW = "2026-10-26T12:00:00Z"
 RUN_RE = re.compile(r"Created batch: ([0-9]{8}T[0-9]{6}-[0-9a-f]{8})\n")
 GIT_ENV = {
@@ -118,7 +120,8 @@ def _settled(root: Path, capsys: pytest.CaptureFixture[str]) -> str:
 
 def _patch_git(monkeypatch: pytest.MonkeyPatch, **overrides: CompletedProcess[str]) -> None:
     """Replace the result of any Git call whose words include a key, and run the rest."""
-    real = curate._git_quiet
+    git_fake = git_fakes.install(monkeypatch)
+    real = git_fake.real_run
 
     def fake(root: Path, *words: str) -> CompletedProcess[str]:
         for word, result in overrides.items():
@@ -126,7 +129,7 @@ def _patch_git(monkeypatch: pytest.MonkeyPatch, **overrides: CompletedProcess[st
                 return result
         return real(root, *words)
 
-    monkeypatch.setattr(curate, "_git_quiet", fake)
+    git_fake.wrap(fake)
 
 
 def _completed(code: int, stderr: str = "") -> CompletedProcess[str]:
@@ -304,7 +307,8 @@ def test_a_failed_stage_is_unstaged_and_reported(
     before_files = {
         path: (root / path).read_bytes() if (root / path).exists() else None for path in paths
     }
-    real_git = curate._git_quiet
+    fake = git_fakes.install(monkeypatch)
+    real_git = fake.real_run
 
     def stage_then_fail(worktree: Path, *words: str) -> CompletedProcess[str]:
         result = real_git(worktree, *words)
@@ -312,7 +316,7 @@ def test_a_failed_stage_is_unstaged_and_reported(
             return _completed(1, "fatal: disk full")
         return result
 
-    monkeypatch.setattr(curate, "_git_quiet", stage_then_fail)
+    fake.wrap(stage_then_fail)
 
     code, _, err = _run(capsys, "curate", "finish", run, "--no-push")
 
@@ -438,7 +442,8 @@ def test_precommit_failure_reports_unstage_error_and_still_cleans_scratch(
     before_files = {
         path: (root / path).read_bytes() if (root / path).exists() else None for path in paths
     }
-    real_git = curate._git_quiet
+    fake = git_fakes.install(monkeypatch)
+    real_git = fake.real_run
 
     def fail_unstage(worktree: Path, *words: str) -> CompletedProcess[str]:
         if "reset" in words:
@@ -449,7 +454,7 @@ def test_precommit_failure_reports_unstage_error_and_still_cleans_scratch(
         raise OSError("scan failed")
 
     monkeypatch.setattr(curate, "_scan_message", fail_scan)
-    monkeypatch.setattr(curate, "_git_quiet", fail_unstage)
+    fake.wrap(fail_unstage)
 
     code, _, err = _run(capsys, "curate", "finish", run, "--no-push")
 
@@ -473,7 +478,8 @@ def test_curation_preserves_a_commit_when_its_result_is_lost(
     root = make_content()
     run = _settled(root, capsys)
     before_head = git(root, "rev-parse", "HEAD").strip()
-    real_git = curate._git_quiet
+    fake = git_fakes.install(monkeypatch)
+    real_git = fake.real_run
 
     def lose_commit_result(worktree: Path, *words: str) -> CompletedProcess[str]:
         result = real_git(worktree, *words)
@@ -483,7 +489,7 @@ def test_curation_preserves_a_commit_when_its_result_is_lost(
             return _completed(128, "commit result interrupted")
         return result
 
-    monkeypatch.setattr(curate, "_git_quiet", lose_commit_result)
+    fake.wrap(lose_commit_result)
 
     if outcome == "interruption":
         with pytest.raises(KeyboardInterrupt):
@@ -507,7 +513,8 @@ def test_curation_preserves_publication_when_commit_outcome_is_unknown(
     root = make_content()
     run = _settled(root, capsys)
     before_head = git(root, "rev-parse", "HEAD").strip()
-    real_git = curate._git_quiet
+    fake = git_fakes.install(monkeypatch)
+    real_git = fake.real_run
     committed = False
 
     def hide_head_after_commit(worktree: Path, *words: str) -> CompletedProcess[str]:
@@ -520,7 +527,7 @@ def test_curation_preserves_publication_when_commit_outcome_is_unknown(
             return _completed(128, "commit result interrupted")
         return result
 
-    monkeypatch.setattr(curate, "_git_quiet", hide_head_after_commit)
+    fake.wrap(hide_head_after_commit)
 
     code, _, err = _run(capsys, "curate", "finish", run, "--no-push")
 
