@@ -545,6 +545,30 @@ def test_interrupted_commit_reconciles_a_nested_content_root(
     )
 
 
+def test_a_commit_git_reports_as_failed_but_made_succeeds_with_a_warning(
+    content: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = git_fakes.install(monkeypatch)
+
+    def report_failure_after_commit(
+        worktree: Path, words: tuple[str, ...]
+    ) -> git_fakes.Result | None:
+        if words[:1] != ("commit",):
+            return None
+        result = fake.real_run(worktree, *words)
+        assert result.returncode == 0
+        return git_fakes.completed(1, "", "reported failure\n")
+
+    fake.responders.append(report_failure_after_commit)
+
+    status, out, err = run_kb(capsys, "--title", "Reported failure", "--body", "Committed.")
+
+    assert status == 0
+    assert "Wrote: " in out
+    assert err == "observe: warning: committed, but Git reported an error: reported failure\n"
+    assert git(content, "status", "--porcelain") == ""
+
+
 def test_a_failed_stage_is_reported_as_a_failed_commit(
     content: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -1,6 +1,7 @@
 """The shared protected file publication and single-path Git commit operation."""
 
 import os
+import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -79,12 +80,14 @@ def _publish(root: Path, directory: str, temporary: Path, when: datetime, comman
 def _commit(root: Path, path: str, subject: str, command: str) -> None:
     """Commit one new file and reconcile an exception before any rollback."""
     previous_head, files = commit.save_new_files(root, (path,), command)
+    reported: str | None = None
     try:
         result = git.run(root, "add", "--", path)
         if result.returncode != 0:
             raise _commit_error(command, result.stderr)
         result = git.run(root, "commit", "-q", "-m", subject, "--", path)
         if result.returncode != 0:
+            reported = result.stderr.rstrip("\n")
             raise _commit_error(command, result.stderr)
     except BaseException as error:
         inspection = commit.inspect(
@@ -96,6 +99,9 @@ def _commit(root: Path, path: str, subject: str, command: str) -> None:
             fallback="",
         )
         if inspection.outcome == "committed":
+            if reported is not None:
+                sys.stderr.write(f"{command}: warning: {commit.committed_with_error(reported)}\n")
+                return
             raise
         if inspection.outcome == "unknown":
             message = commit.uncertain_message(command, path, "file and index", inspection.detail)

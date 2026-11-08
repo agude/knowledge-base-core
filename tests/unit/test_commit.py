@@ -298,3 +298,16 @@ def test_uncertain_message_names_what_was_preserved(
         expected = f"{expected}: {detail}"
 
     assert commit.uncertain_message("kb", listing, preserved, detail) == expected
+
+
+@pytest.mark.parametrize(
+    ("detail", "expected"),
+    [
+        ("index busy", "committed, but Git reported an error: index busy"),
+        ("", "committed, but Git reported an error"),
+    ],
+)
+def test_committed_with_error_names_git_s_error_when_there_is_one(
+    detail: str, expected: str
+) -> None:
+    assert commit.committed_with_error(detail) == expected

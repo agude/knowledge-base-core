@@ -120,8 +120,8 @@ def test_an_uncertain_observe_commit_reports_the_exact_recovery_text(
     )
 
 
-def test_a_failed_report_for_an_existing_observe_commit_is_a_failure_that_keeps_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_a_failed_report_for_an_existing_observe_commit_succeeds_with_a_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = make_repo(tmp_path / "repo")
     (root / "record.md").write_bytes(b"new record\n")
@@ -138,10 +138,11 @@ def test_a_failed_report_for_an_existing_observe_commit_is_a_failure_that_keeps_
 
     fake.responders.append(report_failure_after_commit)
 
-    with pytest.raises(KbError) as caught:
-        write._commit(root, "record.md", "Observe: initial", "observe")
+    write._commit(root, "record.md", "Observe: initial", "observe")
 
-    assert str(caught.value) == "observe: commit failed: reported failure"
+    assert capsys.readouterr().err == (
+        "observe: warning: committed, but Git reported an error: reported failure\n"
+    )
     assert git(root, "show", "HEAD:record.md") == "new record\n"
     assert git(root, "status", "--porcelain") == ""
     assert (root / "record.md").read_bytes() == b"new record\n"

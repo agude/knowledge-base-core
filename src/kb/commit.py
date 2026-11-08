@@ -264,6 +264,12 @@ def rollback_failed(command: str, paths: Sequence[str], detail: str) -> str:
     return f"{message}: {detail}" if detail else message
 
 
+def committed_with_error(detail: str) -> str:
+    """The warning for a commit that exists although the commit command exited nonzero."""
+    clause = "committed, but Git reported an error"
+    return f"{clause}: {detail}" if detail else clause
+
+
 def uncertain_message(command: str, listing: str, preserved: str, detail: str) -> str:
     """The report for an unknown outcome, naming what was kept and how to recover."""
     message = (
