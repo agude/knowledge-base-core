@@ -62,11 +62,13 @@ def _write_batch(
     directory.mkdir(parents=True, exist_ok=True)
     selected_bytes = sum(_member_size(member) for member in members)
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "id": run_id,
         "created": "2026-10-26T12:00:00Z",
         "max_bytes": selected_bytes if max_bytes is None else max_bytes,
         "selected_bytes": selected_bytes,
+        "synchronized": False,
+        "base_commit": None,
         "members": members,
     }
     path = directory / f"{run_id}.json"
