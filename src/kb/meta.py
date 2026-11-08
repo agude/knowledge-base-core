@@ -1,7 +1,7 @@
 """Typed views of article, question, and observation metadata, with the line each came from."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Generic, TypeVar
 
 from kb import dates, model
@@ -9,6 +9,8 @@ from kb.model import Document, Section
 from kb.transcripts import App
 
 T = TypeVar("T")
+NAMED_TTL_DAYS = {"people": 14, "status": 14, "process": 60, "domain": 180}
+MAX_TTL_DAYS = 1_000_000
 
 
 @dataclass(frozen=True)
@@ -26,6 +28,82 @@ def resolve(document: Document, section: Section | None, name: str) -> Located[s
         return None
     value, line = resolved
     return Located(value, line if line is not None else 1)
+
+
+@dataclass(frozen=True)
+class Invalid:
+    """A field that is present but cannot be converted."""
+
+    text: str
+    line: int
+
+
+@dataclass(frozen=True)
+class ArticleMeta:
+    """An article's front matter fields, converted, as one section sees them.
+
+    verified, ttl, synced, and sources are the section's own, its H2's, or the article's;
+    title, updated, conflict, and aliases are always the article's. A front matter list
+    is not a scalar, so a scalar field holding one reads as None. A ttl of zero converts,
+    because only writers refuse it.
+    """
+
+    title: str | None
+    updated: date | Invalid | None
+    verified: Located[date] | Invalid | None
+    ttl: Located[int] | Invalid | None
+    conflict: str | None
+    synced: date | Invalid | None
+    sources: tuple[str, ...]
+    aliases: tuple[str, ...]
+
+    @classmethod
+    def read(cls, document: Document, section: Section | None = None) -> "ArticleMeta":
+        """Convert the fields of a parsed article for one section, or for the whole file."""
+        verified = _date(resolve(document, section, "verified"))
+        ttl = resolve(document, section, "ttl")
+        days = None if ttl is None else ttl_days(ttl.value)
+        return cls(
+            title=document.title,
+            updated=_unlocated(_date(resolve(document, None, "updated"))),
+            verified=verified,
+            ttl=None
+            if ttl is None
+            else Invalid(ttl.value, ttl.line)
+            if days is None
+            else Located(days, ttl.line),
+            conflict=document.scalar("conflict"),
+            synced=_unlocated(_date(resolve(document, section, "synced"))),
+            sources=document.items("sources", section),
+            aliases=document.items("aliases"),
+        )
+
+
+def ttl_days(raw: str) -> int | None:
+    """Parse a named or bounded nonnegative TTL; writers separately reject zero."""
+    if raw in NAMED_TTL_DAYS:
+        return NAMED_TTL_DAYS[raw]
+    if raw.isascii() and raw.isdigit():
+        significant = raw.lstrip("0") or "0"
+        maximum = str(MAX_TTL_DAYS)
+        if len(significant) < len(maximum) or (
+            len(significant) == len(maximum) and significant <= maximum
+        ):
+            return int(significant)
+    return None
+
+
+def _date(located: Located[str] | None) -> Located[date] | Invalid | None:
+    """A YYYY-MM-DD field as a date, Invalid when it is not one, or None when absent."""
+    if located is None:
+        return None
+    parsed = dates.parse_date(located.value)
+    return Invalid(located.value, located.line) if parsed is None else Located(parsed, located.line)
+
+
+def _unlocated(value: Located[date] | Invalid | None) -> date | Invalid | None:
+    """The date without its line; an Invalid value keeps its line for reports."""
+    return value.value if isinstance(value, Located) else value
 
 
 @dataclass(frozen=True)

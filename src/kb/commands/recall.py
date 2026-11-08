@@ -17,6 +17,7 @@ from kb.args import Spec
 from kb.context import Context, load
 from kb.entries import Entry
 from kb.errors import KbError
+from kb.meta import ArticleMeta
 from kb.model import Document
 
 WHO = "kb recall"
@@ -288,7 +289,7 @@ def section_block(context: Context, document: Document, candidate: search.Candid
         f"{document.path}#{candidate.fragment}",
         candidate.heading,
         freshness.status(document, section, context.today),
-        len(document.items("sources", section)),
+        len(ArticleMeta.read(document, section).sources),
     )
     return locators.block(head, lines)
 

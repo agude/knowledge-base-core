@@ -11,6 +11,7 @@ from kb.args import Spec
 from kb.context import Context, load
 from kb.errors import KbError
 from kb.locators import parse_locator
+from kb.meta import ArticleMeta, Located
 
 WHO = "verify"
 SPEC = Spec(
@@ -104,7 +105,8 @@ def _verify(
             raise KbError(f"{WHO}: unsafe front matter: front matter is missing")
         if not document.front_matter_closed:
             raise KbError(f"{WHO}: unsafe front matter: front matter is unclosed")
-        if document.scalar("conflict") == "unresolved":
+        metadata = ArticleMeta.read(document)
+        if metadata.conflict == "unresolved":
             raise KbError(f"{WHO}: article has conflict: unresolved")
 
         local_verified = [
@@ -126,7 +128,8 @@ def _verify(
             ttl = ttl_override
 
         proposed_text = text
-        if document.scalar("verified") != str(context.today):
+        verified = metadata.verified
+        if not isinstance(verified, Located) or verified.value != context.today:
             proposed_text = _edit(proposed_text, "verified", str(context.today))
 
         if ttl_override is not None:

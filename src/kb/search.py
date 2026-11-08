@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 from kb.derivations import BASE_FORMS
+from kb.meta import ArticleMeta
 from kb.model import Document
 from kb.stem import stem
 
@@ -300,7 +301,7 @@ def make_unit(
 def article_candidates(document: Document) -> list[Candidate]:
     """The curated units of one article: its top when it has prose, and each H2 section."""
     title = document.title or ""
-    aliases = document.items("aliases")
+    aliases = ArticleMeta.read(document).aliases
     candidates: list[Candidate] = []
     top = document.prose(document.body_start, document.top_end)
     if top:

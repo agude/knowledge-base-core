@@ -9,6 +9,7 @@ from kb import args, corpus, freshness, locators
 from kb.args import Spec
 from kb.context import Context, load
 from kb.errors import KbError
+from kb.meta import ArticleMeta
 from kb.model import Document, Section
 
 WHO = "kb read"
@@ -52,7 +53,7 @@ def render(context: Context, word: str, sources_only: bool) -> str:
     if selection is None:
         raise KbError(_missing(document, relpath, locator.fragment))
     if sources_only:
-        return _lines(document.items("sources", selection.section))
+        return _lines(ArticleMeta.read(document, selection.section).sources)
     name = f"{relpath}#{locator.fragment}"
     heading = selection.heading or locators.display_title(document)
     head = _header(context, document, name, heading, selection.section)
@@ -70,7 +71,7 @@ def _file(context: Context, path: str) -> str:
 
 def _whole_file(context: Context, document: Document, relpath: str, sources_only: bool) -> str:
     if sources_only:
-        return _lines(document.items("sources"))
+        return _lines(ArticleMeta.read(document).sources)
     head = _header(context, document, relpath, locators.display_title(document), None)
     body = locators.outline(document)
     top = document.top_lines()
@@ -90,7 +91,8 @@ def _header(
     if not corpus.is_curated(document.path):
         return locators.header(name, heading, None, None)
     status = freshness.status(document, section, context.today)
-    return locators.header(name, heading, status, len(document.items("sources", section)))
+    sources = ArticleMeta.read(document, section).sources
+    return locators.header(name, heading, status, len(sources))
 
 
 def _lines(items: Sequence[str]) -> str:

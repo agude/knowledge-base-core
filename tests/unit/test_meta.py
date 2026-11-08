@@ -1,7 +1,7 @@
 """One inheritance rule for metadata fields: section, then its H2, then the article."""
 
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
@@ -184,3 +184,117 @@ def test_parse_front_matter_matches_parse(path: Path) -> None:
         full.front_matter_closed,
     )
     assert front.sections == ()
+
+
+def article(front: str, body: str = "# Example\n") -> model.Document:
+    return model.parse("knowledge/example.md", f"---\n{front}---\n{body}")
+
+
+# After two front matter fields, the body starts on line 5.
+INHERITING = (
+    "# Example\n"  # 5
+    "## Parent\n"  # 6
+    "<!-- kb-section: verified=2026-10-01; ttl=people -->\n"  # 7
+    "### Child\n"  # 8
+    "Text.\n"  # 9
+)
+
+
+def test_article_fields_are_converted() -> None:
+    document = article(
+        "title: Example\n"  # 2
+        "updated: 2026-10-02\n"  # 3
+        "verified: 2026-09-01\n"  # 4
+        "ttl: 30\n"  # 5
+        "conflict: unresolved\n"  # 6
+        "sources:\n"
+        "  - sources/a.md\n"
+        "aliases:\n"
+        "  - nickname\n"
+    )
+
+    assert meta.ArticleMeta.read(document) == meta.ArticleMeta(
+        title="Example",
+        updated=date(2026, 10, 2),
+        verified=Located(date(2026, 9, 1), 4),
+        ttl=Located(30, 5),
+        conflict="unresolved",
+        synced=None,
+        sources=("sources/a.md",),
+        aliases=("nickname",),
+    )
+
+
+def test_invalid_article_fields_keep_their_text_and_line() -> None:
+    document = article("updated: 2026-13-01\nverified: soon\nttl: weekly\n")
+
+    read = meta.ArticleMeta.read(document)
+
+    assert read.updated == meta.Invalid("2026-13-01", 2)
+    assert read.verified == meta.Invalid("soon", 3)
+    assert read.ttl == meta.Invalid("weekly", 4)
+
+
+def test_a_ttl_beyond_the_limit_is_invalid_and_zero_converts() -> None:
+    assert meta.ArticleMeta.read(article("ttl: 1000001\n")).ttl == meta.Invalid("1000001", 2)
+    assert meta.ArticleMeta.read(article("ttl: 0\n")).ttl == Located(0, 2)
+
+
+def test_missing_article_fields_read_as_none_or_empty() -> None:
+    read = meta.ArticleMeta.read(article("title: Example\n"))
+
+    assert (read.updated, read.verified, read.ttl, read.conflict, read.synced) == (
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    assert (read.sources, read.aliases) == ((), ())
+
+
+def test_a_front_matter_list_is_not_a_scalar_field() -> None:
+    read = meta.ArticleMeta.read(article("verified:\n  - 2026-09-01\nttl:\n  - 30\n"))
+
+    assert (read.verified, read.ttl) == (None, None)
+
+
+def test_verified_and_ttl_are_inherited_from_a_section() -> None:
+    document = article("verified: 2026-09-01\nttl: domain\n", INHERITING)
+    child = document.section("1.1")
+    assert child is not None
+
+    read = meta.ArticleMeta.read(document, child)
+
+    assert read.verified == Located(date(2026, 10, 1), 7)
+    assert read.ttl == Located(14, 7)
+
+
+def test_an_invalid_inherited_value_keeps_the_section_line() -> None:
+    document = article(
+        "verified: 2026-09-01\n",
+        "# Example\n## Parent\n<!-- kb-section: verified=bad; ttl=0x10 -->\n### Child\n",
+    )
+    child = document.section("1.1")
+    assert child is not None
+
+    read = meta.ArticleMeta.read(document, child)
+
+    assert read.verified == meta.Invalid("bad", 6)
+    assert read.ttl == meta.Invalid("0x10", 6)
+
+
+def test_synced_is_read_for_a_section_and_updated_only_for_the_article() -> None:
+    document = model.parse(
+        "sources/copy.md",
+        "---\nsynced: 2026-08-01\nupdated: 2026-08-02\n---\n# Copy\n"
+        "## Part\n<!-- kb-section: synced=bad; updated=2026-01-01 -->\n",
+    )
+    section = document.section("1")
+    assert section is not None
+
+    read = meta.ArticleMeta.read(document, section)
+
+    assert read.synced == meta.Invalid("bad", 7)
+    assert read.updated == date(2026, 8, 2)
+    assert meta.ArticleMeta.read(document).synced == date(2026, 8, 1)

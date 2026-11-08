@@ -16,6 +16,7 @@ from kb import args, corpus, dates, git, git_paths, lint, model, publish, snapsh
 from kb.args import Spec
 from kb.context import load
 from kb.errors import KbError
+from kb.meta import ArticleMeta, Invalid
 
 WHO = "hook"
 SPEC = Spec(
@@ -178,8 +179,11 @@ def _stamp_edits(
         raw = (root / relpath).read_bytes()
         text = raw.decode("utf-8")
         prefix, body = corpus.split_bom(text)
-        current = model.parse(relpath, body).scalar("updated")
-        if current is None or current == today:
+        updated = ArticleMeta.read(model.parse(relpath, body)).updated
+        if updated is None:
+            continue
+        current = updated.text if isinstance(updated, Invalid) else updated.isoformat()
+        if current == today:
             continue
         if partial:
             kept.append((relpath, current))

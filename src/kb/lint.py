@@ -7,7 +7,7 @@ from typing import Literal
 
 from kb import corpus, links, locators, meta, model, snapshot
 from kb.dates import parse_date
-from kb.freshness import ttl_days
+from kb.meta import ArticleMeta, Invalid, ttl_days
 from kb.model import Document, Section
 
 MAX_H2_LINES = 50
@@ -189,19 +189,19 @@ def check_document(document: Document, require_ttl: bool = False) -> list[Findin
 
 
 def _check_front_matter(document: Document, require_ttl: bool, findings: list[Finding]) -> None:
-    for name in ("title", "updated", "verified"):
-        value = document.front.get(name)
+    article = ArticleMeta.read(document)
+    fields = {"title": article.title, "updated": article.updated, "verified": article.verified}
+    for name, value in fields.items():
         line = model.front_field_line(document, name) or 1
-        if not isinstance(value, str) or not value:
+        if value is None or (isinstance(value, Invalid) and not value.text):
             _add(findings, document, line, "error", f"front matter missing {name}")
-        elif name != "title" and parse_date(value) is None:
+        elif isinstance(value, Invalid):
             _add(findings, document, line, "error", f"{name} is not a YYYY-MM-DD date")
 
-    ttl_value = document.front.get("ttl")
     if "ttl" not in document.front:
         if require_ttl:
             _add(findings, document, 1, "error", "front matter missing ttl")
-    elif not valid_ttl(ttl_value):
+    elif isinstance(article.ttl, Invalid) or article.ttl is None or article.ttl.value <= 0:
         line = model.front_field_line(document, "ttl") or 1
         _add(
             findings,

@@ -7,12 +7,10 @@ never go stale.
 
 from datetime import date
 
-from kb.dates import parse_date
+from kb.meta import ArticleMeta, Invalid, Located
 from kb.model import Document, Section
 
 DEFAULT_TTL_DAYS = 60
-NAMED_TTL_DAYS = {"people": 14, "status": 14, "process": 60, "domain": 180}
-MAX_TTL_DAYS = 1_000_000
 
 
 def status(document: Document, section: Section | None, today: date) -> str:
@@ -20,52 +18,37 @@ def status(document: Document, section: Section | None, today: date) -> str:
 
     An unresolved conflict in the article adds ", conflict".
     """
+    article = ArticleMeta.read(document, section)
     text = (
-        _sources_status(document, section)
+        _sources_status(article)
         if document.path.startswith("sources/")
-        else (_knowledge_status(document, section, today))
+        else (_knowledge_status(article, today))
     )
-    if document.scalar("conflict") == "unresolved":
+    if article.conflict == "unresolved":
         text += ", conflict"
     return text
 
 
-def _sources_status(document: Document, section: Section | None) -> str:
-    raw = document.scalar("synced", section)
-    if raw is None:
+def _sources_status(article: ArticleMeta) -> str:
+    if article.synced is None:
         return "unknown"
-    if parse_date(raw) is None:
+    if isinstance(article.synced, Invalid):
         return "invalid"
-    return f"source, synced {raw}"
+    return f"source, synced {article.synced.isoformat()}"
 
 
-def _knowledge_status(document: Document, section: Section | None, today: date) -> str:
-    raw_ttl = document.scalar("ttl", section) or ""
-    days = ttl_days(raw_ttl)
-    if days is None and raw_ttl.isascii() and raw_ttl.isdigit():
+def _knowledge_status(article: ArticleMeta, today: date) -> str:
+    ttl = article.ttl
+    # A digit TTL beyond the limit is invalid; an unknown name falls back to the default.
+    if isinstance(ttl, Invalid) and ttl.text.isascii() and ttl.text.isdigit():
         return "invalid"
-    raw = document.scalar("verified", section)
-    if raw is None:
-        return "unknown"
-    verified = parse_date(raw)
+    verified = article.verified
     if verified is None:
+        return "unknown"
+    if isinstance(verified, Invalid):
         return "invalid"
-    if days is None:
-        days = DEFAULT_TTL_DAYS
-    if (today - verified).days > days:
+    days = ttl.value if isinstance(ttl, Located) else DEFAULT_TTL_DAYS
+    raw = verified.value.isoformat()
+    if (today - verified.value).days > days:
         return f"stale, verified {raw} (ttl {days})"
     return f"fresh, verified {raw}"
-
-
-def ttl_days(raw: str) -> int | None:
-    """Parse a named or bounded nonnegative TTL; writers separately reject zero."""
-    if raw in NAMED_TTL_DAYS:
-        return NAMED_TTL_DAYS[raw]
-    if raw.isascii() and raw.isdigit():
-        significant = raw.lstrip("0") or "0"
-        maximum = str(MAX_TTL_DAYS)
-        if len(significant) < len(maximum) or (
-            len(significant) == len(maximum) and significant <= maximum
-        ):
-            return int(significant)
-    return None
