@@ -1,8 +1,8 @@
-"""Typed views of article, question, and observation metadata, with the line each came from."""
+"""Typed views of article and transcript observation metadata, with the line each came from."""
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Generic, TypeVar
+from typing import Generic, TypeVar, cast, get_args
 
 from kb import dates, model
 from kb.model import Document, Section
@@ -60,18 +60,11 @@ class ArticleMeta:
     @classmethod
     def read(cls, document: Document, section: Section | None = None) -> "ArticleMeta":
         """Convert the fields of a parsed article for one section, or for the whole file."""
-        verified = _date(resolve(document, section, "verified"))
-        ttl = resolve(document, section, "ttl")
-        days = None if ttl is None else ttl_days(ttl.value)
         return cls(
             title=document.title,
             updated=_unlocated(_date(resolve(document, None, "updated"))),
-            verified=verified,
-            ttl=None
-            if ttl is None
-            else Invalid(ttl.value, ttl.line)
-            if days is None
-            else Located(days, ttl.line),
+            verified=_date(resolve(document, section, "verified")),
+            ttl=_ttl(resolve(document, section, "ttl")),
             conflict=document.scalar("conflict"),
             synced=_unlocated(_date(resolve(document, section, "synced"))),
             sources=document.items("sources", section),
@@ -101,6 +94,14 @@ def _date(located: Located[str] | None) -> Located[date] | Invalid | None:
     return Invalid(located.value, located.line) if parsed is None else Located(parsed, located.line)
 
 
+def _ttl(located: Located[str] | None) -> Located[int] | Invalid | None:
+    """A TTL field in days, Invalid when it is not one, or None when absent."""
+    if located is None:
+        return None
+    days = ttl_days(located.value)
+    return Invalid(located.value, located.line) if days is None else Located(days, located.line)
+
+
 def _unlocated(value: Located[date] | Invalid | None) -> date | Invalid | None:
     """The date without its line; an Invalid value keeps its line for reports."""
     return value.value if isinstance(value, Located) else value
@@ -124,8 +125,8 @@ class TranscriptMeta:
     started: datetime | None
     ended: datetime | None
     created: datetime | None
-    forked_from: str | None
-    message_ids: tuple[str, ...] | None
+    forked_from: str | None = None
+    message_ids: tuple[str, ...] | None = None
 
     @classmethod
     def read(cls, document: Document) -> "TranscriptMeta":
@@ -152,13 +153,7 @@ class TranscriptMeta:
 
 def _app(value: str | None) -> App | None:
     """The app named by an observation, or None for any other value."""
-    if value == "claude-code":
-        return "claude-code"
-    if value == "codex":
-        return "codex"
-    if value == "goose":
-        return "goose"
-    return None
+    return cast(App, value) if value in get_args(App) else None
 
 
 def _timestamp(value: str | None) -> datetime | None:

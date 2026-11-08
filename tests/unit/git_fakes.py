@@ -63,14 +63,14 @@ class FakeGit:
         return None
 
 
-def as_text(result: subprocess.CompletedProcess[Any]) -> subprocess.CompletedProcess[str]:
+def _as_text(result: subprocess.CompletedProcess[Any]) -> subprocess.CompletedProcess[str]:
     """The result with text streams, decoded as kb.git.run would decode them."""
     return subprocess.CompletedProcess(
         result.args, result.returncode, _text(result.stdout), _text(result.stderr)
     )
 
 
-def as_bytes(result: subprocess.CompletedProcess[Any]) -> subprocess.CompletedProcess[bytes]:
+def _as_bytes(result: subprocess.CompletedProcess[Any]) -> subprocess.CompletedProcess[bytes]:
     """The result with byte streams, encoded as UTF-8 when given as text."""
     return subprocess.CompletedProcess(
         result.args, result.returncode, _bytes(result.stdout), _bytes(result.stderr)
@@ -94,13 +94,13 @@ def install(monkeypatch: pytest.MonkeyPatch) -> FakeGit:
         result = fake.answer(root, words, keywords, text=True)
         if result is None:
             return real_run(root, *words, **keywords)
-        return as_text(result)
+        return _as_text(result)
 
     def run_bytes(root: Path, *words: str, **keywords: Any) -> subprocess.CompletedProcess[bytes]:
         result = fake.answer(root, words, keywords, text=False)
         if result is None:
             return real_run_bytes(root, *words, **keywords)
-        return as_bytes(result)
+        return _as_bytes(result)
 
     monkeypatch.setattr(git, "run", run)
     monkeypatch.setattr(git, "run_bytes", run_bytes)
@@ -111,7 +111,7 @@ def _text(value: str | bytes | None) -> str:
     if value is None:
         return ""
     if isinstance(value, bytes):
-        return value.decode("utf-8").replace("\r\n", "\n")
+        return value.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
     return value
 
 

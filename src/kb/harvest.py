@@ -11,42 +11,8 @@ IDLE_TIME = timedelta(minutes=60)
 MAX_SESSIONS = 50
 SessionKey = tuple[App, str]
 MessageKey = tuple[App, str]
-
-
-@dataclass(frozen=True)
-class HarvestRecord:
-    """The harvest-related fields read from one committed observation's front matter."""
-
-    source: str | None
-    host: str | None
-    app: App | None
-    session: str | None
-    part: int | None
-    first_message: str | None
-    last_message: str | None
-    started: datetime | None
-    ended: datetime | None
-    created: datetime | None
-    forked_from: str | None = None
-    message_ids: tuple[str, ...] | None = None
-
-
-def record_from(meta: TranscriptMeta) -> HarvestRecord:
-    """The harvest record of a transcript observation's metadata."""
-    return HarvestRecord(
-        source=meta.source,
-        host=meta.host,
-        app=meta.app,
-        session=meta.session,
-        part=meta.part,
-        first_message=meta.first_message,
-        last_message=meta.last_message,
-        started=meta.started,
-        ended=meta.ended,
-        created=meta.created,
-        forked_from=meta.forked_from,
-        message_ids=meta.message_ids,
-    )
+HarvestRecord = TranscriptMeta
+"""The harvest-related fields read from one committed observation's front matter."""
 
 
 @dataclass(frozen=True)

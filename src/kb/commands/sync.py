@@ -584,7 +584,7 @@ def _record_from_document(document: model.Document) -> harvest.HarvestRecord | N
         or len(message_ids) != sum(section.level == 2 for section in document.sections)
     ):
         raise KbError(f"sync: invalid message_ids in committed observation {document.path}")
-    return harvest.record_from(metadata)
+    return metadata
 
 
 def _recover(root: Path, git_directory: Path, host: str) -> None:

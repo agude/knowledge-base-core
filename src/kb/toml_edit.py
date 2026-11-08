@@ -2,7 +2,7 @@
 
 import tomllib
 
-from kb.corpus import BOM
+from kb.corpus import BOM, strip_bom
 
 
 def first_table_line(lines: list[str]) -> int:
@@ -12,10 +12,10 @@ def first_table_line(lines: list[str]) -> int:
     complete TOML, so lines inside a multi-line array or string never count.
     """
     for index, line in enumerate(lines):
-        if not line.removeprefix(BOM).lstrip().startswith("["):
+        if not strip_bom(line).lstrip().startswith("["):
             continue
         try:
-            tomllib.loads("".join(lines[:index]).removeprefix(BOM))
+            tomllib.loads(strip_bom("".join(lines[:index])))
         except tomllib.TOMLDecodeError:
             continue
         return index
@@ -34,7 +34,7 @@ def insert_line(text: str, lines: list[str], index: int, assignment: str) -> str
         edited[-1] += newline
     line = assignment + newline
     if index == 0 and edited and edited[0].startswith(BOM):
-        edited[0] = edited[0].removeprefix(BOM)
+        edited[0] = strip_bom(edited[0])
         line = BOM + line
     edited.insert(index, line)
     return "".join(edited)
