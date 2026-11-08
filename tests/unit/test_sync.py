@@ -1590,3 +1590,36 @@ def test_malformed_exact_message_membership_refuses_committed_state(field: str) 
     text = text.replace("Body.", "## 1. user, 2026-10-26T09:00:00Z\n\nBody.")
     with pytest.raises(KbError, match="invalid message_ids in committed observation"):
         sync._record_from_document(model.parse("saved.md", text))
+
+
+def test_an_uncertain_sync_commit_reports_the_exact_recovery_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = make_repo(tmp_path / "content")
+    for key, value in GIT_ENV.items():
+        monkeypatch.setenv(key, value)
+    paths = ("observations/pending/first.md", "observations/pending/second.md")
+    for path in paths:
+        destination = root / path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(f"{path}\n", encoding="utf-8")
+    fake = git_fakes.install(monkeypatch)
+    committed = False
+
+    def hide_head_after_commit(worktree: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        nonlocal committed
+        if committed and words[:3] == ("rev-parse", "--verify", "HEAD"):
+            return completed(1, stderr="HEAD inspection unavailable\n")
+        result = fake.real_run(worktree, *words)
+        if words[:2] == ("commit", "-q") and result.returncode == 0:
+            committed = True
+            return completed(128, stderr="commit result interrupted")
+        return result
+
+    fake.wrap(hide_head_after_commit)
+
+    assert sync._commit_observations(root, paths) == (
+        "sync: commit outcome is uncertain for observations/pending/first.md, "
+        "observations/pending/second.md; the files and index were preserved; inspect Git "
+        "status and HEAD before retrying: commit result interrupted; HEAD inspection unavailable"
+    )

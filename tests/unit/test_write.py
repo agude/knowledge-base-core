@@ -89,3 +89,59 @@ def test_initial_commit_is_preserved_when_head_inspection_fails_after_commit(
     assert git(root, "status", "--porcelain") == ""
     assert isinstance(caught.value, KbError)
     assert "commit outcome is uncertain" in str(caught.value)
+
+
+def test_an_uncertain_observe_commit_reports_the_exact_recovery_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = make_repo(tmp_path / "repo")
+    (root / "record.md").write_bytes(b"new record\n")
+    fake = git_fakes.install(monkeypatch)
+    committed = False
+
+    def hide_head_after_commit(worktree: Path, *words: str) -> subprocess.CompletedProcess[str]:
+        nonlocal committed
+        if committed and words == ("rev-parse", "--verify", "HEAD"):
+            return git_fakes.completed(1, "", "inspection failed\n")
+        result = fake.real_run(worktree, *words)
+        if words[0] == "commit":
+            committed = True
+            return git_fakes.completed(1, "", "reported failure\n")
+        return result
+
+    fake.wrap(hide_head_after_commit)
+
+    with pytest.raises(KbError) as caught:
+        write._commit(root, "record.md", "Observe: initial", "observe")
+
+    assert str(caught.value) == (
+        "observe: commit outcome is uncertain for record.md; the file and index were "
+        "preserved; inspect Git status and HEAD before retrying: inspection failed"
+    )
+
+
+def test_a_failed_report_for_an_existing_observe_commit_is_a_failure_that_keeps_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = make_repo(tmp_path / "repo")
+    (root / "record.md").write_bytes(b"new record\n")
+    fake = git_fakes.install(monkeypatch)
+
+    def report_failure_after_commit(
+        worktree: Path, words: tuple[str, ...]
+    ) -> git_fakes.Result | None:
+        if words[:1] != ("commit",):
+            return None
+        result = fake.real_run(worktree, *words)
+        assert result.returncode == 0
+        return git_fakes.completed(1, "", "reported failure\n")
+
+    fake.responders.append(report_failure_after_commit)
+
+    with pytest.raises(KbError) as caught:
+        write._commit(root, "record.md", "Observe: initial", "observe")
+
+    assert str(caught.value) == "observe: commit failed: reported failure"
+    assert git(root, "show", "HEAD:record.md") == "new record\n"
+    assert git(root, "status", "--porcelain") == ""
+    assert (root / "record.md").read_bytes() == b"new record\n"

@@ -820,3 +820,36 @@ def test_finish_rechecks_destinations_recorded_at_completion(
         assert article.read_text(encoding="utf-8") == ARTICLE.replace("## 1. Fact", "## 1. Renamed")
     else:
         assert not article.exists()
+
+
+def test_an_uncertain_curate_commit_reports_the_exact_recovery_text(
+    make_content: Callable[..., Path],
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = make_content()
+    run = _settled(root, capsys)
+    fake = git_fakes.install(monkeypatch)
+    committed = False
+
+    def hide_head_after_commit(worktree: Path, *words: str) -> CompletedProcess[str]:
+        nonlocal committed
+        if committed and words[:3] == ("rev-parse", "--verify", "HEAD"):
+            return _completed(1, "HEAD inspection unavailable")
+        result = fake.real_run(worktree, *words)
+        if words[0] == "commit" and result.returncode == 0:
+            committed = True
+            return _completed(128, "commit result interrupted")
+        return result
+
+    fake.wrap(hide_head_after_commit)
+
+    code, _, err = _run(capsys, "curate", "finish", run, "--no-push")
+
+    paths = git(root, "show", "--format=", "--name-only", "--no-renames", "HEAD").split()
+    assert code == 1
+    assert err == (
+        f"curate: commit outcome is uncertain for {curate._listing(paths)}; the publication "
+        "files and index were preserved; inspect Git status and HEAD before retrying: "
+        "HEAD inspection unavailable\n"
+    )
