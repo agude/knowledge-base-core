@@ -225,7 +225,13 @@ def inspect(check: Callable[[], Inspection], *, fallback: str = INTERRUPTED) -> 
         return Inspection("unknown", None, str(error) or fallback)
 
 
-def unstage(root: Path, paths: Sequence[str], *, method: Literal["remove", "reset"]) -> str | None:
+def unstage(
+    root: Path,
+    paths: Sequence[str],
+    *,
+    method: Literal["remove", "reset"],
+    optional_locks: bool = True,
+) -> str | None:
     """Remove only these paths from the index, keeping worktree bytes. Returns Git's error text.
 
     "remove" serves new files: it changes the index only when a path is staged, so a locked
@@ -236,9 +242,19 @@ def unstage(root: Path, paths: Sequence[str], *, method: Literal["remove", "rese
     if not paths:
         return None
     if method == "remove":
-        result = git.run(root, "ls-files", "-z", "--", *paths)
+        result = git.run(root, "ls-files", "-z", "--", *paths, optional_locks=optional_locks)
         if result.returncode == 0 and result.stdout:
-            result = git.run(root, "rm", "-q", "-f", "--cached", "--ignore-unmatch", "--", *paths)
+            result = git.run(
+                root,
+                "rm",
+                "-q",
+                "-f",
+                "--cached",
+                "--ignore-unmatch",
+                "--",
+                *paths,
+                optional_locks=optional_locks,
+            )
     else:
         result = git.run(
             root,
@@ -248,6 +264,7 @@ def unstage(root: Path, paths: Sequence[str], *, method: Literal["remove", "rese
             "--pathspec-from-file=-",
             "--pathspec-file-nul",
             input_text="".join(f"{path}\0" for path in paths),
+            optional_locks=optional_locks,
         )
     if result.returncode == 0:
         return None

@@ -16,6 +16,7 @@ from typing import cast
 from kb import (
     archive,
     args,
+    commit,
     config,
     corpus,
     curation,
@@ -45,6 +46,7 @@ from kb.errors import KbError
 from kb.platform import config_file
 
 WHO = "curate"
+UNSTAGE_FAILED = f"{WHO}: cannot unstage the publication set; inspect Git status"
 PENDING = "observations/pending"
 ARCHIVED = "observations/archived"
 BATCHES = "observations/batches"
@@ -739,27 +741,42 @@ def _commit_publication(
         return _head_commit(root)
     except BaseException as error:
         if commit_attempted:
-            outcome, committed_head, detail = _publication_commit_outcome(
-                root, previous_head, expected_tree, subject
-            )
-            if outcome == "committed":
-                if commit_result is not None and commit_result.returncode != 0:
-                    assert committed_head is not None
-                    return committed_head
-                raise
-            if outcome == "unknown":
-                message = (
-                    f"{WHO}: commit outcome is uncertain for {_listing(paths)}; the publication "
-                    "files and index were preserved; inspect Git status and HEAD before retrying"
+            inspection = commit.inspect(
+                lambda: commit.prove_tree(
+                    root,
+                    commit.identify(
+                        root,
+                        previous_head,
+                        subject,
+                        allow_unborn=False,
+                        optional_locks=False,
+                        commit_name="this publication commit",
+                        head_fallback="cannot inspect HEAD",
+                    ),
+                    expected_tree,
                 )
-                raise KbError(f"{message}: {detail}" if detail else message) from error
+            )
+            if inspection.outcome == "committed":
+                if commit_result is not None and commit_result.returncode != 0:
+                    assert inspection.head is not None
+                    return inspection.head
+                raise
+            if inspection.outcome == "unknown":
+                message = commit.uncertain_message(
+                    WHO, _listing(paths), "publication files and index", inspection.detail
+                )
+                raise KbError(message) from error
         try:
-            _unstage(root, git_directory, paths)
+            unstage_error = commit.unstage(root, paths, method="reset", optional_locks=False)
         except BaseException as rollback_error:
             detail = str(rollback_error) or "cleanup was interrupted"
-            if not detail.startswith(f"{WHO}:"):
-                detail = f"{WHO}: cannot unstage the publication set; inspect Git status: {detail}"
-            raise KbError(f"{detail}; original failure: {error}") from rollback_error
+            raise KbError(f"{UNSTAGE_FAILED}: {detail}; original failure: {error}") from (
+                rollback_error
+            )
+        if unstage_error is not None:
+            raise KbError(
+                f"{UNSTAGE_FAILED}: {unstage_error}; original failure: {error}"
+            ) from error
         raise
     finally:
         pathspec.unlink(missing_ok=True)
@@ -767,75 +784,9 @@ def _commit_publication(
             text.unlink(missing_ok=True)
 
 
-def _publication_commit_outcome(
-    root: Path, previous_head: str, expected_tree: str, subject: str
-) -> tuple[str, str | None, str]:
-    """Confirm the expected publication commit, a failed attempt, or an uncertain state."""
-    try:
-        head_result = git.run(root, "rev-parse", "--verify", "HEAD", optional_locks=False)
-        if head_result.returncode != 0 or not head_result.stdout.strip():
-            detail = head_result.stderr.rstrip("\n") or "cannot inspect HEAD"
-            return "unknown", None, detail
-        head = head_result.stdout.strip()
-        if head == previous_head:
-            return "failed", None, "HEAD is unchanged"
-
-        metadata = git.run(root, "show", "-s", "--format=%P%x00%s", head, optional_locks=False)
-        if metadata.returncode != 0:
-            detail = metadata.stderr.rstrip("\n") or "cannot inspect the new commit"
-            return "unknown", None, detail
-        fields = metadata.stdout.rstrip("\n").split("\0", 1)
-        if len(fields) != 2:
-            return "unknown", None, "Git returned malformed commit metadata"
-        if fields[0].split() != [previous_head] or fields[1] != subject:
-            return "unknown", None, "HEAD changed but does not identify this publication commit"
-
-        tree = git.run(root, "rev-parse", "--verify", f"{head}^{{tree}}", optional_locks=False)
-        if tree.returncode != 0 or tree.stdout.strip() != expected_tree:
-            detail = tree.stderr.rstrip("\n") or "the new commit tree differs from the staged set"
-            return "unknown", None, detail
-        index = git.run(root, "write-tree", optional_locks=False)
-        if index.returncode != 0 or index.stdout.strip() != expected_tree:
-            detail = index.stderr.rstrip("\n") or "the index differs from the staged set"
-            return "unknown", None, detail
-        status = git.run(
-            root, "status", "--porcelain=v1", "-z", "--untracked-files=all", optional_locks=False
-        )
-        if status.returncode != 0 or status.stdout:
-            detail = (
-                status.stderr.rstrip("\n") or "the worktree differs from the committed publication"
-            )
-            return "unknown", None, detail
-        return "committed", head, ""
-    except BaseException as error:
-        return "unknown", None, str(error) or "commit outcome inspection was interrupted"
-
-
-def _unstage(root: Path, git_directory: Path, paths: Sequence[str]) -> None:
-    """Remove only the paths that finish staged. The worktree bytes are left as they are."""
-    pathspec = _write_scratch_file(git_directory, _nul_terminated(paths))
-    try:
-        result = git.run(
-            root,
-            "--literal-pathspecs",
-            "reset",
-            "-q",
-            f"--pathspec-from-file={pathspec}",
-            "--pathspec-file-nul",
-            optional_locks=False,
-        )
-    finally:
-        pathspec.unlink(missing_ok=True)
-    if result.returncode != 0:
-        detail = result.stderr.rstrip("\n")
-        raise KbError(f"{WHO}: cannot unstage the publication set; inspect Git status: {detail}")
-
-
 def _scan_message(git_directory: Path, message: str) -> None:
     """Scan the rendered commit message. Reasons were scanned on entry, so a match is internal."""
-    scratch = git_directory / "kb-tmp"
-    scratch.mkdir(parents=True, exist_ok=True)
-    found = secrets.findings(scratch, message)
+    found = secrets.findings(scratch.shared_directory(git_directory, WHO), message)
     if found:
         kinds = ", ".join(sorted({kind for kind, _ in found}))
         raise KbError(f"{WHO}: the commit message matched a secret check ({kinds}); internal error")
