@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
+from kb import dates
+
 App = Literal["claude-code", "codex", "goose"]
 Role = Literal["user", "assistant"]
 # Why a kb call's output is not usable: no paired result, a command that shares its output
@@ -60,16 +62,7 @@ def parse_timestamp(value: object) -> datetime | None:
     """Parse an ISO timestamp with a time zone and normalize it to UTC."""
     if not isinstance(value, str):
         return None
-    try:
-        timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if timestamp.tzinfo is None:
-        return None
-    try:
-        return timestamp.astimezone(UTC)
-    except OverflowError:
-        return None
+    return dates.parse_utc(value)
 
 
 def timestamp_text(value: datetime) -> str:

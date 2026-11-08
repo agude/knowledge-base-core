@@ -4,9 +4,10 @@ import os
 import shutil
 import tomllib
 from collections.abc import Callable, Mapping
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
+from kb import dates
 from kb.errors import KbError
 
 NO_CONTENT = (
@@ -90,13 +91,13 @@ def parse_harvest_since(text: str, config: Path) -> datetime | None:
             f"knowledge base: invalid config file {config}: "
             "harvest_since must be a time-zone-aware TOML datetime"
         )
-    try:
-        return value.astimezone(UTC)
-    except OverflowError as error:
+    utc = dates.to_utc(value)
+    if utc is None:
         raise KbError(
             f"knowledge base: invalid config file {config}: "
             "harvest_since must normalize to a representable UTC timestamp"
-        ) from error
+        )
+    return utc
 
 
 def set_harvest_since(text: str, moment: datetime, config: Path) -> str:
@@ -129,10 +130,10 @@ def set_harvest_since(text: str, moment: datetime, config: Path) -> str:
         return text
     if moment.tzinfo is None or moment.utcoffset() is None:
         raise KbError("harvest_since requires a time-zone-aware current time")
-    try:
-        cutoff = moment.astimezone(UTC).replace(microsecond=0)
-    except OverflowError as error:
-        raise KbError("harvest_since requires a representable UTC current time") from error
+    utc = dates.to_utc(moment)
+    if utc is None:
+        raise KbError("harvest_since requires a representable UTC current time")
+    cutoff = utc.replace(microsecond=0)
     stamp = cutoff.isoformat(timespec="seconds").replace("+00:00", "Z")
     lines = text.splitlines(keepends=True)
     first_table = next(

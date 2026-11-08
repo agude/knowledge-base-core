@@ -9,6 +9,7 @@ from datetime import UTC, date, datetime
 from pathlib import PurePosixPath
 from typing import Literal, cast
 
+from kb import dates
 from kb.locators import parse_locator
 
 SCHEMA_VERSION = 2
@@ -551,11 +552,8 @@ def _has_outcome(member: Member) -> bool:
 def _validate_timestamp(value: str) -> None:
     if not isinstance(value, str):
         raise StateError("batch created timestamp must be a string")
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as error:
-        raise StateError("batch created timestamp must be an ISO UTC timestamp") from error
-    if parsed.tzinfo is None or parsed.utcoffset() != UTC.utcoffset(parsed):
+    parsed = dates.parse_aware(value)
+    if parsed is None or parsed.utcoffset() != UTC.utcoffset(parsed):
         raise StateError("batch created timestamp must be an ISO UTC timestamp")
 
 

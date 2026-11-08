@@ -5,8 +5,9 @@ chunks and evidence both read this contract, so it lives apart from either of th
 
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 
+from kb import dates
 from kb.model import Document, Section
 
 _MESSAGE_HEADING = re.compile(r"([0-9]+)\. (user|assistant), (.+)")
@@ -63,18 +64,7 @@ def message_sections(document: Document) -> tuple[MessageSection, ...] | None:
 
 def _timestamp(value: str | None) -> datetime | None:
     """A timezone-aware ISO timestamp normalized to UTC."""
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        return None
-    try:
-        return parsed.astimezone(UTC)
-    except OverflowError:
-        return None
+    return dates.parse_utc(value) if value else None
 
 
 def _nonempty(value: str | None) -> bool:

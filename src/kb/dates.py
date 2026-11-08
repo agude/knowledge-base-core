@@ -63,17 +63,14 @@ def now(environ: Mapping[str, str]) -> datetime:
     fixed = environ.get("KB_NOW", "")
     if not fixed:
         return datetime.now(UTC)
-    try:
-        parsed = datetime.fromisoformat(fixed.replace("Z", "+00:00"))
-    except ValueError:
-        parsed = None
-    if parsed is None or parsed.tzinfo is None or parsed.utcoffset() is None:
+    parsed = parse_aware(fixed)
+    if parsed is None:
         raise KbError(
             f"knowledge base: KB_NOW must be a time-zone-aware ISO timestamp, not {fixed}"
         )
-    try:
-        return parsed.astimezone(UTC)
-    except OverflowError as error:
+    utc = to_utc(parsed)
+    if utc is None:
         raise KbError(
             f"knowledge base: KB_NOW must normalize to a representable UTC timestamp, not {fixed}"
-        ) from error
+        )
+    return utc

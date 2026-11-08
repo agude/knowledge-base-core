@@ -15,6 +15,7 @@ from itertools import groupby
 from operator import itemgetter
 from pathlib import Path
 
+from kb import dates
 from kb.shellcalls import Invocation, invocations, sole_invocation
 from kb.transcripts import (
     App,
@@ -276,10 +277,7 @@ def _updated(value: object) -> datetime | None:
         moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
-    try:
-        return moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment.astimezone(UTC)
-    except OverflowError:
-        return None
+    return moment.replace(tzinfo=UTC) if moment.tzinfo is None else dates.to_utc(moment)
 
 
 @dataclass
