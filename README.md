@@ -537,7 +537,8 @@ only after confirming that Git did not commit them. If Git cannot establish the
 outcome, the commands preserve the files and index and report that you must
 inspect Git status and HEAD before retrying. If Git cannot remove the staged
 paths during rollback, the commands keep the working files and report which
-paths need inspection.
+paths need inspection. Every writer that commits, `kb curate finish` included,
+follows the recovery rule stated in `src/kb/commit.py`.
 
 ### `kb sync`
 
