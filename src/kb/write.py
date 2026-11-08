@@ -1,7 +1,6 @@
 """The shared protected file publication and single-path Git commit operation."""
 
 import os
-import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -246,12 +245,7 @@ def _git_blob(root: Path, revision: str) -> tuple[bytes | None, str]:
 
     Text mode would translate CRLF to LF on Windows and alter the content.
     """
-    result = subprocess.run(
-        ["git", "show", revision],
-        cwd=root,
-        capture_output=True,
-        check=False,
-    )
+    result = git.run_bytes(root, "show", revision)
     if result.returncode != 0:
         return None, result.stderr.decode("utf-8", errors="replace").replace("\r\n", "\n")
     return result.stdout, ""

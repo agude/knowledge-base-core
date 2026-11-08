@@ -95,3 +95,14 @@ def test_a_responder_can_alter_a_real_result(
     result = git.run(root, "status", "--porcelain")
 
     assert (result.returncode, result.stderr) == (1, "reported failure\n")
+
+
+def test_a_wrapped_function_answers_only_text_calls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = make_repo(tmp_path / "repo")
+    fake = git_fakes.install(monkeypatch)
+    fake.wrap(lambda *_args: git_fakes.completed(5))
+
+    assert git.run(root, "status").returncode == 5
+    assert git.run_bytes(root, "status").returncode == 0

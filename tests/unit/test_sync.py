@@ -582,20 +582,19 @@ def test_head_records_handles_tree_and_batch_errors_and_empty_trees(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root = Path()
-    monkeypatch.setattr(
-        sync,
-        "_git_bytes",
-        lambda *args, **kwargs: completed_bytes(1, b"", b"tree error"),
-    )
+    fake = git_fakes.install(monkeypatch)
+    fake.on(("ls-tree",), completed_bytes(1, b"", b"tree error"))
     with pytest.raises(KbError, match="cannot list committed observations: tree error"):
         sync._head_records(root)
-    monkeypatch.setattr(sync, "_git_bytes", lambda *args, **kwargs: completed_bytes(0, b""))
+    fake.responders.clear()
+    fake.on(("ls-tree",), completed_bytes(0, b""))
     assert sync._head_records(root) == ()
 
     oid = "a" * 40
     tree = f"100644 blob {oid}\tobservations/pending/saved.md\0".encode()
-    calls = iter((completed_bytes(0, tree), completed_bytes(1, b"", b"batch error")))
-    monkeypatch.setattr(sync, "_git_bytes", lambda *args, **kwargs: next(calls))
+    fake.responders.clear()
+    fake.on(("ls-tree",), completed_bytes(0, tree))
+    fake.on(("cat-file",), completed_bytes(1, b"", b"batch error"))
     with pytest.raises(KbError, match="cannot read committed observations: batch error"):
         sync._head_records(root)
 
@@ -615,20 +614,23 @@ def test_head_records_skips_non_md_non_blob_and_undecodable_records(
         + oid
         + b"\tobservations/pending/\xff.md\0"
     )
-    monkeypatch.setattr(sync, "_git_bytes", lambda *args, **kwargs: completed_bytes(0, tree))
+    fake = git_fakes.install(monkeypatch)
+    fake.on(("ls-tree",), completed_bytes(0, tree))
     assert sync._head_records(Path()) == ()
 
     object_id = b"b" * 40
     one_record_tree = b"100644 blob " + object_id + b"\tobservations/pending/old.md\0"
     old_text = observation_text().replace("session-transcript", "session").encode()
     batch = object_id + b" blob " + str(len(old_text)).encode() + b"\n" + old_text + b"\n"
-    calls = iter((completed_bytes(0, one_record_tree), completed_bytes(0, batch)))
-    monkeypatch.setattr(sync, "_git_bytes", lambda *args, **kwargs: next(calls))
+    fake.responders.clear()
+    fake.on(("ls-tree",), completed_bytes(0, one_record_tree))
+    fake.on(("cat-file",), completed_bytes(0, batch))
     assert sync._head_records(Path()) == ()
 
     invalid_text = object_id + b" blob 1\n\xff\n"
-    calls = iter((completed_bytes(0, one_record_tree), completed_bytes(0, invalid_text)))
-    monkeypatch.setattr(sync, "_git_bytes", lambda *args, **kwargs: next(calls))
+    fake.responders.clear()
+    fake.on(("ls-tree",), completed_bytes(0, one_record_tree))
+    fake.on(("cat-file",), completed_bytes(0, invalid_text))
     assert sync._head_records(Path()) == ()
 
 
@@ -646,8 +648,9 @@ def test_head_records_rejects_truncated_cat_file_output(
 ) -> None:
     oid = "a" * 40
     tree = f"100644 blob {oid}\tobservations/pending/saved.md\0".encode()
-    calls = iter((completed_bytes(0, tree), completed_bytes(0, batch)))
-    monkeypatch.setattr(sync, "_git_bytes", lambda *args, **kwargs: next(calls))
+    fake = git_fakes.install(monkeypatch)
+    fake.on(("ls-tree",), completed_bytes(0, tree))
+    fake.on(("cat-file",), completed_bytes(0, batch))
     with pytest.raises(KbError, match=message):
         sync._head_records(Path())
 
@@ -734,11 +737,7 @@ def test_recover_preserves_candidates_when_the_committed_tree_cannot_be_inspecte
             calls.append(args)
         return original_git(repo, *args)
 
-    monkeypatch.setattr(
-        sync,
-        "_git_bytes",
-        lambda *_args, **_kwargs: completed_bytes(1, b"", b"tree unavailable"),
-    )
+    fake.on(("ls-tree",), completed_bytes(1, b"", b"tree unavailable"))
     fake.wrap(track)
 
     with pytest.raises(

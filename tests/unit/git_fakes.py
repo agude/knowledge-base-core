@@ -21,6 +21,7 @@ class FakeGit:
     real_run: Callable[..., subprocess.CompletedProcess[str]]
     real_run_bytes: Callable[..., subprocess.CompletedProcess[bytes]]
     responders: list[Responder] = field(default_factory=list)
+    text_responders: list[Responder] = field(default_factory=list)
     calls: list[tuple[str, ...]] = field(default_factory=list)
     keywords: list[dict[str, Any]] = field(default_factory=list)
 
@@ -41,16 +42,19 @@ class FakeGit:
         self.responders.append(respond)
 
     def wrap(self, function: Callable[..., subprocess.CompletedProcess[Any]]) -> None:
-        """Answer every call with function(root, *words), which may call real_run itself."""
-        self.responders.append(lambda root, words: function(root, *words))
+        """Answer every kb.git.run call with function(root, *words); it may call real_run.
+
+        kb.git.run_bytes calls skip it, because a text result would lose their exact bytes.
+        """
+        self.text_responders.append(lambda root, words: function(root, *words))
 
     def answer(
-        self, root: Path, words: tuple[str, ...], keywords: dict[str, Any]
+        self, root: Path, words: tuple[str, ...], keywords: dict[str, Any], *, text: bool
     ) -> subprocess.CompletedProcess[Any] | None:
         """Record the call and return the first responder result, or None to run real Git."""
         self.calls.append(words)
         self.keywords.append(keywords)
-        for responder in self.responders:
+        for responder in [*self.responders, *(self.text_responders if text else [])]:
             result = responder(root, words)
             if result is not None:
                 if isinstance(result, BaseException):
@@ -87,13 +91,13 @@ def install(monkeypatch: pytest.MonkeyPatch) -> FakeGit:
     fake = FakeGit(real_run=real_run, real_run_bytes=real_run_bytes)
 
     def run(root: Path, *words: str, **keywords: Any) -> subprocess.CompletedProcess[str]:
-        result = fake.answer(root, words, keywords)
+        result = fake.answer(root, words, keywords, text=True)
         if result is None:
             return real_run(root, *words, **keywords)
         return as_text(result)
 
     def run_bytes(root: Path, *words: str, **keywords: Any) -> subprocess.CompletedProcess[bytes]:
-        result = fake.answer(root, words, keywords)
+        result = fake.answer(root, words, keywords, text=False)
         if result is None:
             return real_run_bytes(root, *words, **keywords)
         return as_bytes(result)

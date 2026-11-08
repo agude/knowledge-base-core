@@ -1,12 +1,11 @@
 """Read publication files from the worktree or the effective Git index."""
 
-import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Protocol
 
-from kb import corpus, git_paths
+from kb import corpus, git, git_paths
 from kb.errors import KbError
 
 
@@ -100,12 +99,7 @@ class GitFiles:
 def read_index(root: Path) -> GitFiles:
     """Read indexed blobs without checkout filters, honoring Git's GIT_INDEX_FILE."""
     prefix = git_paths.repository_prefix(root, "hook")
-    listing = subprocess.run(
-        ["git", "ls-files", "--stage", "--full-name", "-z", "--", "."],
-        cwd=root,
-        capture_output=True,
-        check=False,
-    )
+    listing = git.run_bytes(root, "ls-files", "--stage", "--full-name", "-z", "--", ".")
     if listing.returncode:
         raise KbError("hook: cannot read the effective index")
     entries: list[tuple[str, str, bytes]] = []
@@ -125,38 +119,26 @@ def read_index(root: Path) -> GitFiles:
 
 def read_head(root: Path, command: str) -> GitFiles:
     """Read the committed baseline; an unborn branch has an empty snapshot."""
-    head = subprocess.run(
-        ["git", "rev-parse", "--verify", "-q", "HEAD"], cwd=root, capture_output=True, check=False
-    )
+    head = git.run_bytes(root, "rev-parse", "--verify", "-q", "HEAD")
     if head.returncode:
-        branch = subprocess.run(
-            ["git", "symbolic-ref", "-q", "HEAD"], cwd=root, capture_output=True, check=False
-        )
+        branch = git.run_bytes(root, "symbolic-ref", "-q", "HEAD")
         if branch.returncode == 0:
-            reference = subprocess.run(
-                ["git", "show-ref", "--verify", "--quiet", branch.stdout.decode().strip()],
-                cwd=root,
-                capture_output=True,
-                check=False,
+            reference = git.run_bytes(
+                root, "show-ref", "--verify", "--quiet", branch.stdout.decode().strip()
             )
             if reference.returncode == 1:
                 return GitFiles(root, {})
         raise KbError(f"{command}: cannot read publication baseline HEAD")
     prefix = git_paths.repository_prefix(root, command)
-    listing = subprocess.run(
-        [
-            "git",
-            "ls-tree",
-            "-r",
-            "-z",
-            "--full-tree",
-            head.stdout.decode().strip(),
-            "--",
-            prefix or ".",
-        ],
-        cwd=root,
-        capture_output=True,
-        check=False,
+    listing = git.run_bytes(
+        root,
+        "ls-tree",
+        "-r",
+        "-z",
+        "--full-tree",
+        head.stdout.decode().strip(),
+        "--",
+        prefix or ".",
     )
     if listing.returncode:
         detail = listing.stderr.decode("utf-8", errors="replace").rstrip("\n")
@@ -175,12 +157,11 @@ def read_head(root: Path, command: str) -> GitFiles:
 
 def _read_blobs(root: Path, entries: list[tuple[str, str, bytes]], command: str) -> GitFiles:
     """Read exact blob bytes shared by index and committed-tree snapshots."""
-    result = subprocess.run(
-        ["git", "cat-file", "--batch"],
-        cwd=root,
-        input=b"".join(object_id + b"\n" for _, _, object_id in entries),
-        capture_output=True,
-        check=False,
+    result = git.run_bytes(
+        root,
+        "cat-file",
+        "--batch",
+        input_bytes=b"".join(object_id + b"\n" for _, _, object_id in entries),
     )
     if result.returncode:
         raise KbError(f"{command}: cannot read snapshot blobs")

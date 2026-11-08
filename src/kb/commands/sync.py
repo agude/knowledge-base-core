@@ -3,7 +3,6 @@
 import os
 import shutil
 import socket
-import subprocess
 import sys
 import tempfile
 from collections.abc import Iterator, Mapping, Sequence
@@ -492,7 +491,9 @@ def _head_records(root: Path) -> tuple[harvest.HarvestRecord, ...]:
     prefix = git_paths.repository_prefix(root, "sync")
     pending = git_paths.to_repository_path(PENDING, prefix)
     archived = git_paths.to_repository_path(ARCHIVED, prefix)
-    tree = _git_bytes(root, "ls-tree", "-r", "-z", "--full-tree", "HEAD", "--", pending, archived)
+    tree = git.run_bytes(
+        root, "ls-tree", "-r", "-z", "--full-tree", "HEAD", "--", pending, archived, input_bytes=b""
+    )
     if tree.returncode != 0:
         detail = tree.stderr.decode("utf-8", errors="replace").rstrip("\n")
         raise KbError(f"cannot list committed observations: {detail}")
@@ -516,8 +517,11 @@ def _head_records(root: Path) -> tuple[harvest.HarvestRecord, ...]:
         entries.append((object_id, relative))
     if not entries:
         return ()
-    batch = _git_bytes(
-        root, "cat-file", "--batch", input_text="".join(f"{oid}\n" for oid, _ in entries)
+    batch = git.run_bytes(
+        root,
+        "cat-file",
+        "--batch",
+        input_bytes="".join(f"{oid}\n" for oid, _ in entries).encode("utf-8"),
     )
     if batch.returncode != 0:
         detail = batch.stderr.decode("utf-8", errors="replace").rstrip("\n")
@@ -635,7 +639,7 @@ def _recover(root: Path, git_directory: Path, host: str) -> None:
 def _committed_pending_paths(root: Path, prefix: str) -> set[str]:
     """The content-relative pending paths in a successfully inspected HEAD tree."""
     repository_pending = git_paths.to_repository_path(PENDING, prefix)
-    tree = _git_bytes(
+    tree = git.run_bytes(
         root,
         "ls-tree",
         "-r",
@@ -644,6 +648,7 @@ def _committed_pending_paths(root: Path, prefix: str) -> set[str]:
         "HEAD",
         "--",
         repository_pending,
+        input_bytes=b"",
     )
     if tree.returncode != 0:
         detail = tree.stderr.decode("utf-8", errors="replace").rstrip("\n")
@@ -1032,14 +1037,3 @@ def _sync_remote(
     if result.already_in_sync:
         actions.append(f"Already in sync with origin/{status.branch}.")
     return tuple(actions), result.errors
-
-
-def _git_bytes(root: Path, *words: str, input_text: str = "") -> subprocess.CompletedProcess[bytes]:
-    """Run a git command with byte output for NUL-delimited tree and blob data."""
-    return subprocess.run(
-        ["git", *words],
-        cwd=root,
-        input=input_text.encode("utf-8"),
-        capture_output=True,
-        check=False,
-    )
