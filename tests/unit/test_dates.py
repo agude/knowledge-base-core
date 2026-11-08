@@ -1,6 +1,6 @@
 """Tests for today's date and the KB_TODAY override."""
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
 
@@ -64,3 +64,57 @@ def test_malformed_kb_now_is_reported(value: str) -> None:
         KbError, match=r"^knowledge base: KB_NOW must be a time-zone-aware ISO timestamp"
     ):
         dates.now({"KB_NOW": value})
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("2026-11-07T10:00:00Z", datetime(2026, 11, 7, 10, tzinfo=UTC)),
+        (
+            "2026-11-07T10:00:00+05:30",
+            datetime(2026, 11, 7, 10, tzinfo=timezone(timedelta(hours=5, minutes=30))),
+        ),
+        ("2026-11-07T10:00:00.250Z", datetime(2026, 11, 7, 10, 0, 0, 250000, tzinfo=UTC)),
+    ],
+)
+def test_parse_aware_keeps_the_written_offset(text: str, expected: datetime) -> None:
+    parsed = dates.parse_aware(text)
+
+    assert parsed == expected
+    assert parsed is not None and parsed.utcoffset() == expected.utcoffset()
+
+
+@pytest.mark.parametrize("text", ["2026-11-07T10:00:00", "not a time", ""])
+def test_parse_aware_refuses_naive_and_malformed_text(text: str) -> None:
+    assert dates.parse_aware(text) is None
+
+
+def test_to_utc_converts_an_offset_value() -> None:
+    value = datetime(2026, 11, 7, 15, 30, tzinfo=timezone(timedelta(hours=5, minutes=30)))
+
+    converted = dates.to_utc(value)
+
+    assert converted == datetime(2026, 11, 7, 10, tzinfo=UTC)
+    assert converted is not None and converted.tzinfo is UTC
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        datetime(1, 1, 1, tzinfo=timezone(timedelta(hours=1))),
+        datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone(timedelta(hours=-1))),
+    ],
+)
+def test_to_utc_refuses_an_instant_outside_the_representable_years(value: datetime) -> None:
+    assert dates.to_utc(value) is None
+
+
+def test_parse_utc_refuses_an_instant_before_year_one() -> None:
+    assert dates.parse_utc("0001-01-01T00:00:00+01:00") is None
+
+
+def test_parse_utc_normalizes_to_the_utc_instant() -> None:
+    parsed = dates.parse_utc("2026-11-07T15:30:00+05:30")
+
+    assert parsed == datetime(2026, 11, 7, 10, tzinfo=UTC)
+    assert parsed is not None and parsed.tzinfo is UTC

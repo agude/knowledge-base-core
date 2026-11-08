@@ -19,6 +19,31 @@ def parse_date(text: str) -> date | None:
         return None
 
 
+def parse_aware(text: str) -> datetime | None:
+    """An ISO timestamp with a time zone, as written; None for any other text."""
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed
+
+
+def to_utc(value: datetime) -> datetime | None:
+    """The same instant in UTC, or None when it falls outside years 1 to 9999."""
+    try:
+        return value.astimezone(UTC)
+    except OverflowError:
+        return None
+
+
+def parse_utc(text: str) -> datetime | None:
+    """An ISO timestamp with a time zone, normalized to UTC; None otherwise."""
+    parsed = parse_aware(text)
+    return None if parsed is None else to_utc(parsed)
+
+
 def today(environ: Mapping[str, str]) -> date:
     """KB_TODAY when it is set, else the local date.
 
