@@ -445,7 +445,7 @@ def _synchronize(root: Path, git_directory: Path) -> None:
 
 def _head_commit(root: Path) -> str:
     """The full identifier of HEAD, read without changing the repository."""
-    result = git.run(root, "rev-parse", "--verify", "--quiet", "HEAD", read_only=True)
+    result = git.run(root, "rev-parse", "--verify", "--quiet", "HEAD", optional_locks=False)
     commit = result.stdout.strip()
     if result.returncode != 0 or not curation.is_commit_id(commit):
         raise KbError(f"{WHO}: cannot read HEAD")
@@ -680,7 +680,7 @@ def _commit_publication(
             "--all",
             f"--pathspec-from-file={pathspec}",
             "--pathspec-file-nul",
-            read_only=True,
+            optional_locks=False,
         )
         if staged.returncode != 0:
             detail = staged.stderr.rstrip("\n")
@@ -732,7 +732,7 @@ def _commit_publication(
             root, "write-tree", message="cannot snapshot the staged publication"
         ).strip()
         commit_attempted = True
-        commit_result = git.run(root, "commit", "-q", "-F", str(text), read_only=True)
+        commit_result = git.run(root, "commit", "-q", "-F", str(text), optional_locks=False)
         if commit_result.returncode != 0:
             detail = (commit_result.stderr or commit_result.stdout).rstrip("\n")
             raise KbError(f"{WHO}: commit failed: {detail}")
@@ -772,7 +772,7 @@ def _publication_commit_outcome(
 ) -> tuple[str, str | None, str]:
     """Confirm the expected publication commit, a failed attempt, or an uncertain state."""
     try:
-        head_result = git.run(root, "rev-parse", "--verify", "HEAD", read_only=True)
+        head_result = git.run(root, "rev-parse", "--verify", "HEAD", optional_locks=False)
         if head_result.returncode != 0 or not head_result.stdout.strip():
             detail = head_result.stderr.rstrip("\n") or "cannot inspect HEAD"
             return "unknown", None, detail
@@ -780,7 +780,7 @@ def _publication_commit_outcome(
         if head == previous_head:
             return "failed", None, "HEAD is unchanged"
 
-        metadata = git.run(root, "show", "-s", "--format=%P%x00%s", head, read_only=True)
+        metadata = git.run(root, "show", "-s", "--format=%P%x00%s", head, optional_locks=False)
         if metadata.returncode != 0:
             detail = metadata.stderr.rstrip("\n") or "cannot inspect the new commit"
             return "unknown", None, detail
@@ -790,16 +790,16 @@ def _publication_commit_outcome(
         if fields[0].split() != [previous_head] or fields[1] != subject:
             return "unknown", None, "HEAD changed but does not identify this publication commit"
 
-        tree = git.run(root, "rev-parse", "--verify", f"{head}^{{tree}}", read_only=True)
+        tree = git.run(root, "rev-parse", "--verify", f"{head}^{{tree}}", optional_locks=False)
         if tree.returncode != 0 or tree.stdout.strip() != expected_tree:
             detail = tree.stderr.rstrip("\n") or "the new commit tree differs from the staged set"
             return "unknown", None, detail
-        index = git.run(root, "write-tree", read_only=True)
+        index = git.run(root, "write-tree", optional_locks=False)
         if index.returncode != 0 or index.stdout.strip() != expected_tree:
             detail = index.stderr.rstrip("\n") or "the index differs from the staged set"
             return "unknown", None, detail
         status = git.run(
-            root, "status", "--porcelain=v1", "-z", "--untracked-files=all", read_only=True
+            root, "status", "--porcelain=v1", "-z", "--untracked-files=all", optional_locks=False
         )
         if status.returncode != 0 or status.stdout:
             detail = (
@@ -822,7 +822,7 @@ def _unstage(root: Path, git_directory: Path, paths: Sequence[str]) -> None:
             "-q",
             f"--pathspec-from-file={pathspec}",
             "--pathspec-file-nul",
-            read_only=True,
+            optional_locks=False,
         )
     finally:
         pathspec.unlink(missing_ok=True)
@@ -864,7 +864,14 @@ def _committed_batch(root: Path, batch: curation.Batch) -> str | None:
     if batch.base_commit is not None and _is_ancestor(root, batch.base_commit, "HEAD"):
         revision = f"{batch.base_commit}..HEAD"
     result = git.run(
-        root, "log", "--diff-filter=A", "--format=%H", revision, "--", relative, read_only=True
+        root,
+        "log",
+        "--diff-filter=A",
+        "--format=%H",
+        revision,
+        "--",
+        relative,
+        optional_locks=False,
     )
     if result.returncode != 0:
         return None
@@ -884,12 +891,12 @@ def _publication_line(root: Path, batch: curation.Batch) -> str:
 
 
 def _branch(root: Path) -> str | None:
-    result = git.run(root, "symbolic-ref", "--quiet", "--short", "HEAD", read_only=True)
+    result = git.run(root, "symbolic-ref", "--quiet", "--short", "HEAD", optional_locks=False)
     return result.stdout.strip() if result.returncode == 0 else None
 
 
 def _has_origin(root: Path) -> bool:
-    return git.run(root, "remote", "get-url", "origin", read_only=True).returncode == 0
+    return git.run(root, "remote", "get-url", "origin", optional_locks=False).returncode == 0
 
 
 def _is_published(root: Path, commit: str, branch: str) -> bool:
@@ -898,12 +905,14 @@ def _is_published(root: Path, commit: str, branch: str) -> bool:
 
 
 def _is_ancestor(root: Path, ancestor: str, descendant: str) -> bool:
-    result = git.run(root, "merge-base", "--is-ancestor", ancestor, descendant, read_only=True)
+    result = git.run(
+        root, "merge-base", "--is-ancestor", ancestor, descendant, optional_locks=False
+    )
     return result.returncode == 0
 
 
 def _git_output(root: Path, *words: str, message: str) -> str:
-    result = git.run(root, *words, read_only=True)
+    result = git.run(root, *words, optional_locks=False)
     if result.returncode != 0:
         detail = result.stderr.rstrip("\n")
         raise KbError(f"{WHO}: {message}" + (f": {detail}" if detail else ""))
@@ -1672,7 +1681,7 @@ def _related_stale(
 def _require_clean_tree(root: Path) -> None:
     """Refuse selection when the index or worktree contains non-lock changes."""
     result = git.run_bytes(
-        root, "status", "--porcelain=v1", "-z", "--untracked-files=all", read_only=True
+        root, "status", "--porcelain=v1", "-z", "--untracked-files=all", optional_locks=False
     )
     if result.returncode != 0:
         detail = result.stderr.decode("utf-8", errors="replace").strip()

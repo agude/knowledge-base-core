@@ -135,23 +135,32 @@ def _config(context: Context) -> tuple[Check, Path | None]:
 
 def _content(root: Path) -> Check:
     """The Git state of the content root: repository, branch, origin, worktree, and origin."""
-    top = git.run(root, "rev-parse", "--show-toplevel", read_only=True)
+    top = git.run(root, "rev-parse", "--show-toplevel", optional_locks=False)
     repo = top.returncode == 0 and Path(top.stdout.strip()).resolve() == root.resolve()
     if not repo:
         return diagnosis.content_check(False, None, False, 0, False, None, None)
-    branch_result = git.run(root, "symbolic-ref", "--quiet", "--short", "HEAD", read_only=True)
+    branch_result = git.run(
+        root, "symbolic-ref", "--quiet", "--short", "HEAD", optional_locks=False
+    )
     branch = branch_result.stdout.strip() if branch_result.returncode == 0 else None
-    origin = git.run(root, "remote", "get-url", "origin", read_only=True).returncode == 0
+    origin = git.run(root, "remote", "get-url", "origin", optional_locks=False).returncode == 0
     dirty = _dirty_count(root)
     fetched, ahead, behind = False, None, None
     if branch is not None:
         remote_ref = f"refs/remotes/origin/{branch}"
         if (
-            git.run(root, "show-ref", "--verify", "--quiet", remote_ref, read_only=True).returncode
+            git.run(
+                root, "show-ref", "--verify", "--quiet", remote_ref, optional_locks=False
+            ).returncode
             == 0
         ):
             counts = git.run(
-                root, "rev-list", "--left-right", "--count", f"HEAD...{remote_ref}", read_only=True
+                root,
+                "rev-list",
+                "--left-right",
+                "--count",
+                f"HEAD...{remote_ref}",
+                optional_locks=False,
             )
             values = counts.stdout.split()
             if counts.returncode == 0 and len(values) == 2 and all(v.isdigit() for v in values):
@@ -163,7 +172,7 @@ def _content(root: Path) -> Check:
 def _dirty_count(root: Path) -> int:
     """The changed or untracked paths in the worktree."""
     result = git.run(
-        root, "status", "--porcelain=v1", "-z", "--untracked-files=all", read_only=True
+        root, "status", "--porcelain=v1", "-z", "--untracked-files=all", optional_locks=False
     )
     if result.returncode != 0:
         raise KbError(f"cannot inspect working tree: {result.stderr.rstrip()}")
@@ -172,7 +181,7 @@ def _dirty_count(root: Path) -> int:
 
 def _gitattributes(root: Path) -> Check:
     """The text and eol attributes that Git resolves for a path in the content root."""
-    result = git.run(root, "check-attr", "text", "eol", "--", "probe.md", read_only=True)
+    result = git.run(root, "check-attr", "text", "eol", "--", "probe.md", optional_locks=False)
     if result.returncode != 0:
         raise KbError(f"cannot read attributes: {result.stderr.rstrip()}")
     values: dict[str, str] = {}
@@ -188,7 +197,7 @@ def _gitattributes(root: Path) -> Check:
 def _hook(root: Path) -> Check:
     """The pre-commit hook at Git's hooks path: its kind, whether it is kb's, and its kb."""
     result = git.run(
-        root, "rev-parse", "--path-format=absolute", "--git-path", "hooks", read_only=True
+        root, "rev-parse", "--path-format=absolute", "--git-path", "hooks", optional_locks=False
     )
     if result.returncode != 0:
         raise KbError(f"cannot locate the hooks directory: {result.stderr.rstrip()}")
@@ -227,7 +236,7 @@ def _kb_problem(script: bytes) -> str | None:
 def _sync(root: Path, context: Context) -> Check:
     """The sync outcome record in the common Git directory."""
     common = git.run(
-        root, "rev-parse", "--path-format=absolute", "--git-common-dir", read_only=True
+        root, "rev-parse", "--path-format=absolute", "--git-common-dir", optional_locks=False
     )
     if common.returncode != 0:
         raise KbError(f"cannot locate the Git directory: {common.stderr.rstrip()}")

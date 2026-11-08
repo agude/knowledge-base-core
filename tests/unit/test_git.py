@@ -45,15 +45,15 @@ def test_run_bytes_keeps_crlf_bytes(tmp_path: Path) -> None:
     assert git.run_bytes(root, "show", "HEAD:f.txt").stdout == b"a\r\nb\r\n"
 
 
-def test_read_only_sets_optional_locks_without_changing_os_environ(tmp_path: Path) -> None:
+def test_disabling_optional_locks_leaves_os_environ_unchanged(tmp_path: Path) -> None:
     root = make_repo(tmp_path / "repo")
 
-    read_only = git._environment(True)
-    assert read_only is not None
-    assert read_only["GIT_OPTIONAL_LOCKS"] == "0"
-    assert git._environment(False) is None
+    environment = git._environment(False)
+    assert environment is not None
+    assert environment["GIT_OPTIONAL_LOCKS"] == "0"
+    assert git._environment(True) is None
     assert "GIT_OPTIONAL_LOCKS" not in os.environ
-    assert git.run(root, "status", "--porcelain", read_only=True).returncode == 0
+    assert git.run(root, "status", "--porcelain", optional_locks=False).returncode == 0
     assert "GIT_OPTIONAL_LOCKS" not in os.environ
 
 

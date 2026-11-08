@@ -45,18 +45,18 @@ def read_head(
     root: Path,
     *,
     allow_unborn: bool,
-    read_only: bool = False,
+    optional_locks: bool = True,
     fallback: str = "Git did not return HEAD",
 ) -> tuple[str | None, str | None]:
     """Read HEAD, recognizing an unborn branch only when its named reference is absent.
 
     Returns (head, None), (None, None) for an unborn branch, or (None, error text).
     """
-    result = git.run(root, "rev-parse", "--verify", "HEAD", read_only=read_only)
+    result = git.run(root, "rev-parse", "--verify", "HEAD", optional_locks=optional_locks)
     if result.returncode == 0 and result.stdout.strip():
         return result.stdout.strip(), None
     if allow_unborn:
-        symbolic = git.run(root, "symbolic-ref", "-q", "HEAD", read_only=read_only)
+        symbolic = git.run(root, "symbolic-ref", "-q", "HEAD", optional_locks=optional_locks)
         if symbolic.returncode == 0 and symbolic.stdout.strip():
             reference = git.run(
                 root,
@@ -64,7 +64,7 @@ def read_head(
                 "--verify",
                 "--quiet",
                 symbolic.stdout.strip(),
-                read_only=read_only,
+                optional_locks=optional_locks,
             )
             if reference.returncode == 1:
                 return None, None
@@ -119,13 +119,13 @@ def identify(
     subject: str,
     *,
     allow_unborn: bool,
-    read_only: bool = False,
+    optional_locks: bool = True,
     commit_name: str = "this transaction's commit",
     head_fallback: str = "Git did not return HEAD",
 ) -> Inspection:
     """Whether HEAD moved to one new commit with this subject on the saved HEAD."""
     head, error = read_head(
-        root, allow_unborn=allow_unborn, read_only=read_only, fallback=head_fallback
+        root, allow_unborn=allow_unborn, optional_locks=optional_locks, fallback=head_fallback
     )
     if error is not None:
         return Inspection("unknown", None, error)
@@ -133,7 +133,7 @@ def identify(
         return Inspection("failed", None, "HEAD is unchanged")
     assert head is not None
 
-    metadata = git.run(root, "show", "-s", "--format=%P%x00%s", head, read_only=read_only)
+    metadata = git.run(root, "show", "-s", "--format=%P%x00%s", head, optional_locks=optional_locks)
     if metadata.returncode != 0:
         return Inspection(
             "unknown", None, _detail(metadata.stderr, "cannot inspect the new commit")
@@ -200,16 +200,16 @@ def prove_tree(root: Path, inspection: Inspection, expected_tree: str) -> Inspec
         return inspection
     head = inspection.head
     assert head is not None
-    tree = git.run(root, "rev-parse", "--verify", f"{head}^{{tree}}", read_only=True)
+    tree = git.run(root, "rev-parse", "--verify", f"{head}^{{tree}}", optional_locks=False)
     if tree.returncode != 0 or tree.stdout.strip() != expected_tree:
         detail = tree.stderr.rstrip("\n") or "the new commit tree differs from the staged set"
         return Inspection("unknown", None, detail)
-    index = git.run(root, "write-tree", read_only=True)
+    index = git.run(root, "write-tree", optional_locks=False)
     if index.returncode != 0 or index.stdout.strip() != expected_tree:
         detail = index.stderr.rstrip("\n") or "the index differs from the staged set"
         return Inspection("unknown", None, detail)
     status = git.run(
-        root, "status", "--porcelain=v1", "-z", "--untracked-files=all", read_only=True
+        root, "status", "--porcelain=v1", "-z", "--untracked-files=all", optional_locks=False
     )
     if status.returncode != 0 or status.stdout:
         detail = status.stderr.rstrip("\n") or "the worktree differs from the committed publication"

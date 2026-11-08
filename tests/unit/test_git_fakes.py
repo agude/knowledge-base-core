@@ -71,11 +71,11 @@ def test_calls_records_matched_and_unmatched_calls(
     fake = git_fakes.install(monkeypatch)
     fake.on(("commit",), git_fakes.completed(1))
 
-    git.run(root, "commit", "-q", read_only=True)
+    git.run(root, "commit", "-q", optional_locks=False)
     git.run_bytes(root, "status", "--porcelain")
 
     assert fake.calls == [("commit", "-q"), ("status", "--porcelain")]
-    assert fake.keywords == [{"read_only": True}, {}]
+    assert fake.keywords == [{"optional_locks": False}, {}]
 
 
 def test_a_responder_can_alter_a_real_result(
