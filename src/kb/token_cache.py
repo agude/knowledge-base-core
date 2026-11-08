@@ -25,7 +25,7 @@ from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Literal
 
-from kb import addressing, chunks, corpus, evidence, lock, model, search
+from kb import addressing, chunks, corpus, evidence, git, lock, model, search
 from kb.entries import Entry, PartTokens
 
 FORMAT = 4
@@ -161,14 +161,7 @@ def _location(root: Path) -> tuple[Path | None, bool]:
 def _git(root: Path, *words: str) -> subprocess.CompletedProcess[str] | None:
     """Run one read-only git command in root, or None when git cannot run."""
     try:
-        return subprocess.run(
-            ["git", *words],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            check=False,
-        )
+        return git.run(root, *words)
     except OSError:
         return None
 

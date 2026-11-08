@@ -353,7 +353,14 @@ def test_next_is_read_only_and_does_not_call_git_lock_or_network(
 
     monkeypatch.setattr(curate, "load", lambda *_args: context)
     monkeypatch.setattr(curate, "_read_batch", lambda *_args: batch)
-    git_fakes.install(monkeypatch).responders.append(lambda *_args: unexpected())
+
+    def unexpected_git(_root: Path, words: tuple[str, ...]) -> None:
+        # The token cache locates itself with these two probes, outside curate.
+        if words[:2] == ("rev-parse", "--show-toplevel") or words[:1] == ("check-ignore",):
+            return
+        unexpected()
+
+    git_fakes.install(monkeypatch).responders.append(unexpected_git)
     monkeypatch.setattr(lock, "write_lock", unexpected)
     monkeypatch.setattr(secrets, "findings", unexpected)
     monkeypatch.setattr(socket, "create_connection", unexpected)

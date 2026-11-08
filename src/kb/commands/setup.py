@@ -16,7 +16,7 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC
 from pathlib import Path
 
-from kb import __version__, args, config, dates, lock, scratch, setup_rules, skills
+from kb import __version__, args, config, dates, git, lock, scratch, setup_rules, skills
 from kb.args import Spec
 from kb.errors import KbError
 from kb.platform import config_file
@@ -265,14 +265,7 @@ def _publish(target: Path, origin: str, failures: list[str]) -> None:
 
 def _git_ok(root: Path, *words: str) -> None:
     """Run one git command in root, or raise KbError with its error output."""
-    result = subprocess.run(
-        ["git", *words],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
+    result = git.run(root, *words)
     if result.returncode != 0:
         detail = result.stderr.rstrip("\n")
         raise KbError(f"git {words[0]} failed: {detail}")
@@ -420,14 +413,7 @@ def _check_version(path: str) -> None:
 
 def _hook_file(root: Path) -> Path:
     """The pre-commit hook path that Git uses for the repository, which honors core.hooksPath."""
-    result = subprocess.run(
-        ["git", "rev-parse", "--path-format=absolute", "--git-path", "hooks"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
+    result = git.run(root, "rev-parse", "--path-format=absolute", "--git-path", "hooks")
     if result.returncode != 0:
         raise KbError(f"cannot locate the hooks directory of {root}")
     return Path(result.stdout.removesuffix("\n")) / "pre-commit"
