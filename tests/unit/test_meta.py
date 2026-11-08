@@ -132,7 +132,16 @@ def test_an_invalid_timestamp_reads_as_none(field: str) -> None:
 
 @pytest.mark.parametrize(
     ("part", "expected"),
-    [("2", 2), ("0", 0), ("-1", None), ("1.5", None), ("٣", None), ("two", None), ("", None)],
+    [
+        ("2", 2),
+        ("0", 0),
+        ("-1", None),
+        ("1.5", None),
+        ("٣", None),
+        ("two", None),
+        ("", None),
+        pytest.param("9" * 5000, None, id="oversized"),
+    ],
 )
 def test_part_reads_as_ascii_digits_only(part: str, expected: int | None) -> None:
     assert transcript(f"---\npart: {part}\n---\n").part == expected

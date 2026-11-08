@@ -72,6 +72,21 @@ def test_message_sections_normalize_timestamps_and_ignore_fenced_headings() -> N
         (TRANSCRIPT_FRONT.replace('first_message: "message-1"\n', ""), MESSAGE_HEADINGS),
         (TRANSCRIPT_FRONT.replace('last_message: "message-2"\n', ""), MESSAGE_HEADINGS),
         (TRANSCRIPT_FRONT.replace("part: 1\n", "part: 0\n"), MESSAGE_HEADINGS),
+        pytest.param(
+            TRANSCRIPT_FRONT.replace("part: 1\n", f"part: {'9' * 5000}\n"),
+            MESSAGE_HEADINGS,
+            id="oversized-part",
+        ),
+        pytest.param(
+            f"part: {'9' * 5000}\n",
+            MESSAGE_HEADINGS,
+            id="non-transcript-with-oversized-part",
+        ),
+        pytest.param(
+            TRANSCRIPT_FRONT,
+            (f"{'9' * 5000}. user, 2026-10-20T00:10:00Z", MESSAGE_HEADINGS[1]),
+            id="oversized-message-number",
+        ),
         (
             TRANSCRIPT_FRONT.replace(
                 "started: 2026-10-20T00:00:00Z", "started: 2026-10-20T00:00:00"

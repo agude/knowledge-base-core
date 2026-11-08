@@ -131,16 +131,13 @@ class TranscriptMeta:
     @classmethod
     def read(cls, document: Document) -> "TranscriptMeta":
         """Convert the front matter of a parsed observation."""
-        part_text = document.scalar("part")
         message_ids = document.front.get("message_ids")
         return cls(
             source=document.scalar("source"),
             host=document.scalar("host"),
             app=_app(document.scalar("app")),
             session=document.scalar("session"),
-            part=int(part_text)
-            if part_text and part_text.isascii() and part_text.isdigit()
-            else None,
+            part=_part(document.scalar("part")),
             first_message=document.scalar("first_message"),
             last_message=document.scalar("last_message"),
             started=_timestamp(document.scalar("started")),
@@ -149,6 +146,16 @@ class TranscriptMeta:
             forked_from=document.scalar("forked_from"),
             message_ids=message_ids if isinstance(message_ids, tuple) else None,
         )
+
+
+def _part(value: str | None) -> int | None:
+    """An ASCII part number, or None when malformed or beyond Python's conversion limit."""
+    if not value or not value.isascii() or not value.isdigit():
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
 
 
 def _app(value: str | None) -> App | None:

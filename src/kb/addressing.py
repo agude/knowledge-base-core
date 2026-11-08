@@ -52,20 +52,15 @@ def message_sections(document: Document) -> tuple[MessageSection, ...] | None:
     found: list[MessageSection] = []
     for number, section in enumerate(sections, start=1):
         match = _MESSAGE_HEADING.fullmatch(section.heading)
-        if match is None or int(match.group(1)) != number:
+        if match is None or match.group(1).lstrip("0") != str(number):
             return None
-        timestamp = _timestamp(match.group(3))
+        timestamp = dates.parse_utc(match.group(3))
         if timestamp is None or not started <= timestamp <= ended:
             return None
         found.append(
             MessageSection(number=number, role=match.group(2), section=section, timestamp=timestamp)
         )
     return tuple(found)
-
-
-def _timestamp(value: str | None) -> datetime | None:
-    """A timezone-aware ISO timestamp normalized to UTC."""
-    return dates.parse_utc(value) if value else None
 
 
 def _nonempty(value: str | None) -> bool:

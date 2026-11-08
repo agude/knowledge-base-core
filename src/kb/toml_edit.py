@@ -14,12 +14,18 @@ def first_table_line(lines: list[str]) -> int:
     for index, line in enumerate(lines):
         if not strip_bom(line).lstrip().startswith("["):
             continue
-        try:
-            tomllib.loads(strip_bom("".join(lines[:index])))
-        except tomllib.TOMLDecodeError:
-            continue
-        return index
+        if is_statement_boundary(lines, index):
+            return index
     return len(lines)
+
+
+def is_statement_boundary(lines: list[str], index: int) -> bool:
+    """Whether a line starts outside any unfinished TOML string, array, or assignment."""
+    try:
+        tomllib.loads(strip_bom("".join(lines[:index])))
+    except tomllib.TOMLDecodeError:
+        return False
+    return True
 
 
 def insert_line(text: str, lines: list[str], index: int, assignment: str) -> str:

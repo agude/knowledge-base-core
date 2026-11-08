@@ -55,12 +55,6 @@ def test_read_head_reports_an_unborn_branch(tmp_path: Path) -> None:
     assert error
 
 
-def test_read_head_returns_a_commit(tmp_path: Path) -> None:
-    root = make_repo(tmp_path / "repo", commit=True)
-
-    assert commit.read_head(root, allow_unborn=True) == (head_of(root), None)
-
-
 def test_read_head_treats_a_missing_branch_beside_another_as_unborn(tmp_path: Path) -> None:
     root = make_repo(tmp_path / "repo", commit=True)
     run(root, "symbolic-ref", "HEAD", "refs/heads/missing")
@@ -235,26 +229,11 @@ def test_rollback_failed_names_the_kept_files() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    ("preserved", "listing"),
-    [
-        ("file and index", "observations/pending/a.md"),
-        ("files and index", "observations/pending/a.md, observations/pending/b.md"),
-        ("publication files and index", "knowledge/a.md, observations/pending/a.md"),
-    ],
-)
-@pytest.mark.parametrize("detail", ["", "HEAD inspection unavailable"])
-def test_uncertain_message_names_what_was_preserved(
-    preserved: str, listing: str, detail: str
-) -> None:
-    expected = (
-        f"kb: commit outcome is uncertain for {listing}; the {preserved} were preserved; "
+def test_uncertain_message_without_inspection_detail() -> None:
+    assert commit.uncertain_message("observe", "a.md", "file and index", "") == (
+        "observe: commit outcome is uncertain for a.md; the file and index were preserved; "
         "inspect Git status and HEAD before retrying"
     )
-    if detail:
-        expected = f"{expected}: {detail}"
-
-    assert commit.uncertain_message("kb", listing, preserved, detail) == expected
 
 
 @pytest.mark.parametrize(

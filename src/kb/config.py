@@ -104,18 +104,7 @@ def set_harvest_since(text: str, moment: datetime, config: Path) -> str:
         raise KbError(
             f"knowledge base: invalid config file {config}: harvest_since must be a top-level key"
         )
-    existing = before.get("harvest_since")
-    if existing is not None:
-        if (
-            not isinstance(existing, datetime)
-            or existing.tzinfo is None
-            or existing.utcoffset() is None
-        ):
-            raise KbError(
-                f"knowledge base: invalid config file {config}: "
-                "harvest_since must be a time-zone-aware TOML datetime"
-            )
-        # Existing cutoffs must also be representable when the reader uses them.
+    if before.get("harvest_since") is not None:
         parse_harvest_since(text, config)
         return text
     if moment.tzinfo is None or moment.utcoffset() is None:

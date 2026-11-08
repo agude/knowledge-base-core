@@ -158,3 +158,16 @@ def test_a_content_line_after_a_nested_array_is_replaced() -> None:
     edited = setup_rules.set_content(text, ROOT)
 
     assert edited == f'{NESTED_ARRAY}content = "{ROOT}"\n[t]\na = 1\n'
+
+
+@pytest.mark.parametrize("delimiter", ['"""', "'''"])
+@pytest.mark.parametrize("existing", ["", 'content = "/old"\n'])
+def test_a_content_assignment_inside_a_multiline_string_is_preserved(
+    delimiter: str, existing: str
+) -> None:
+    prefix = f'example = {delimiter}\ncontent = "/example"\n{delimiter}\n'
+    text = f"{prefix}{existing}[t]\na = 1\n"
+
+    edited = setup_rules.set_content(text, ROOT)
+
+    assert edited == f'{prefix}content = "{ROOT}"\n[t]\na = 1\n'

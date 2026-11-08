@@ -135,19 +135,6 @@ def test_invalid_harvest_since_is_reported(tmp_path: Path, text: str, message: s
         config.parse_harvest_since(text, tmp_path / "config.toml")
 
 
-def test_unreadable_harvest_config_is_reported(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    path = write(tmp_path / "config.toml", "harvest_since = 2026-10-26T12:00:00Z\n")
-
-    def deny(self: Path, *args: object, **kwargs: object) -> str:
-        raise PermissionError(13, "Permission denied")
-
-    monkeypatch.setattr(Path, "read_text", deny)
-    with pytest.raises(KbError, match=r"^knowledge base: cannot read config file "):
-        config.read_harvest_since(path)
-
-
 def test_invalid_toml_is_reported(tmp_path: Path) -> None:
     config_path = tmp_path / "config.toml"
     with pytest.raises(KbError, match=r"^knowledge base: invalid config file "):

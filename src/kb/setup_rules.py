@@ -179,7 +179,9 @@ def _top_level_content_line(lines: list[str], limit: int) -> int | None:
     """The index of a single-line content assignment before the first table header, if any."""
     for index in range(limit):
         candidate = corpus.strip_bom(lines[index])
-        if CONTENT_LINE.fullmatch(candidate.rstrip("\r\n")):
+        if CONTENT_LINE.fullmatch(candidate.rstrip("\r\n")) and toml_edit.is_statement_boundary(
+            lines, index
+        ):
             return index
     return None
 
