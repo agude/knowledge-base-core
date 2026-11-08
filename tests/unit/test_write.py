@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from kb import write
+from kb import commit, write
 from kb.errors import KbError
 
 from . import git_fakes
@@ -36,7 +36,7 @@ def test_snapshot_refuses_a_committed_subdirectory_path(tmp_path: Path) -> None:
     before = git(root, "write-tree")
 
     with pytest.raises(KbError, match="existing HEAD path"):
-        write._commit_snapshot(nested, "record.md", "observe")
+        commit.save_new_files(nested, ("record.md",), "observe")
 
     assert path.read_text() == "committed\n"
     assert git(root, "write-tree") == before

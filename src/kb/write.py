@@ -3,7 +3,6 @@
 import os
 import sys
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -124,34 +123,3 @@ def _commit_error(command: str, stderr: str) -> KbError:
     return KbError(
         f"{command}: commit failed: {detail}" if detail else f"{command}: commit failed:"
     )
-
-
-# Removed in step A4.
-@dataclass(frozen=True)
-class CommitSnapshot:
-    """The content and HEAD state needed to identify this one-path commit."""
-
-    head: str | None
-    path: str
-    repository_path: str
-    content: bytes
-
-
-# Removed in step A4.
-def _commit_snapshot(root: Path, path: str, command: str) -> CommitSnapshot:
-    head, (saved,) = commit.save_new_files(root, (path,), command)
-    return CommitSnapshot(head, saved.path, saved.repository_path, saved.content)
-
-
-# Removed in step A4.
-def _commit_outcome(root: Path, snapshot: CommitSnapshot, subject: str) -> tuple[str, str]:
-    identified = commit.identify(root, snapshot.head, subject, allow_unborn=snapshot.head is None)
-    saved = commit.NewFile(snapshot.path, snapshot.repository_path, snapshot.content)
-    inspection = commit.prove_new_files(root, identified, (saved,))
-    return inspection.outcome, inspection.detail
-
-
-# Removed in step A4.
-def _unstage_paths(root: Path, paths: Sequence[str], command: str) -> str | None:
-    detail = commit.unstage(root, paths, method="remove")
-    return None if detail is None else commit.rollback_failed(command, paths, detail)

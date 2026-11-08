@@ -14,6 +14,7 @@ from pathlib import Path
 from kb import (
     __version__,
     args,
+    commit,
     config,
     dates,
     git,
@@ -27,7 +28,6 @@ from kb import (
     secrets,
     sync_state,
     token_cache,
-    write,
 )
 from kb.args import Spec
 from kb.config import content_root
@@ -56,6 +56,7 @@ ARCHIVED = "observations/archived"
 TMP = sync_state.TMP
 MAX_NAME_TRIES = 5
 REDACTION_PASSES = 3
+DISAGREEING_PATHS = "the paths do not agree on the commit outcome"
 SPEC = Spec(
     usage="sync [--status] [--no-push] [--dry-run]",
     summary=(
@@ -871,57 +872,54 @@ def _commit_observations(root: Path, paths: Sequence[str]) -> str | None:
     """Commit this run's paths, reconciling a reported or raised commit failure first."""
     subject = f"Observe: {len(paths)} session transcript(s)"
     try:
-        snapshots = tuple(write._commit_snapshot(root, path, "sync") for path in paths)
+        previous_head, files = commit.save_new_files(root, paths, "sync")
     except KbError as error:
         return f"sync: cannot save commit state: {error}"
+
+    def inspect() -> commit.Inspection:
+        """Count the batch as committed only when every file is proven in the new commit."""
+        return commit.inspect(
+            lambda: commit.prove_new_files(
+                root,
+                commit.identify(root, previous_head, subject, allow_unborn=previous_head is None),
+                files,
+            ),
+            fallback=DISAGREEING_PATHS,
+        )
 
     try:
         staged = git.run(root, "add", "--", *paths)
         if staged.returncode != 0:
             detail = staged.stderr.rstrip("\n")
-            outcome, reason = _observation_commit_outcome(root, snapshots, subject)
+            inspection = inspect()
             return _finish_failed_observation_commit(
-                root, paths, outcome, _observation_failure_detail(detail, reason, outcome)
+                root,
+                paths,
+                inspection.outcome,
+                _observation_failure_detail(detail, inspection.detail, inspection.outcome),
             )
 
         committed = git.run(root, "commit", "-q", "-m", subject, "--", *paths)
         if committed.returncode == 0:
             return None
         detail = committed.stderr.rstrip("\n")
-        outcome, reason = _observation_commit_outcome(root, snapshots, subject)
+        inspection = inspect()
         return _finish_failed_observation_commit(
-            root, paths, outcome, _observation_failure_detail(detail, reason, outcome)
+            root,
+            paths,
+            inspection.outcome,
+            _observation_failure_detail(detail, inspection.detail, inspection.outcome),
         )
     except BaseException as error:
-        outcome, detail = _observation_commit_outcome(root, snapshots, subject)
-        if outcome == "committed":
+        inspection = inspect()
+        if inspection.outcome == "committed":
             raise
-        if outcome == "unknown":
-            message = _uncertain_observation_commit(paths, detail)
-            raise KbError(message) from error
+        if inspection.outcome == "unknown":
+            raise KbError(_uncertain(paths, inspection.detail)) from error
         cleanup_error = _remove_paths(root, paths)
         if cleanup_error is not None:
             raise KbError(f"{cleanup_error}; original failure: {error}") from error
         raise
-
-
-def _observation_commit_outcome(
-    root: Path, snapshots: Sequence[write.CommitSnapshot], subject: str
-) -> tuple[str, str]:
-    """Classify the batch only when every path agrees with its saved transaction state."""
-    results: list[tuple[str, str]] = []
-    for snapshot in snapshots:
-        try:
-            results.append(write._commit_outcome(root, snapshot, subject))
-        except BaseException as error:
-            results.append(("unknown", str(error)))
-    outcomes = {outcome for outcome, _ in results}
-    if outcomes == {"committed"}:
-        return "committed", ""
-    if outcomes == {"failed"}:
-        return "failed", "HEAD is unchanged"
-    detail = next((detail for outcome, detail in results if outcome == "unknown" and detail), "")
-    return "unknown", detail or "the paths do not agree on the commit outcome"
 
 
 def _finish_failed_observation_commit(
@@ -931,7 +929,7 @@ def _finish_failed_observation_commit(
     if outcome == "committed":
         return None
     if outcome == "unknown":
-        return _uncertain_observation_commit(paths, detail)
+        return _uncertain(paths, detail)
     failure = f"sync: commit failed: {detail}" if detail else "sync: commit failed"
     cleanup_error = _remove_paths(root, paths)
     return f"{failure}; {cleanup_error}" if cleanup_error is not None else failure
@@ -946,21 +944,16 @@ def _observation_failure_detail(reported: str, inspection: str, outcome: str) ->
     return reported or inspection
 
 
-def _uncertain_observation_commit(paths: Sequence[str], detail: str) -> str:
+def _uncertain(paths: Sequence[str], detail: str) -> str:
     """Tell the operator which files were retained because Git's outcome is unclear."""
-    listed = ", ".join(paths)
-    message = (
-        f"sync: commit outcome is uncertain for {listed}; the files and index were preserved; "
-        "inspect Git status and HEAD before retrying"
-    )
-    return f"{message}: {detail}" if detail else message
+    return commit.uncertain_message("sync", ", ".join(paths), "files and index", detail)
 
 
 def _remove_paths(root: Path, paths: Sequence[str]) -> str | None:
     """Unstage all transaction paths before deleting any of their published files."""
-    error = write._unstage_paths(root, paths, "sync")
-    if error is not None:
-        return error
+    detail = commit.unstage(root, paths, method="remove")
+    if detail is not None:
+        return commit.rollback_failed("sync", paths, detail)
     failures: list[str] = []
     for relative in paths:
         try:
