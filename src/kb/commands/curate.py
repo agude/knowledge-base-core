@@ -10,7 +10,6 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
-from subprocess import CompletedProcess
 from typing import cast
 
 from kb import (
@@ -673,7 +672,7 @@ def _commit_publication(
     commit_attempted = False
     expected_tree = ""
     subject = ""
-    commit_result: CompletedProcess[str] | None = None
+    reported: str | None = None
     try:
         staged = git.run(
             root,
@@ -736,8 +735,8 @@ def _commit_publication(
         commit_attempted = True
         commit_result = git.run(root, "commit", "-q", "-F", str(text), optional_locks=False)
         if commit_result.returncode != 0:
-            detail = (commit_result.stderr or commit_result.stdout).rstrip("\n")
-            raise KbError(f"{WHO}: commit failed: {detail}")
+            reported = (commit_result.stderr or commit_result.stdout).rstrip("\n")
+            raise KbError(f"{WHO}: commit failed: {reported}")
         return _head_commit(root)
     except BaseException as error:
         if commit_attempted:
@@ -757,10 +756,9 @@ def _commit_publication(
                 )
             )
             if inspection.outcome == "committed":
-                if commit_result is not None and commit_result.returncode != 0:
+                if reported is not None:
                     assert inspection.head is not None
-                    detail = (commit_result.stderr or commit_result.stdout).rstrip("\n")
-                    sys.stderr.write(f"{WHO}: warning: {commit.committed_with_error(detail)}\n")
+                    sys.stderr.write(f"{WHO}: warning: {commit.committed_with_error(reported)}\n")
                     return inspection.head
                 raise
             if inspection.outcome == "unknown":
