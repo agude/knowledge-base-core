@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from kb import dates
+from kb.meta import TranscriptMeta
 from kb.model import Document, Section
 
 _MESSAGE_HEADING = re.compile(r"([0-9]+)\. (user|assistant), (.+)")
@@ -28,19 +29,19 @@ def message_sections(document: Document) -> tuple[MessageSection, ...] | None:
 
     H2 keys are numbered in order, so a section's key is the string of its number.
     """
-    if document.scalar("source") != "session-transcript":
+    metadata = TranscriptMeta.read(document)
+    if metadata.source != "session-transcript":
         return None
     if not all(
-        _nonempty(document.scalar(field)) for field in ("session", "first_message", "last_message")
+        _nonempty(value)
+        for value in (metadata.session, metadata.first_message, metadata.last_message)
     ):
         return None
-
-    part = document.scalar("part") or ""
-    if not part.isascii() or not part.isdigit() or int(part) < 1:
+    if metadata.part is None or metadata.part < 1:
         return None
 
-    started = _timestamp(document.scalar("started"))
-    ended = _timestamp(document.scalar("ended"))
+    started = metadata.started
+    ended = metadata.ended
     if started is None or ended is None or started > ended:
         return None
 

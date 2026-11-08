@@ -4,6 +4,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from kb.meta import TranscriptMeta
 from kb.transcripts import App, Message, Session
 
 IDLE_TIME = timedelta(minutes=60)
@@ -28,6 +29,24 @@ class HarvestRecord:
     created: datetime | None
     forked_from: str | None = None
     message_ids: tuple[str, ...] | None = None
+
+
+def record_from(meta: TranscriptMeta) -> HarvestRecord:
+    """The harvest record of a transcript observation's metadata."""
+    return HarvestRecord(
+        source=meta.source,
+        host=meta.host,
+        app=meta.app,
+        session=meta.session,
+        part=meta.part,
+        first_message=meta.first_message,
+        last_message=meta.last_message,
+        started=meta.started,
+        ended=meta.ended,
+        created=meta.created,
+        forked_from=meta.forked_from,
+        message_ids=meta.message_ids,
+    )
 
 
 @dataclass(frozen=True)

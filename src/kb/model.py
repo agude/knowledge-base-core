@@ -278,6 +278,37 @@ def parse(path: str, text: str) -> Document:
     )
 
 
+def parse_front_matter(path: str, text: str) -> Document:
+    """Parse only a file's front matter. The front matter fields equal parse()'s.
+
+    The body is not scanned: it has no headings, sections, fences, or metadata comments.
+    Use it to read front matter fields from many files cheaply.
+    """
+    lines = _split_lines(text)
+    front, body_start, front_fields, front_matter_span, opened, closed = _front_matter(lines)
+    return Document(
+        path=path,
+        lines=tuple(lines),
+        front=front,
+        front_fields=front_fields,
+        front_matter_span=front_matter_span,
+        front_matter_opened=opened,
+        front_matter_closed=closed,
+        body_start=body_start,
+        top_end=len(lines),
+        top_headings=(),
+        h1=None,
+        h1_positions=(),
+        fenced_lines=frozenset(),
+        unclosed_fence_start=None,
+        sections=(),
+        metadata_comments=(),
+        metadata_diagnostics=(),
+        heading_lines=frozenset(),
+        comment_lines=frozenset(),
+    )
+
+
 def edit_front_matter(
     text: str,
     name: str,

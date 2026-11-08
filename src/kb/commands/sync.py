@@ -21,6 +21,7 @@ from kb import (
     git_paths,
     harvest,
     lock,
+    meta,
     model,
     observation,
     remote,
@@ -49,7 +50,7 @@ from kb.transcript_observation import (
 from kb.transcript_observation import (
     validate as validate_observation,
 )
-from kb.transcripts import App, Session, parse_timestamp
+from kb.transcripts import App, Session
 
 PENDING = "observations/pending"
 ARCHIVED = "observations/archived"
@@ -558,8 +559,10 @@ def _head_records(root: Path) -> tuple[harvest.HarvestRecord, ...]:
             text = content.decode("utf-8")
         except UnicodeDecodeError:
             continue
-        document = model.parse(relative, text)
-        record = _record_from_document(document)
+        front = model.parse_front_matter(relative, text)
+        if front.scalar("source") != "session-transcript" or front.scalar("host") is None:
+            continue
+        record = _record_from_document(model.parse(relative, text))
         if record is not None:
             records.append(record)
     return tuple(records)
@@ -567,48 +570,21 @@ def _head_records(root: Path) -> tuple[harvest.HarvestRecord, ...]:
 
 def _record_from_document(document: model.Document) -> harvest.HarvestRecord | None:
     """Extract an observation state record when the relevant fields have supported shapes."""
-    source = document.scalar("source")
-    host = document.scalar("host")
-    if source != "session-transcript" or host is None:
+    metadata = meta.TranscriptMeta.read(document)
+    if metadata.source != "session-transcript" or metadata.host is None:
         return None
-    app_value = document.scalar("app")
-    if app_value == "claude-code":
-        app: App | None = "claude-code"
-    elif app_value == "codex":
-        app = "codex"
-    elif app_value == "goose":
-        app = "goose"
-    else:
-        app = None
-    session_id = document.scalar("session")
-    part_text = document.scalar("part")
-    part = int(part_text) if part_text and part_text.isascii() and part_text.isdigit() else None
     message_ids = document.front.get("message_ids")
     if message_ids is not None and (
         not isinstance(message_ids, tuple)
         or not message_ids
         or not all(message_ids)
         or len(set(message_ids)) != len(message_ids)
-        or message_ids[0] != document.scalar("first_message")
-        or message_ids[-1] != document.scalar("last_message")
+        or message_ids[0] != metadata.first_message
+        or message_ids[-1] != metadata.last_message
         or len(message_ids) != sum(section.level == 2 for section in document.sections)
     ):
         raise KbError(f"sync: invalid message_ids in committed observation {document.path}")
-    assert message_ids is None or isinstance(message_ids, tuple)
-    return harvest.HarvestRecord(
-        source=source,
-        host=host,
-        app=app,
-        session=session_id,
-        part=part,
-        first_message=document.scalar("first_message"),
-        last_message=document.scalar("last_message"),
-        started=parse_timestamp(document.scalar("started")),
-        ended=parse_timestamp(document.scalar("ended")),
-        created=parse_timestamp(document.scalar("created")),
-        forked_from=document.scalar("forked_from"),
-        message_ids=message_ids,
-    )
+    return harvest.record_from(metadata)
 
 
 def _recover(root: Path, git_directory: Path, host: str) -> None:
