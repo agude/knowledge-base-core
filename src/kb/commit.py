@@ -225,26 +225,43 @@ def inspect(check: Callable[[], Inspection], *, fallback: str = INTERRUPTED) -> 
         return Inspection("unknown", None, str(error) or fallback)
 
 
-def unstage(root: Path, paths: Sequence[str]) -> str | None:
+def unstage(root: Path, paths: Sequence[str], *, method: Literal["remove", "reset"]) -> str | None:
     """Remove only these paths from the index, keeping worktree bytes. Returns Git's error text.
 
-    git reset unstages a new path on an unborn branch, after a hook changed it, and under a
-    temporary index, so one operation serves every writer.
+    "remove" serves new files: it changes the index only when a path is staged, so a locked
+    index with nothing staged is not a rollback failure, and it forces out a path a rejecting
+    hook changed. "reset" serves curate's edits, deletions, and renames, and always takes the
+    index lock.
     """
     if not paths:
         return None
-    result = git.run(
-        root,
-        "--literal-pathspecs",
-        "reset",
-        "-q",
-        "--pathspec-from-file=-",
-        "--pathspec-file-nul",
-        input_text="".join(f"{path}\0" for path in paths),
-    )
+    if method == "remove":
+        result = git.run(root, "ls-files", "-z", "--", *paths)
+        if result.returncode == 0 and result.stdout:
+            result = git.run(root, "rm", "-q", "-f", "--cached", "--ignore-unmatch", "--", *paths)
+    else:
+        result = git.run(
+            root,
+            "--literal-pathspecs",
+            "reset",
+            "-q",
+            "--pathspec-from-file=-",
+            "--pathspec-file-nul",
+            input_text="".join(f"{path}\0" for path in paths),
+        )
     if result.returncode == 0:
         return None
     return result.stderr.rstrip("\n")
+
+
+def rollback_failed(command: str, paths: Sequence[str], detail: str) -> str:
+    """The report for new files kept because unstaging them failed."""
+    listed = ", ".join(paths)
+    message = (
+        f"{command}: rollback failed for {listed}; files were preserved; "
+        "inspect Git status before retrying"
+    )
+    return f"{message}: {detail}" if detail else message
 
 
 def uncertain_message(command: str, listing: str, preserved: str, detail: str) -> str:

@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
@@ -233,26 +234,48 @@ def test_save_new_files_refuses_a_path_already_in_head(tmp_path: Path) -> None:
         commit.save_new_files(root, ["seed.md"], "observe")
 
 
-def test_unstage_removes_only_the_named_paths(tmp_path: Path) -> None:
+@pytest.mark.parametrize("method", ["remove", "reset"])
+def test_unstage_removes_only_the_named_paths(
+    tmp_path: Path, method: Literal["remove", "reset"]
+) -> None:
     root = make_repo(tmp_path / "repo", commit=True)
     for name in ("new.md", "keep.md"):
         (root / name).write_text(f"{name}\n", encoding="utf-8")
         run(root, "add", "--", name)
 
-    assert commit.unstage(root, ["new.md"]) is None
+    assert commit.unstage(root, ["new.md"], method=method) is None
 
     assert run(root, "diff", "--cached", "--name-only") == "keep.md\n"
     assert (root / "new.md").read_text(encoding="utf-8") == "new.md\n"
 
 
-def test_unstage_returns_git_error_text(tmp_path: Path) -> None:
+def test_remove_leaves_a_locked_index_alone_when_nothing_is_staged(tmp_path: Path) -> None:
+    root = make_repo(tmp_path / "repo", commit=True)
+    (root / "new.md").write_text("new\n", encoding="utf-8")
+    (root / ".git" / "index.lock").write_text("", encoding="utf-8")
+
+    assert commit.unstage(root, ["new.md"], method="remove") is None
+
+
+def test_reset_reports_a_locked_index(tmp_path: Path) -> None:
     root = make_repo(tmp_path / "repo", commit=True)
     (root / ".git" / "index.lock").write_text("", encoding="utf-8")
 
-    error = commit.unstage(root, ["seed.md"])
+    error = commit.unstage(root, ["seed.md"], method="reset")
 
     assert error is not None
     assert "index.lock" in error
+
+
+def test_rollback_failed_names_the_kept_files() -> None:
+    assert commit.rollback_failed("sync", ["a.md", "b.md"], "index unavailable") == (
+        "sync: rollback failed for a.md, b.md; files were preserved; inspect Git status "
+        "before retrying: index unavailable"
+    )
+    assert commit.rollback_failed("observe", ["a.md"], "") == (
+        "observe: rollback failed for a.md; files were preserved; inspect Git status "
+        "before retrying"
+    )
 
 
 @pytest.mark.parametrize(

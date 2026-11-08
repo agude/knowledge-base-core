@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Protocol
 
-from kb import corpus, git, git_paths
+from kb import commit, corpus, git, git_paths
 from kb.errors import KbError
 
 
@@ -119,16 +119,11 @@ def read_index(root: Path) -> GitFiles:
 
 def read_head(root: Path, command: str) -> GitFiles:
     """Read the committed baseline; an unborn branch has an empty snapshot."""
-    head = git.run_bytes(root, "rev-parse", "--verify", "-q", "HEAD")
-    if head.returncode:
-        branch = git.run_bytes(root, "symbolic-ref", "-q", "HEAD")
-        if branch.returncode == 0:
-            reference = git.run_bytes(
-                root, "show-ref", "--verify", "--quiet", branch.stdout.decode().strip()
-            )
-            if reference.returncode == 1:
-                return GitFiles(root, {})
+    head, error = commit.read_head(root, allow_unborn=True)
+    if error is not None:
         raise KbError(f"{command}: cannot read publication baseline HEAD")
+    if head is None:
+        return GitFiles(root, {})
     prefix = git_paths.repository_prefix(root, command)
     listing = git.run_bytes(
         root,
@@ -136,7 +131,7 @@ def read_head(root: Path, command: str) -> GitFiles:
         "-r",
         "-z",
         "--full-tree",
-        head.stdout.decode().strip(),
+        head,
         "--",
         prefix or ".",
     )
