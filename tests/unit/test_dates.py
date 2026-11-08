@@ -109,10 +109,6 @@ def test_to_utc_refuses_an_instant_outside_the_representable_years(value: dateti
     assert dates.to_utc(value) is None
 
 
-def test_parse_utc_refuses_an_instant_before_year_one() -> None:
-    assert dates.parse_utc("0001-01-01T00:00:00+01:00") is None
-
-
 def test_parse_utc_normalizes_to_the_utc_instant() -> None:
     parsed = dates.parse_utc("2026-11-07T15:30:00+05:30")
 

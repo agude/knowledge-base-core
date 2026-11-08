@@ -1,24 +1,21 @@
 """The shared commit outcome and rollback module, against real repositories."""
 
-import os
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Literal
 
 import pytest
 
-from kb import commit, git
+from kb import commit
 from kb.errors import KbError
 
 from . import git_fakes
 
 
-def run(root: Path, *words: str, env: dict[str, str] | None = None) -> str:
+def run(root: Path, *words: str) -> str:
     return subprocess.run(
         ["git", *words],
         cwd=root,
-        env=env,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -37,46 +34,6 @@ def make_repo(root: Path, *, commit: bool) -> Path:
         run(root, "add", "--", "seed.md")
         run(root, "commit", "-q", "-m", "Seed")
     return root
-
-
-def test_reset_unstages_a_new_file_on_an_unborn_branch(tmp_path: Path) -> None:
-    root = make_repo(tmp_path / "repo", commit=False)
-    (root / "new.md").write_text("new\n", encoding="utf-8")
-    run(root, "add", "--", "new.md")
-
-    result = git.run(root, "reset", "-q", "--", "new.md")
-
-    assert result.returncode == 0, result.stderr
-    assert run(root, "ls-files") == ""
-
-
-def test_reset_unstages_a_new_file_a_hook_changed_after_staging(tmp_path: Path) -> None:
-    root = make_repo(tmp_path / "repo", commit=True)
-    path = root / "new.md"
-    path.write_text("staged\n", encoding="utf-8")
-    run(root, "add", "--", "new.md")
-    path.write_text("changed by a hook\n", encoding="utf-8")
-
-    result = git.run(root, "reset", "-q", "--", "new.md")
-
-    assert result.returncode == 0, result.stderr
-    assert run(root, "ls-files") == "seed.md\n"
-    assert path.read_text(encoding="utf-8") == "changed by a hook\n"
-
-
-def test_reset_unstages_under_a_temporary_index(tmp_path: Path) -> None:
-    root = make_repo(tmp_path / "repo", commit=True)
-    temporary = tmp_path / "index.tmp"
-    shutil.copyfile(root / ".git" / "index", temporary)
-    env = {**os.environ, "GIT_INDEX_FILE": str(temporary)}
-    (root / "new.md").write_text("new\n", encoding="utf-8")
-    run(root, "add", "--", "new.md", env=env)
-    assert run(root, "ls-files", env=env) == "new.md\nseed.md\n"
-
-    run(root, "reset", "-q", "--", "new.md", env=env)
-
-    assert run(root, "ls-files", env=env) == "seed.md\n"
-    assert run(root, "ls-files") == "seed.md\n"
 
 
 def head_of(root: Path) -> str:

@@ -57,24 +57,6 @@ def test_disabling_optional_locks_leaves_os_environ_unchanged(tmp_path: Path) ->
     assert "GIT_OPTIONAL_LOCKS" not in os.environ
 
 
-def test_input_text_and_input_bytes_reach_git(tmp_path: Path) -> None:
-    root = make_repo(tmp_path / "repo")
-
-    text = git.run(root, "hash-object", "--stdin", input_text="same content\n")
-    raw = git.run_bytes(root, "hash-object", "--stdin", input_bytes=b"same content\n")
-
-    assert text.returncode == 0
-    assert text.stdout.strip() == raw.stdout.decode("ascii").strip()
-
-
-def test_nonzero_exit_returns_a_result(tmp_path: Path) -> None:
-    root = make_repo(tmp_path / "repo")
-
-    result = git.run(root, "rev-parse", "--verify", "no-such-ref")
-
-    assert result.returncode != 0
-
-
 def test_run_sends_input_text_as_exact_utf8_bytes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

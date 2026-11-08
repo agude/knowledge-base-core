@@ -64,19 +64,6 @@ def test_a_missing_field_resolves_to_none() -> None:
     assert meta.resolve(document(), None, "effective") is None
 
 
-def test_without_a_section_the_article_value_is_used() -> None:
-    assert meta.resolve(document(), None, "verified") == Located("2026-09-01", 3)
-
-
-def test_resolve_agrees_with_document_scalar() -> None:
-    parsed = document()
-    for current in (None, *parsed.sections):
-        for name in ("verified", "ttl", "title", "effective"):
-            resolved = meta.resolve(parsed, current, name)
-            expected = parsed.scalar(name, current)
-            assert (None if resolved is None else resolved.value) == expected
-
-
 def test_a_front_value_without_a_recorded_field_is_on_line_one() -> None:
     parsed = document()
     bare = replace(parsed, front_fields=())

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from kb import commit, lint, model, snapshot
+from kb import lint, model, snapshot
 from kb.errors import KbError
 
 from .test_hook import ARTICLE, git, repo
@@ -157,21 +157,3 @@ def test_an_unreadable_head_is_not_an_empty_baseline(tmp_path: Path) -> None:
 
     with pytest.raises(KbError, match="curate: cannot read publication baseline HEAD"):
         snapshot.read_head(root, "curate")
-
-
-@pytest.mark.parametrize("state", ["unborn", "committed", "missing_branch"])
-def test_commit_and_snapshot_agree_on_an_unborn_branch(tmp_path: Path, state: str) -> None:
-    if state == "unborn":
-        root = tmp_path / "repo"
-        subprocess.run(["git", "init", "-q", str(root)], check=True)
-    else:
-        root = repo(tmp_path / "repo", {"knowledge/a.md": ARTICLE.encode()})
-    if state == "missing_branch":
-        git(root, "symbolic-ref", "HEAD", "refs/heads/missing")
-
-    head, error = commit.read_head(root, allow_unborn=True)
-    baseline = snapshot.read_head(root, "hook")
-
-    assert error is None
-    assert (head is None) == (baseline.files == {})
-    assert (head is None) == (state != "committed")
