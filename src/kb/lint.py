@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Literal
 
-from kb import corpus, links, locators, model, snapshot
+from kb import corpus, links, locators, meta, model, snapshot
 from kb.dates import parse_date
 from kb.freshness import ttl_days
 from kb.model import Document, Section
@@ -191,7 +191,7 @@ def check_document(document: Document, require_ttl: bool = False) -> list[Findin
 def _check_front_matter(document: Document, require_ttl: bool, findings: list[Finding]) -> None:
     for name in ("title", "updated", "verified"):
         value = document.front.get(name)
-        line = _front_field_line(document, name) or 1
+        line = model.front_field_line(document, name) or 1
         if not isinstance(value, str) or not value:
             _add(findings, document, line, "error", f"front matter missing {name}")
         elif name != "title" and parse_date(value) is None:
@@ -202,7 +202,7 @@ def _check_front_matter(document: Document, require_ttl: bool, findings: list[Fi
         if require_ttl:
             _add(findings, document, 1, "error", "front matter missing ttl")
     elif not valid_ttl(ttl_value):
-        line = _front_field_line(document, "ttl") or 1
+        line = model.front_field_line(document, "ttl") or 1
         _add(
             findings,
             document,
@@ -275,16 +275,20 @@ def _check_section_values(document: Document, section: Section, findings: list[F
     for name in ("verified", "effective"):
         value = section.meta.get(name)
         if value is not None and parse_date(value) is None:
-            line = _section_field_line(section, name)
+            line = model.section_field_line(section, name)
             _add(findings, document, line, "error", f"invalid section {name} date")
     if "synced" in section.meta:
-        line = _section_field_line(section, "synced")
+        line = model.section_field_line(section, "synced")
         _add(findings, document, line, "error", "synced is a sources/ field; use verified")
 
     ttl_value = section.meta.get("ttl")
     if ttl_value is not None and not valid_ttl(ttl_value):
         _add(
-            findings, document, _section_field_line(section, "ttl"), "error", "invalid section ttl"
+            findings,
+            document,
+            model.section_field_line(section, "ttl"),
+            "error",
+            "invalid section ttl",
         )
 
     status = section.meta.get("status")
@@ -292,25 +296,27 @@ def _check_section_values(document: Document, section: Section, findings: list[F
         _add(
             findings,
             document,
-            _section_field_line(section, "status"),
+            model.section_field_line(section, "status"),
             "error",
             "invalid section status",
         )
 
 
 def _check_effective_date(document: Document, section: Section, findings: list[Finding]) -> None:
-    effective, effective_line = _inherited_value(document, section, "effective")
-    verified, _ = _inherited_verified(document, section)
-    effective_date = parse_date(effective or "")
-    verified_date = parse_date(verified or "")
+    effective = meta.resolve(document, section, "effective")
+    verified = meta.resolve(document, section, "verified")
+    if effective is None or verified is None:
+        return
+    effective_date = parse_date(effective.value)
+    verified_date = parse_date(verified.value)
     if effective_date is None or verified_date is None or effective_date <= verified_date:
         return
     _add(
         findings,
         document,
-        effective_line,
+        effective.line,
         "error",
-        f"effective date {effective} is after verified date {verified}",
+        f"effective date {effective.value} is after verified date {verified.value}",
     )
 
 
@@ -324,9 +330,9 @@ def _check_supersedes(
     target = section.meta.get("supersedes")
     if target is None:
         return
-    line = _section_field_line(section, "supersedes")
-    status, _ = _inherited_value(document, section, "status")
-    if status == "superseded":
+    line = model.section_field_line(section, "supersedes")
+    status = meta.resolve(document, section, "status")
+    if status is not None and status.value == "superseded":
         _add(
             findings,
             document,
@@ -381,36 +387,6 @@ def _check_supersedes_cycles(
             current = edges[current][0]
 
 
-def _inherited_verified(document: Document, section: Section) -> tuple[str | None, int]:
-    """The section's verified date, inherited from its parents and then the article."""
-    current: Section | None = section
-    while current is not None:
-        if "verified" in current.meta:
-            return current.meta["verified"], _section_field_line(current, "verified")
-        current = document.section(current.parent) if current.parent is not None else None
-    front_value = document.front.get("verified")
-    value = front_value if isinstance(front_value, str) else None
-    return value, _front_field_line(document, "verified") or 1
-
-
-def _inherited_value(document: Document, section: Section, name: str) -> tuple[str | None, int]:
-    """The first section or article value and its source line."""
-    current: Section | None = section
-    while current is not None:
-        if name in current.meta:
-            return current.meta[name], _section_field_line(current, name)
-        current = document.section(current.parent) if current.parent is not None else None
-    front_value = document.front.get(name)
-    value = front_value if isinstance(front_value, str) else None
-    return value, _front_field_line(document, name) or 1
-
-
-def _front_field_line(document: Document, name: str) -> int | None:
-    """The one-based line of the first front matter occurrence named name."""
-    field = next((field for field in document.front_fields if field.name == name), None)
-    return None if field is None else field.span.start + 1
-
-
 def _front_matter_sources(document: Document) -> list[Reference]:
     """Return sources from the first front-matter field occurrence."""
     field = next((field for field in document.front_fields if field.name == "sources"), None)
@@ -449,17 +425,6 @@ def _heading_slug(heading: str) -> str:
     slug = _NON_SLUG.sub("", heading.translate(_ASCII_LOWER))
     slug = _WHITESPACE.sub("-", slug)
     return _HYPHENS.sub("-", slug).strip("-")
-
-
-def _section_field_line(section: Section, name: str) -> int:
-    """The one-based line for a section metadata field, or its comment start."""
-    comment = section.metadata_comment
-    if comment is not None:
-        entry = next((entry for entry in comment.entries if entry.name == name), None)
-        if entry is not None:
-            return entry.line_index + 1
-        return comment.span.start + 1
-    return section.start + 1
 
 
 def valid_ttl(value: object) -> bool:

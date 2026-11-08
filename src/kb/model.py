@@ -180,34 +180,68 @@ class Document:
 
     def scalar(self, name: str, section: Section | None = None) -> str | None:
         """A scalar field as the section sees it: its own, its H2's, or the article's."""
-        inherited = self._inherited(name, section)
-        if inherited is not None:
-            return inherited
-        value = self.front.get(name)
-        return value if isinstance(value, str) else None
+        resolved = resolve_field(self, section, name)
+        return None if resolved is None else resolved[0]
 
     def items(self, name: str, section: Section | None = None) -> tuple[str, ...]:
         """A list field as the section sees it. A section's comma-separated value wins."""
-        inherited = self._inherited(name, section)
-        if inherited is not None:
-            return tuple(item.strip() for item in inherited.split(",") if item.strip())
-        value = self.front.get(name)
-        if isinstance(value, tuple):
-            return value
-        if isinstance(value, str) and value:
-            return (value,)
+        owner = _metadata_owner(self, section, name)
+        if owner is not None:
+            value = owner.meta[name]
+            return tuple(item.strip() for item in value.split(",") if item.strip())
+        front = self.front.get(name)
+        if isinstance(front, tuple):
+            return front
+        if isinstance(front, str) and front:
+            return (front,)
         return ()
 
-    def _inherited(self, name: str, section: Section | None) -> str | None:
-        """The field from the section's metadata, or from its H2 when it is an H3."""
-        if section is None:
-            return None
-        if name in section.meta:
-            return section.meta[name]
-        if section.parent is None:
-            return None
-        parent = self.section(section.parent)
-        return None if parent is None else parent.meta.get(name)
+
+def resolve_field(
+    document: Document, section: Section | None, name: str
+) -> tuple[str, int | None] | None:
+    """A field as the section sees it, and the one-based line it was read from.
+
+    The rule: the section's own metadata, then its H2's when it is an H3, then the article's
+    front matter. A front matter list is not a scalar and resolves to None. The line is None
+    only for a front matter value with no recorded field.
+    """
+    owner = _metadata_owner(document, section, name)
+    if owner is not None:
+        return owner.meta[name], section_field_line(owner, name)
+    value = document.front.get(name)
+    if not isinstance(value, str):
+        return None
+    return value, front_field_line(document, name)
+
+
+def section_field_line(section: Section, name: str) -> int:
+    """The one-based line for a section metadata field, or its comment start."""
+    comment = section.metadata_comment
+    if comment is not None:
+        entry = next((entry for entry in comment.entries if entry.name == name), None)
+        if entry is not None:
+            return entry.line_index + 1
+        return comment.span.start + 1
+    return section.start + 1
+
+
+def front_field_line(document: Document, name: str) -> int | None:
+    """The one-based line of the first front matter occurrence named name."""
+    field = next((field for field in document.front_fields if field.name == name), None)
+    return None if field is None else field.span.start + 1
+
+
+def _metadata_owner(document: Document, section: Section | None, name: str) -> Section | None:
+    """The section whose metadata sets the field: this one, or its H2 when it is an H3."""
+    if section is None:
+        return None
+    if name in section.meta:
+        return section
+    if section.parent is None:
+        return None
+    parent = document.section(section.parent)
+    return parent if parent is not None and name in parent.meta else None
 
 
 def parse(path: str, text: str) -> Document:
