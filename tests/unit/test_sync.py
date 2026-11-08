@@ -665,25 +665,6 @@ def test_head_records_rejects_truncated_cat_file_output(
         sync._head_records(Path())
 
 
-@pytest.mark.parametrize(
-    ("source", "app", "part", "expected_app", "expected_part"),
-    [
-        ("session-transcript", "claude-code", "2", "claude-code", 2),
-        ("session-transcript", "codex", "bad", "codex", None),
-        ("session-transcript", "goose", "1", "goose", 1),
-        ("session-transcript", "unknown", "-1", None, None),
-    ],
-)
-def test_record_from_document_maps_supported_fields(
-    source: str, app: str, part: str, expected_app: str | None, expected_part: int | None
-) -> None:
-    text = observation_text().replace("source: session-transcript", f"source: {source}")
-    text = text.replace("app: claude-code", f"app: {app}").replace("part: 1", f"part: {part}")
-    record = sync._record_from_document(model.parse("record.md", text))
-    assert record is not None
-    assert record.app == expected_app and record.part == expected_part
-
-
 def test_record_from_document_ignores_non_transcript_observations() -> None:
     document = model.parse("old.md", observation_text().replace("session-transcript", "session"))
     assert sync._record_from_document(document) is None

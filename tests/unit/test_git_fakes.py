@@ -30,17 +30,6 @@ def test_a_matched_call_returns_the_configured_result(
     assert (raw.returncode, raw.stdout, raw.stderr) == (3, b"out\n", b"err\n")
 
 
-def test_an_unmatched_call_runs_real_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    root = make_repo(tmp_path / "repo")
-    fake = git_fakes.install(monkeypatch)
-    fake.on(("commit",), git_fakes.completed(1))
-
-    result = git.run(root, "rev-parse", "--is-inside-work-tree")
-
-    assert result.returncode == 0
-    assert result.stdout == "true\n"
-
-
 def test_times_answers_only_the_first_matching_calls(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

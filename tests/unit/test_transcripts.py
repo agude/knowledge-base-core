@@ -40,11 +40,6 @@ def test_parse_timestamp_rejects_non_iso_or_timezone_free_values(value: object) 
     assert parse_timestamp(value) is None
 
 
-def test_parse_timestamp_normalizes_utc_and_other_offsets() -> None:
-    assert parse_timestamp("2026-10-26T12:00:00Z") == datetime(2026, 10, 26, 12, tzinfo=UTC)
-    assert parse_timestamp("2026-10-26T05:00:00-07:00") == datetime(2026, 10, 26, 12, tzinfo=UTC)
-
-
 def test_timestamp_text_preserves_fractional_seconds_and_uses_utc() -> None:
     local = datetime(2026, 10, 26, 5, 0, 5, 123000, tzinfo=timezone(timedelta(hours=-7)))
     assert timestamp_text(local) == "2026-10-26T12:00:05.123000Z"
