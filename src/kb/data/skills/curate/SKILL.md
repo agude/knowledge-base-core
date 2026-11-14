@@ -52,19 +52,37 @@ evidence, and open questions. Verify time-sensitive claims against current
 sources. Preserve durable facts, decisions, and useful attribution. Do not
 copy secrets or temporary task details into articles.
 
-For an incorporated fact, edit the relevant article directly. Add the future
-archive locator to its `sources`, such as
-`observations/archived/FILENAME.md#1`; the target appears when completion
-archives the observation. A commit hook sets `updated` to today's UTC date on
-staged articles when needed. Editing does not verify a fact and never changes
-`verified` or `ttl`.
+For an incorporated fact, write the text and let `kb edit` place it. Do not
+splice text into article files by hand. Pass the text on stdin:
+
+```sh
+kb edit replace ARTICLE#N    # rewrite a whole section; use this to edit an entry
+kb edit append ARTICLE#N     # add paragraphs or bullets at the end of a section
+kb edit insert ARTICLE --after N     # add a new section; --after top for the first H2
+kb edit move ARTICLE#N --after M     # reorder or regroup sections
+kb edit remove ARTICLE#N
+```
+
+To change one bullet or add an entry mid-section, read the section with
+`kb read`, rewrite the whole section, and `replace` it. Several headings in the
+text split a section that is too long. `replace` keeps the section's metadata
+comment when the rewrite omits it. Each edit prints the locators it wrote and
+any section it renumbered; complete with the printed locator, never a number
+counted by hand.
+
+Completion adds the archive locator to each destination's `sources`; do not
+add it yourself. A commit hook sets `updated` to today's UTC date on staged
+articles when needed. Editing does not verify a fact and never changes
+`verified`. When `kb edit` notes that an edited article has no `ttl`, set one
+with `kb edit ttl ARTICLE TTL`, choosing the period that fits how quickly its
+facts change.
 
 Use `kb verify ARTICLE` only after checking the article against current
 evidence. A valid `ttl` is required. If the article has no valid `ttl`, supply
 `--ttl` with `people`, `status`, `process`, `domain`, or a positive day count
-up to 1,000,000. Choose the period that fits how quickly the fact may change.
-`kb lint` checks article structure, metadata, and local references before the
-batch is published.
+up to 1,000,000. `kb verify` refuses an article with section-level `verified`
+metadata; use `kb edit ttl` there. `kb lint` checks article structure,
+metadata, and local references before the batch is published.
 
 Settle each item with exactly one outcome:
 
@@ -74,6 +92,12 @@ kb curate complete RUN FILENAME --disposition duplicate LOCATOR...
 kb curate complete RUN FILENAME --disposition ephemeral --reason TEXT
 kb curate defer RUN FILENAME --reason TEXT
 kb curate drop RUN FILENAME --reason TEXT
+```
+
+If a recorded destination is wrong, correct it before finishing:
+
+```sh
+kb curate amend RUN FILENAME LOCATOR...
 ```
 
 Use `incorporated` when the durable fact is in an article. It accepts a whole
@@ -93,15 +117,17 @@ because it was edited or because the observation says it is true.
 ## Finish and publish
 
 After every selected item is completed, deferred, or dropped, review `status`,
-run `kb lint` on changed articles, and finish the batch:
+run `kb lint --require-ttl` on changed articles, and finish the batch:
 
 ```sh
 kb curate status RUN
 kb curate finish RUN
 ```
 
-`finish` validates the publication set, commits it once, then fetches, rebases,
-and pushes. It refuses pending work, interrupted archives, staged changes,
+`finish` renumbers a destination whose section moved when its heading is still
+unique, and names `kb curate amend` for any other changed destination. It
+validates the publication set, commits it once, then fetches, rebases, and
+pushes. It refuses pending work, interrupted archives, staged changes,
 and files outside the batch. If publication fails after the local commit,
 resolve the reported cause and run `kb sync` or repeat `kb curate finish RUN`;
 the repeat pushes the existing commit without creating another. Use
