@@ -5,7 +5,8 @@ articles and source documents, and the observations and questions behind them.
 `recall`, `read`, `map`, `questions`, and `evidence` are read-only. `kb observe`
 records an observation, `kb gap` records an open question, and `kb sync` can
 record finished Claude Code, Codex, and Goose transcripts. `kb lint`,
-`kb verify`, and `kb resolve` provide curator checks and explicit updates.
+`kb edit`, `kb verify`, and `kb resolve` provide curator checks and explicit
+updates.
 `kb curate` runs resumable batches: `start` synchronizes with `origin`, and
 `finish` validates a batch, commits it once, and pushes it. The content
 pre-commit hook, `kb hook pre-commit`, checks every content commit. `kb setup`
@@ -21,6 +22,7 @@ kb map [PATH]         # list the articles under PATH, with their sections
 kb questions [--context PATH] [--all] [--limit N]
 kb evidence QUERY... [--kind KIND] [--since DATE] [--until DATE] [--limit N]
 kb lint [PATH...] [--require-ttl]  # check articles before publication
+kb edit {replace,append,insert,move,remove,ttl} ...  # place section text from stdin
 kb verify ARTICLE [--ttl TTL]      # record an explicit verification
 kb resolve QUESTION --answer TEXT [--destination LOCATOR | --obsolete]
 kb curate {start,status,next,complete,defer,drop,finish} ...
@@ -184,9 +186,10 @@ publication.
 
 ### Curation commands
 
-`kb lint`, `kb verify`, and `kb resolve` are curator commands. They do not
-commit. `kb lint` is read-only: it does not write files, take locks, run Git,
-or make network calls. `kb verify` and `kb resolve` edit the content repository
+`kb lint`, `kb edit`, `kb verify`, and `kb resolve` are curator commands. They
+do not commit. `kb lint` is read-only: it does not write files, take locks, run
+Git, or make network calls. `kb edit`, `kb verify`, and `kb resolve` edit the
+content repository
 under the shared writer lock. They wait according to `KB_LOCK_WAIT`, which is
 a non-negative number of seconds and defaults to 30.
 
@@ -240,6 +243,54 @@ article atomically. It leaves the change uncommitted.
 Success prints `Verified: PATH (ttl TTL)`. Failures print nothing to stdout,
 use the `verify:` prefix on stderr, and exit 1. A usage error prints the usage
 line.
+
+#### `kb edit`
+
+```sh
+kb edit replace LOCATOR < SECTIONS
+kb edit append LOCATOR < PARAGRAPHS
+kb edit insert ARTICLE --after FRAGMENT < SECTIONS
+kb edit insert ARTICLE --before FRAGMENT < SECTIONS
+kb edit move LOCATOR --after FRAGMENT
+kb edit move LOCATOR --before FRAGMENT
+kb edit remove LOCATOR
+kb edit ttl ARTICLE TTL
+```
+
+The writer supplies the text; `kb edit` decides where it lands. `LOCATOR` is an
+article under `knowledge/` with a numbered section, `ARTICLE#N` (an H2 with its
+H3s) or `ARTICLE#N.M` (one H3). `FRAGMENT` is a section number, or `top` with
+`--after` for a new first H2.
+
+- `replace` swaps the whole section for the sections on stdin. The text must
+  start with a heading of the same level. Several sections split one. To edit
+  one entry or add a bullet mid-section, rewrite the section and replace it.
+  A rewritten section that has no metadata comment keeps the comment of the
+  replaced section with the same level and heading, so `verified` and
+  `sources` survive a rewrite.
+- `append` adds paragraphs to the end of the section's own text, before any
+  H3 it holds. The text must not contain an H2 or H3.
+- `insert` adds sections after or before an anchor. An H2 is placed relative
+  to an H2. An H3 goes before or after an H3, or `--after` an H2 as its last
+  H3.
+- `move` takes a whole section to a new place under the same rules.
+- `remove` deletes a whole section.
+- `ttl` sets `ttl` without changing `verified`. Use it when an edited article
+  has no `ttl`, which `kb curate finish` requires. Use `kb verify` to record a
+  verification.
+
+Text on stdin is scanned for possible secrets before anything is written. It
+must not start with `---`, contain an H1, or leave a code fence open. CRLF
+input is normalized and written with the article's line ending; lines outside
+the edit keep their bytes. The edited article is linted in memory, and an edit
+that adds a lint error is refused. The file is replaced atomically under the
+shared writer lock and left uncommitted.
+
+Success prints `Edited: PATH`, then the locator and heading of each section the
+edit wrote, one `Renumbered: PATH#OLD -> #NEW | HEADING` line for each section
+whose number changed, any lint warning the edit added, and a note when the
+article has no `ttl`. A missing section lists the article's sections. Failures
+use the `edit:` prefix on stderr and exit 1.
 
 #### `kb resolve`
 

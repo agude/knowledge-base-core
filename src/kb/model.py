@@ -379,6 +379,26 @@ def edit_front_matter(
     return result
 
 
+def split_lines(text: str) -> list[str]:
+    """Split text into lines without endings, on the parser's newline boundary."""
+    return _split_lines(text)
+
+
+def split_raw_lines(text: str) -> list[str]:
+    """Split text into lines that keep their endings, on the parser's newline boundary."""
+    return _split_raw_lines(text)
+
+
+def heading(line: str) -> tuple[int, str] | None:
+    """The level and text of an ATX heading line, or None."""
+    return _heading(line)
+
+
+def is_rule(line: str) -> bool:
+    """Whether a line is a front matter delimiter."""
+    return _RULE.fullmatch(line) is not None
+
+
 def _split_lines(text: str) -> list[str]:
     lines = text.split("\n")
     if lines and lines[-1] == "":

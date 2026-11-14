@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from kb.commands import curate as curate_command
 from kb.commands import doctor as doctor_command
+from kb.commands import edit as edit_command
 from kb.commands import evidence as evidence_command
 from kb.commands import gap as gap_command
 from kb.commands import hook as hook_command
@@ -57,6 +58,11 @@ COMMANDS: tuple[Command, ...] = (
         name="verify",
         summary="Set an article's verified date and a required TTL.",
         run=verify_command.run,
+    ),
+    Command(
+        name="edit",
+        summary="Place section text from stdin in an article, or set its TTL.",
+        run=edit_command.run,
     ),
     Command(
         name="resolve",
