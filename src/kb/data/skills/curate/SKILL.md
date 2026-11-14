@@ -6,8 +6,9 @@ description: Process pending knowledge-base observations into checked articles, 
 # Curate the knowledge base
 
 The user starts a curation run. Use this skill only when the user asks you to
-curate. Curation edits articles in the content repository and publishes a
-batch in one commit.
+curate. Curation edits articles in the content repository and publishes each
+batch in one commit. A run continues through successive batches until the
+pending queue is empty; see "Repeat until the queue is empty".
 
 ## Start or resume a batch
 
@@ -106,3 +107,24 @@ resolve the reported cause and run `kb sync` or repeat `kb curate finish RUN`;
 the repeat pushes the existing commit without creating another. Use
 `--no-push` only when the user requests a local commit or the machine is
 offline. A later `kb sync` publishes it.
+
+## Repeat until the queue is empty
+
+One batch is bounded by `--max-bytes`, so it may not hold every pending
+observation. After `finish` succeeds, run `kb curate start --max-bytes 65536`
+again and repeat the process and finish steps for the new batch. Continue
+until one of these conditions ends the run:
+
+- `start` prints `No pending observations.` The queue is empty.
+- Every observation in a new batch was already deferred earlier in this run,
+  and none can now be settled. Defer them again, finish the batch, and report
+  the deferred filenames and reasons to the user.
+
+Deferred observations stay in `observations/pending/`, so later batches select
+them again.
+
+The `start` report lists each observation larger than the budget under
+`Larger than budget` with an exact command that selects it alone, such as
+`kb curate start --max-bytes 70000 FILENAME`. When `start` prints
+`No observations fit --max-bytes N.`, only such observations remain. Run the
+printed command for each one in turn, processing and finishing each batch.
