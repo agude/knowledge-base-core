@@ -25,7 +25,7 @@ kb lint [PATH...] [--require-ttl]  # check articles before publication
 kb edit {replace,append,insert,move,remove,ttl} ...  # place section text from stdin
 kb verify ARTICLE [--ttl TTL]      # record an explicit verification
 kb resolve QUESTION --answer TEXT [--destination LOCATOR | --obsolete]
-kb curate {start,status,next,complete,defer,drop,finish} ...
+kb curate {start,status,next,complete,amend,defer,drop,finish} ...
 kb observe --title TITLE --body TEXT  # record an observation and commit it
 kb gap --title TITLE --body TEXT --context PATH  # record a question and commit it
 kb sync [--status | --no-push | --dry-run]  # harvest transcripts and sync content
@@ -412,13 +412,17 @@ questions. The byte budget limits only the original observations; these
 sections and question rows add to the context shown for each item. `--query`
 replaces the observation title when another query better describes the work.
 
-Edit knowledge articles directly. Before completing an incorporated item,
-add its future archived locator to the article's `sources`. For example, use
-`observations/archived/FILENAME.md#1` when citing its first numbered section.
-The reference is temporarily missing until completion publishes the archive.
-`kb verify` will refuse it while missing. After completion, run `kb lint` and
-use `kb verify` only when the archived evidence supports the claim. Resolve
-questions with `kb resolve` when evidence supports an answer.
+Write article text and place it with `kb edit`; it reports the locator to
+complete with. Completion cites the archive itself: it adds
+`observations/archived/FILENAME.md` to each destination article's front matter
+`sources`, or to the `sources` of the destination section's metadata comment
+when that section, or its H2, has one. Each addition prints
+`Cited: ARCHIVE in LOCATOR`; one already present is left alone. Completion
+checks that every citation applies before it archives anything, and an
+interrupted completion repeats them. After completion, run
+`kb lint --require-ttl` on changed articles and use `kb verify` only when the
+archived evidence supports the claim. Resolve questions with `kb resolve` when
+evidence supports an answer.
 
 `incorporated` accepts a whole knowledge article or a readable section.
 `duplicate` requires a numbered section. Both can name multiple destinations;
@@ -426,8 +430,8 @@ the manifest stores each canonical locator and its current heading. `ephemeral`
 accepts no destination and requires a single-line reason. Completion adds the
 batch identifier, the original file's hash, and an ephemeral reason to the
 archived observation. The manifest keeps the disposition, the full destination
-list, and the archived file's hash. It does not change article dates or stage
-or commit files.
+list, and the archived file's hash. Apart from the citations, it does not change
+articles, and it does not stage or commit files.
 The command scans supplied destinations and ephemeral reasons for possible
 secrets before reporting validation errors. Successful completion prints the
 pending-to-archived path; failures use the `curate:` prefix and exit 1.
@@ -441,6 +445,11 @@ If completion stops after saving its archive intent, repeat the exact
 | Original and expected archive | Remove only the unchanged pending copy. |
 | Expected archive only | Mark the member complete. |
 | Neither copy, changed input, or conflicting archive | Stop and inspect the files manually. |
+
+`amend RUN FILENAME LOCATOR...` replaces the destinations of a completed
+incorporated or duplicate member, cites its archive in the new destinations,
+and prints `Amended: FILENAME -> LOCATORS`. Citations added for the old
+destinations stay. A committed batch cannot be amended.
 
 `defer` keeps an unchanged pending file for a later batch. `drop` records a
 reason when another writer removed or changed that file; it leaves the file as
@@ -470,9 +479,13 @@ their count and do not stop publication.
 
 Before creating a new finish commit, every completed archive must still match
 its recorded hash and have no pending copy. Incorporated and duplicate outcomes
-must still name the recorded destination locators and headings. Missing or
-changed archives and destinations refuse publication without changing files or
-staging. A retry after the publication commit already exists publishes that
+must still name the recorded destination locators and headings. When an edit
+renumbered a destination section and its recorded heading is still unique at
+that level in the article, finish updates the manifest and prints
+`Renumbered destination: FILENAME: OLD -> NEW | HEADING`. Any other changed
+destination refuses publication and names the `kb curate amend` command that
+corrects it. Missing or changed archives refuse publication without changing
+files or staging. A retry after the publication commit already exists publishes that
 commit instead of creating another.
 
 Finish stages exactly the publication set, checks the staged paths against it,

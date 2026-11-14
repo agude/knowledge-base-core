@@ -127,7 +127,7 @@ def test_start_help_usage_and_budget_validation(git_kb: Kb) -> None:
         "Usage: kb curate start [--no-sync] --max-bytes N [FILENAME...]\n\n"
     )
     assert git_kb("curate").stdout.startswith(
-        "Usage: kb curate {start,status,next,complete,defer,drop,finish} ..."
+        "Usage: kb curate {start,status,next,complete,amend,defer,drop,finish} ..."
     )
 
     missing = git_kb("curate", "start")
@@ -922,7 +922,16 @@ def test_complete_archives_each_outcome_with_canonical_destinations_without_comm
     ephemeral_text = (archived / ephemeral_name).read_text(encoding="utf-8")
     assert "\ndisposition:" not in ephemeral_text
     assert 'curation_reason: "No durable details"' in ephemeral_text
-    assert all(path.read_bytes() == content for path, content in article_bytes.items())
+    # Only the duplicate is newly cited; the incorporated archive was already cited by fragment.
+    assert services_article.read_bytes() == article_bytes[services_article]
+    assert network_article.read_bytes() == article_bytes[network_article].replace(
+        f"sources=observations/archived/{incorporated_name}#1 -->".encode(),
+        f"sources=observations/archived/{incorporated_name}#1, "
+        f"observations/archived/{duplicate_name} -->".encode(),
+    )
+    assert duplicate.stdout.endswith(
+        f"Cited: observations/archived/{duplicate_name} in knowledge/curation/network.md#1\n"
+    )
     linted = git_kb("lint", "knowledge/curation/network.md", "knowledge/curation/services.md")
     assert linted.returncode == 0, linted.stdout + linted.stderr
     assert git_kb.git("rev-parse", "HEAD") == original_head

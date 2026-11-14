@@ -192,7 +192,7 @@ def test_dispatch_and_nested_command_usage(
 ) -> None:
     assert curate.run([]) == 0
     assert (
-        "Usage: kb curate {start,status,next,complete,defer,drop,finish} ..."
+        "Usage: kb curate {start,status,next,complete,amend,defer,drop,finish} ..."
         in capsys.readouterr().out
     )
     assert curate.run(["--help"]) == 0
@@ -584,7 +584,9 @@ def test_complete_publishes_each_outcome_and_is_idempotent(
     archive_path = root / "observations" / "archived" / "item.md"
     archived = archive_path.read_bytes()
     member = curate._read_batch(root, RUN).members[0]
-    assert result == "Archived: observations/pending/item.md -> observations/archived/item.md\n"
+    archived_line = "Archived: observations/pending/item.md -> observations/archived/item.md\n"
+    cited = "Cited: observations/archived/item.md in knowledge/topic.md\n"
+    assert result == archived_line + ("" if disposition == "ephemeral" else cited)
     assert not (root / "observations" / "pending" / "item.md").exists()
     assert member.status == "complete"
     assert member.disposition == disposition
@@ -611,7 +613,7 @@ def test_complete_publishes_each_outcome_and_is_idempotent(
             destinations,
             reason,
         )
-        == result
+        == archived_line
     )
     assert archive_path.read_bytes() == archived
     assert not list((git_directory / "kb-tmp").glob("*"))

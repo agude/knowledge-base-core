@@ -1,5 +1,6 @@
 """Local curation batch selection and progress reporting."""
 
+import dataclasses
 import hashlib
 import os
 import shlex
@@ -15,6 +16,7 @@ from typing import cast
 from kb import (
     archive,
     args,
+    articles,
     commit,
     config,
     corpus,
@@ -34,6 +36,7 @@ from kb import (
     remote,
     scratch,
     secrets,
+    sections,
     snapshot,
 )
 from kb.args import Spec
@@ -90,6 +93,13 @@ DROP_SPEC = Spec(
     summary="Settle a pending member whose input is missing or changed without altering that file.",
     valued=frozenset({"--reason"}),
 )
+AMEND_SPEC = Spec(
+    usage="curate amend RUN FILENAME LOCATOR...",
+    summary=(
+        "Replace the destinations of a completed incorporated or duplicate member before the "
+        "batch is committed, and add its archive to the new destinations' sources."
+    ),
+)
 FINISH_SPEC = Spec(
     usage="curate finish RUN [--no-push]",
     summary=(
@@ -99,11 +109,13 @@ FINISH_SPEC = Spec(
     switches=frozenset({"--no-push"}),
 )
 SPEC = Spec(
-    usage="curate {start,status,next,complete,defer,drop,finish} ...",
+    usage="curate {start,status,next,complete,amend,defer,drop,finish} ...",
     summary=(
         "Manage curation batches. Start synchronizes and selects bounded input; status reports "
         "persisted progress and local publication state without changing files or contacting "
-        "origin. Complete records outcomes and archives unchanged observations. Finish validates "
+        "origin. Complete records outcomes, archives unchanged observations, and cites the archive "
+        "in each destination article; amend corrects a completed member's destinations. Finish "
+        "renumbers destinations whose heading moved, validates "
         "a settled batch, commits it once, and pushes it."
     ),
 )
@@ -142,6 +154,8 @@ def run(words: Sequence[str]) -> int:
         return _next_command(arguments)
     if command == "complete":
         return _complete_command(arguments)
+    if command == "amend":
+        return _amend_command(arguments)
     if command == "defer":
         return _defer_command(arguments)
     if command == "drop":
@@ -270,6 +284,41 @@ def _complete_command(words: Sequence[str]) -> int:
                 parsed.words[2:],
                 parsed.values.get("--reason"),
             )
+    except lock.LockBusy as busy:
+        raise KbError(
+            f"{WHO}: content repository is busy (waited {busy.waited}s for the lock)"
+        ) from None
+    except curation.StateError as error:
+        raise KbError(f"{WHO}: {error}") from error
+    except KbError as error:
+        if str(error).startswith((f"{WHO}:", "Usage:")):
+            raise
+        raise KbError(f"{WHO}: {error}") from error
+    except (OSError, RuntimeError, UnicodeError) as error:
+        raise KbError(f"{WHO}: {error}") from error
+    sys.stdout.write(output)
+    return 0
+
+
+def _amend_command(words: Sequence[str]) -> int:
+    parsed = args.parse(AMEND_SPEC, words)
+    if parsed.help:
+        sys.stdout.write(AMEND_SPEC.help_text())
+        return 0
+    if len(parsed.words) < 3:
+        raise AMEND_SPEC.usage_error()
+    try:
+        wait = lock.parse_wait(os.environ.get("KB_LOCK_WAIT"))
+    except lock.InvalidWait:
+        raise AMEND_SPEC.usage_error() from None
+
+    try:
+        context = load(os.environ, sys.platform, Path.home())
+        git_directory = lock.git_dir(context.root, WHO)
+        backend = lock.default_backend(sys.platform)
+        with lock.write_lock(git_directory, wait, backend):
+            batch = _read_batch(context.root, parsed.words[0])
+            output = _amend(context.root, git_directory, batch, parsed.words[1], parsed.words[2:])
     except lock.LockBusy as busy:
         raise KbError(
             f"{WHO}: content repository is busy (waited {busy.waited}s for the lock)"
@@ -504,7 +553,7 @@ def _finish(root: Path, git_directory: Path, run_id: str, *, no_push: bool) -> i
     if committed is not None:
         return _resume_publication(root, committed, branch, no_push=no_push)
     _require_index_clean(root)
-    _require_completed_members(root, batch)
+    batch = _require_completed_members(root, git_directory, batch)
     changes = _publication_changes(root, batch)
     verdict = publish.validate(root, changes, baseline=snapshot.read_head(root, WHO))
     if verdict.blocking:
@@ -522,8 +571,15 @@ def _finish(root: Path, git_directory: Path, run_id: str, *, no_push: bool) -> i
     return _publish(root, commit, branch, new_commit=True)
 
 
-def _require_completed_members(root: Path, batch: curation.Batch) -> None:
-    """Recheck completed archives and recorded destinations before staging a new commit."""
+def _require_completed_members(
+    root: Path, git_directory: Path, batch: curation.Batch
+) -> curation.Batch:
+    """Recheck completed archives and recorded destinations before staging a new commit.
+
+    A destination section whose number changed but whose heading is still unique in its
+    article is renumbered in the manifest, and the change is reported.
+    """
+    updated = batch
     for member in batch.members:
         if member.status != "complete":
             continue
@@ -542,10 +598,57 @@ def _require_completed_members(root: Path, batch: curation.Batch) -> None:
                 member.disposition,
                 member.reason,
             )
-            if destinations != member.destinations:
+            if destinations == member.destinations:
+                continue
+            renumbered = _renumbered_destinations(root, member)
+            if renumbered is None:
                 raise KbError(
-                    f"{WHO}: a destination heading changed for {member.filename}; inspect manually"
+                    f"{WHO}: a destination heading changed for {member.filename}; correct it "
+                    f"with: kb curate amend {batch.id} {member.filename} LOCATOR..."
                 )
+            for old, new in zip(member.destinations, renumbered, strict=True):
+                if old.locator != new.locator:
+                    sys.stdout.write(
+                        f"Renumbered destination: {member.filename}: {old.locator} -> "
+                        f"{new.locator} | {new.heading}\n"
+                    )
+            updated = curation.replace_member(
+                updated, dataclasses.replace(member, destinations=renumbered)
+            )
+    if updated != batch:
+        _replace_manifest(git_directory, _batch_path(root, batch.id), updated)
+    return updated
+
+
+def _renumbered_destinations(
+    root: Path, member: curation.Member
+) -> tuple[curation.Destination, ...] | None:
+    """Destinations re-resolved by recorded heading, or None when one cannot be found once."""
+    result: list[curation.Destination] = []
+    for destination in member.destinations:
+        locator = locators.parse_locator(destination.locator)
+        fragment = locator.fragment
+        if fragment is None or locators.NUMBERED.fullmatch(fragment) is None:
+            current = _requested_destinations(
+                root, [destination.locator], cast(curation.Disposition, member.disposition), None
+            )
+            if current != (destination,):
+                return None
+            result.append(destination)
+            continue
+        if not (root / locator.path).is_file():
+            return None
+        document = corpus.read_document(root, locator.path)
+        level = 2 if "." not in fragment else 3
+        matches = [
+            item
+            for item in document.sections
+            if item.heading == destination.heading and item.level == level
+        ]
+        if len(matches) != 1:
+            return None
+        result.append(curation.Destination(f"{locator.path}#{matches[0].key}", destination.heading))
+    return tuple(result)
 
 
 def _resume_publication(root: Path, commit: str, branch: str, *, no_push: bool) -> int:
@@ -1056,6 +1159,7 @@ def _complete(
     if _member_file_bytes(root, ARCHIVED, member.filename) is not None:
         raise KbError(f"{WHO}: archive already exists: {ARCHIVED}/{member.filename}")
     _refuse_inbound_pending_references(root, member.filename)
+    _cite_archive(root, git_directory, member.filename, destinations, write=False)
 
     try:
         original_text = original.decode("utf-8")
@@ -1194,10 +1298,86 @@ def _resume_archive(
     if pending_exists:
         _remove_pending(root, member)
 
+    cited = _cite_archive(root, git_directory, member.filename, member.destinations, write=True)
     completed = curation.finish_archive(member)
     completed_batch = curation.replace_member(batch, completed)
     _replace_manifest(git_directory, _batch_path(root, batch.id), completed_batch)
-    return _archived_line(member.filename)
+    return _archived_line(member.filename) + cited
+
+
+def _cite_archive(
+    root: Path,
+    git_directory: Path,
+    filename: str,
+    destinations: Sequence[curation.Destination],
+    *,
+    write: bool,
+) -> str:
+    """Add the archive locator to each destination's sources; report the additions.
+
+    A destination section whose metadata comment holds sources, itself or through its H2,
+    gets the locator there; every other destination gets it in the front matter sources.
+    The edit is idempotent, so an interrupted completion can repeat it. With write=False
+    it only proves that every edit applies, before anything is archived.
+    """
+    source = f"{ARCHIVED}/{filename}"
+    by_article: dict[str, list[str | None]] = {}
+    for destination in destinations:
+        locator = locators.parse_locator(destination.locator)
+        by_article.setdefault(locator.path, []).append(locator.fragment)
+    lines: list[str] = []
+    for relpath, fragments in by_article.items():
+        article = articles.read(root, relpath, WHO)
+        text = article.text
+        try:
+            for fragment in fragments:
+                document = model.parse(relpath, text)
+                owner = None
+                if fragment is not None and locators.NUMBERED.fullmatch(fragment):
+                    owner = sections.section_source_owner(document, fragment)
+                if owner is not None and fragment is not None:
+                    edited = sections.add_section_source(text, fragment, source)
+                    where = f"{relpath}#{owner.key}"
+                else:
+                    edited = sections.add_front_source(text, source)
+                    where = relpath
+                if edited != text:
+                    lines.append(f"Cited: {source} in {where}\n")
+                text = edited
+        except sections.EditError as error:
+            raise KbError(f"{WHO}: cannot cite the archive in {relpath}: {error}") from error
+        if write:
+            articles.write(root, git_directory, article, text, WHO)
+    return "".join(lines)
+
+
+def _amend(
+    root: Path,
+    git_directory: Path,
+    batch: curation.Batch,
+    filename: str,
+    destination_words: Sequence[str],
+) -> str:
+    """Replace a completed member's destinations and cite its archive in the new ones."""
+    _scan_completion_text(git_directory, destination_words, None)
+    member = next((item for item in batch.members if item.filename == filename), None)
+    if member is None:
+        raise KbError(f"{WHO}: not a batch member")
+    if member.status != "complete" or member.disposition not in {"incorporated", "duplicate"}:
+        raise KbError(f"{WHO}: only a completed incorporated or duplicate member can be amended")
+    if _committed_batch(root, batch) is not None:
+        raise KbError(f"{WHO}: batch {batch.id} is already committed")
+    destinations = _requested_destinations(
+        root, destination_words, cast(curation.Disposition, member.disposition), None
+    )
+    _cite_archive(root, git_directory, filename, destinations, write=False)
+    cited = _cite_archive(root, git_directory, filename, destinations, write=True)
+    amended = dataclasses.replace(member, destinations=destinations)
+    _replace_manifest(
+        git_directory, _batch_path(root, batch.id), curation.replace_member(batch, amended)
+    )
+    listing = ", ".join(destination.locator for destination in destinations)
+    return f"Amended: {filename} -> {listing}\n{cited}"
 
 
 def _requested_destinations(
