@@ -588,24 +588,19 @@ def _triage_plan(root: Path) -> TriagePlan:
             rule = "curation"
         if rule is not None:
             rules[filename] = rule
-    owners = _named_fork_owners(root, fronts, rules)
     references = _inbound_references(root)
-    chosen: list[tuple[QueueEntry, triage.Rule]] = []
-    kept: list[tuple[str, str]] = []
-    for entry in entries:
-        filename = entry.snapshot.filename
-        rule = rules.get(filename)
-        if rule is None:
-            continue
-        if (root / PENDING / filename).resolve() in references:
-            kept.append((filename, "is linked from curated documents"))
-        elif fronts[filename].scalar("session") in owners:
-            kept.append(
-                (filename, "holds messages that an untriaged transcript names in forked_from")
-            )
-        else:
-            chosen.append((entry, rule))
-    return TriagePlan(tuple(chosen), tuple(kept))
+    kept = {
+        filename: "is linked from curated documents"
+        for filename in rules
+        if (root / PENDING / filename).resolve() in references
+    }
+    _keep_fork_owners(root, fronts, rules, kept)
+    chosen = [
+        (entry, rules[entry.snapshot.filename])
+        for entry in entries
+        if entry.snapshot.filename in rules and entry.snapshot.filename not in kept
+    ]
+    return TriagePlan(tuple(chosen), tuple(sorted(kept.items())))
 
 
 def _is_untriaged_transcript(front: model.Document) -> bool:
@@ -622,27 +617,56 @@ def _curation_sessions() -> frozenset[tuple[str | None, str | None]]:
     )
 
 
-def _named_fork_owners(
-    root: Path, fronts: Mapping[str, model.Document], rules: Mapping[str, triage.Rule]
-) -> frozenset[str]:
-    """The sessions that a pending or archived untriaged transcript names in forked_from.
+def _keep_fork_owners(
+    root: Path,
+    fronts: Mapping[str, model.Document],
+    rules: Mapping[str, triage.Rule],
+    kept: dict[str, str],
+) -> None:
+    """Keep each matched transcript whose session a staying transcript names in forked_from.
 
-    Such a session's observation holds that transcript's shared prefix, so curation must still
-    read it.
+    A transcript that names a session in forked_from left its shared prefix in that session's
+    observation, so the owner must stay wherever the naming transcript stays: in pending, kept
+    in pending, or curated in the archive. A kept owner protects its own owner in turn.
     """
-    documents = [front for filename, front in fronts.items() if filename not in rules]
-    directory = _fixed_directory(root, ARCHIVED, create=False, optional=True)
-    if directory is not None:
-        for path in sorted(directory.glob("*.md")):
-            if path.is_symlink() or not path.is_file():
+    by_session: dict[str, list[str]] = {}
+    for filename in rules:
+        session = fronts[filename].scalar("session")
+        if session:
+            by_session.setdefault(session, []).append(filename)
+    staying = [
+        front for filename, front in fronts.items() if filename not in rules or filename in kept
+    ]
+    staying.extend(_curated_archives(root))
+    owners = [owner for front in staying if (owner := _forked_from(front))]
+    while owners:
+        for filename in by_session.get(owners.pop(), ()):
+            if filename in kept:
                 continue
-            text = corpus.strip_bom(path.read_text(encoding="utf-8"))
-            documents.append(model.parse_front_matter(path.name, text))
-    return frozenset(
-        owner
-        for document in documents
-        if _is_untriaged_transcript(document) and (owner := document.scalar("forked_from"))
-    )
+            kept[filename] = "holds shared messages that a staying transcript names in forked_from"
+            if owner := _forked_from(fronts[filename]):
+                owners.append(owner)
+
+
+def _forked_from(front: model.Document) -> str | None:
+    if front.scalar("source") != triage.TRANSCRIPT:
+        return None
+    return front.scalar("forked_from") or None
+
+
+def _curated_archives(root: Path) -> list[model.Document]:
+    """The front matter of the archived transcripts that curation settled, not triage."""
+    directory = _fixed_directory(root, ARCHIVED, create=False, optional=True)
+    if directory is None:
+        return []
+    documents: list[model.Document] = []
+    for path in sorted(directory.glob("*.md")):
+        if path.is_symlink() or not path.is_file():
+            continue
+        front = model.parse_front_matter(path.name, corpus.strip_bom(path.read_text("utf-8")))
+        if _is_untriaged_transcript(front):
+            documents.append(front)
+    return documents
 
 
 def _report_kept(plan: TriagePlan) -> None:

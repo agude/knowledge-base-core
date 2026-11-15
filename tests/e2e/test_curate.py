@@ -1889,7 +1889,7 @@ def test_triage_keeps_restored_linked_and_fork_owner_transcripts(git_kb: Kb) -> 
     assert result.stderr == (
         "curate: warning: observations/pending/linked.md is linked from curated documents; "
         "kept in pending\n"
-        "curate: warning: observations/pending/owner.md holds messages that an untriaged "
+        "curate: warning: observations/pending/owner.md holds shared messages that a staying "
         "transcript names in forked_from; kept in pending\n"
     )
     assert result.stdout == "Triaged: 0 session transcript(s)\n"
@@ -2054,3 +2054,50 @@ def test_start_budgets_a_transcript_by_its_shown_bytes(git_kb: Kb) -> None:
     assert member["shown_bytes"] == manifest["selected_bytes"] < 1000
     status = git_kb("curate", "status", _run_id(result))
     assert f"Remaining pending bytes: {member['shown_bytes']}" in status.stdout
+
+
+def test_triage_keeps_the_owners_of_a_kept_transcript_transitively(git_kb: Kb) -> None:
+    linked = _transcript(git_kb, "linked.md", 'parent_session: "p"', 'forked_from: "middle"')
+    middle = _transcript(git_kb, "middle.md", 'parent_session: "p"', 'forked_from: "root"')
+    root = _transcript(git_kb, "root.md", 'parent_session: "p"')
+    unrelated = _transcript(git_kb, "unrelated.md", 'parent_session: "p"')
+    _write_article(
+        git_kb,
+        "knowledge/inbound.md",
+        "---\ntitle: Inbound reference\nupdated: 2026-10-20\nverified: 2026-10-20\n"
+        "ttl: domain\n---\n\n[Evidence](../observations/pending/linked.md)\n",
+    )
+    _commit(
+        git_kb,
+        *(f"observations/pending/{name}" for name in ("linked.md", "middle.md", "root.md")),
+        "observations/pending/unrelated.md",
+        "knowledge/inbound.md",
+    )
+
+    result = git_kb("curate", "triage")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "Triaged: 1 session transcript(s)\n  delegated: 1\n"
+    for name, content in (("linked.md", linked), ("middle.md", middle), ("root.md", root)):
+        assert _pending(git_kb, name).read_bytes() == content
+    assert _archived(git_kb, "unrelated.md").read_bytes() == _with_triage(unrelated, "delegated")
+    assert "middle.md holds shared messages" in result.stderr
+    assert "root.md holds shared messages" in result.stderr
+
+
+def test_triage_keeps_the_owner_of_a_curated_archive(git_kb: Kb) -> None:
+    owner = _transcript(git_kb, "owner.md", 'parent_session: "p"')
+    archive = git_kb.content / "observations" / "archived" / "parent.md"
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    archive.write_text(
+        '---\nsource: session-transcript\nsession: "parent"\nforked_from: "owner"\n'
+        "original_sha256: abc\ncuration_batch: 20261026T120000-a1b2c3d4\n---\n",
+        encoding="utf-8",
+    )
+    _commit(git_kb, "observations/pending/owner.md", "observations/archived/parent.md")
+
+    result = git_kb("curate", "triage")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "Triaged: 0 session transcript(s)\n"
+    assert _pending(git_kb, "owner.md").read_bytes() == owner
