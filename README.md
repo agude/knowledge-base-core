@@ -561,6 +561,10 @@ the count for each rule. The commit is pushed by the next `kb sync` or
 stops before the commit, the next `kb sync` or `kb curate triage` restores
 them. `--dry-run` lists each match and its rule and changes nothing.
 
+A source transcript that cannot be read is reported on stderr as `cannot
+inspect transcript`, and the command exits 1 after finishing the rest: a
+curation run in that transcript is not detected, so its parts stay pending.
+
 ### Content pre-commit hook
 
 `kb hook pre-commit` is the content repository's Git pre-commit hook. Git may

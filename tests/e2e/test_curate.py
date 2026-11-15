@@ -2101,3 +2101,23 @@ def test_triage_keeps_the_owner_of_a_curated_archive(git_kb: Kb) -> None:
     assert result.returncode == 0, result.stderr
     assert result.stdout == "Triaged: 0 session transcript(s)\n"
     assert _pending(git_kb, "owner.md").read_bytes() == owner
+
+
+def test_triage_reports_a_transcript_it_cannot_inspect(git_kb: Kb) -> None:
+    delegated = _transcript(git_kb, "delegated.md", 'parent_session: "parent"')
+    _commit(git_kb, "observations/pending/delegated.md")
+    unreadable = git_kb.claude_config_dir / "projects" / "demo" / "broken.jsonl"
+    unreadable.parent.mkdir(parents=True, exist_ok=True)
+    unreadable.write_bytes(b"\xff\xfe not UTF-8\n")
+
+    dry = git_kb("curate", "triage", "--dry-run")
+    result = git_kb("curate", "triage")
+
+    warning = (
+        "curate: cannot inspect transcript broken: transcript is not UTF-8; "
+        "a curation run it holds stays pending\n"
+    )
+    assert (dry.returncode, dry.stderr) == (1, warning)
+    assert (result.returncode, result.stderr) == (1, warning)
+    assert result.stdout == "Triaged: 1 session transcript(s)\n  delegated: 1\n"
+    assert _archived(git_kb, "delegated.md").read_bytes() == _with_triage(delegated, "delegated")
