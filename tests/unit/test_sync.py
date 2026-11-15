@@ -747,6 +747,57 @@ def test_recover_removes_only_uncommitted_triaged_archives_from_this_host(tmp_pa
     assert git(root, "diff", "--cached", "--name-only") == ""
 
 
+@pytest.mark.parametrize("pending_removed", [True, False])
+@pytest.mark.parametrize("staged", [True, False])
+def test_recover_restores_an_interrupted_triage_move(
+    tmp_path: Path, pending_removed: bool, staged: bool
+) -> None:
+    root = make_repo(tmp_path / "content")
+    pending = root / "observations" / "pending"
+    archived = root / "observations" / "archived"
+    pending.mkdir(parents=True)
+    archived.mkdir(parents=True)
+    original = observation_text("moved").replace('host: "test-host"', 'host: "other-host"')
+    (pending / "moved.md").write_text(original, encoding="utf-8")
+    git(root, "add", "observations/pending/moved.md")
+    git(root, "commit", "-q", "-m", "Commit pending")
+    copy = original.replace("created:", "triage: delegated\ncreated:")
+    (archived / "moved.md").write_text(copy, encoding="utf-8")
+    if pending_removed:
+        (pending / "moved.md").unlink()
+    if staged:
+        git(root, "add", "--all", "--", "observations")
+
+    sync._recover(root, root / ".git", "test-host")
+
+    assert (pending / "moved.md").read_text(encoding="utf-8") == original
+    assert not (archived / "moved.md").exists()
+    assert git(root, "status", "--porcelain", "--untracked-files=all") == ""
+
+
+def test_recover_keeps_an_uncommitted_curation_archive_of_a_committed_pending_file(
+    tmp_path: Path,
+) -> None:
+    root = make_repo(tmp_path / "content")
+    pending = root / "observations" / "pending"
+    archived = root / "observations" / "archived"
+    pending.mkdir(parents=True)
+    archived.mkdir(parents=True)
+    (pending / "curated.md").write_text(observation_text("curated"), encoding="utf-8")
+    git(root, "add", "observations/pending/curated.md")
+    git(root, "commit", "-q", "-m", "Commit pending")
+    archive = observation_text("curated").replace(
+        "created:", "original_sha256: abc\ncuration_batch: 20261026T120000-a1b2c3d4\ncreated:"
+    )
+    (archived / "curated.md").write_text(archive, encoding="utf-8")
+    (pending / "curated.md").unlink()
+
+    sync._recover(root, root / ".git", "test-host")
+
+    assert (archived / "curated.md").read_text(encoding="utf-8") == archive
+    assert not (pending / "curated.md").exists()
+
+
 def test_recover_leaves_an_empty_archive_without_inspecting_head(tmp_path: Path) -> None:
     root = tmp_path / "content"
     root.mkdir()

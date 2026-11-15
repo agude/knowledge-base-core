@@ -593,11 +593,13 @@ def _record_from_document(document: model.Document) -> harvest.HarvestRecord | N
 
 
 def _recover(root: Path, git_directory: Path, host: str) -> None:
-    """Remove this host's uncommitted transcript observations and empty kb-tmp.
+    """Undo interrupted harvests and triage moves, and empty kb-tmp.
 
     In pending, every uncommitted transcript from this host is a harvest leftover. In the
-    archive, only an uncommitted transcript with a triage field is: curation's uncommitted
-    archives carry curation_batch and stay.
+    archive, an uncommitted transcript with a triage field is one of two things. When HEAD
+    holds a pending file of the same name, it is an interrupted triage move, from any host:
+    the pending file is restored and the copy removed. Otherwise it is a harvest leftover, and
+    this host's are removed. Curation's uncommitted archives carry curation_batch and stay.
     """
     pending = fixed_directory(root, PENDING, command="sync", create=False, optional=True)
     archived = fixed_directory(root, ARCHIVED, command="sync", create=False, optional=True)
@@ -609,14 +611,37 @@ def _recover(root: Path, git_directory: Path, host: str) -> None:
     if pending is not None:
         _remove_uncommitted(root, prefix, PENDING, _transcripts(root, pending, host))
     files = [] if archived is None else _files(root, archived)
-    if files:
-        committed = _committed_paths(root, prefix, ARCHIVED)
-        candidates = [
-            (path, relative)
-            for path, relative in files
-            if relative not in committed and _is_triaged(path, relative, host)
-        ]
-        _remove_uncommitted(root, prefix, ARCHIVED, candidates, committed)
+    if not files:
+        return
+    committed = _committed_paths(root, prefix, ARCHIVED)
+    pending_committed: set[str] | None = None
+    leftovers: list[tuple[Path, str]] = []
+    for path, relative in files:
+        if relative in committed:
+            continue
+        document = _read(path, relative)
+        if not _is_triaged(document):
+            continue
+        if pending_committed is None:
+            pending_committed = _committed_paths(root, prefix, PENDING)
+        original = f"{PENDING}/{path.name}"
+        if original in pending_committed:
+            _undo_move(root, path, relative, original)
+        elif document is not None and document.scalar("host") == host:
+            leftovers.append((path, relative))
+    _remove_uncommitted(root, prefix, ARCHIVED, leftovers, committed)
+
+
+def _undo_move(root: Path, path: Path, relative: str, original: str) -> None:
+    """Restore a moved pending file from HEAD, then unstage and delete its archive copy."""
+    restore = ("reset", "-q", "--") if (root / original).is_file() else ("checkout", "HEAD", "--")
+    restored = git.run(root, *restore, original)
+    if restored.returncode != 0:
+        raise KbError(f"cannot restore interrupted triage move {original}")
+    unstaged = git.run(root, "rm", "-q", "--cached", "--ignore-unmatch", "--", relative)
+    if unstaged.returncode != 0:
+        raise KbError(f"cannot unstage interrupted triage copy {relative}")
+    path.unlink(missing_ok=True)
 
 
 def _files(root: Path, directory: Path) -> list[tuple[Path, str]]:
@@ -653,12 +678,11 @@ def _transcripts(root: Path, directory: Path, host: str) -> list[tuple[Path, str
     ]
 
 
-def _is_triaged(path: Path, relative: str, host: str) -> bool:
-    """Whether an archived file is this host's triaged transcript, not a curation archive."""
-    document = _read(path, relative)
+def _is_triaged(document: model.Document | None) -> bool:
+    """Whether an archived file is a triaged transcript, not a curation archive."""
     return (
-        _is_transcript(document, host)
-        and document is not None
+        document is not None
+        and document.scalar("source") == "session-transcript"
         and document.scalar(triage.FIELD) is not None
         and "curation_batch" not in document.front
     )

@@ -680,9 +680,13 @@ then 1.
 Harvest progress is reconstructed from committed observations in `HEAD`. If a
 run stops before its observation commit, the next run removes that run's
 uncommitted transcript observations and temporary scanner files, then retries
-from the source transcripts. In `observations/archived/`, recovery removes only
-this host's uncommitted transcripts that carry `triage`; an archive that
-`kb curate` has not committed yet carries `curation_batch` and stays. Re-running after a successful harvest does not
+from the source transcripts. In `observations/archived/`, an uncommitted
+transcript that carries `triage` is either an interrupted triage move or a
+harvest leftover. When `HEAD` holds a pending file of the same name, the move is
+undone: the pending file is restored from `HEAD` and the archive copy is
+removed. Otherwise recovery removes the file if this host harvested it. An
+archive that `kb curate` has not committed yet carries `curation_batch` and
+stays. Re-running after a successful harvest does not
 duplicate committed messages.
 
 Transcript identity preserves explicit message IDs and UUIDs. When they are
