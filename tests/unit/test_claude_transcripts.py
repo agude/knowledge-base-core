@@ -380,3 +380,18 @@ def test_only_a_leading_command_envelope_is_an_invocation() -> None:
     session = claude.parse("\n".join(lines) + "\n", "main")
 
     assert session.invoked == ("effort", "goal")
+
+
+def test_compaction_summaries_are_skipped() -> None:
+    summary = "This session is being continued from a previous conversation."
+    lines = [
+        record("user", "First request.", message_id="u1"),
+        record(
+            "user", summary, message_id="u2", isCompactSummary=True, isVisibleInTranscriptOnly=True
+        ),
+        record("user", "Next request.", message_id="u3"),
+    ]
+
+    session = claude.parse("\n".join(lines) + "\n", "main")
+
+    assert [message.id for message in session.messages] == ["u1", "u3"]

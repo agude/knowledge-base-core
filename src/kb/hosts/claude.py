@@ -107,7 +107,12 @@ def _invoked_names(text: str) -> list[str]:
 def _message(record: Mapping[str, object]) -> tuple[Message | None, bool]:
     """Return the retained user or assistant message and whether its record was malformed."""
     role_value = record.get("type")
-    if role_value not in ("user", "assistant") or record.get("isMeta"):
+    # A compaction summary restates earlier messages, which harvest has already kept.
+    if (
+        role_value not in ("user", "assistant")
+        or record.get("isMeta")
+        or record.get("isCompactSummary")
+    ):
         return None, False
     message = record.get("message")
     if not isinstance(message, Mapping):
