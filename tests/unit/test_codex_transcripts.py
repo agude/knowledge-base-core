@@ -492,3 +492,21 @@ def test_quoted_and_assistant_skill_text_is_not_an_invocation() -> None:
     session = codex.parse("\n".join(lines) + "\n", "rollout-main.jsonl")
 
     assert session.invoked == ()
+
+
+def test_skill_bodies_are_removed_and_the_invocation_is_kept() -> None:
+    lines = (user_blocks("$curate").rstrip("\n"), user_blocks(SKILL).rstrip("\n"))
+
+    session = codex.parse("\n".join(lines) + "\n", "rollout-main.jsonl")
+
+    assert [entry.text for entry in session.messages] == ["$curate"]
+    assert session.invoked == ("curate",)
+
+
+def test_a_skill_block_with_text_after_it_is_kept_whole() -> None:
+    trailing = SKILL + "\nAnd then this."
+
+    session = codex.parse(user_blocks(trailing), "rollout-main.jsonl")
+
+    assert session.messages[0].text == trailing
+    assert session.invoked == ("curate",)

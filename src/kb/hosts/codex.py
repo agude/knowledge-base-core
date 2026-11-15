@@ -64,6 +64,8 @@ INJECTED_PREFIXES = (
         r"[ \t]*(?:\n|\Z)",
         re.DOTALL,
     ),
+    # A skill body fills its block; a block with text after the closing tag stays whole.
+    re.compile(r"\A\s*<skill>\s*<name>[^<>\n]+</name>.*</skill>\s*\Z", re.DOTALL),
 )
 
 
