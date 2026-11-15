@@ -31,7 +31,7 @@ def make_batch(*members: curation.Member, maximum: int | None = None) -> curatio
 
 
 def pending(name: str = "20261028T120000-a1b2c3d4.md", size: int = 3) -> curation.Member:
-    return curation.Member(name, HASH, size)
+    return curation.Member(name, HASH, size, shown_bytes=size)
 
 
 def test_run_id_uses_utc_time_and_injected_suffix() -> None:
@@ -330,3 +330,52 @@ def test_loader_rejects_invalid_synchronization_fields(field: str, value: object
 
     with pytest.raises(curation.StateError):
         curation.load_batch(json.dumps(raw))
+
+
+def test_a_version_two_manifest_loads_and_round_trips_without_shown_bytes() -> None:
+    value = json.loads(curation.render_batch(make_batch(pending())))
+    value["schema_version"] = 2
+    del value["members"][0]["shown_bytes"]
+    text = json.dumps(value, ensure_ascii=False, indent=2) + "\n"
+
+    batch = curation.load_batch(text)
+
+    assert batch.schema_version == 2
+    assert batch.members[0].shown_bytes is None
+    assert batch.members[0].budget_bytes == 3
+    assert curation.render_batch(batch) == text
+
+
+@pytest.mark.parametrize(
+    ("version", "mutate", "message"),
+    [
+        (3, lambda member: member.pop("shown_bytes"), "missing shown_bytes"),
+        (2, lambda member: None, "unknown shown_bytes"),
+        (3, lambda member: member.update(shown_bytes=-1), "shown_bytes"),
+    ],
+)
+def test_shown_bytes_follow_the_manifest_version(
+    version: int, mutate: Callable[[dict[str, Any]], None], message: str
+) -> None:
+    value = json.loads(curation.render_batch(make_batch(pending())))
+    value["schema_version"] = version
+    mutate(value["members"][0])
+
+    with pytest.raises(curation.StateError, match=message):
+        curation.load_batch(json.dumps(value))
+
+
+def test_budgets_count_shown_bytes() -> None:
+    small = curation.PendingInput("transcript.md", b"x" * 1000, date(2026, 10, 1), shown_bytes=10)
+    member = curation.make_member("transcript.md", b"x" * 1000, 10)
+
+    selection = curation.select([small], 50)
+    batch = curation.make_batch(RUN, datetime(2026, 10, 28, tzinfo=UTC), 50, [member])
+
+    assert selection.selected == (small,) and selection.selected_bytes == 10
+    assert (batch.selected_bytes, member.original_bytes, member.shown_bytes) == (10, 1000, 10)
+    assert curation.make_member("note.md", b"abc").shown_bytes == 3
+    with pytest.raises(curation.StateError, match="need shown_bytes"):
+        replace(batch, members=(curation.Member("transcript.md", HASH, 1000),))
+    with pytest.raises(curation.StateError, match="have no shown_bytes"):
+        replace(batch, schema_version=2)

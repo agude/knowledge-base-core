@@ -155,7 +155,7 @@ def test_synchronized_start_pushes_local_commits_and_records_its_base(remote_git
     assert "Pulled:" not in result.stdout
     assert _origin_head(remote_git_kb) == _head(remote_git_kb)
     manifest = _manifest(remote_git_kb, _run_id(result))
-    assert manifest["schema_version"] == 2
+    assert manifest["schema_version"] == 3
     assert manifest["synchronized"] is True
     assert manifest["base_commit"] == _head(remote_git_kb)
 
@@ -236,7 +236,7 @@ def test_no_sync_creates_a_local_batch_without_origin(git_kb: Kb) -> None:
     assert result.returncode == 0, result.stderr
     assert "Not synchronized: local batch" in result.stdout
     manifest = _manifest(git_kb, _run_id(result))
-    assert manifest["schema_version"] == 2
+    assert manifest["schema_version"] == 3
     assert manifest["synchronized"] is False
     assert manifest["base_commit"] == _head(git_kb)
 

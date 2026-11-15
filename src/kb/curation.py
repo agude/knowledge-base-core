@@ -12,7 +12,9 @@ from typing import Literal, cast
 from kb import dates
 from kb.locators import parse_locator
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+# Version 2 members have no shown_bytes; their budget counted original bytes. They stay readable.
+SUPPORTED_VERSIONS = frozenset({2, 3})
 MAX_REPORT_ITEMS = 8
 Disposition = Literal["incorporated", "duplicate", "ephemeral"]
 Status = Literal["pending", "archiving", "complete", "deferred", "dropped"]
@@ -32,7 +34,7 @@ _TOP_FIELDS = (
     "base_commit",
     "members",
 )
-_MEMBER_FIELDS = (
+_MEMBER_FIELDS_V2 = (
     "filename",
     "original_sha256",
     "original_bytes",
@@ -42,6 +44,7 @@ _MEMBER_FIELDS = (
     "reason",
     "archive_sha256",
 )
+_MEMBER_FIELDS = (*_MEMBER_FIELDS_V2[:3], "shown_bytes", *_MEMBER_FIELDS_V2[3:])
 _DISPOSITIONS = frozenset({"incorporated", "duplicate", "ephemeral"})
 _STATUSES = frozenset({"pending", "archiving", "complete", "deferred", "dropped"})
 
@@ -77,9 +80,16 @@ class Member:
     destinations: tuple[Destination, ...] = ()
     reason: str | None = None
     archive_sha256: str | None = None
+    # The bytes that curate next shows. None in a version 2 manifest.
+    shown_bytes: int | None = None
 
     def __post_init__(self) -> None:
         validate_member(self)
+
+    @property
+    def budget_bytes(self) -> int:
+        """The bytes that count against the batch budget."""
+        return self.original_bytes if self.shown_bytes is None else self.shown_bytes
 
 
 @dataclass(frozen=True)
@@ -106,11 +116,12 @@ class PendingInput:
     filename: str
     content: bytes
     created_date: date | None
+    shown_bytes: int | None = None
 
     @property
     def size(self) -> int:
-        """The original UTF-8 byte count used by the selection budget."""
-        return len(self.content)
+        """The byte count used by the selection budget: what curate next shows."""
+        return len(self.content) if self.shown_bytes is None else self.shown_bytes
 
 
 @dataclass(frozen=True)
@@ -138,12 +149,16 @@ def make_run_id(when: datetime, suffix: str) -> str:
     return f"{normalized:%Y%m%dT%H%M%S}-{suffix}"
 
 
-def make_member(filename: str, content: bytes) -> Member:
-    """Snapshot one input's name, exact byte length, and SHA-256."""
+def make_member(filename: str, content: bytes, shown_bytes: int | None = None) -> Member:
+    """Snapshot one input's name, exact byte length, SHA-256, and shown byte length.
+
+    shown_bytes defaults to the original length.
+    """
     return Member(
         filename=filename,
         original_sha256=hashlib.sha256(content).hexdigest(),
         original_bytes=len(content),
+        shown_bytes=len(content) if shown_bytes is None else shown_bytes,
     )
 
 
@@ -229,8 +244,14 @@ def make_batch(
             "batch created timestamp must normalize to a representable UTC timestamp"
         ) from error
     timestamp = normalized.isoformat(timespec="seconds").replace("+00:00", "Z")
-    ordered_members = tuple(members)
-    total = sum(member.original_bytes for member in ordered_members)
+    # A member without a shown size counts its original bytes.
+    ordered_members = tuple(
+        member
+        if member.shown_bytes is not None
+        else replace(member, shown_bytes=member.original_bytes)
+        for member in members
+    )
+    total = sum(member.budget_bytes for member in ordered_members)
     return Batch(
         SCHEMA_VERSION,
         run_id,
@@ -262,17 +283,17 @@ def load_batch(text: str) -> Batch:
     if not isinstance(value, dict):
         raise StateError("batch must be a JSON object")
     version = value.get("schema_version")
-    if type(version) is not int or version != SCHEMA_VERSION:
+    if type(version) is not int or version not in SUPPORTED_VERSIONS:
         raise StateError(f"unsupported batch schema version: {version!r}")
     _exact_fields(value, _TOP_FIELDS, "batch")
     members_value = value["members"]
     if not isinstance(members_value, list):
         raise StateError("batch members must be an array")
-    members = tuple(_member_from_object(item) for item in members_value)
+    members = tuple(_member_from_object(item, version) for item in members_value)
     synchronized = _boolean(value["synchronized"], "batch synchronized")
     base_commit = _nullable_string(value["base_commit"], "batch base_commit")
     return Batch(
-        schema_version=SCHEMA_VERSION,
+        schema_version=version,
         id=_string(value["id"], "batch id"),
         created=_string(value["created"], "batch created"),
         max_bytes=_integer(value["max_bytes"], "batch max_bytes"),
@@ -290,7 +311,7 @@ def is_commit_id(value: str) -> bool:
 
 def validate_batch(batch: Batch) -> None:
     """Raise StateError unless the batch and every member satisfy the schema."""
-    if type(batch.schema_version) is not int or batch.schema_version != SCHEMA_VERSION:
+    if type(batch.schema_version) is not int or batch.schema_version not in SUPPORTED_VERSIONS:
         raise StateError(f"unsupported batch schema version: {batch.schema_version!r}")
     validate_run_id(batch.id)
     _validate_timestamp(batch.created)
@@ -309,7 +330,12 @@ def validate_batch(batch: Batch) -> None:
         raise StateError("batch contains duplicate filenames")
     for member in batch.members:
         validate_member(member)
-    total = sum(member.original_bytes for member in batch.members)
+        if (member.shown_bytes is None) != (batch.schema_version == 2):
+            raise StateError(
+                f"schema version {batch.schema_version} members "
+                + ("have no shown_bytes" if batch.schema_version == 2 else "need shown_bytes")
+            )
+    total = sum(member.budget_bytes for member in batch.members)
     if batch.selected_bytes != total:
         raise StateError(f"selected_bytes is {batch.selected_bytes}, expected {total}")
     if total > batch.max_bytes:
@@ -321,6 +347,8 @@ def validate_member(member: Member) -> None:
     validate_filename(member.filename)
     _validate_hash(member.original_sha256, "original_sha256")
     _nonnegative_int(member.original_bytes, "original_bytes")
+    if member.shown_bytes is not None:
+        _nonnegative_int(member.shown_bytes, "shown_bytes")
     if member.status not in _STATUSES:
         raise StateError(f"invalid member status: {member.status!r}")
     for destination in member.destinations:
@@ -461,10 +489,10 @@ def validate_run_id(run_id: str) -> None:
         raise StateError(f"unsafe batch id: {run_id!r}") from error
 
 
-def _member_from_object(value: object) -> Member:
+def _member_from_object(value: object, version: int) -> Member:
     if not isinstance(value, dict):
         raise StateError("batch member must be a JSON object")
-    _exact_fields(value, _MEMBER_FIELDS, "batch member")
+    _exact_fields(value, _MEMBER_FIELDS_V2 if version == 2 else _MEMBER_FIELDS, "batch member")
     destinations_value = value["destinations"]
     if not isinstance(destinations_value, list):
         raise StateError("member destinations must be an array")
@@ -486,6 +514,7 @@ def _member_from_object(value: object) -> Member:
         destinations=destinations,
         reason=_nullable_string(value["reason"], "member reason"),
         archive_sha256=_nullable_string(value["archive_sha256"], "member archive_sha256"),
+        shown_bytes=None if version == 2 else _integer(value["shown_bytes"], "member shown_bytes"),
     )
 
 
@@ -513,10 +542,12 @@ def _batch_object(batch: Batch) -> dict[str, object]:
 
 
 def _member_object(member: Member) -> dict[str, object]:
+    shown = {} if member.shown_bytes is None else {"shown_bytes": member.shown_bytes}
     return {
         "filename": member.filename,
         "original_sha256": member.original_sha256,
         "original_bytes": member.original_bytes,
+        **shown,
         "status": member.status,
         "disposition": member.disposition,
         "destinations": [

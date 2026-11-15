@@ -365,10 +365,12 @@ kb curate finish RUN [--no-push]
 kb curate triage [--dry-run]
 ```
 
-`start` requires a byte budget. It counts each observation's original UTF-8
-bytes, including front matter, and selects ordinary Markdown files directly
-under `observations/pending/`. It snapshots the chosen filenames, sizes, and
-hashes in `observations/batches/RUN.json`. A clean Git worktree is required
+`start` requires a byte budget. It counts the UTF-8 bytes that `next` shows for
+each observation, including front matter: the curation view of a session
+transcript, or the whole file for anything else. It selects ordinary Markdown
+files directly under `observations/pending/`. It snapshots the chosen
+filenames, original sizes, hashes, and shown sizes in
+`observations/batches/RUN.json`. A clean Git worktree is required
 when the batch starts. Automatic selection proceeds by creation date; explicit
 filenames preserve their supplied order. If an observation is larger than the
 budget, `start` prints a command that selects that file alone with its own
@@ -383,8 +385,12 @@ conflicts (the rebase is aborted and local commits are kept), or the push
 fails. The message names the failing step and says `no batch created`. Use
 `--no-sync` for offline work. It creates an unpublished local batch and prints
 `Not synchronized: local batch`. The manifest records `synchronized` and
-`base_commit`, the HEAD the batch started from. Version 1 manifests are
-refused; finish or abandon them with kb 0.4.2 or earlier before upgrading.
+`base_commit`, the HEAD the batch started from. New manifests are version 3,
+which records each member's `shown_bytes`. Version 2 manifests, whose budgets
+counted original bytes, are still read. Version 1 manifests are refused; finish
+or abandon them with kb 0.4.2 or earlier before upgrading. A kb that predates
+version 3 refuses a repository that holds a version 3 manifest, so upgrade every
+host before its next `kb curate start`.
 
 The RUN below came from an isolated fixture repository. A real run prints its
 own RUN; use that value for every later command.

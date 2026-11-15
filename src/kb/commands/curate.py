@@ -58,7 +58,8 @@ START_SPEC = Spec(
     usage="curate start [--no-sync] --max-bytes N [FILENAME...]",
     summary=(
         "Synchronize with origin, then create a local batch from pending observations. "
-        "N counts original UTF-8 bytes; selection is bounded. --no-sync skips "
+        "N counts the UTF-8 bytes that next shows, so a transcript counts its curation view; "
+        "selection is bounded. --no-sync skips "
         "synchronization for offline work and records the batch as local."
     ),
     valued=frozenset({"--max-bytes"}),
@@ -448,7 +449,9 @@ def _start(
         return 1
 
     now = dates.now(os.environ)
-    members = [curation.make_member(item.filename, item.content) for item in selection.selected]
+    members = [
+        curation.make_member(item.filename, item.content, item.size) for item in selection.selected
+    ]
     batch = curation.make_batch(
         curation.make_run_id(now, os.urandom(4).hex()),
         now,
@@ -1254,7 +1257,7 @@ def _status(root: Path, batch: curation.Batch) -> tuple[str, int]:
         f"Dispositions: incorporated={dispositions['incorporated']}, "
         f"duplicate={dispositions['duplicate']}, ephemeral={dispositions['ephemeral']}",
         f"Remaining pending bytes: "
-        f"{sum(member.original_bytes for member in batch.members if member.status == 'pending')}",
+        f"{sum(member.budget_bytes for member in batch.members if member.status == 'pending')}",
     ]
     if destination_counts:
         lines.append("Destinations:")
@@ -2034,7 +2037,12 @@ def _pending_entries(root: Path) -> list[QueueEntry]:
             warnings.append("title is missing; related stale search is unavailable")
         entries.append(
             QueueEntry(
-                curation.PendingInput(path.name, content, created),
+                curation.PendingInput(
+                    path.name,
+                    content,
+                    created,
+                    len(curation_view.render(text, f"{PENDING}/{path.name}").encode("utf-8")),
+                ),
                 document.title,
                 tuple(warnings),
             )

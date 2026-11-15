@@ -2024,3 +2024,33 @@ def test_next_shows_transcript_commands_as_stubs_that_read_in_full(git_kb: Kb) -
     assert "rm -r ./tmp" not in shown.stdout
     assert full.returncode == 0, full.stderr
     assert "~~~~sh\nrm -r ./tmp\n~~~~" in full.stdout
+
+
+def test_start_budgets_a_transcript_by_its_shown_bytes(git_kb: Kb) -> None:
+    command = "x" * 5000
+    content = (
+        "---\n"
+        'title: "Session transcript (1 messages)"\n'
+        "source: session-transcript\n"
+        'host: "test"\n'
+        "app: claude-code\n"
+        'session: "big"\n'
+        "created: 2026-10-26T12:00:00Z\n"
+        "---\n\n"
+        f"## 1. assistant, 2026-10-26T11:00:00Z\n\n~~~~sh\necho {command}\n~~~~\n"
+    ).encode()
+    _pending(git_kb, "big.md").write_bytes(content)
+    _commit(git_kb, "observations/pending/big.md")
+
+    result = git_kb("curate", "start", "--no-sync", "--max-bytes", "1000", "big.md")
+
+    assert result.returncode == 0, result.stderr
+    manifest = json.loads(
+        (git_kb.content / "observations/batches" / f"{_run_id(result)}.json").read_text("utf-8")
+    )
+    member = manifest["members"][0]
+    assert manifest["schema_version"] == 3
+    assert member["original_bytes"] == len(content)
+    assert member["shown_bytes"] == manifest["selected_bytes"] < 1000
+    status = git_kb("curate", "status", _run_id(result))
+    assert f"Remaining pending bytes: {member['shown_bytes']}" in status.stdout
