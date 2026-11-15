@@ -1,6 +1,7 @@
 """The curation view of a transcript observation: its text, with shell blocks as stubs.
 
-The stored observation keeps every command. The view replaces the shell blocks of each run of
+The stored observation keeps every command. Message boundaries come from kb.model, so a
+heading quoted inside a fence is not one. The view replaces the shell blocks of each run of
 messages with one stub that counts the commands, names their programs, and gives the locator
 that prints them in full. A message with text keeps its text, and its commands start the next
 stub. Any other observation is shown unchanged.
@@ -10,27 +11,32 @@ import re
 from collections import Counter
 from collections.abc import Sequence
 
-from kb import shellcalls
+from kb import model, shellcalls
 from kb.hosts import codex
 
-HEADING = re.compile(r"^## ([1-9][0-9]*)\. (?:user|assistant), \S+$", re.MULTILINE)
-FENCE = re.compile(r"^(~{4,})(text|sh)\n(.*?)\n\1$", re.MULTILINE | re.DOTALL)
-TRANSCRIPT = re.compile(r"^source: session-transcript$", re.MULTILINE)
-APP = re.compile(r"^app: (\S+)$", re.MULTILINE)
+MESSAGE = re.compile(r"[1-9][0-9]*\. (?:user|assistant), \S+")
+OPENING = re.compile(r"(~{4,})(text|sh)")
 SHOWN_PROGRAMS = 5
 
 
 def render(text: str, locator: str) -> str:
     """The view of an observation whose path is locator."""
-    front, separator, body = _split(text)
-    if not separator or TRANSCRIPT.search(front) is None:
+    document = model.parse(locator, text)
+    if (
+        document.scalar("source") != "session-transcript"
+        or document.unclosed_fence_start is not None
+    ):
         return text
-    app_match = APP.search(front)
-    app = app_match.group(1) if app_match else ""
-    headings = list(HEADING.finditer(body))
-    if not headings:
+    starts = [
+        section.start
+        for section in document.sections
+        if section.level == 2 and MESSAGE.fullmatch(section.heading)
+    ]
+    if not starts:
         return text
-    parts = [(front + separator + body[: headings[0].start()]).rstrip("\n")]
+    lines = document.lines
+    app = document.scalar("app") or ""
+    parts = ["\n".join(lines[: starts[0]]).rstrip("\n")]
     run: list[tuple[int, str]] = []
 
     def flush() -> None:
@@ -38,33 +44,46 @@ def render(text: str, locator: str) -> str:
             parts.append(_stub(run, locator, app))
             run.clear()
 
-    for index, heading in enumerate(headings):
-        end = headings[index + 1].start() if index + 1 < len(headings) else len(body)
-        segment = body[heading.end() : end]
-        fences = list(FENCE.finditer(segment))
-        if FENCE.sub("", segment).strip():
+    for index, start in enumerate(starts):
+        end = starts[index + 1] if index + 1 < len(starts) else len(lines)
+        heading = lines[start]
+        blocks = _blocks(lines[start + 1 : end])
+        if blocks is None:
             flush()
-            parts.append((heading.group(0) + segment).rstrip("\n"))
+            parts.append("\n".join(lines[start:end]).rstrip("\n"))
             continue
-        texts = [fence.group(0) for fence in fences if fence.group(2) == "text"]
+        texts = ["\n".join(block) for info, block in blocks if info == "text"]
         if texts:
             flush()
-            parts.append(heading.group(0))
+            parts.append(heading)
             parts.extend(texts)
-        number = int(heading.group(1))
-        run.extend((number, fence.group(3)) for fence in fences if fence.group(2) == "sh")
+        number = int(heading.removeprefix("## ").split(".", 1)[0])
+        run.extend((number, "\n".join(block[1:-1])) for info, block in blocks if info == "sh")
     flush()
     return "\n\n".join(part for part in parts if part) + "\n"
 
 
-def _split(text: str) -> tuple[str, str, str]:
-    """Front matter through its opening line and fields, the closing delimiter, and the body."""
-    if not text.startswith("---\n"):
-        return text, "", ""
-    end = text.find("\n---\n", 3)
-    if end < 0:
-        return text, "", ""
-    return text[: end + 1], "---\n", text[end + 5 :]
+def _blocks(lines: Sequence[str]) -> list[tuple[str, list[str]]] | None:
+    """The text and sh fences of one message, or None when it holds anything else.
+
+    A fence closes only on a line that repeats its opening marker. Harvest makes the marker
+    longer than any tilde run inside the content, so no content line can close it.
+    """
+    blocks: list[tuple[str, list[str]]] = []
+    block: list[str] | None = None
+    marker = info = ""
+    for line in lines:
+        if block is not None:
+            block.append(line)
+            if line == marker:
+                blocks.append((info, block))
+                block = None
+        elif (opening := OPENING.fullmatch(line)) is not None:
+            marker, info = opening.groups()
+            block = [line]
+        elif line.strip():
+            return None
+    return None if block is not None else blocks
 
 
 def _stub(run: Sequence[tuple[int, str]], locator: str, app: str) -> str:

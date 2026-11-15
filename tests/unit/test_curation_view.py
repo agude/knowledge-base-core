@@ -102,3 +102,30 @@ def test_a_message_with_other_content_is_kept_verbatim() -> None:
     view = curation_view.render(edited, LOCATOR)
 
     assert "~~~~sh\nls\n~~~~\n\nStray line.\n\n## 2. user" in view
+
+
+QUOTED_HEADING = "## 99. user, 2026-10-25T09:00:00Z"
+
+
+def test_a_quoted_message_heading_in_text_is_not_a_boundary() -> None:
+    text = observation(("user", f"Quote:\n{QUOTED_HEADING}\nEnd.", ()), ("assistant", "OK", ()))
+
+    assert curation_view.render(text, LOCATOR) == text
+
+
+def test_a_quoted_message_heading_in_a_command_is_stubbed_with_it() -> None:
+    heredoc = f"cat > notes.md <<'EOF'\n{QUOTED_HEADING}\n{'x' * 10000}\nEOF"
+    text = observation(("assistant", "Writing notes.", (heredoc,)), ("user", "Thanks.", ()))
+
+    view = curation_view.render(text, LOCATOR)
+
+    assert QUOTED_HEADING not in view
+    assert "x" * 100 not in view
+    assert "[1 command(s) in message 1, 10 KB: cat." in view
+
+
+def test_an_unclosed_fence_leaves_the_observation_unchanged() -> None:
+    text = observation(("user", "Next.", ()), ("assistant", "", ("ls",)))
+    broken = text.removesuffix("~~~~\n")
+
+    assert curation_view.render(broken, LOCATOR) == broken
