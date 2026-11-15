@@ -4,6 +4,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from kb import triage
 from kb.meta import TranscriptMeta
 from kb.transcripts import App, Message, Session
 
@@ -148,9 +149,16 @@ def select_candidates(
     harvest_since: datetime | None,
     limit: int = MAX_SESSIONS,
 ) -> Selection:
-    """Choose ready messages in timestamp order and assign shared prefixes once."""
+    """Choose ready messages in timestamp order and assign shared prefixes once.
+
+    A triaged session never takes a message that an untriaged session also holds, ready or
+    not: a Codex subagent forked from its parent copies the parent's history, and that history
+    belongs in the parent's observation, which curation reads.
+    """
     if limit < 1:
         raise ValueError("the session limit must be positive")
+    candidates = tuple(candidates)
+    held = _untriaged_messages(candidates)
     limit = min(limit, MAX_SESSIONS)
     now_utc = _utc(now)
     since_utc = None if harvest_since is None else _utc(harvest_since)
@@ -180,6 +188,10 @@ def select_candidates(
             )
         if since_utc is not None:
             messages = tuple(message for message in messages if message.timestamp >= since_utc)
+        if triage.for_session(session) is not None:
+            messages = tuple(
+                message for message in messages if (session.app, message.id) not in held
+            )
         if not messages:
             continue
 
@@ -227,6 +239,16 @@ def select_candidates(
                 break
     ready_times = tuple(_utc(candidate.modified) for candidate, _, _ in ready)
     return Selection(tuple(plans), len(ready), waiting, tuple(warnings), ready_times)
+
+
+def _untriaged_messages(candidates: Iterable[Candidate]) -> frozenset[MessageKey]:
+    """The message keys that some identified untriaged session holds."""
+    return frozenset(
+        (candidate.session.app, message.id)
+        for candidate in candidates
+        if candidate.session.id is not None and triage.for_session(candidate.session) is None
+        for message in candidate.session.messages
+    )
 
 
 def _valid_record(record: HarvestRecord, host: str) -> bool:

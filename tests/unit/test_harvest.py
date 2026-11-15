@@ -411,3 +411,36 @@ def test_selection_refuses_naive_clock_cutoff_or_modification_time() -> None:
     candidate = Candidate(session("naive", message("x")), datetime(2026, 10, 25, 8))
     with pytest.raises(ValueError, match="timezone-aware"):
         select_candidates((candidate,), empty_state(), NOW, None)
+
+
+def test_a_triaged_fork_does_not_take_its_parents_messages() -> None:
+    shared = (message("shared-1", OLD), message("shared-2", OLD + timedelta(minutes=1)))
+    own = message("fork-own", OLD + timedelta(minutes=2), "assistant")
+    parent = session("parent", *shared, latest=NOW - timedelta(minutes=5))
+    fork = replace(session("fork", *shared, own), parent_session="parent")
+    candidates = [Candidate(parent, NOW - timedelta(minutes=5)), Candidate(fork, OLD)]
+
+    while_parent_runs = select_candidates(candidates, empty_state(), NOW, SINCE)
+    later = select_candidates(
+        [Candidate(replace(parent, latest_timestamp=OLD), OLD), Candidate(fork, OLD)],
+        empty_state(),
+        NOW,
+        SINCE,
+    )
+
+    assert [
+        (plan.session.id, [m.id for m in plan.messages], plan.forked_from)
+        for plan in while_parent_runs.plans
+    ] == [("fork", ["fork-own"], None)]
+    assert [(plan.session.id, [m.id for m in plan.messages]) for plan in later.plans] == [
+        ("parent", ["shared-1", "shared-2"]),
+        ("fork", ["fork-own"]),
+    ]
+
+
+def test_a_triaged_session_keeps_messages_no_untriaged_session_holds() -> None:
+    fork = replace(session("fork", message("only-here")), parent_session="parent")
+
+    selection = select_candidates([Candidate(fork, OLD)], empty_state(), NOW, SINCE)
+
+    assert [[m.id for m in plan.messages] for plan in selection.plans] == [["only-here"]]
