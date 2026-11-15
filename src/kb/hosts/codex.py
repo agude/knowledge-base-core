@@ -53,6 +53,15 @@ INJECTED_BLOCKS = (
         re.IGNORECASE | re.DOTALL,
     ),
 )
+# Context that Codex injects as the whole start of a user content block. A quoted copy later in
+# a block, such as one inside a guardian review's history, is not injected and stays.
+INJECTED_PREFIXES = (
+    re.compile(
+        r"\A\s*# AGENTS\.md instructions(?: for [^\n]*)?\n+<INSTRUCTIONS>.*?</INSTRUCTIONS>"
+        r"[ \t]*(?:\n|\Z)",
+        re.DOTALL,
+    ),
+)
 
 
 def parse(text: str, filename: str) -> Session:
@@ -175,6 +184,8 @@ def _text_message(
         return None, False
     role: Role = role_value
     texts = _message_text(payload.get("content"), role)
+    if role == "user":
+        texts = _without_injected_prefixes(texts)
     text = "\n".join(texts)
     if role == "user":
         for block in INJECTED_BLOCKS:
@@ -183,6 +194,24 @@ def _text_message(
     if not text.strip():
         return None, False
     return _make_message(record, payload, role, text, ())
+
+
+def _without_injected_prefixes(texts: list[str]) -> list[str]:
+    """Remove injected context from the start of each block, and drop a block it emptied.
+
+    A block that was already empty stays, so the text of a message without injected context
+    is unchanged.
+    """
+    kept: list[str] = []
+    for text in texts:
+        remainder = text
+        for prefix in INJECTED_PREFIXES:
+            match = prefix.match(remainder)
+            if match is not None:
+                remainder = remainder[match.end() :]
+        if remainder or remainder == text:
+            kept.append(remainder)
+    return kept
 
 
 def _message_text(value: object, role: Role) -> list[str]:

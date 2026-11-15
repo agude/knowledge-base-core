@@ -175,6 +175,58 @@ def test_message_with_only_injected_context_is_skipped() -> None:
     assert codex.parse(text + "\n", "rollout-main.jsonl").messages == ()
 
 
+AGENTS_FOR = (
+    "# AGENTS.md instructions for /work\n\n<INSTRUCTIONS>\n## Rules\n\nDrop.\n</INSTRUCTIONS>"
+)
+AGENTS_BARE = "# AGENTS.md instructions\n\n<INSTRUCTIONS>\nDrop.\n</INSTRUCTIONS>\n"
+
+
+def user_blocks(*texts: str) -> str:
+    content = [{"type": "input_text", "text": text} for text in texts]
+    return message("user", content) + "\n"
+
+
+def test_injected_agents_instructions_are_removed_in_both_forms() -> None:
+    for injected in (AGENTS_FOR, AGENTS_BARE):
+        session = codex.parse(user_blocks(injected, "Keep this request."), "rollout-main.jsonl")
+
+        assert [entry.text for entry in session.messages] == ["Keep this request."]
+
+
+def test_a_message_of_only_agents_instructions_is_skipped() -> None:
+    assert codex.parse(user_blocks(AGENTS_FOR), "rollout-main.jsonl").messages == ()
+
+
+def test_text_after_agents_instructions_in_the_same_block_is_kept() -> None:
+    session = codex.parse(user_blocks(AGENTS_FOR + "\nKeep this."), "rollout-main.jsonl")
+
+    assert session.messages[0].text == "Keep this."
+
+
+def test_quoted_agents_instructions_inside_a_block_are_kept() -> None:
+    quoted = "The following is the agent history:\n" + AGENTS_FOR
+
+    session = codex.parse(user_blocks(quoted), "rollout-main.jsonl")
+
+    assert session.messages[0].text == quoted
+
+
+def test_unclosed_agents_instructions_are_kept() -> None:
+    unclosed = "# AGENTS.md instructions\n\n<INSTRUCTIONS>\nNo end."
+
+    session = codex.parse(user_blocks(unclosed), "rollout-main.jsonl")
+
+    assert session.messages[0].text == unclosed
+
+
+def test_only_a_block_emptied_by_removal_is_dropped() -> None:
+    stripped = codex.parse(user_blocks("First.", AGENTS_FOR, "Last."), "rollout-main.jsonl")
+    untouched = codex.parse(user_blocks("First.", "", "Last."), "rollout-main.jsonl")
+
+    assert stripped.messages[0].text == "First.\nLast."
+    assert untouched.messages[0].text == "First.\n\nLast."
+
+
 def test_user_and_assistant_text_blocks_use_their_roles() -> None:
     records = (
         "\n".join(
