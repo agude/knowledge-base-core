@@ -20,8 +20,8 @@ kb curate start --max-bytes 65536
 ```
 
 Use the `RUN` printed by the command in every later command. The byte budget
-counts each selected observation's original UTF-8 bytes, including front
-matter. Automatic selection follows creation date; supplied filenames keep
+counts the UTF-8 bytes that `next` shows for each observation, including front
+matter, so a session transcript counts its curation view. Automatic selection follows creation date; supplied filenames keep
 their order. `start` requires a clean worktree and synchronizes with `origin`
 before it creates the batch. For explicitly requested offline work, use
 `kb curate start --no-sync --max-bytes N`; this creates a local batch that is
@@ -35,9 +35,23 @@ kb curate next RUN
 ```
 
 `status` shows batch progress and publication state without contacting the
-remote. `next` prints the full observation, up to three matching curated
-sections, and up to five related open questions. Use `--query TEXT` when a
-different query better describes the observation.
+remote. `next` prints the observation, up to three matching curated sections,
+and up to five related open questions. Use `--query TEXT` when a different
+query better describes the observation.
+
+For a session transcript, `next` prints a curation view. Every message keeps
+its text, but shell commands are replaced by stubs such as:
+
+```text
+[38 command(s) in messages 120-158, 41 KB: rg x12, sed x9, patch x4, uv x3, git x2, 8 more. Read with: kb read observations/pending/FILE.md#N, N 120-158]
+```
+
+The transcript keeps no tool output, so a command rarely holds a durable fact
+by itself; the next message usually says what happened. Read a command with
+`kb read observations/pending/FILE.md#N` only when the text points at a value
+that the command holds and the fact depends on, such as a flag, path, setting,
+query, or version. Do not read stubs to reconstruct work that the text already
+reports.
 
 If a prior command was interrupted, run `status` first. When it prints an
 exact recovery command for an archive intent, repeat that command exactly.
@@ -46,7 +60,7 @@ an unsettled one.
 
 ## Process each observation
 
-Read the whole observation and the context from `next`. Use `kb recall`,
+Read the whole view and the context from `next`. Use `kb recall`,
 `kb evidence`, and `kb questions` to check for existing knowledge, supporting
 evidence, and open questions. Verify time-sensitive claims against current
 sources. Preserve durable facts, decisions, and useful attribution. Do not
