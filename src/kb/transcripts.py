@@ -46,6 +46,16 @@ class Session:
     snapshot_complete: bool
     malformed_lines: int = 0
     duplicate_ids: int = 0
+    # The skills and slash commands the user invoked, in first-use order. A session keeps them
+    # even when the invoking message is not retained.
+    invoked: tuple[str, ...] = ()
+
+
+def add_invoked(invoked: list[str], names: Iterable[str]) -> None:
+    """Append each name not already recorded, keeping first-use order."""
+    for name in names:
+        if name and name not in invoked:
+            invoked.append(name)
 
 
 def complete_lines(text: str) -> tuple[tuple[str, ...], bool]:

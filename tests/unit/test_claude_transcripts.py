@@ -324,3 +324,30 @@ def test_missing_uuid_uses_the_ordered_group_of_shell_tool_ids() -> None:
         record("assistant", list(reversed(blocks)), message_id=None) + "\n", "group"
     )
     assert parsed.messages[0].id != reversed_group.messages[0].id
+
+
+def test_invoked_commands_are_recorded_once_in_first_use_order() -> None:
+    lines = [
+        record(
+            "user",
+            "<command-message>curate</command-message>\n<command-name>/curate</command-name>",
+            message_id="u1",
+        ),
+        record("user", "<command-name>/model</command-name>", message_id="u2"),
+        record("user", "<command-name>/curate</command-name> again", message_id="u3"),
+        record(
+            "assistant",
+            [{"type": "text", "text": "<command-name>/ignored</command-name>"}],
+            message_id="a1",
+        ),
+    ]
+
+    session = claude.parse("\n".join(lines) + "\n", "main")
+
+    assert session.invoked == ("curate", "model")
+
+
+def test_a_session_without_invocations_records_none() -> None:
+    session = claude.parse(record("user", "Plain request.") + "\n", "main")
+
+    assert session.invoked == ()

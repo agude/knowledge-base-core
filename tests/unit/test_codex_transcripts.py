@@ -464,3 +464,31 @@ def test_repeated_command_calls_without_payload_ids_remain_distinct_and_stable()
         assert codex.parse(text, "rollout-main.jsonl").messages == parsed.messages
         appended = codex.parse(text + records[-1] + "\n", "rollout-main.jsonl")
         assert appended.messages[:2] == parsed.messages
+
+
+SKILL = "<skill>\n<name>curate</name>\n<path>/skills/curate/SKILL.md</path>\nBody.\n</skill>"
+
+
+def test_invoked_skills_are_recorded_from_skill_blocks() -> None:
+    lines = (
+        user_blocks("$curate").rstrip("\n"),
+        user_blocks(SKILL).rstrip("\n"),
+        user_blocks(SKILL.replace("curate", "stub-book")).rstrip("\n"),
+        user_blocks(SKILL).rstrip("\n"),
+    )
+
+    session = codex.parse("\n".join(lines) + "\n", "rollout-main.jsonl")
+
+    assert session.invoked == ("curate", "stub-book")
+
+
+def test_quoted_and_assistant_skill_text_is_not_an_invocation() -> None:
+    lines = (
+        user_blocks("History:\n" + SKILL).rstrip("\n"),
+        message("assistant", [{"type": "output_text", "text": SKILL}]),
+        item("reasoning", {"summary": []}),
+    )
+
+    session = codex.parse("\n".join(lines) + "\n", "rollout-main.jsonl")
+
+    assert session.invoked == ()

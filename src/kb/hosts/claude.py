@@ -16,6 +16,7 @@ from kb.transcripts import (
     Scan,
     Session,
     Store,
+    add_invoked,
     complete_lines,
     earlier,
     later,
@@ -32,6 +33,8 @@ from kb.transcripts import (
 
 APP: App = "claude-code"
 SYSTEM_REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL)
+# A skill or slash command the user invoked, recorded as user text.
+COMMAND_NAME = re.compile(r"<command-name>\s*/?([^<>\s]+)\s*</command-name>")
 # The tools whose input is a shell command. Claude Code on Windows has both.
 SHELL_TOOLS = frozenset(("Bash", "PowerShell"))
 
@@ -43,6 +46,7 @@ def parse(text: str, session_id: str, parent_session: str | None = None) -> Sess
     project = ""
     latest_timestamp = None
     malformed = 0
+    invoked: list[str] = []
 
     for index, line in enumerate(lines):
         try:
@@ -67,6 +71,8 @@ def parse(text: str, session_id: str, parent_session: str | None = None) -> Sess
             malformed += 1
         if message is not None:
             messages.append(message)
+            if message.role == "user":
+                add_invoked(invoked, COMMAND_NAME.findall(message.text))
 
     unique, duplicates = unique_messages(messages)
     return Session(
@@ -80,6 +86,7 @@ def parse(text: str, session_id: str, parent_session: str | None = None) -> Sess
         snapshot_complete=complete,
         malformed_lines=malformed,
         duplicate_ids=duplicates,
+        invoked=tuple(invoked),
     )
 
 

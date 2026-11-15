@@ -16,6 +16,7 @@ from kb.transcripts import (
     Scan,
     Session,
     Store,
+    add_invoked,
     complete_lines,
     earlier,
     later,
@@ -53,6 +54,8 @@ INJECTED_BLOCKS = (
         re.IGNORECASE | re.DOTALL,
     ),
 )
+# A skill the user invoked: Codex adds its body as a user content block that starts so.
+SKILL_NAME = re.compile(r"\A\s*<skill>\s*<name>([^<>\n]+)</name>")
 # Context that Codex injects as the whole start of a user content block. A quoted copy later in
 # a block, such as one inside a guardian review's history, is not injected and stays.
 INJECTED_PREFIXES = (
@@ -75,6 +78,7 @@ def parse(text: str, filename: str) -> Session:
     messages: list[Message] = []
     latest_timestamp = None
     malformed = 0
+    invoked: list[str] = []
 
     for index, line in enumerate(lines):
         try:
@@ -102,6 +106,7 @@ def parse(text: str, filename: str) -> Session:
                 parent_session,
                 forked_from,
             )
+        add_invoked(invoked, _invoked_skills(record))
         message, invalid = _message(record)
         if invalid:
             malformed += 1
@@ -120,6 +125,7 @@ def parse(text: str, filename: str) -> Session:
         snapshot_complete=complete,
         malformed_lines=malformed,
         duplicate_ids=duplicates,
+        invoked=tuple(invoked),
     )
 
 
@@ -157,6 +163,24 @@ def _metadata(
     parent_session = parent if isinstance(parent, str) else None
     forked_from = fork if isinstance(fork, str) else None
     return filename_id, project, parent_session, forked_from
+
+
+def _invoked_skills(record: Mapping[str, object]) -> list[str]:
+    """The names of the skills whose bodies a user message item carries."""
+    payload = record.get("payload")
+    if (
+        record.get("type") != "response_item"
+        or not isinstance(payload, Mapping)
+        or payload.get("type") != "message"
+        or payload.get("role") != "user"
+    ):
+        return []
+    names: list[str] = []
+    for text in _message_text(payload.get("content"), "user"):
+        match = SKILL_NAME.match(text)
+        if match is not None:
+            names.append(match.group(1).strip())
+    return names
 
 
 def _message(record: Mapping[str, object]) -> tuple[Message | None, bool]:
