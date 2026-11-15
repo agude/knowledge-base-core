@@ -33,8 +33,10 @@ from kb.transcripts import (
 
 APP: App = "claude-code"
 SYSTEM_REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL)
-# A skill or slash command the user invoked, recorded as user text.
-COMMAND_NAME = re.compile(r"<command-name>\s*/?([^<>\s]+)\s*</command-name>")
+# Claude Code records a skill or slash command the user invoked as a user message that starts
+# with these tags, in any order. The same tags quoted later in other text are not invocations.
+ENVELOPE_TAG = re.compile(r"\s*<(command-(?:message|name|args))>(.*?)</\1>", re.DOTALL)
+COMMAND_NAME = re.compile(r"/?([^<>\s]+)")
 # The tools whose input is a shell command. Claude Code on Windows has both.
 SHELL_TOOLS = frozenset(("Bash", "PowerShell"))
 
@@ -72,7 +74,7 @@ def parse(text: str, session_id: str, parent_session: str | None = None) -> Sess
         if message is not None:
             messages.append(message)
             if message.role == "user":
-                add_invoked(invoked, COMMAND_NAME.findall(message.text))
+                add_invoked(invoked, _invoked_names(message.text))
 
     unique, duplicates = unique_messages(messages)
     return Session(
@@ -88,6 +90,18 @@ def parse(text: str, session_id: str, parent_session: str | None = None) -> Sess
         duplicate_ids=duplicates,
         invoked=tuple(invoked),
     )
+
+
+def _invoked_names(text: str) -> list[str]:
+    """The command names in the tags that open a user message. A name inside args is not one."""
+    names: list[str] = []
+    position = 0
+    while (tag := ENVELOPE_TAG.match(text, position)) is not None:
+        name = COMMAND_NAME.fullmatch(tag.group(2).strip())
+        if tag.group(1) == "command-name" and name is not None:
+            names.append(name.group(1))
+        position = tag.end()
+    return names
 
 
 def _message(record: Mapping[str, object]) -> tuple[Message | None, bool]:
