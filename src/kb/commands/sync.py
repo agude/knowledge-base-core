@@ -29,6 +29,7 @@ from kb import (
     secrets,
     sync_state,
     token_cache,
+    triage,
 )
 from kb.args import Spec
 from kb.config import content_root
@@ -92,6 +93,7 @@ class Prepared:
     reason: str | None
     messages: int
     redacted_by_detector: Mapping[str, int]
+    rule: triage.Rule | None = None
 
     @property
     def redacted_lines(self) -> int:
@@ -195,7 +197,8 @@ def recover_and_harvest(
             commit_warning = harvested.warning
             if commit_warning is not None:
                 warnings.append(commit_warning)
-        sys.stdout.write(f"Harvested: {harvested.count} session transcript(s)\n")
+        archived = f" ({harvested.triaged} archived by triage)" if harvested.triaged else ""
+        sys.stdout.write(f"Harvested: {harvested.count} session transcript(s){archived}\n")
         if messages or byte_count or redacted:
             sys.stdout.write(
                 f"Harvest totals: {messages} messages, {byte_count} bytes, "
@@ -409,7 +412,9 @@ def _dry_run(
                 sys.stdout.write(
                     f"{plan.session.app} {plan.session.id} part {plan.part}: "
                     f"{result.messages} messages, {result.byte_count} bytes, "
-                    f"{result.redacted_lines} redacted lines\n"
+                    f"{result.redacted_lines} redacted lines"
+                    + ("" if result.rule is None else f", triage: {result.rule}")
+                    + "\n"
                 )
             _write_totals(*totals)
             _write_record_counts(scanned.candidates)
@@ -588,31 +593,89 @@ def _record_from_document(document: model.Document) -> harvest.HarvestRecord | N
 
 
 def _recover(root: Path, git_directory: Path, host: str) -> None:
-    """Remove this host's uncommitted transcript observations and empty kb-tmp."""
+    """Remove this host's uncommitted transcript observations and empty kb-tmp.
+
+    In pending, every uncommitted transcript from this host is a harvest leftover. In the
+    archive, only an uncommitted transcript with a triage field is: curation's uncommitted
+    archives carry curation_batch and stay.
+    """
     pending = fixed_directory(root, PENDING, command="sync", create=False, optional=True)
+    archived = fixed_directory(root, ARCHIVED, command="sync", create=False, optional=True)
     scratch_directory = git_directory / TMP
     if scratch_directory.is_symlink():
         raise KbError(f"temporary directory is a symlink: {scratch_directory}")
     _empty_directory(scratch_directory)
-    if pending is None:
-        return
     prefix = git_paths.repository_prefix(root, "sync")
-    candidates: list[tuple[Path, str]] = []
-    for path in sorted(pending.glob("*.md")):
-        if path.is_symlink() or not path.is_file():
-            continue
-        relative = path.relative_to(root).as_posix()
-        try:
-            document = model.parse(relative, path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError):
-            continue
-        if document.scalar("source") != "session-transcript" or document.scalar("host") != host:
-            continue
-        candidates.append((path, relative))
+    if pending is not None:
+        _remove_uncommitted(root, prefix, PENDING, _transcripts(root, pending, host))
+    files = [] if archived is None else _files(root, archived)
+    if files:
+        committed = _committed_paths(root, prefix, ARCHIVED)
+        candidates = [
+            (path, relative)
+            for path, relative in files
+            if relative not in committed and _is_triaged(path, relative, host)
+        ]
+        _remove_uncommitted(root, prefix, ARCHIVED, candidates, committed)
 
+
+def _files(root: Path, directory: Path) -> list[tuple[Path, str]]:
+    """The regular Markdown files directly in directory, with content-relative paths."""
+    return [
+        (path, path.relative_to(root).as_posix())
+        for path in sorted(directory.glob("*.md"))
+        if not path.is_symlink() and path.is_file()
+    ]
+
+
+def _read(path: Path, relative: str) -> model.Document | None:
+    """Parse one observation, or None when it cannot be read."""
+    try:
+        return model.parse(relative, path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError):
+        return None
+
+
+def _is_transcript(document: model.Document | None, host: str) -> bool:
+    return (
+        document is not None
+        and document.scalar("source") == "session-transcript"
+        and document.scalar("host") == host
+    )
+
+
+def _transcripts(root: Path, directory: Path, host: str) -> list[tuple[Path, str]]:
+    """This host's transcript observations directly in directory."""
+    return [
+        (path, relative)
+        for path, relative in _files(root, directory)
+        if _is_transcript(_read(path, relative), host)
+    ]
+
+
+def _is_triaged(path: Path, relative: str, host: str) -> bool:
+    """Whether an archived file is this host's triaged transcript, not a curation archive."""
+    document = _read(path, relative)
+    return (
+        _is_transcript(document, host)
+        and document is not None
+        and document.scalar(triage.FIELD) is not None
+        and "curation_batch" not in document.front
+    )
+
+
+def _remove_uncommitted(
+    root: Path,
+    prefix: str,
+    directory: str,
+    candidates: Sequence[tuple[Path, str]],
+    committed: set[str] | None = None,
+) -> None:
+    """Unstage and delete each candidate that HEAD does not hold."""
     if not candidates:
         return
-    committed = _committed_pending_paths(root, prefix)
+    if committed is None:
+        committed = _committed_paths(root, prefix, directory)
     for path, relative in candidates:
         if relative in committed:
             continue
@@ -622,9 +685,9 @@ def _recover(root: Path, git_directory: Path, host: str) -> None:
         path.unlink(missing_ok=True)
 
 
-def _committed_pending_paths(root: Path, prefix: str) -> set[str]:
-    """The content-relative pending paths in a successfully inspected HEAD tree."""
-    repository_pending = git_paths.to_repository_path(PENDING, prefix)
+def _committed_paths(root: Path, prefix: str, directory: str) -> set[str]:
+    """The content-relative paths under directory in a successfully inspected HEAD tree."""
+    repository_directory = git_paths.to_repository_path(directory, prefix)
     tree = git.run_bytes(
         root,
         "ls-tree",
@@ -633,7 +696,7 @@ def _committed_pending_paths(root: Path, prefix: str) -> set[str]:
         "--full-tree",
         "HEAD",
         "--",
-        repository_pending,
+        repository_directory,
         input_bytes=b"",
     )
     if tree.returncode != 0:
@@ -706,8 +769,9 @@ def _write_selection(
     paths: list[str] = []
     for plan, result in prepared:
         assert result.text is not None
+        directory = PENDING if result.rule is None else ARCHIVED
         try:
-            path = _publish(root, scan_directory, result.text, now)
+            path = _publish(root, scan_directory, result.text, now, directory)
         except (OSError, UnicodeError, KbError) as error:
             failures.append(_failure_text(Failure(plan.session.id or "unknown", str(error))))
             cleanup_error = _remove_paths(root, paths)
@@ -725,8 +789,9 @@ def _write_selection(
     for _, result in prepared:
         for detector, count in result.redacted_by_detector.items():
             detector_counts[detector] = detector_counts.get(detector, 0) + count
+    triaged = sum(result.rule is not None for _, result in prepared)
     return (
-        WriteResult(len(paths), tuple(failures), warning),
+        WriteResult(len(paths), tuple(failures), warning, triaged),
         sum(result.messages for _, result in prepared),
         sum(result.byte_count for _, result in prepared),
         sum(result.redacted_lines for _, result in prepared),
@@ -741,10 +806,12 @@ class WriteResult:
     count: int
     failures: tuple[str, ...]
     warning: str | None = None
+    triaged: int = 0
 
 
 def _prepare(plan: harvest.HarvestPlan, scan_directory: Path, host: str, now: datetime) -> Prepared:
     """Redact user content, validate it, and render one planned observation."""
+    rule = triage.for_session(plan.session)
     _, title, excerpt = title_candidates(plan.messages)
     detector_lines: dict[str, set[ContentLine | str]] = {}
     if excerpt is not None:
@@ -785,14 +852,14 @@ def _prepare(plan: harvest.HarvestPlan, scan_directory: Path, host: str, now: da
 
     try:
         text = render_observation(
-            plan.session, messages, plan.part, host, now, plan.forked_from, title
+            plan.session, messages, plan.part, host, now, plan.forked_from, title, rule
         )
     except (ValueError, OverflowError) as error:
         return Prepared(
             None, f"invalid observation: {error}", len(messages), _detector_counts(detector_lines)
         )
     invalid = validate_observation(
-        text, plan.session, messages, plan.part, host, now, plan.forked_from, title
+        text, plan.session, messages, plan.part, host, now, plan.forked_from, title, rule
     )
     if invalid:
         return Prepared(
@@ -801,7 +868,7 @@ def _prepare(plan: harvest.HarvestPlan, scan_directory: Path, host: str, now: da
             len(messages),
             _detector_counts(detector_lines),
         )
-    return Prepared(text, None, len(messages), _detector_counts(detector_lines))
+    return Prepared(text, None, len(messages), _detector_counts(detector_lines), rule)
 
 
 def _record_detector_lines(
@@ -831,10 +898,15 @@ def _detector_counts(counts: Mapping[str, set[ContentLine | str]]) -> dict[str, 
     return {detector: len(locations) for detector, locations in counts.items()}
 
 
-def _publish(root: Path, scan_directory: Path, text: str, now: datetime) -> str:
-    """Publish a temporary observation without replacing a target, then return its content path."""
-    pending = fixed_directory(root, PENDING, command="sync", create=True)
-    assert pending is not None
+def _publish(
+    root: Path, scan_directory: Path, text: str, now: datetime, directory: str = PENDING
+) -> str:
+    """Publish a temporary observation in directory without replacing a target.
+
+    Returns its content path.
+    """
+    target = fixed_directory(root, directory, command="sync", create=True)
+    assert target is not None
     # The scanned observation is hard-linked into content, so it takes the umask's mode.
     temporary = scratch.create_file(
         scan_directory, "observation-", ".md", text.encode("utf-8"), mode=0o666
@@ -842,15 +914,15 @@ def _publish(root: Path, scan_directory: Path, text: str, now: datetime) -> str:
     try:
         for _ in range(MAX_NAME_TRIES):
             name = observation.file_name(now, os.urandom(4).hex())
-            destination = pending / name
+            destination = target / name
             if destination.exists():
                 continue
             try:
                 os.link(temporary, destination)
             except FileExistsError:
                 continue
-            return f"{PENDING}/{name}"
-        raise KbError(f"no free file name in {PENDING}")
+            return f"{directory}/{name}"
+        raise KbError(f"no free file name in {directory}")
     finally:
         temporary.unlink(missing_ok=True)
 

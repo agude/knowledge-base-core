@@ -706,6 +706,58 @@ def test_recover_cleans_temp_and_only_this_hosts_uncommitted_observations(
     assert calls == ["observations/pending/owned.md"]
 
 
+def test_recover_removes_only_uncommitted_triaged_archives_from_this_host(tmp_path: Path) -> None:
+    root = make_repo(tmp_path / "content")
+    archived = root / "observations" / "archived"
+    archived.mkdir(parents=True)
+
+    def triaged(session: str, host: str = "test-host", extra: str = "") -> str:
+        return (
+            observation_text(session)
+            .replace('host: "test-host"', f'host: "{host}"')
+            .replace("created:", f"triage: delegated\n{extra}created:")
+        )
+
+    files = {
+        "leftover.md": triaged("leftover"),
+        "staged.md": triaged("staged"),
+        "committed.md": triaged("committed"),
+        "other-host.md": triaged("other", host="other"),
+        "curated.md": observation_text("curated").replace(
+            "created:", "original_sha256: abc\ncuration_batch: 20261026T120000-a1b2c3d4\ncreated:"
+        ),
+        "curated-triaged.md": triaged("both", extra="curation_batch: 20261026T120000-a1b2c3d4\n"),
+        "untriaged.md": observation_text("untriaged"),
+    }
+    for name, text in files.items():
+        (archived / name).write_text(text, encoding="utf-8")
+    git(root, "add", "observations/archived/committed.md")
+    git(root, "commit", "-q", "-m", "Commit one")
+    git(root, "add", "observations/archived/staged.md")
+
+    sync._recover(root, root / ".git", "test-host")
+
+    assert sorted(path.name for path in archived.iterdir()) == [
+        "committed.md",
+        "curated-triaged.md",
+        "curated.md",
+        "other-host.md",
+        "untriaged.md",
+    ]
+    assert git(root, "diff", "--cached", "--name-only") == ""
+
+
+def test_recover_leaves_an_empty_archive_without_inspecting_head(tmp_path: Path) -> None:
+    root = tmp_path / "content"
+    root.mkdir()
+    git(root, "init", "-q", "-b", "main")
+    (root / "observations" / "archived").mkdir(parents=True)
+
+    sync._recover(root, root / ".git", "test-host")
+
+    assert list((root / "observations" / "archived").iterdir()) == []
+
+
 @pytest.mark.parametrize("staged", [False, True])
 def test_recover_preserves_candidates_when_the_committed_tree_cannot_be_inspected(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, staged: bool

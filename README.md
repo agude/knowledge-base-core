@@ -657,6 +657,20 @@ When transcripts share a message prefix, the first session to harvest those
 message IDs owns them. If the later session has messages to record, its
 observation names the owner of the shared prefix.
 
+Harvest saves every ready transcript, but files two kinds straight into
+`observations/archived/` instead of `observations/pending/`, so curation never
+reads them. Each carries `triage: <rule>` in its front matter, in the same
+commit as the rest of the run:
+
+- `delegated`: the session has a parent. This is a Claude Code subagent, a
+  Codex guardian review or subagent thread, or a Goose subagent. The parent
+  session holds the delegated task and its result.
+- `curation`: the user invoked the `curate` skill in the session, so it is a
+  curation run. Every part of the session is filed this way.
+
+To curate a triaged transcript, move it to `observations/pending/`.
+`kb curate start` applies the `delegated` rule to transcripts already pending.
+
 The title excerpt and message text are checked for possible secrets. A matching
 message line is replaced with `[redacted: <detector>]`; when the title excerpt
 matches, the title omits it. A session is skipped and reported on stderr if
@@ -666,7 +680,9 @@ then 1.
 Harvest progress is reconstructed from committed observations in `HEAD`. If a
 run stops before its observation commit, the next run removes that run's
 uncommitted transcript observations and temporary scanner files, then retries
-from the source transcripts. Re-running after a successful harvest does not
+from the source transcripts. In `observations/archived/`, recovery removes only
+this host's uncommitted transcripts that carry `triage`; an archive that
+`kb curate` has not committed yet carries `curation_batch` and stays. Re-running after a successful harvest does not
 duplicate committed messages.
 
 Transcript identity preserves explicit message IDs and UUIDs. When they are
@@ -712,12 +728,14 @@ Options:
 - `--no-push` harvests and commits, then fetches and rebases, but does not push.
 - `--dry-run` lists each planned part as
   `<app> <session> part <n>: <m> messages, <bytes> bytes, <k> redacted lines`,
-  followed by totals. It does not lock, fetch, or change Git state. Its
+  with `, triage: <rule>` appended for a part that would be archived, followed
+  by totals. It does not lock, fetch, or change Git state. Its
   temporary scanner files are removed before exit.
 
 `--status` and `--dry-run` cannot be combined with another option. With
-harvesting enabled, a regular run prints `Harvested: <n> session transcript(s)`
-and, when there are messages, `Harvest totals: <n> messages, <n> bytes, <n>
+harvesting enabled, a regular run prints `Harvested: <n> session transcript(s)`,
+with ` (<m> archived by triage)` appended when some were archived, and, when
+there are messages, `Harvest totals: <n> messages, <n> bytes, <n>
 redacted lines`. Regular runs and dry runs may also print `Redacted by
 detector: ...` and, when transcript records were discarded, `Skipped transcript
 records: <n> malformed line(s), <n> duplicate message ID(s)`. With harvesting

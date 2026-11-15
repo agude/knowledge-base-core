@@ -79,7 +79,12 @@ def set_mtime(path: Path, timestamp: str) -> None:
 
 def pending(kb: Kb) -> list[Path]:
     """Return pending transcript observations in name order."""
-    directory = kb.content / "observations" / "pending"
+    return transcripts(kb, "pending")
+
+
+def transcripts(kb: Kb, name: str) -> list[Path]:
+    """Return the transcript observations in one observations directory, in name order."""
+    directory = kb.content / "observations" / name
     if not directory.exists():
         return []
     return [
@@ -105,10 +110,10 @@ def field(text: str, name: str) -> str | None:
     return None
 
 
-def observation_for(kb: Kb, session: str, part: int = 1) -> Path:
+def observation_for(kb: Kb, session: str, part: int = 1, *, directory: str = "pending") -> Path:
     """Find an observation by its transcript session and part fields."""
     matches = []
-    for path in pending(kb):
+    for path in transcripts(kb, directory):
         text = observation_text(path)
         if field(text, "session") == session and field(text, "part") == str(part):
             matches.append(path)
@@ -271,7 +276,7 @@ def test_observation_front_matter_covers_main_subagent_and_fork(remote_git_kb: K
 
     assert result.returncode == 0, result.stderr
     main = observation_text(observation_for(remote_git_kb, "main"))
-    child = observation_text(observation_for(remote_git_kb, "agent-helper"))
+    child = observation_text(observation_for(remote_git_kb, "agent-helper", directory="archived"))
     assert field(main, "app") == "claude-code"
     assert field(main, "project") == "/fixture/claude-project"
     assert field(main, "host") == HOST
@@ -279,6 +284,8 @@ def test_observation_front_matter_covers_main_subagent_and_fork(remote_git_kb: K
     assert field(main, "last_message") == "main-assistant-3"
     assert field(main, "part") == "1"
     assert field(child, "parent_session") == "subagent-parent"
+    assert field(child, "triage") == "delegated"
+    assert field(main, "triage") is None
     fork_observations = [
         observation_text(observation_for(remote_git_kb, session))
         for session in ("fork-origin", "fork-child")
@@ -299,7 +306,7 @@ def test_codex_main_and_subagent_use_measured_session_identity(remote_git_kb: Kb
 
     assert result.returncode == 0, result.stderr
     main = observation_text(observation_for(remote_git_kb, "codex-main"))
-    agent = observation_text(observation_for(remote_git_kb, "codex-agent"))
+    agent = observation_text(observation_for(remote_git_kb, "codex-agent", directory="archived"))
     assert field(main, "app") == "codex"
     assert field(main, "project") == "/fixture/project"
     assert field(main, "first_message") == "codex-user-1"
@@ -307,6 +314,7 @@ def test_codex_main_and_subagent_use_measured_session_identity(remote_git_kb: Kb
     assert "<environment_context>" not in main
     assert "fixture command" in main
     assert field(agent, "parent_session") == "codex-main"
+    assert field(agent, "triage") == "delegated"
 
 
 def test_goose_main_and_subagent_sessions_are_harvested_once_from_the_database(
@@ -318,9 +326,9 @@ def test_goose_main_and_subagent_sessions_are_harvested_once_from_the_database(
     result = remote_git_kb("sync")
 
     assert result.returncode == 0, result.stderr
-    assert "Harvested: 2 session transcript(s)" in result.stdout
+    assert "Harvested: 2 session transcript(s) (1 archived by triage)\n" in result.stdout
     main = observation_text(observation_for(remote_git_kb, "20261025_1"))
-    agent = observation_text(observation_for(remote_git_kb, "20261025_2"))
+    agent = observation_text(observation_for(remote_git_kb, "20261025_2", directory="archived"))
     assert field(main, "app") == "goose"
     assert field(main, "project") == "/fixture/goose-project"
     assert field(main, "first_message") == "goose-user-1"
@@ -338,6 +346,7 @@ def test_goose_main_and_subagent_sessions_are_harvested_once_from_the_database(
     ):
         assert dropped not in main
     assert field(agent, "parent_session") == "20261025_1"
+    assert field(agent, "triage") == "delegated"
     assert "The subagent fixture is done." in agent
     again = remote_git_kb("sync")
     assert again.returncode == 0, again.stderr
@@ -975,3 +984,58 @@ def test_recovery_leaves_another_hosts_observation_untracked(remote_git_kb: Kb) 
     assert other_host.exists()
     assert "Interrupted content." in observation_text(other_host)
     assert "sync: uncommitted changes" in result.stderr
+
+
+def test_curation_runs_are_archived_by_triage_in_every_part(remote_git_kb: Kb) -> None:
+    invocation = "<command-message>curate</command-message>\\n<command-name>/curate</command-name>"
+    transcript = install_text(
+        remote_git_kb,
+        "claude",
+        "projects/demo/curation.jsonl",
+        claude_message("curation", "curation-user-1", "user", invocation, "2026-10-25T08:00:00Z")
+        + claude_message(
+            "curation", "curation-assistant-1", "assistant", "Starting.", "2026-10-25T08:01:00Z"
+        ),
+    )
+    set_mtime(transcript, "2026-10-25T08:01:00Z")
+    config(remote_git_kb)
+
+    first = remote_git_kb("sync")
+    append_text(
+        transcript,
+        claude_message("curation", "curation-user-2", "user", "Continue.", "2026-10-26T08:00:00Z"),
+    )
+    set_mtime(transcript, "2026-10-26T08:00:00Z")
+    second = remote_git_kb("sync")
+
+    assert first.returncode == 0, first.stderr
+    assert "Harvested: 1 session transcript(s) (1 archived by triage)\n" in first.stdout
+    assert second.returncode == 0, second.stderr
+    assert "Harvested: 1 session transcript(s) (1 archived by triage)\n" in second.stdout
+    for part in (1, 2):
+        path = observation_for(remote_git_kb, "curation", part, directory="archived")
+        assert field(observation_text(path), "triage") == "curation"
+        relative = path.relative_to(remote_git_kb.content).as_posix()
+        assert remote_git_kb.git("ls-files", "--", relative).strip() == relative
+    assert pending(remote_git_kb) == []
+    assert remote_git_kb.git("status", "--porcelain", "--untracked-files=all") == ""
+
+
+def test_dry_run_names_the_triage_rule(remote_git_kb: Kb) -> None:
+    install(
+        remote_git_kb,
+        "claude",
+        "projects/demo/main.jsonl",
+        "projects/demo/subagent-parent.jsonl",
+        "projects/demo/subagent-parent/subagents/agent-helper.jsonl",
+    )
+    config(remote_git_kb)
+
+    result = remote_git_kb("sync", "--dry-run")
+
+    assert result.returncode == 0, result.stderr
+    lines = result.stdout.splitlines()
+    helper = next(line for line in lines if line.startswith("claude-code agent-helper part 1:"))
+    main = next(line for line in lines if line.startswith("claude-code main part 1:"))
+    assert helper.endswith(" redacted lines, triage: delegated")
+    assert main.endswith(" redacted lines")
