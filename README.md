@@ -385,6 +385,19 @@ fails. The message names the failing step and says `no batch created`. Use
 `base_commit`, the HEAD the batch started from. Version 1 manifests are
 refused; finish or abandon them with kb 0.4.2 or earlier before upgrading.
 
+After synchronizing, and with `--no-sync` too, `start` files delegated
+transcripts in the archive instead of the queue. A pending transcript is
+delegated when its front matter has `parent_session`: a Claude Code subagent,
+a Codex guardian review or subagent thread, or a Goose subagent. Its parent
+session holds the delegated task and the result. `start` moves each one to
+`observations/archived/` with `triage: delegated` added to its front matter,
+commits the moves once as `Triage: N session transcript(s)`, and prints the
+same count. The commit is pushed by `finish` or the next `kb sync`. A file
+named on the command line stays in the queue, and so does a file that already
+has a `triage` field: to curate a triaged transcript, move it back to
+`observations/pending/`. A file that a curated document links to stays in the
+queue with a warning. If the commit fails, the moves are undone.
+
 The RUN below came from an isolated fixture repository. A real run prints its
 own RUN; use that value for every later command.
 

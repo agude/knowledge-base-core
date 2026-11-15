@@ -8,7 +8,7 @@ import socket
 import stat
 import sys
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from typing import cast
@@ -38,6 +38,7 @@ from kb import (
     secrets,
     sections,
     snapshot,
+    triage,
 )
 from kb.args import Spec
 from kb.commands import recall as recall_command
@@ -48,7 +49,6 @@ from kb.errors import KbError
 from kb.platform import config_file
 
 WHO = "curate"
-UNSTAGE_FAILED = f"{WHO}: cannot unstage the publication set; inspect Git status"
 PENDING = "observations/pending"
 ARCHIVED = "observations/archived"
 BATCHES = "observations/batches"
@@ -128,6 +128,7 @@ class QueueEntry:
     snapshot: curation.PendingInput
     title: str | None
     warnings: tuple[str, ...]
+    triage: triage.Rule | None = None
 
 
 @dataclass(frozen=True)
@@ -401,8 +402,8 @@ def _start(
     _check_existing_batches(root)
     if synchronize:
         _synchronize(root, git_directory)
+    entries = _triage_pending(root, git_directory, _pending_entries(root), explicit_names)
     base_commit = _head_commit(root)
-    entries = _pending_entries(root)
     selection = curation.select(
         [entry.snapshot for entry in entries],
         max_bytes,
@@ -493,6 +494,116 @@ def _synchronize(root: Path, git_directory: Path) -> None:
         sys.stdout.write("Already in sync.\n")
 
 
+def _triage_pending(
+    root: Path,
+    git_directory: Path,
+    entries: Sequence[QueueEntry],
+    explicit_names: Sequence[str],
+) -> list[QueueEntry]:
+    """Archive the pending transcripts that a triage rule matches, in one commit.
+
+    A named file is kept: naming it asks to curate it. A file that a curated document links
+    to is kept and reported, because moving it would break the link. Returns the entries
+    left in pending. On a failure before the commit exists, the worktree is restored.
+    """
+    named = set(explicit_names)
+    chosen = [
+        entry
+        for entry in entries
+        if entry.triage is not None and entry.snapshot.filename not in named
+    ]
+    if not chosen:
+        return list(entries)
+    references = _inbound_references(root)
+    linked = {
+        entry.snapshot.filename
+        for entry in chosen
+        if (root / PENDING / entry.snapshot.filename).resolve() in references
+    }
+    for filename in sorted(linked):
+        sys.stderr.write(
+            f"{WHO}: warning: {PENDING}/{filename} is linked from curated documents; "
+            "kept in pending\n"
+        )
+    chosen = [entry for entry in chosen if entry.snapshot.filename not in linked]
+    if not chosen:
+        return list(entries)
+
+    rendered = [(entry, _triaged_bytes(entry)) for entry in chosen]
+    previous_head = _head_commit(root)
+    published: list[str] = []
+    removed: list[QueueEntry] = []
+    try:
+        for entry, content in rendered:
+            filename = entry.snapshot.filename
+            pending = root / PENDING / filename
+            _publish_archive(
+                root, git_directory, filename, content, stat.S_IMODE(pending.lstat().st_mode)
+            )
+            published.append(filename)
+            pending.unlink()
+            removed.append(entry)
+        names = [entry.snapshot.filename for entry in chosen]
+        paths = [f"{PENDING}/{name}" for name in names] + [f"{ARCHIVED}/{name}" for name in names]
+        _commit_set(root, git_directory, paths, "triage", lambda _: _triage_message(chosen))
+    except BaseException as error:
+        _undo_triage(root, previous_head, published, removed, error)
+        raise
+    sys.stdout.write(f"Triaged: {len(chosen)} session transcript(s)\n")
+    moved = {entry.snapshot.filename for entry in chosen}
+    return [entry for entry in entries if entry.snapshot.filename not in moved]
+
+
+def _triaged_bytes(entry: QueueEntry) -> bytes:
+    """The pending file's bytes with its triage rule added to the front matter."""
+    assert entry.triage is not None
+    bom, text = corpus.split_bom(entry.snapshot.content.decode("utf-8"))
+    try:
+        edited = model.edit_front_matter(text, triage.FIELD, entry.triage)
+    except model.FrontMatterEditError as error:
+        raise KbError(
+            f"{WHO}: cannot triage {PENDING}/{entry.snapshot.filename}: {error}"
+        ) from error
+    return (bom + edited).encode("utf-8")
+
+
+def _triage_message(entries: Sequence[QueueEntry]) -> str:
+    """The triage commit's message: a count, then the count for each rule."""
+    rules = Counter(entry.triage for entry in entries if entry.triage is not None)
+    lines = [
+        f"Triage: {len(entries)} session transcript(s)",
+        "",
+        "Filed in observations/archived/ by triage rule; curation does not read them.",
+        "",
+        "Rules:",
+        *(f"- {rule}: {rules[rule]}" for rule in sorted(rules)),
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _undo_triage(
+    root: Path,
+    previous_head: str,
+    published: Sequence[str],
+    removed: Sequence[QueueEntry],
+    error: BaseException,
+) -> None:
+    """Restore the pending files and remove the new archives when no commit was made."""
+    try:
+        if _head_commit(root) != previous_head:
+            return
+        for entry in removed:
+            pending = root / PENDING / entry.snapshot.filename
+            pending.write_bytes(entry.snapshot.content)
+            pending.chmod(stat.S_IMODE((root / ARCHIVED / entry.snapshot.filename).stat().st_mode))
+        for filename in published:
+            (root / ARCHIVED / filename).unlink(missing_ok=True)
+    except (OSError, KbError) as cleanup:
+        raise KbError(
+            f"{WHO}: cannot undo triage: {cleanup}; inspect Git status; original failure: {error}"
+        ) from error
+
+
 def _head_commit(root: Path) -> str:
     """The full identifier of HEAD, read without changing the repository."""
     result = git.run(root, "rev-parse", "--verify", "--quiet", "HEAD", optional_locks=False)
@@ -564,7 +675,13 @@ def _finish(root: Path, git_directory: Path, run_id: str, *, no_push: bool) -> i
         sys.stdout.write(f"Preexisting (not blocking): {len(verdict.preexisting)}\n")
         for finding in verdict.preexisting:
             sys.stdout.write(f"  {_finding_text(finding)}\n")
-    commit = _commit_publication(root, git_directory, batch, [change.path for change in changes])
+    commit = _commit_set(
+        root,
+        git_directory,
+        [change.path for change in changes],
+        "publication",
+        lambda staged: publish.render_message(batch.id, batch, staged),
+    )
     if no_push:
         sys.stdout.write(f"Commit: {commit}\nCommitted locally; not published\n")
         return 0
@@ -758,17 +875,20 @@ def _change_status(code: str) -> str:
     return "M"
 
 
-def _commit_publication(
+def _commit_set(
     root: Path,
     git_directory: Path,
-    batch: curation.Batch,
     paths: Sequence[str],
+    name: str,
+    render: Callable[[Sequence[publish.Change]], str],
 ) -> str:
-    """Stage exactly the publication set and reconcile every failure before commit success.
+    """Stage exactly these paths, commit them, and reconcile every failure before success.
 
-    The message is rendered from the staged set, where Git detects renames that the
-    worktree status reports as a deletion and an addition.
+    name labels the set in errors, such as "publication". render builds the message from the
+    staged changes, where Git detects renames that the worktree status reports as a deletion
+    and an addition. Returns the new HEAD.
     """
+    unstage_failed = f"{WHO}: cannot unstage the {name} set; inspect Git status"
     previous_head = _head_commit(root)
     pathspec = _write_scratch_file(git_directory, _nul_terminated(paths))
     text: Path | None = None
@@ -788,7 +908,7 @@ def _commit_publication(
         )
         if staged.returncode != 0:
             detail = staged.stderr.rstrip("\n")
-            raise KbError(f"{WHO}: cannot stage the publication set: {detail}")
+            raise KbError(f"{WHO}: cannot stage the {name} set: {detail}")
         names = _git_output(
             root,
             "diff",
@@ -804,7 +924,7 @@ def _commit_publication(
             extra = sorted(staged_names - set(paths))
             missing = sorted(set(paths) - staged_names)
             raise KbError(
-                f"{WHO}: staged set differs from the publication set (extra: {extra}; "
+                f"{WHO}: staged set differs from the {name} set (extra: {extra}; "
                 f"missing: {missing}); nothing committed"
             )
         staged_changes = [
@@ -828,12 +948,12 @@ def _commit_publication(
                 )
             )
         ]
-        message = publish.render_message(batch.id, batch, staged_changes)
+        message = render(staged_changes)
         subject = message.splitlines()[0]
         _scan_message(git_directory, message)
         text = _write_scratch_file(git_directory, message.encode("utf-8"))
         expected_tree = _git_output(
-            root, "write-tree", message="cannot snapshot the staged publication"
+            root, "write-tree", message=f"cannot snapshot the staged {name} set"
         ).strip()
         commit_attempted = True
         commit_result = git.run(root, "commit", "-q", "-F", str(text), optional_locks=False)
@@ -852,7 +972,7 @@ def _commit_publication(
                         subject,
                         allow_unborn=False,
                         optional_locks=False,
-                        commit_name="this publication commit",
+                        commit_name=f"this {name} commit",
                         head_fallback="cannot inspect HEAD",
                     ),
                     expected_tree,
@@ -866,19 +986,19 @@ def _commit_publication(
                 raise
             if inspection.outcome == "unknown":
                 message = commit.uncertain_message(
-                    WHO, _listing(paths), "publication files and index", inspection.detail
+                    WHO, _listing(paths), f"{name} files and index", inspection.detail
                 )
                 raise KbError(message) from error
         try:
             unstage_error = commit.unstage(root, paths, method="reset", optional_locks=False)
         except BaseException as rollback_error:
             detail = str(rollback_error) or "cleanup was interrupted"
-            raise KbError(f"{UNSTAGE_FAILED}: {detail}; original failure: {error}") from (
+            raise KbError(f"{unstage_failed}: {detail}; original failure: {error}") from (
                 rollback_error
             )
         if unstage_error is not None:
             raise KbError(
-                f"{UNSTAGE_FAILED}: {unstage_error}; original failure: {error}"
+                f"{unstage_failed}: {unstage_error}; original failure: {error}"
             ) from error
         raise
     finally:
@@ -1466,8 +1586,18 @@ def _scan_completion_text(
 
 def _refuse_inbound_pending_references(root: Path, filename: str) -> None:
     """Refuse curated documents that still point at the pending file."""
-    pending = (root / PENDING / filename).resolve()
-    found: list[str] = []
+    found = _inbound_references(root).get((root / PENDING / filename).resolve(), [])
+    if found:
+        lines = [
+            f"{WHO}: references still target the pending observation {PENDING}/{filename}:",
+            *(f"  {item}" for item in sorted(set(found))),
+        ]
+        raise KbError("\n".join(lines))
+
+
+def _inbound_references(root: Path) -> dict[Path, list[str]]:
+    """Map each resolved target of a relative reference in curated documents to its sources."""
+    found: dict[Path, list[str]] = {}
     for directory in ("knowledge", "sources"):
         for relpath in corpus.markdown_files(root, directory):
             document = corpus.read_document(root, relpath)
@@ -1487,14 +1617,10 @@ def _refuse_inbound_pending_references(root: Path, filename: str) -> None:
                     raise KbError(
                         f"{WHO}: cannot resolve a reference in {relpath}: {error}"
                     ) from error
-                if target == pending:
-                    found.append(f"{reference.source_path}:{reference.line} ({reference.kind})")
-    if found:
-        lines = [
-            f"{WHO}: references still target the pending observation {PENDING}/{filename}:",
-            *(f"  {item}" for item in sorted(set(found))),
-        ]
-        raise KbError("\n".join(lines))
+                found.setdefault(target, []).append(
+                    f"{reference.source_path}:{reference.line} ({reference.kind})"
+                )
+    return found
 
 
 def _batch_path(root: Path, run_id: str) -> Path:
@@ -1780,6 +1906,7 @@ def _pending_entries(root: Path) -> list[QueueEntry]:
                 curation.PendingInput(path.name, content, created),
                 document.title,
                 tuple(warnings),
+                triage.from_front_matter(document),
             )
         )
     return entries

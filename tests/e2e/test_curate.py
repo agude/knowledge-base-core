@@ -1757,3 +1757,180 @@ def test_full_local_curation_workflow_and_historical_defer(git_kb: Kb) -> None:
     assert old_status.returncode == 0, old_status.stderr
     assert "Committed locally; not published:" in old_status.stdout
     assert _pending(git_kb, "new-arrival.md").read_bytes() == new_arrival
+
+
+def _transcript(kb: Kb, filename: str, *fields: str) -> bytes:
+    """Write and return a pending transcript observation with extra front matter fields."""
+    content = (
+        "---\n"
+        'title: "Session transcript (1 messages)"\n'
+        "source: session-transcript\n"
+        'host: "test"\n'
+        "app: codex\n"
+        f'session: "{filename.removesuffix(".md")}"\n'
+        + "".join(f"{field}\n" for field in fields)
+        + "created: 2026-10-26T12:00:00Z\n"
+        "---\n\n## 1. user, 2026-10-26T11:00:00Z\n\n~~~~text\nHello\n~~~~\n"
+    ).encode("utf-8")
+    _pending(kb, filename).parent.mkdir(parents=True, exist_ok=True)
+    _pending(kb, filename).write_bytes(content)
+    return content
+
+
+def _archived(kb: Kb, filename: str) -> Path:
+    return kb.content / "observations" / "archived" / filename
+
+
+def _with_triage(content: bytes, rule: str) -> bytes:
+    """The bytes that triage writes: the rule inserted before the closing delimiter."""
+    text = content.decode("utf-8")
+    end = text.index("\n---\n", 4) + 1
+    return (text[:end] + f"triage: {rule}\n" + text[end:]).encode("utf-8")
+
+
+def test_start_archives_delegated_transcripts_in_one_commit(git_kb: Kb) -> None:
+    delegated = _transcript(git_kb, "delegated.md", 'parent_session: "parent"')
+    ordinary = _transcript(git_kb, "ordinary.md")
+    _commit(git_kb, "observations/pending/delegated.md", "observations/pending/ordinary.md")
+    head = git_kb.git("rev-parse", "HEAD")
+
+    result = git_kb("curate", "start", "--no-sync", "--max-bytes", "1000000")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    assert result.stdout.startswith("Triaged: 1 session transcript(s)\nNot synchronized:")
+    assert not _pending(git_kb, "delegated.md").exists()
+    assert _archived(git_kb, "delegated.md").read_bytes() == _with_triage(delegated, "delegated")
+    assert _pending(git_kb, "ordinary.md").read_bytes() == ordinary
+    assert git_kb.git("rev-parse", "HEAD~1") == head
+    assert git_kb.git("log", "-1", "--format=%B").rstrip("\n") == (
+        "Triage: 1 session transcript(s)\n\n"
+        "Filed in observations/archived/ by triage rule; curation does not read them.\n\n"
+        "Rules:\n- delegated: 1"
+    )
+    assert git_kb.git("diff", "--name-status", "--no-renames", "HEAD~1", "HEAD").splitlines() == [
+        "A\tobservations/archived/delegated.md",
+        "D\tobservations/pending/delegated.md",
+    ]
+    manifest = json.loads(
+        (git_kb.content / "observations/batches" / f"{_run_id(result)}.json").read_text("utf-8")
+    )
+    assert "delegated.md" not in manifest_member_names(manifest)
+    assert "ordinary.md" in manifest_member_names(manifest)
+    status = git_kb.git("status", "--porcelain", "--untracked-files=all").splitlines()
+    assert status == [f"?? observations/batches/{_run_id(result)}.json"]
+
+
+def test_start_triage_runs_once_and_creates_no_batch_for_an_empty_queue(git_kb: Kb) -> None:
+    for path in (git_kb.content / "observations/pending").glob("*.md"):
+        git_kb.git("rm", "-q", "--", path.relative_to(git_kb.content).as_posix())
+    _transcript(git_kb, "delegated.md", 'parent_session: "parent"')
+    git_kb.git("add", "--", "observations/pending/delegated.md")
+    git_kb.git("commit", "-q", "-m", "Prepare curation fixture")
+
+    first = git_kb("curate", "start", "--no-sync", "--max-bytes", "1000000")
+    head = git_kb.git("rev-parse", "HEAD")
+    second = git_kb("curate", "start", "--no-sync", "--max-bytes", "1000000")
+
+    assert first.returncode == 1
+    assert first.stdout.startswith("Triaged: 1 session transcript(s)\n")
+    assert first.stdout.endswith("No pending observations.\n")
+    assert second.returncode == 1
+    assert "Triaged:" not in second.stdout
+    assert git_kb.git("rev-parse", "HEAD") == head
+    assert git_kb.git("status", "--porcelain", "--untracked-files=all") == ""
+
+
+def test_start_triage_keeps_named_restored_and_linked_transcripts(git_kb: Kb) -> None:
+    named = _transcript(git_kb, "named.md", 'parent_session: "parent"')
+    restored = _transcript(git_kb, "restored.md", 'parent_session: "parent"', "triage: delegated")
+    linked = _transcript(git_kb, "linked.md", 'parent_session: "parent"')
+    _write_article(
+        git_kb,
+        "knowledge/inbound.md",
+        "---\ntitle: Inbound reference\nupdated: 2026-10-20\nverified: 2026-10-20\n"
+        "ttl: domain\n---\n\n[Evidence](../observations/pending/linked.md)\n",
+    )
+    _commit(
+        git_kb,
+        "observations/pending/named.md",
+        "observations/pending/restored.md",
+        "observations/pending/linked.md",
+        "knowledge/inbound.md",
+    )
+    head = git_kb.git("rev-parse", "HEAD")
+
+    result = git_kb("curate", "start", "--no-sync", "--max-bytes", "1000000", "named.md")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == (
+        "curate: warning: observations/pending/linked.md is linked from curated documents; "
+        "kept in pending\n"
+    )
+    assert "Triaged:" not in result.stdout
+    assert git_kb.git("rev-parse", "HEAD") == head
+    for filename, content in (
+        ("named.md", named),
+        ("restored.md", restored),
+        ("linked.md", linked),
+    ):
+        assert _pending(git_kb, filename).read_bytes() == content
+    manifest = json.loads(
+        (git_kb.content / "observations/batches" / f"{_run_id(result)}.json").read_text("utf-8")
+    )
+    assert manifest_member_names(manifest) == ["named.md"]
+
+
+def _start_with_commit_failure(kb: Kb, *, commit_first: bool) -> CompletedProcess[str]:
+    """Run start with a triage commit that fails, after committing when commit_first is set."""
+    script = (
+        "import subprocess\n"
+        "from kb import cli\n"
+        "from kb.commands import curate\n"
+        "def fail(root, *_args, **_kwargs):\n"
+        f"    if {commit_first!r}:\n"
+        "        subprocess.run(['git', 'add', '-A', 'observations'], cwd=root, check=True)\n"
+        "        subprocess.run(['git', 'commit', '-q', '-m', 'Triage'], cwd=root, check=True)\n"
+        "    raise OSError('injected commit failure')\n"
+        "curate._commit_set = fail\n"
+        "raise SystemExit(cli.main(['curate', 'start', '--no-sync', '--max-bytes', '1000000']))\n"
+    )
+    return subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=kb.home,
+        env=kb.environment({}),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+        timeout=60,
+    )
+
+
+def test_start_triage_restores_the_worktree_when_the_commit_fails(git_kb: Kb) -> None:
+    delegated = _transcript(git_kb, "delegated.md", 'parent_session: "parent"')
+    _commit(git_kb, "observations/pending/delegated.md")
+    head = git_kb.git("rev-parse", "HEAD")
+    mode = _pending(git_kb, "delegated.md").stat().st_mode
+
+    result = _start_with_commit_failure(git_kb, commit_first=False)
+
+    _failure(result, "injected commit failure")
+    assert _pending(git_kb, "delegated.md").read_bytes() == delegated
+    assert _pending(git_kb, "delegated.md").stat().st_mode == mode
+    assert not _archived(git_kb, "delegated.md").exists()
+    assert git_kb.git("rev-parse", "HEAD") == head
+    assert git_kb.git("status", "--porcelain", "--untracked-files=all") == ""
+
+
+def test_start_triage_keeps_the_archive_when_the_commit_exists(git_kb: Kb) -> None:
+    delegated = _transcript(git_kb, "delegated.md", 'parent_session: "parent"')
+    _commit(git_kb, "observations/pending/delegated.md")
+    head = git_kb.git("rev-parse", "HEAD")
+
+    result = _start_with_commit_failure(git_kb, commit_first=True)
+
+    _failure(result, "injected commit failure")
+    assert not _pending(git_kb, "delegated.md").exists()
+    assert _archived(git_kb, "delegated.md").read_bytes() == _with_triage(delegated, "delegated")
+    assert git_kb.git("rev-parse", "HEAD~1") == head
