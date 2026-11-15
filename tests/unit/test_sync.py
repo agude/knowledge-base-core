@@ -250,7 +250,7 @@ def test_sync_without_harvesting_runs_recovery_and_syncs_remote(
 ) -> None:
     root = make_repo(tmp_path / "content")
     calls: list[str] = []
-    monkeypatch.setattr(sync, "_recover", lambda *args: calls.append("recover"))
+    monkeypatch.setattr(sync, "recover", lambda *args: calls.append("recover"))
     monkeypatch.setattr(remote, "dirty_paths", lambda _: ())
     monkeypatch.setattr(remote, "fetch_status", lambda _: (sync.RemoteStatus("main", 0, 0), None))
     monkeypatch.setattr(
@@ -267,7 +267,7 @@ def test_sync_reports_dirty_paths_and_recovery_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = make_repo(tmp_path / "content")
-    monkeypatch.setattr(sync, "_recover", lambda *args: (_ for _ in ()).throw(KbError("broken")))
+    monkeypatch.setattr(sync, "recover", lambda *args: (_ for _ in ()).throw(KbError("broken")))
     monkeypatch.setattr(remote, "dirty_paths", lambda _: tuple(f"file-{i}" for i in range(12)))
     assert sync._sync(root, root / ".git", {}, "test-host", NOW, None, False) == 1
     captured = capsys.readouterr()
@@ -279,7 +279,7 @@ def test_dirty_worktree_without_other_errors_exits_successfully(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = make_repo(tmp_path / "content")
-    monkeypatch.setattr(sync, "_recover", lambda *args: None)
+    monkeypatch.setattr(sync, "recover", lambda *args: None)
     monkeypatch.setattr(remote, "dirty_paths", lambda _: ("local.md",))
     assert sync._sync(root, root / ".git", {}, "host", NOW, None, False) == 0
     assert "not pulling or pushing" in capsys.readouterr().err
@@ -289,7 +289,7 @@ def test_sync_returns_fetch_error_and_combines_harvest_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = make_repo(tmp_path / "content")
-    monkeypatch.setattr(sync, "_recover", lambda *args: None)
+    monkeypatch.setattr(sync, "recover", lambda *args: None)
     monkeypatch.setattr(remote, "dirty_paths", lambda _: ())
     monkeypatch.setattr(remote, "fetch_status", lambda _: (None, "sync: fetch failed"))
     assert sync._sync(root, root / ".git", {}, "test-host", NOW, None, False) == 1
@@ -305,10 +305,10 @@ def test_sync_harvests_reports_record_counts_and_completes_remote_step(
     candidate = harvest.Candidate(make_session(malformed=1, duplicates=2), START)
     monkeypatch.setattr(
         sync,
-        "_recover",
+        "recover",
         lambda *args: (_ for _ in ()).throw(OSError("recovery")),
     )
-    monkeypatch.setattr(sync, "_scan_transcripts", lambda _: sync.ScanResult((candidate,), ()))
+    monkeypatch.setattr(sync, "scan_transcripts", lambda _: sync.ScanResult((candidate,), ()))
     monkeypatch.setattr(sync, "_head_records", lambda _: ())
     monkeypatch.setattr(harvest, "reconstruct_state", lambda *args: harvest.HarvestState({}, {}))
     monkeypatch.setattr(
@@ -339,8 +339,8 @@ def test_sync_pushes_after_a_session_is_skipped_then_exits_one(
 ) -> None:
     root = make_repo(tmp_path / "content")
     candidate = harvest.Candidate(make_session(), START)
-    monkeypatch.setattr(sync, "_recover", lambda *args: None)
-    monkeypatch.setattr(sync, "_scan_transcripts", lambda _: sync.ScanResult((candidate,), ()))
+    monkeypatch.setattr(sync, "recover", lambda *args: None)
+    monkeypatch.setattr(sync, "scan_transcripts", lambda _: sync.ScanResult((candidate,), ()))
     monkeypatch.setattr(sync, "_head_records", lambda _: ())
     monkeypatch.setattr(harvest, "reconstruct_state", lambda *args: harvest.HarvestState({}, {}))
     monkeypatch.setattr(harvest, "select_candidates", lambda *args: harvest.Selection((), 0, 0, ()))
@@ -368,8 +368,8 @@ def test_sync_with_harvest_and_dirty_tree_stops_remote_sync(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = make_repo(tmp_path / "content")
-    monkeypatch.setattr(sync, "_recover", lambda *args: None)
-    monkeypatch.setattr(sync, "_scan_transcripts", lambda _: sync.ScanResult((), ()))
+    monkeypatch.setattr(sync, "recover", lambda *args: None)
+    monkeypatch.setattr(sync, "scan_transcripts", lambda _: sync.ScanResult((), ()))
     monkeypatch.setattr(sync, "_head_records", lambda _: ())
     monkeypatch.setattr(harvest, "reconstruct_state", lambda *args: harvest.HarvestState({}, {}))
     monkeypatch.setattr(harvest, "select_candidates", lambda *args: harvest.Selection((), 0, 0, ()))
@@ -392,7 +392,7 @@ def test_status_reports_backlog_and_remote_errors(
     assert "sync: remote failed" in capsys.readouterr().err
 
     candidate = harvest.Candidate(make_session(), START)
-    monkeypatch.setattr(sync, "_scan_transcripts", lambda _: sync.ScanResult((candidate,), ()))
+    monkeypatch.setattr(sync, "scan_transcripts", lambda _: sync.ScanResult((candidate,), ()))
     monkeypatch.setattr(sync, "_head_records", lambda _: ())
     monkeypatch.setattr(remote, "fetch_status", lambda _: (sync.RemoteStatus("main", 2, 3), None))
     assert sync._status(root, {}, "test-host", NOW, START - timedelta(days=1)) == 0
@@ -401,7 +401,7 @@ def test_status_reports_backlog_and_remote_errors(
 
     monkeypatch.setattr(
         sync,
-        "_scan_transcripts",
+        "scan_transcripts",
         lambda _: sync.ScanResult((candidate,), (sync.Failure("broken", "cannot read"),)),
     )
     assert sync._status(root, {}, "test-host", NOW, START - timedelta(days=1)) == 1
@@ -417,7 +417,7 @@ def test_dry_run_without_cutoff_and_with_preparation_failure(
     candidate = harvest.Candidate(make_session(), START)
     plan = make_plan()
     selection = harvest.Selection((plan,), 1, 0, ("rewritten",))
-    monkeypatch.setattr(sync, "_scan_transcripts", lambda _: sync.ScanResult((candidate,), ()))
+    monkeypatch.setattr(sync, "scan_transcripts", lambda _: sync.ScanResult((candidate,), ()))
     monkeypatch.setattr(sync, "_head_records", lambda _: ())
     monkeypatch.setattr(harvest, "reconstruct_state", lambda *args: harvest.HarvestState({}, {}))
     monkeypatch.setattr(harvest, "select_candidates", lambda *args: selection)
@@ -437,7 +437,7 @@ def test_dry_run_reports_prepared_observations_redactions_and_record_counts(
     candidate = harvest.Candidate(make_session(malformed=2, duplicates=1), START)
     plan = make_plan(candidate.session, part=2)
     selection = harvest.Selection((plan,), 1, 0, ())
-    monkeypatch.setattr(sync, "_scan_transcripts", lambda _: sync.ScanResult((candidate,), ()))
+    monkeypatch.setattr(sync, "scan_transcripts", lambda _: sync.ScanResult((candidate,), ()))
     monkeypatch.setattr(sync, "_head_records", lambda _: ())
     monkeypatch.setattr(harvest, "reconstruct_state", lambda *args: harvest.HarvestState({}, {}))
     monkeypatch.setattr(harvest, "select_candidates", lambda *args: selection)
@@ -456,7 +456,7 @@ def test_dry_run_reports_prepared_observations_redactions_and_record_counts(
 
 def test_dry_run_wraps_filesystem_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = make_repo(tmp_path / "content")
-    monkeypatch.setattr(sync, "_scan_transcripts", lambda _: (_ for _ in ()).throw(OSError("no")))
+    monkeypatch.setattr(sync, "scan_transcripts", lambda _: (_ for _ in ()).throw(OSError("no")))
     with pytest.raises(KbError, match="sync: dry-run failed: no"):
         sync._dry_run(root, root / ".git", {}, "host", NOW, START)
 
@@ -470,7 +470,7 @@ def test_scan_transcripts_reads_goose_sessions_and_reports_an_unreadable_databas
         connection.executescript(GOOSE_SCRIPT.read_text(encoding="utf-8"))
     environ = {"GOOSE_PATH_ROOT": str(tmp_path / "goose")}
 
-    result = sync._scan_transcripts(environ)
+    result = sync.scan_transcripts(environ)
 
     assert result.failures == ()
     assert [
@@ -479,7 +479,7 @@ def test_scan_transcripts_reads_goose_sessions_and_reports_an_unreadable_databas
     ] == [("goose", "20261025_1", None), ("goose", "20261025_2", "20261025_1")]
     assert result.candidates[0].modified == datetime(2026, 10, 25, 9, 5, tzinfo=UTC)
     (sessions / "sessions.db").write_bytes(b"not a database\n" * 100)
-    failed = sync._scan_transcripts(environ)
+    failed = sync.scan_transcripts(environ)
     assert failed.candidates == ()
     assert [(failure.session, failure.reason) for failure in failed.failures] == [
         ("goose", "cannot read session database: file is not a database")
@@ -508,7 +508,7 @@ def test_scan_transcripts_parses_claude_and_codex_and_reports_bad_files(
         '{"type":"session_meta","payload":{"id":"codex","cwd":"/codex"}}\n',
         encoding="utf-8",
     )
-    result = sync._scan_transcripts(
+    result = sync.scan_transcripts(
         {"CLAUDE_CONFIG_DIR": str(claude_root), "CODEX_HOME": str(codex_root)}
     )
     assert {candidate.session.id for candidate in result.candidates} == {
@@ -519,7 +519,7 @@ def test_scan_transcripts_parses_claude_and_codex_and_reports_bad_files(
     assert any(failure.reason == "transcript is not UTF-8" for failure in result.failures)
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
-    empty = sync._scan_transcripts({})
+    empty = sync.scan_transcripts({})
     assert empty == sync.ScanResult((), ())
 
 
@@ -700,7 +700,7 @@ def test_recover_cleans_temp_and_only_this_hosts_uncommitted_observations(
         return original(repo, *args)
 
     fake.wrap(track)
-    sync._recover(root, git_dir, "test-host")
+    sync.recover(root, git_dir, "test-host")
     assert list(scratch.iterdir()) == []
     assert not owned.exists() and other.exists() and committed.exists()
     assert calls == ["observations/pending/owned.md"]
@@ -735,7 +735,7 @@ def test_recover_removes_only_uncommitted_triaged_archives_from_this_host(tmp_pa
     git(root, "commit", "-q", "-m", "Commit one")
     git(root, "add", "observations/archived/staged.md")
 
-    sync._recover(root, root / ".git", "test-host")
+    sync.recover(root, root / ".git", "test-host")
 
     assert sorted(path.name for path in archived.iterdir()) == [
         "committed.md",
@@ -768,7 +768,7 @@ def test_recover_restores_an_interrupted_triage_move(
     if staged:
         git(root, "add", "--all", "--", "observations")
 
-    sync._recover(root, root / ".git", "test-host")
+    sync.recover(root, root / ".git", "test-host")
 
     assert (pending / "moved.md").read_text(encoding="utf-8") == original
     assert not (archived / "moved.md").exists()
@@ -792,7 +792,7 @@ def test_recover_keeps_an_uncommitted_curation_archive_of_a_committed_pending_fi
     (archived / "curated.md").write_text(archive, encoding="utf-8")
     (pending / "curated.md").unlink()
 
-    sync._recover(root, root / ".git", "test-host")
+    sync.recover(root, root / ".git", "test-host")
 
     assert (archived / "curated.md").read_text(encoding="utf-8") == archive
     assert not (pending / "curated.md").exists()
@@ -804,7 +804,7 @@ def test_recover_leaves_an_empty_archive_without_inspecting_head(tmp_path: Path)
     git(root, "init", "-q", "-b", "main")
     (root / "observations" / "archived").mkdir(parents=True)
 
-    sync._recover(root, root / ".git", "test-host")
+    sync.recover(root, root / ".git", "test-host")
 
     assert list((root / "observations" / "archived").iterdir()) == []
 
@@ -837,7 +837,7 @@ def test_recover_preserves_candidates_when_the_committed_tree_cannot_be_inspecte
     with pytest.raises(
         KbError, match="cannot inspect committed observation paths: tree unavailable"
     ):
-        sync._recover(root, root / ".git", "test-host")
+        sync.recover(root, root / ".git", "test-host")
 
     assert record.read_bytes() == original
     assert git(root, "write-tree") == index
@@ -875,7 +875,7 @@ def test_recover_preserves_committed_observations_in_repository_layouts(
     head = git(working_repository, "rev-parse", "HEAD").strip()
     index = git(working_repository, "write-tree").strip()
 
-    sync._recover(root, lock.git_dir(root, "sync"), "test-host")
+    sync.recover(root, lock.git_dir(root, "sync"), "test-host")
 
     assert (
         record.exists(),
@@ -888,7 +888,7 @@ def test_recover_preserves_committed_observations_in_repository_layouts(
 
 def test_recover_skips_missing_pending_and_symlink_entries(tmp_path: Path) -> None:
     root = make_repo(tmp_path / "content")
-    sync._recover(root, root / ".git", "test-host")
+    sync.recover(root, root / ".git", "test-host")
     pending = root / sync.PENDING
     pending.mkdir(parents=True)
     target = tmp_path / "target"
@@ -896,7 +896,7 @@ def test_recover_skips_missing_pending_and_symlink_entries(tmp_path: Path) -> No
     (pending / "link.md").symlink_to(target)
     (pending / "not-a-file.md").mkdir()
     (pending / "invalid.md").write_bytes(b"\xff")
-    sync._recover(root, root / ".git", "test-host")
+    sync.recover(root, root / ".git", "test-host")
     assert target.read_text(encoding="utf-8") == "keep"
 
 
@@ -912,7 +912,7 @@ def test_recover_refuses_a_symlinked_scratch_directory(tmp_path: Path) -> None:
     scratch.symlink_to(external, target_is_directory=True)
 
     with pytest.raises(KbError, match="temporary directory is a symlink"):
-        sync._recover(root, git_dir, "test-host")
+        sync.recover(root, git_dir, "test-host")
 
     assert scratch.is_symlink()
     assert existing.read_text(encoding="utf-8") == "Keep active scratch.\n"
@@ -952,7 +952,7 @@ def test_recover_refuses_symlinked_fixed_directories_without_mutation(
     index = git(root, "ls-files", "--stage")
 
     with pytest.raises(KbError, match="content directory is a symlink"):
-        sync._recover(root, root / ".git", "test-host")
+        sync.recover(root, root / ".git", "test-host")
 
     assert sorted(path.relative_to(external) for path in external.rglob("*")) == external_names
     assert interrupted.read_bytes() == external_bytes
@@ -968,7 +968,7 @@ def test_recover_reports_unstage_failure(tmp_path: Path, monkeypatch: pytest.Mon
     fake = git_fakes.install(monkeypatch)
     fake.on(("rm",), completed(1))
     with pytest.raises(KbError, match="cannot unstage interrupted observation"):
-        sync._recover(root, root / ".git", "test-host")
+        sync.recover(root, root / ".git", "test-host")
 
 
 def test_empty_directory_handles_symlinks_files_and_nested_dirs(
@@ -1575,8 +1575,8 @@ def test_a_sync_commit_git_reports_as_failed_succeeds_and_records_the_warning(
         monkeypatch.setenv(key, value)
     monkeypatch.setattr(secrets, "findings", lambda *args: [])
     candidate = harvest.Candidate(make_session(), START)
-    monkeypatch.setattr(sync, "_recover", lambda *args: None)
-    monkeypatch.setattr(sync, "_scan_transcripts", lambda _: sync.ScanResult((candidate,), ()))
+    monkeypatch.setattr(sync, "recover", lambda *args: None)
+    monkeypatch.setattr(sync, "scan_transcripts", lambda _: sync.ScanResult((candidate,), ()))
     monkeypatch.setattr(sync, "_head_records", lambda _: ())
     monkeypatch.setattr(harvest, "reconstruct_state", lambda *args: harvest.HarvestState({}, {}))
     monkeypatch.setattr(

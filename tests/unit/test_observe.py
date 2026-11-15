@@ -255,7 +255,7 @@ def test_sync_recovery_at_lock_acquisition_does_not_remove_observe_scratch(
 
     @contextmanager
     def recover_then_lock(git_directory: Path, wait: int, backend: lock.Backend) -> Iterator[None]:
-        sync._recover(content, git_directory, observation.short_host(socket.gethostname()))
+        sync.recover(content, git_directory, observation.short_host(socket.gethostname()))
         with original_lock(git_directory, wait, backend):
             yield
 

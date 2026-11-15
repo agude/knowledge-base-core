@@ -362,6 +362,7 @@ kb curate complete RUN FILENAME --disposition ephemeral --reason TEXT
 kb curate defer RUN FILENAME --reason TEXT
 kb curate drop RUN FILENAME --reason TEXT
 kb curate finish RUN [--no-push]
+kb curate triage [--dry-run]
 ```
 
 `start` requires a byte budget. It counts each observation's original UTF-8
@@ -384,19 +385,6 @@ fails. The message names the failing step and says `no batch created`. Use
 `Not synchronized: local batch`. The manifest records `synchronized` and
 `base_commit`, the HEAD the batch started from. Version 1 manifests are
 refused; finish or abandon them with kb 0.4.2 or earlier before upgrading.
-
-After synchronizing, and with `--no-sync` too, `start` files delegated
-transcripts in the archive instead of the queue. A pending transcript is
-delegated when its front matter has `parent_session`: a Claude Code subagent,
-a Codex guardian review or subagent thread, or a Goose subagent. Its parent
-session holds the delegated task and the result. `start` moves each one to
-`observations/archived/` with `triage: delegated` added to its front matter,
-commits the moves once as `Triage: N session transcript(s)`, and prints the
-same count. The commit is pushed by `finish` or the next `kb sync`. A file
-named on the command line stays in the queue, and so does a file that already
-has a `triage` field: to curate a triaged transcript, move it back to
-`observations/pending/`. A file that a curated document links to stays in the
-queue with a warning. If the commit fails, the moves are undone.
 
 The RUN below came from an isolated fixture repository. A real run prints its
 own RUN; use that value for every later command.
@@ -518,6 +506,39 @@ repeated finish after publication prints `Already published`.
 
 `kb curate status` reports the publication state from local refs: unpublished,
 committed locally, or published as the commit that holds the manifest.
+
+#### `kb curate triage`
+
+`kb curate triage` archives pending session transcripts that a triage rule
+matches, the same rules that harvest applies when it saves a transcript. It is
+for transcripts already pending: those saved before triage existed, or by a kb
+on another host that does not triage yet.
+
+```sh
+kb curate triage --dry-run
+kb curate triage
+```
+
+- `delegated`: the front matter has `parent_session`. This covers every host's
+  transcripts.
+- `curation`: this host's transcript of the session shows the user invoked the
+  `curate` skill. Every pending part of that session matches. Run the command
+  on each host to triage that host's curation runs.
+
+A transcript stays in the queue, with a warning, when a curated document links
+to it, or when an untriaged transcript names its session in `forked_from`,
+because its observation holds that transcript's shared messages. A transcript
+that already has a `triage` field also stays: to curate a triaged transcript,
+move it back to `observations/pending/`.
+
+The command takes the writer lock, runs the same recovery as `kb sync`,
+requires a clean worktree, and refuses while a batch is open. It moves each
+match to `observations/archived/` with `triage: RULE` added to its front
+matter, commits the moves once as `Triage: N session transcript(s)`, and prints
+the count for each rule. The commit is pushed by the next `kb sync` or
+`kb curate finish`. If the commit fails, the moves are undone; if the process
+stops before the commit, the next `kb sync` or `kb curate triage` restores
+them. `--dry-run` lists each match and its rule and changes nothing.
 
 ### Content pre-commit hook
 
@@ -669,7 +690,7 @@ commit as the rest of the run:
   curation run. Every part of the session is filed this way.
 
 To curate a triaged transcript, move it to `observations/pending/`.
-`kb curate start` applies the `delegated` rule to transcripts already pending.
+`kb curate triage` applies the same rules to transcripts already pending.
 
 The title excerpt and message text are checked for possible secrets. A matching
 message line is replaced with `[redacted: <detector>]`; when the title excerpt

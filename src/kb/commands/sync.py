@@ -177,13 +177,13 @@ def recover_and_harvest(
     warnings: list[str] = []
     commit_warning: str | None = None
     try:
-        _recover(root, git_directory, host)
+        recover(root, git_directory, host)
     except (OSError, UnicodeError, KbError) as error:
         errors.append(f"sync: recovery failed: {error}")
 
     if harvest_since is not None:
         with _scanner_workspace(git_directory, standalone=False) as scan_directory:
-            candidates = _scan_transcripts(environ)
+            candidates = scan_transcripts(environ)
             errors.extend(_failure_text(failure) for failure in candidates.failures)
             records = _head_records(root)
             state = harvest.reconstruct_state(records, _sessions(candidates.candidates), host)
@@ -347,7 +347,7 @@ def backlog(
 
     Never fetches, locks, or writes. A caller that needs origin's state fetches it separately.
     """
-    scanned = _scan_transcripts(environ)
+    scanned = scan_transcripts(environ)
     state = harvest.reconstruct_state(_head_records(root), _sessions(scanned.candidates), host)
     selection = harvest.select_candidates(scanned.candidates, state, now, harvest_since)
     return Backlog(scanned, selection)
@@ -395,7 +395,7 @@ def _dry_run(
         return 0
     try:
         with _scanner_workspace(git_directory, standalone=True) as scan_directory:
-            scanned = _scan_transcripts(environ)
+            scanned = scan_transcripts(environ)
             records = _head_records(root)
             state = harvest.reconstruct_state(records, _sessions(scanned.candidates), host)
             selection = harvest.select_candidates(scanned.candidates, state, now, harvest_since)
@@ -429,7 +429,7 @@ def _dry_run(
         raise KbError(f"sync: dry-run failed: {error}") from None
 
 
-def _scan_transcripts(environ: Mapping[str, str]) -> ScanResult:
+def scan_transcripts(environ: Mapping[str, str]) -> ScanResult:
     """Read isolated Claude, Codex, and Goose transcripts once and parse their snapshots."""
     candidates: list[harvest.Candidate] = []
     failures: list[Failure] = []
@@ -592,7 +592,7 @@ def _record_from_document(document: model.Document) -> harvest.HarvestRecord | N
     return metadata
 
 
-def _recover(root: Path, git_directory: Path, host: str) -> None:
+def recover(root: Path, git_directory: Path, host: str) -> None:
     """Undo interrupted harvests and triage moves, and empty kb-tmp.
 
     In pending, every uncommitted transcript from this host is a harvest leftover. In the

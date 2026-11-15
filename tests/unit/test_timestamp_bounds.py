@@ -67,7 +67,7 @@ def test_bad_timestamp_sessions_do_not_abort_scan(tmp_path: Path) -> None:
             "message": {"role": "user", "content": "Healthy request."},
         }
         (project / f"session-{index}.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
-    result = sync._scan_transcripts(
+    result = sync.scan_transcripts(
         {
             "CLAUDE_CONFIG_DIR": str(tmp_path / "claude"),
             "CODEX_HOME": str(tmp_path / "codex"),

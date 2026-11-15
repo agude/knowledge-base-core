@@ -8,7 +8,7 @@ import socket
 import stat
 import sys
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from typing import cast
@@ -108,15 +108,27 @@ FINISH_SPEC = Spec(
     ),
     switches=frozenset({"--no-push"}),
 )
+TRIAGE_SPEC = Spec(
+    usage="curate triage [--dry-run]",
+    summary=(
+        "Archive pending session transcripts that a triage rule matches, in one commit. "
+        "delegated: the session has a parent. curation: this host's transcript shows the user "
+        "invoked the curate skill; every part of that session matches. A transcript that already "
+        "has a triage field, that a curated document links to, or that an untriaged transcript "
+        "names in forked_from stays. --dry-run lists the matches and changes nothing."
+    ),
+    switches=frozenset({"--dry-run"}),
+)
 SPEC = Spec(
-    usage="curate {start,status,next,complete,amend,defer,drop,finish} ...",
+    usage="curate {start,status,next,complete,amend,defer,drop,finish,triage} ...",
     summary=(
         "Manage curation batches. Start synchronizes and selects bounded input; status reports "
         "persisted progress and local publication state without changing files or contacting "
         "origin. Complete records outcomes, archives unchanged observations, and cites the archive "
         "in each destination article; amend corrects a completed member's destinations. Finish "
         "renumbers destinations whose heading moved, validates "
-        "a settled batch, commits it once, and pushes it."
+        "a settled batch, commits it once, and pushes it. Triage archives pending transcripts "
+        "that curation skips."
     ),
 )
 
@@ -128,7 +140,6 @@ class QueueEntry:
     snapshot: curation.PendingInput
     title: str | None
     warnings: tuple[str, ...]
-    triage: triage.Rule | None = None
 
 
 @dataclass(frozen=True)
@@ -161,6 +172,8 @@ def run(words: Sequence[str]) -> int:
         return _defer_command(arguments)
     if command == "drop":
         return _drop_command(arguments)
+    if command == "triage":
+        return _triage_command(arguments)
     raise KbError(f"Usage: kb {SPEC.usage}")
 
 
@@ -402,8 +415,8 @@ def _start(
     _check_existing_batches(root)
     if synchronize:
         _synchronize(root, git_directory)
-    entries = _triage_pending(root, git_directory, _pending_entries(root), explicit_names)
     base_commit = _head_commit(root)
+    entries = _pending_entries(root)
     selection = curation.select(
         [entry.snapshot for entry in entries],
         max_bytes,
@@ -494,42 +507,160 @@ def _synchronize(root: Path, git_directory: Path) -> None:
         sys.stdout.write("Already in sync.\n")
 
 
-def _triage_pending(
-    root: Path,
-    git_directory: Path,
-    entries: Sequence[QueueEntry],
-    explicit_names: Sequence[str],
-) -> list[QueueEntry]:
-    """Archive the pending transcripts that a triage rule matches, in one commit.
+@dataclass(frozen=True)
+class TriagePlan:
+    """The pending transcripts that triage archives, with their rules, and those it keeps."""
 
-    A named file is kept: naming it asks to curate it. A file that a curated document links
-    to is kept and reported, because moving it would break the link. Returns the entries
-    left in pending. On a failure before the commit exists, the worktree is restored.
+    chosen: tuple[tuple[QueueEntry, triage.Rule], ...]
+    kept: tuple[tuple[str, str], ...]
+
+
+def _triage_command(words: Sequence[str]) -> int:
+    parsed = args.parse(TRIAGE_SPEC, words)
+    if parsed.help:
+        sys.stdout.write(TRIAGE_SPEC.help_text())
+        return 0
+    if parsed.words or parsed.values:
+        raise TRIAGE_SPEC.usage_error()
+    try:
+        wait = lock.parse_wait(os.environ.get("KB_LOCK_WAIT"))
+    except lock.InvalidWait:
+        raise TRIAGE_SPEC.usage_error() from None
+    try:
+        context = load(os.environ, sys.platform, Path.home())
+        root = context.root
+        git_directory = lock.git_dir(root, WHO)
+        if "--dry-run" in parsed.switches:
+            plan = _triage_plan(root)
+            _report_kept(plan)
+            for entry, rule in plan.chosen:
+                sys.stdout.write(f"{PENDING}/{entry.snapshot.filename}: {rule}\n")
+            sys.stdout.write(f"Would triage: {len(plan.chosen)} session transcript(s)\n")
+            return 0
+        backend = lock.default_backend(sys.platform)
+        with lock.write_lock(git_directory, wait, backend):
+            host = observation.short_host(socket.gethostname())
+            sync_command.recover(root, git_directory, host)
+            _require_clean_tree(root)
+            _check_existing_batches(root)
+            plan = _triage_plan(root)
+            _report_kept(plan)
+            if plan.chosen:
+                _archive_triaged(root, git_directory, plan.chosen)
+    except lock.LockBusy as busy:
+        raise KbError(
+            f"{WHO}: content repository is busy (waited {busy.waited}s for the lock)"
+        ) from None
+    except KbError as error:
+        if str(error).startswith((f"{WHO}:", "Usage:")):
+            raise
+        raise KbError(f"{WHO}: {error}") from error
+    except (OSError, RuntimeError, UnicodeError) as error:
+        raise KbError(f"{WHO}: {error}") from error
+    sys.stdout.write(_triage_summary(plan.chosen))
+    return 0
+
+
+def _triage_plan(root: Path) -> TriagePlan:
+    """Match each pending transcript against the triage rules, without changing anything.
+
+    delegated comes from front matter, so it covers every host's transcripts. curation comes
+    from this host's transcripts, so each host triages its own curation runs.
     """
-    named = set(explicit_names)
-    chosen = [
-        entry
-        for entry in entries
-        if entry.triage is not None and entry.snapshot.filename not in named
-    ]
-    if not chosen:
-        return list(entries)
-    references = _inbound_references(root)
-    linked = {
-        entry.snapshot.filename
-        for entry in chosen
-        if (root / PENDING / entry.snapshot.filename).resolve() in references
-    }
-    for filename in sorted(linked):
-        sys.stderr.write(
-            f"{WHO}: warning: {PENDING}/{filename} is linked from curated documents; "
-            "kept in pending\n"
+    entries = _pending_entries(root)
+    fronts = {
+        entry.snapshot.filename: model.parse_front_matter(
+            entry.snapshot.filename, corpus.strip_bom(entry.snapshot.content.decode("utf-8"))
         )
-    chosen = [entry for entry in chosen if entry.snapshot.filename not in linked]
-    if not chosen:
-        return list(entries)
+        for entry in entries
+    }
+    curation_runs = _curation_sessions()
+    rules: dict[str, triage.Rule] = {}
+    for filename, front in fronts.items():
+        rule = triage.from_front_matter(front)
+        session = (front.scalar("app"), front.scalar("session"))
+        if rule is None and _is_untriaged_transcript(front) and session in curation_runs:
+            rule = "curation"
+        if rule is not None:
+            rules[filename] = rule
+    owners = _named_fork_owners(root, fronts, rules)
+    references = _inbound_references(root)
+    chosen: list[tuple[QueueEntry, triage.Rule]] = []
+    kept: list[tuple[str, str]] = []
+    for entry in entries:
+        filename = entry.snapshot.filename
+        rule = rules.get(filename)
+        if rule is None:
+            continue
+        if (root / PENDING / filename).resolve() in references:
+            kept.append((filename, "is linked from curated documents"))
+        elif fronts[filename].scalar("session") in owners:
+            kept.append(
+                (filename, "holds messages that an untriaged transcript names in forked_from")
+            )
+        else:
+            chosen.append((entry, rule))
+    return TriagePlan(tuple(chosen), tuple(kept))
 
-    rendered = [(entry, _triaged_bytes(entry)) for entry in chosen]
+
+def _is_untriaged_transcript(front: model.Document) -> bool:
+    return front.scalar("source") == triage.TRANSCRIPT and triage.FIELD not in front.front
+
+
+def _curation_sessions() -> frozenset[tuple[str | None, str | None]]:
+    """The (app, session) keys of this host's sessions that are curation runs."""
+    scanned = sync_command.scan_transcripts(os.environ)
+    return frozenset(
+        (candidate.session.app, candidate.session.id)
+        for candidate in scanned.candidates
+        if triage.for_session(candidate.session) == "curation"
+    )
+
+
+def _named_fork_owners(
+    root: Path, fronts: Mapping[str, model.Document], rules: Mapping[str, triage.Rule]
+) -> frozenset[str]:
+    """The sessions that a pending or archived untriaged transcript names in forked_from.
+
+    Such a session's observation holds that transcript's shared prefix, so curation must still
+    read it.
+    """
+    documents = [front for filename, front in fronts.items() if filename not in rules]
+    directory = _fixed_directory(root, ARCHIVED, create=False, optional=True)
+    if directory is not None:
+        for path in sorted(directory.glob("*.md")):
+            if path.is_symlink() or not path.is_file():
+                continue
+            text = corpus.strip_bom(path.read_text(encoding="utf-8"))
+            documents.append(model.parse_front_matter(path.name, text))
+    return frozenset(
+        owner
+        for document in documents
+        if _is_untriaged_transcript(document) and (owner := document.scalar("forked_from"))
+    )
+
+
+def _report_kept(plan: TriagePlan) -> None:
+    for filename, reason in plan.kept:
+        sys.stderr.write(f"{WHO}: warning: {PENDING}/{filename} {reason}; kept in pending\n")
+
+
+def _triage_summary(chosen: Sequence[tuple[QueueEntry, triage.Rule]]) -> str:
+    rules = Counter(rule for _, rule in chosen)
+    lines = [f"Triaged: {len(chosen)} session transcript(s)"]
+    lines.extend(f"  {rule}: {rules[rule]}" for rule in sorted(rules))
+    return "\n".join(lines) + "\n"
+
+
+def _archive_triaged(
+    root: Path, git_directory: Path, chosen: Sequence[tuple[QueueEntry, triage.Rule]]
+) -> None:
+    """Move each chosen pending transcript to the archive with its rule, in one commit.
+
+    On a failure before the commit exists, the worktree is restored. A process that stops
+    before the commit leaves a move that recovery restores.
+    """
+    rendered = [(entry, _triaged_bytes(entry, rule)) for entry, rule in chosen]
     previous_head = _head_commit(root)
     published: list[str] = []
     removed: list[QueueEntry] = []
@@ -543,23 +674,19 @@ def _triage_pending(
             published.append(filename)
             pending.unlink()
             removed.append(entry)
-        names = [entry.snapshot.filename for entry in chosen]
+        names = [entry.snapshot.filename for entry, _ in chosen]
         paths = [f"{PENDING}/{name}" for name in names] + [f"{ARCHIVED}/{name}" for name in names]
         _commit_set(root, git_directory, paths, "triage", lambda _: _triage_message(chosen))
     except BaseException as error:
         _undo_triage(root, previous_head, published, removed, error)
         raise
-    sys.stdout.write(f"Triaged: {len(chosen)} session transcript(s)\n")
-    moved = {entry.snapshot.filename for entry in chosen}
-    return [entry for entry in entries if entry.snapshot.filename not in moved]
 
 
-def _triaged_bytes(entry: QueueEntry) -> bytes:
+def _triaged_bytes(entry: QueueEntry, rule: triage.Rule) -> bytes:
     """The pending file's bytes with its triage rule added to the front matter."""
-    assert entry.triage is not None
     bom, text = corpus.split_bom(entry.snapshot.content.decode("utf-8"))
     try:
-        edited = model.edit_front_matter(text, triage.FIELD, entry.triage)
+        edited = model.edit_front_matter(text, triage.FIELD, rule)
     except model.FrontMatterEditError as error:
         raise KbError(
             f"{WHO}: cannot triage {PENDING}/{entry.snapshot.filename}: {error}"
@@ -567,11 +694,11 @@ def _triaged_bytes(entry: QueueEntry) -> bytes:
     return (bom + edited).encode("utf-8")
 
 
-def _triage_message(entries: Sequence[QueueEntry]) -> str:
+def _triage_message(chosen: Sequence[tuple[QueueEntry, triage.Rule]]) -> str:
     """The triage commit's message: a count, then the count for each rule."""
-    rules = Counter(entry.triage for entry in entries if entry.triage is not None)
+    rules = Counter(rule for _, rule in chosen)
     lines = [
-        f"Triage: {len(entries)} session transcript(s)",
+        f"Triage: {len(chosen)} session transcript(s)",
         "",
         "Filed in observations/archived/ by triage rule; curation does not read them.",
         "",
@@ -1906,7 +2033,6 @@ def _pending_entries(root: Path) -> list[QueueEntry]:
                 curation.PendingInput(path.name, content, created),
                 document.title,
                 tuple(warnings),
-                triage.from_front_matter(document),
             )
         )
     return entries

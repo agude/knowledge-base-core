@@ -192,7 +192,7 @@ def test_dispatch_and_nested_command_usage(
 ) -> None:
     assert curate.run([]) == 0
     assert (
-        "Usage: kb curate {start,status,next,complete,amend,defer,drop,finish} ..."
+        "Usage: kb curate {start,status,next,complete,amend,defer,drop,finish,triage} ..."
         in capsys.readouterr().out
     )
     assert curate.run(["--help"]) == 0
@@ -201,6 +201,10 @@ def test_dispatch_and_nested_command_usage(
     assert curate.run(["next", "--help"]) == 0
     assert curate.run(["defer", "--help"]) == 0
     assert curate.run(["drop", "--help"]) == 0
+    assert curate.run(["triage", "--help"]) == 0
+    assert capsys.readouterr().out.endswith("--dry-run lists the matches and changes nothing.\n")
+    with pytest.raises(KbError, match="Usage: kb curate triage"):
+        curate.run(["triage", "extra"])
     with pytest.raises(KbError, match="Usage: kb curate"):
         curate.run(["other"])
     with pytest.raises(KbError, match="Usage: kb curate start"):
