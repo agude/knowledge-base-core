@@ -1,6 +1,7 @@
 """Tests for pure transcript titles, redaction, fenced rendering, and validation."""
 
 from datetime import UTC, datetime, timedelta, timezone
+from typing import Literal
 
 import pytest
 
@@ -268,3 +269,28 @@ def test_validate_rejects_unexpected_optional_fields_and_missing_identity() -> N
     assert transcript_observation.validate(rendered, session, (), 1, "host", CREATED) == (
         "missing session ID or messages",
     )
+
+
+@pytest.mark.parametrize("rule", ["delegated", "curation"])
+def test_render_and_validate_the_triage_field(rule: Literal["delegated", "curation"]) -> None:
+    session = make_session()
+    values = messages()
+
+    rendered = transcript_observation.render(
+        session, values, 1, "host", CREATED, forked_from="owner", triage=rule
+    )
+
+    assert f'forked_from: "owner"\ntriage: {rule}\npart: 1\n' in rendered
+    assert (
+        transcript_observation.validate(
+            rendered, session, values, 1, "host", CREATED, forked_from="owner", triage=rule
+        )
+        == ()
+    )
+    assert transcript_observation.validate(
+        rendered, session, values, 1, "host", CREATED, forked_from="owner"
+    ) == ("triage",)
+    other: Literal["delegated", "curation"] = "curation" if rule == "delegated" else "delegated"
+    assert transcript_observation.validate(
+        rendered, session, values, 1, "host", CREATED, forked_from="owner", triage=other
+    ) == ("triage",)

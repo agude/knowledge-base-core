@@ -8,6 +8,7 @@ from datetime import datetime
 from kb.model import parse as parse_markdown
 from kb.observation import escape
 from kb.transcripts import Message, Session, timestamp_text
+from kb.triage import Rule
 
 SOURCE = "session-transcript"
 REDACTED = "[redacted: {detector}]"
@@ -96,6 +97,7 @@ def render(
     created: datetime,
     forked_from: str | None = None,
     title: str | None = None,
+    triage: Rule | None = None,
 ) -> str:
     """Render one transcript observation with stable front matter and fenced messages."""
     if session.id is None:
@@ -121,6 +123,8 @@ def render(
         lines.append(f'parent_session: "{escape(session.parent_session)}"')
     if forked_from is not None:
         lines.append(f'forked_from: "{escape(forked_from)}"')
+    if triage is not None:
+        lines.append(f"triage: {triage}")
     lines.extend(
         (
             f"part: {part}",
@@ -148,6 +152,7 @@ def validate(
     created: datetime,
     forked_from: str | None = None,
     title: str | None = None,
+    triage: Rule | None = None,
 ) -> tuple[str, ...]:
     """Check rendered front matter against its expected values and count its H2 messages."""
     if session.id is None or not messages:
@@ -172,6 +177,8 @@ def validate(
         expected["parent_session"] = session.parent_session
     if forked_from is not None:
         expected["forked_from"] = forked_from
+    if triage is not None:
+        expected["triage"] = triage
     document = parse_markdown("observation.md", text)
     failures = [
         field
@@ -180,7 +187,7 @@ def validate(
     ]
     if document.front.get("message_ids") != tuple(message.id for message in messages):
         failures.append("message_ids")
-    for optional in ("parent_session", "forked_from"):
+    for optional in ("parent_session", "forked_from", "triage"):
         if optional not in expected and optional in document.front:
             failures.append(optional)
     if sum(section.level == 2 for section in document.sections) != len(messages):
