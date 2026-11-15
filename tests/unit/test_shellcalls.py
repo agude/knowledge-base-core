@@ -2,6 +2,7 @@
 
 import pytest
 
+from kb import shellcalls
 from kb.shellcalls import invocations, sole_invocation
 
 
@@ -250,3 +251,15 @@ def test_a_heredoc_delimiter_with_an_unclosed_quote_gives_no_calls() -> None:
 def test_blanks_between_the_heredoc_operator_and_its_delimiter_are_allowed() -> None:
     command = "cat << EOF\nkb recall fake\nEOF\nkb recall real"
     assert [item.arguments for item in invocations(command)] == [("real",)]
+
+
+def test_programs_name_each_simple_command_without_directories() -> None:
+    assert shellcalls.programs("cd /work && FOO=1 /usr/bin/rg x | wc -l; git status") == (
+        "cd",
+        "rg",
+        "wc",
+        "git",
+    )
+    assert shellcalls.programs("cat <<'EOF' > out\nrm -rf /\nEOF") == ("cat",)
+    assert shellcalls.programs("echo 'unclosed") == ("echo",)
+    assert shellcalls.programs("") == ()

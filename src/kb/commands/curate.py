@@ -21,6 +21,7 @@ from kb import (
     config,
     corpus,
     curation,
+    curation_view,
     dates,
     evidence,
     freshness,
@@ -70,8 +71,9 @@ STATUS_SPEC = Spec(
 NEXT_SPEC = Spec(
     usage="curate next RUN [--query TEXT]",
     summary=(
-        "Show the next unchanged observation in full with matching curated sections and open "
-        "questions. --query overrides the observation title for related context."
+        "Show the next unchanged observation with matching curated sections and open questions. "
+        "A transcript's shell blocks are shown as stubs that name the kb read locator for the "
+        "full commands. --query overrides the observation title for related context."
     ),
     valued=frozenset({"--query"}),
 )
@@ -1863,7 +1865,8 @@ def _render_next(
     sections: Sequence[str],
     question_rows: Sequence[str],
 ) -> str:
-    """Format the full observation and bounded context in the documented order."""
+    """Format the observation's curation view and bounded context in the documented order."""
+    shown = curation_view.render(text, f"{PENDING}/{member.filename}")
     complete_count = sum(item.status == "complete" for item in batch.members)
     deferred_count = sum(item.status == "deferred" for item in batch.members)
     dropped_count = sum(item.status == "dropped" for item in batch.members)
@@ -1874,11 +1877,12 @@ def _render_next(
         f"{dropped_count} dropped of {len(batch.members)}; {pending_count} pending",
         f"Pending locator: {PENDING}/{member.filename}",
         f"Input bytes: {len(content)}",
+        f"Shown bytes: {len(shown.encode('utf-8'))}",
         f"SHA-256: {member.original_sha256}",
         "Observation:",
     ]
-    output = "\n".join(lines) + "\n" + text
-    if not text.endswith("\n"):
+    output = "\n".join(lines) + "\n" + shown
+    if not shown.endswith("\n"):
         output += "\n"
     output += f"\nQuery: {query}\n"
     if sections:

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from kb import shellcalls
 from kb.shellcalls import Invocation, invocations, sole_invocation
 from kb.transcripts import (
     App,
@@ -527,6 +528,20 @@ def _shell_commands(payload: Mapping[str, object], item_type: object) -> list[st
         command = _command_value(payload.get("arguments", payload.get("input")))
         return [] if command is None else [command]
     return []
+
+
+def programs(command: str) -> tuple[str, ...]:
+    """The programs that a retained Codex command runs.
+
+    A shell command gives its programs. An exec script gives the programs of its literal
+    commands, and patch for an apply_patch call; a script with neither is js.
+    """
+    if "tools." not in command:
+        return shellcalls.programs(command)
+    names = [name for inner in _exec_commands(command) for name in shellcalls.programs(inner)]
+    if "apply_patch" in command:
+        names.append("patch")
+    return tuple(names) or ("js",)
 
 
 def _exec_commands(source: str) -> list[str]:

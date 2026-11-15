@@ -1990,3 +1990,37 @@ def test_a_killed_triage_is_recovered_by_the_next_run(git_kb: Kb) -> None:
     assert _archived(git_kb, "delegated.md").read_bytes() == _with_triage(delegated, "delegated")
     assert git_kb.git("rev-parse", "HEAD~1") == head
     assert git_kb.git("status", "--porcelain", "--untracked-files=all") == ""
+
+
+def test_next_shows_transcript_commands_as_stubs_that_read_in_full(git_kb: Kb) -> None:
+    content = (
+        b"---\n"
+        b'title: "Session transcript (3 messages): Hey"\n'
+        b"source: session-transcript\n"
+        b'host: "test"\n'
+        b"app: claude-code\n"
+        b'session: "bash"\n'
+        b"created: 2026-10-26T12:00:00Z\n"
+        b"---\n\n"
+        b"## 1. user, 2026-10-26T11:00:00Z\n\n~~~~text\nHey, let's do some bash.\n~~~~\n\n"
+        b"## 2. assistant, 2026-10-26T11:01:00Z\n\n~~~~text\nOK\n~~~~\n\n"
+        b"~~~~sh\nls .\n~~~~\n\n~~~~sh\nrm -r ./tmp\n~~~~\n\n"
+        b"## 3. user, 2026-10-26T11:02:00Z\n\n~~~~text\nVery good.\n~~~~\n"
+    )
+    _pending(git_kb, "bash.md").write_bytes(content)
+    _commit(git_kb, "observations/pending/bash.md")
+    run_id = _run_id(git_kb("curate", "start", "--no-sync", "--max-bytes", "100000", "bash.md"))
+
+    shown = git_kb("curate", "next", run_id)
+    full = git_kb("read", "observations/pending/bash.md#2")
+
+    assert shown.returncode == 0, shown.stderr
+    assert f"Input bytes: {len(content)}\nShown bytes: " in shown.stdout
+    assert (
+        "## 2. assistant, 2026-10-26T11:01:00Z\n\n~~~~text\nOK\n~~~~\n\n"
+        "[2 command(s) in message 2, 15 bytes: ls, rm. "
+        "Read with: kb read observations/pending/bash.md#2]\n\n## 3. user"
+    ) in shown.stdout
+    assert "rm -r ./tmp" not in shown.stdout
+    assert full.returncode == 0, full.stderr
+    assert "~~~~sh\nrm -r ./tmp\n~~~~" in full.stdout

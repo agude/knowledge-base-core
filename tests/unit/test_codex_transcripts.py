@@ -510,3 +510,10 @@ def test_a_skill_block_with_text_after_it_is_kept_whole() -> None:
 
     assert session.messages[0].text == trailing
     assert session.invoked == ("curate",)
+
+
+def test_programs_read_shell_commands_and_exec_scripts() -> None:
+    assert codex.programs("git status") == ("git",)
+    assert codex.programs('await tools.exec_command({cmd:"uv run pytest; rg x"})') == ("uv", "rg")
+    assert codex.programs('await tools.apply_patch("*** Begin Patch")') == ("patch",)
+    assert codex.programs("await tools.exec_command({cmd: `ls ${dir}`})") == ("js",)

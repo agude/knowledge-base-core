@@ -407,10 +407,25 @@ $ kb curate next 20261026T120000-8664e45f
 
 `status` and `next` take no locks and write nothing. `status` reads local Git
 refs to report whether the batch is committed and published; it never contacts
-`origin`. `next` prints the full
-observation, up to three matching curated sections, and up to five related open
-questions. The byte budget limits only the original observations; these
-sections and question rows add to the context shown for each item. `--query`
+`origin`. `next` prints the observation, up to three matching curated
+sections, and up to five related open questions. The byte budget limits only the
+observations; these sections and question rows add to the context shown for
+each item.
+
+For a session transcript, `next` prints a curation view. The stored file is
+unchanged. Each message keeps its text, and the shell blocks of a message and
+the command-only messages after it become one stub:
+
+```text
+[38 command(s) in messages 120-158, 41 KB: rg x12, sed x9, patch x4, uv x3, git x2, 8 more. Read with: kb read observations/pending/FILE.md#N, N 120-158]
+```
+
+A stub counts the commands, gives their size, and names up to five programs by
+frequency. For Codex, the programs come from the literal commands in each exec
+script; a patch is `patch`, and a script with neither is `js`. `kb read
+observations/pending/FILE.md#N` prints message N with its commands in full.
+`next` reports both `Input bytes`, the stored size, and `Shown bytes`, the size
+of the view. `--query`
 replaces the observation title when another query better describes the work.
 
 Write article text and place it with `kb edit`; it reports the locator to

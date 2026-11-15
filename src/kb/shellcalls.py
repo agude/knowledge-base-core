@@ -67,6 +67,25 @@ def sole_invocation(command: str) -> Invocation | None:
     return _invocation(filled[0])
 
 
+def programs(command: str) -> tuple[str, ...]:
+    """The program of each simple command in a line, without directories, in order.
+
+    Leading assignments are skipped. A line that does not lex gives its first word.
+    """
+    segments = _segments(command)
+    if segments is None:
+        words = command.split(maxsplit=1)
+        return (_program(words[0]),) if words else ()
+    found: list[str] = []
+    for words in segments:
+        start = 0
+        while start < len(words) and ASSIGNMENT.match(words[start]):
+            start += 1
+        if start < len(words):
+            found.append(_program(words[start]))
+    return tuple(found)
+
+
 def _segments(command: str) -> list[list[str]] | None:
     """The unquoted words of each simple command, or None when the line does not lex or unquote.
 
