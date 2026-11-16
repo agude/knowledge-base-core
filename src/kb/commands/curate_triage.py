@@ -179,7 +179,13 @@ def _forked_from(front: model.Document) -> str | None:
 
 
 def _curated_archives(root: Path) -> list[model.Document]:
-    """The front matter of the archived transcripts that curation settled, not triage."""
+    """The front matter of the archived transcripts that curation read.
+
+    Curation's archives carry curation_batch, and older ones have no triage field. A
+    transcript restored to pending by hand keeps its triage field when curation archives it,
+    so curation_batch decides. Only an archive that triage made, with triage and no
+    curation_batch, is left out.
+    """
     directory = fixed_directory(root, ARCHIVED, command=WHO, create=False, optional=True)
     if directory is None:
         return []
@@ -188,7 +194,9 @@ def _curated_archives(root: Path) -> list[model.Document]:
         if path.is_symlink() or not path.is_file():
             continue
         front = model.parse_front_matter(path.name, corpus.strip_bom(path.read_text("utf-8")))
-        if _is_untriaged_transcript(front):
+        if _is_untriaged_transcript(front) or (
+            front.scalar("source") == triage.TRANSCRIPT and "curation_batch" in front.front
+        ):
             documents.append(front)
     return documents
 

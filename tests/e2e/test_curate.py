@@ -2121,3 +2121,36 @@ def test_triage_reports_a_transcript_it_cannot_inspect(git_kb: Kb) -> None:
     assert (result.returncode, result.stderr) == (1, warning)
     assert result.stdout == "Triaged: 1 session transcript(s)\n  delegated: 1\n"
     assert _archived(git_kb, "delegated.md").read_bytes() == _with_triage(delegated, "delegated")
+
+
+@pytest.mark.parametrize(
+    ("fields", "kept"),
+    [
+        (
+            "triage: delegated\noriginal_sha256: abc\ncuration_batch: 20261026T120000-a1b2c3d4\n",
+            True,
+        ),
+        ("triage: delegated\n", False),
+    ],
+    ids=["restored and curated", "archived by triage"],
+)
+def test_triage_keeps_owners_of_curated_archives_whatever_their_triage_field(
+    git_kb: Kb, fields: str, kept: bool
+) -> None:
+    owner = _transcript(git_kb, "owner.md", 'parent_session: "p"')
+    archive = git_kb.content / "observations" / "archived" / "parent.md"
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    archive.write_text(
+        '---\nsource: session-transcript\nsession: "parent"\nforked_from: "owner"\n'
+        + fields
+        + "---\n",
+        encoding="utf-8",
+    )
+    _commit(git_kb, "observations/pending/owner.md", "observations/archived/parent.md")
+
+    result = git_kb("curate", "triage")
+
+    assert result.returncode == 0, result.stderr
+    assert _pending(git_kb, "owner.md").exists() is kept
+    if not kept:
+        assert _archived(git_kb, "owner.md").read_bytes() == _with_triage(owner, "delegated")
