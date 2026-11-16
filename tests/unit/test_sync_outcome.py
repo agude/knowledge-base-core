@@ -122,7 +122,7 @@ def test_a_skipped_session_records_an_error_with_its_line(
     stub_steps(monkeypatch)
     candidate = harvest.Candidate(make_session(), START)
     skipped = "sync: skipped session session: possible secrets remain"
-    monkeypatch.setattr(sync, "scan_transcripts", lambda _: sync.ScanResult((candidate,), ()))
+    monkeypatch.setattr(sync, "scan_transcripts", lambda *_: sync.ScanResult((candidate,), ()))
     monkeypatch.setattr(sync, "_head_records", lambda _: ())
     monkeypatch.setattr(harvest, "reconstruct_state", lambda *args: harvest.HarvestState({}, {}))
     monkeypatch.setattr(harvest, "select_candidates", lambda *args: harvest.Selection((), 0, 0, ()))
@@ -142,7 +142,7 @@ def test_an_exception_during_the_run_records_an_error_and_is_raised(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     stub_steps(monkeypatch)
-    monkeypatch.setattr(sync, "scan_transcripts", lambda _: sync.ScanResult((), ()))
+    monkeypatch.setattr(sync, "scan_transcripts", lambda *_: sync.ScanResult((), ()))
     monkeypatch.setattr(
         sync,
         "_head_records",
@@ -196,7 +196,7 @@ def test_backlog_reads_head_and_selects_without_fetching_origin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     candidate = harvest.Candidate(make_session(), START)
-    monkeypatch.setattr(sync, "scan_transcripts", lambda _: sync.ScanResult((candidate,), ()))
+    monkeypatch.setattr(sync, "scan_transcripts", lambda *_: sync.ScanResult((candidate,), ()))
     monkeypatch.setattr(sync, "_head_records", lambda _: ())
     monkeypatch.setattr(remote, "fetch_status", lambda _: pytest.fail("the backlog fetched origin"))
 

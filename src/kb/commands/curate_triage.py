@@ -98,14 +98,14 @@ def run(words: Sequence[str]) -> int:
 
 
 def _triage_plan(root: Path) -> TriagePlan:
-    """Match each pending transcript against the triage rules, without changing anything.
+    """Match each pending transcript against the triage rules, without changing git state.
 
     delegated comes from front matter, so it covers every host's transcripts. curation comes
     from this host's transcripts, so each host triages its own curation runs.
     """
     entries = curate.pending_entries(root)
     fronts = {entry.snapshot.filename: entry.document for entry in entries}
-    curation_runs, unreadable = _curation_sessions()
+    curation_runs, unreadable = _curation_sessions(root)
     rules: dict[str, triage.Rule] = {}
     for filename, front in fronts.items():
         rule = triage.from_front_matter(front)
@@ -137,11 +137,11 @@ def _is_untriaged_transcript(front: model.Document) -> bool:
     return front.scalar("source") == triage.TRANSCRIPT and triage.FIELD not in front.front
 
 
-def _curation_sessions() -> tuple[
-    frozenset[tuple[str | None, str | None]], tuple[tuple[str, str], ...]
-]:
+def _curation_sessions(
+    root: Path,
+) -> tuple[frozenset[tuple[str | None, str | None]], tuple[tuple[str, str], ...]]:
     """The (app, session) keys of this host's curation runs, and the transcripts not read."""
-    scanned = sync_command.scan_transcripts(os.environ)
+    scanned = sync_command.scan_transcripts(os.environ, root)
     runs = frozenset(
         (candidate.session.app, candidate.session.id)
         for candidate in scanned.candidates

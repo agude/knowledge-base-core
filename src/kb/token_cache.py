@@ -93,7 +93,7 @@ class CacheStatus:
 
 def status(root: Path) -> CacheStatus:
     """The state of the cache file. Compares names and stat fields only, never bytes."""
-    target, usable = _location(root)
+    target, usable = _location(root, CACHE_FILE)
     if target is None:
         return CacheStatus(None, 0, 0, "none")
     if not usable:
@@ -130,18 +130,18 @@ def evidence_paths(root: Path) -> list[str]:
     )
 
 
-def cache_file(root: Path) -> Path | None:
-    """The cache file, cache/tokens.pickle at the top of root's worktree, when kb may write it.
+def cache_file(root: Path, name: str = CACHE_FILE) -> Path | None:
+    """The cache file, cache/<name> at the top of root's worktree, when kb may write it.
 
     None when root is not the top of a git worktree of its own, or when git does not ignore
     the cache file. A content root inside another repository, such as a fixture, gets no
     cache, and an unignored cache is never written where a commit could pick it up.
     """
-    target, usable = _location(root)
+    target, usable = _location(root, name)
     return target if usable else None
 
 
-def _location(root: Path) -> tuple[Path | None, bool]:
+def _location(root: Path, name: str) -> tuple[Path | None, bool]:
     """The cache file's path, and whether git ignores it there.
 
     The path is None when root is not the top of a git worktree of its own.
@@ -152,9 +152,9 @@ def _location(root: Path) -> tuple[Path | None, bool]:
     lines = toplevel.stdout.splitlines()
     if len(lines) != 1 or Path(lines[0]).resolve() != root.resolve():
         return None, False
-    relative = f"{CACHE_DIRECTORY}/{CACHE_FILE}"
+    relative = f"{CACHE_DIRECTORY}/{name}"
     ignored = _git(root, "check-ignore", "--quiet", "--", relative)
-    target = root.resolve() / CACHE_DIRECTORY / CACHE_FILE
+    target = root.resolve() / CACHE_DIRECTORY / name
     return target, ignored is not None and ignored.returncode == 0
 
 

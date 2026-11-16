@@ -29,6 +29,7 @@ from kb import (
     secrets,
     sync_state,
     token_cache,
+    transcript_cache,
     triage,
 )
 from kb.args import Spec
@@ -183,7 +184,7 @@ def recover_and_harvest(
 
     if harvest_since is not None:
         with _scanner_workspace(git_directory, standalone=False) as scan_directory:
-            candidates = scan_transcripts(environ)
+            candidates = scan_transcripts(environ, root)
             errors.extend(_failure_text(failure) for failure in candidates.failures)
             records = _head_records(root)
             state = harvest.reconstruct_state(records, _sessions(candidates.candidates), host)
@@ -345,9 +346,10 @@ def backlog(
 ) -> Backlog:
     """Scan transcripts and select what a harvest would take, reading HEAD only.
 
-    Never fetches, locks, or writes. A caller that needs origin's state fetches it separately.
+    Never fetches, locks, or changes git state. The transcript cache lives outside git, and a
+    caller that needs origin's state fetches it separately.
     """
-    scanned = scan_transcripts(environ)
+    scanned = scan_transcripts(environ, root)
     state = harvest.reconstruct_state(_head_records(root), _sessions(scanned.candidates), host)
     selection = harvest.select_candidates(scanned.candidates, state, now, harvest_since)
     return Backlog(scanned, selection)
@@ -395,7 +397,7 @@ def _dry_run(
         return 0
     try:
         with _scanner_workspace(git_directory, standalone=True) as scan_directory:
-            scanned = scan_transcripts(environ)
+            scanned = scan_transcripts(environ, root)
             records = _head_records(root)
             state = harvest.reconstruct_state(records, _sessions(scanned.candidates), host)
             selection = harvest.select_candidates(scanned.candidates, state, now, harvest_since)
@@ -429,8 +431,13 @@ def _dry_run(
         raise KbError(f"sync: dry-run failed: {error}") from None
 
 
-def scan_transcripts(environ: Mapping[str, str]) -> ScanResult:
-    """Read isolated Claude, Codex, and Goose transcripts once and parse their snapshots."""
+def scan_transcripts(environ: Mapping[str, str], root: Path | None = None) -> ScanResult:
+    """Read isolated Claude, Codex, and Goose transcripts once and parse their snapshots.
+
+    With root, a Claude or Codex transcript whose size and modification time match the last
+    scan reuses its stored session, and this scan stores what it parses. See kb.transcript_cache.
+    """
+    cache = None if root is None else transcript_cache.Cache.load(root)
     candidates: list[harvest.Candidate] = []
     failures: list[Failure] = []
     claude_root = _store_root(environ, "CLAUDE_CONFIG_DIR", ".claude") / "projects"
@@ -438,15 +445,22 @@ def scan_transcripts(environ: Mapping[str, str]) -> ScanResult:
         if not project.is_dir():
             continue
         for path in sorted(project.glob("*.jsonl")):
-            _read_candidate(path, failures, candidates, "claude-code")
+            _read_candidate(path, failures, candidates, "claude-code", cache=cache)
         for session_directory in sorted(project.iterdir()):
             if not session_directory.is_dir():
                 continue
             for path in sorted((session_directory / "subagents").glob("agent-*.jsonl")):
-                _read_candidate(path, failures, candidates, "claude-code", session_directory.name)
+                _read_candidate(
+                    path,
+                    failures,
+                    candidates,
+                    "claude-code",
+                    session_directory.name,
+                    cache=cache,
+                )
     codex_root = _store_root(environ, "CODEX_HOME", ".codex") / "sessions"
     for path in sorted(codex_root.rglob("rollout-*.jsonl")):
-        _read_candidate(path, failures, candidates, "codex")
+        _read_candidate(path, failures, candidates, "codex", cache=cache)
     goose_root = goose_sessions(environ, sys.platform, Path.home())
     try:
         snapshots = goose.read(goose_root)
@@ -454,6 +468,8 @@ def scan_transcripts(environ: Mapping[str, str]) -> ScanResult:
         failures.append(Failure("goose", f"cannot read session database: {error}"))
     else:
         candidates.extend(harvest.Candidate(item.session, item.updated) for item in snapshots)
+    if cache is not None:
+        cache.save()
     return ScanResult(tuple(candidates), tuple(failures))
 
 
@@ -463,16 +479,27 @@ def _read_candidate(
     candidates: list[harvest.Candidate],
     app: App,
     parent_session: str | None = None,
+    *,
+    cache: transcript_cache.Cache | None = None,
 ) -> None:
-    """Read one transcript and add its parsed session or a redacted failure reason."""
+    """Read one transcript and add its parsed session or a redacted failure reason.
+
+    The file's status is read before its text, so a file that changes during the read has a
+    stale stored identity and is parsed again by the next scan.
+    """
     label = _session_label(path)
     try:
-        modified = datetime.fromtimestamp(path.stat().st_mtime, UTC)
-        text = path.read_text(encoding="utf-8")
-        if app == "claude-code":
-            session = claude.parse(text, path.stem, parent_session)
-        else:
-            session = codex.parse(text, path.name)
+        status = path.stat()
+        modified = datetime.fromtimestamp(status.st_mtime, UTC)
+        session = None if cache is None else cache.session(str(path), status)
+        if session is None:
+            text = path.read_text(encoding="utf-8")
+            if app == "claude-code":
+                session = claude.parse(text, path.stem, parent_session)
+            else:
+                session = codex.parse(text, path.name)
+            if cache is not None:
+                cache.add(str(path), status, session)
     except UnicodeDecodeError:
         failures.append(Failure(label, "transcript is not UTF-8"))
         return
