@@ -129,3 +129,15 @@ def test_an_unclosed_fence_leaves_the_observation_unchanged() -> None:
     broken = text.removesuffix("~~~~\n")
 
     assert curation_view.render(broken, LOCATOR) == broken
+
+
+def test_a_heading_with_other_valid_whitespace_is_a_message() -> None:
+    text = observation(("user", "Look.", ()), ("assistant", "", ("ls",)), ("user", "Next.", ()))
+    edited = text.replace("## 2. assistant", "##\t2. assistant").replace(
+        "## 3. user", "##  3. user"
+    )
+
+    view = curation_view.render(edited, LOCATOR)
+
+    assert f"[1 command(s) in message 2, 2 bytes: ls. Read with: kb read {LOCATOR}#2]" in view
+    assert "##  3. user" in view

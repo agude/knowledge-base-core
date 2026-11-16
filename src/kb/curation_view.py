@@ -14,7 +14,7 @@ from collections.abc import Sequence
 from kb import model, shellcalls
 from kb.hosts import codex
 
-MESSAGE = re.compile(r"[1-9][0-9]*\. (?:user|assistant), \S+")
+MESSAGE = re.compile(r"([1-9][0-9]*)\. (?:user|assistant), \S+")
 OPENING = re.compile(r"(~{4,})(text|sh)")
 SHOWN_PROGRAMS = 5
 
@@ -27,16 +27,16 @@ def render(text: str, locator: str) -> str:
         or document.unclosed_fence_start is not None
     ):
         return text
-    starts = [
-        section.start
+    messages = [
+        (section.start, int(match.group(1)))
         for section in document.sections
-        if section.level == 2 and MESSAGE.fullmatch(section.heading)
+        if section.level == 2 and (match := MESSAGE.fullmatch(section.heading)) is not None
     ]
-    if not starts:
+    if not messages:
         return text
     lines = document.lines
     app = document.scalar("app") or ""
-    parts = ["\n".join(lines[: starts[0]]).rstrip("\n")]
+    parts = ["\n".join(lines[: messages[0][0]]).rstrip("\n")]
     run: list[tuple[int, str]] = []
 
     def flush() -> None:
@@ -44,8 +44,8 @@ def render(text: str, locator: str) -> str:
             parts.append(_stub(run, locator, app))
             run.clear()
 
-    for index, start in enumerate(starts):
-        end = starts[index + 1] if index + 1 < len(starts) else len(lines)
+    for index, (start, number) in enumerate(messages):
+        end = messages[index + 1][0] if index + 1 < len(messages) else len(lines)
         heading = lines[start]
         blocks = _blocks(lines[start + 1 : end])
         if blocks is None:
@@ -57,7 +57,6 @@ def render(text: str, locator: str) -> str:
             flush()
             parts.append(heading)
             parts.extend(texts)
-        number = int(heading.removeprefix("## ").split(".", 1)[0])
         run.extend((number, "\n".join(block[1:-1])) for info, block in blocks if info == "sh")
     flush()
     return "\n\n".join(part for part in parts if part) + "\n"
