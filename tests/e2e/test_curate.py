@@ -105,7 +105,7 @@ def _interrupt_archive(kb: Kb, *arguments: str) -> CompletedProcess[str]:
         "from kb.commands import curate\n"
         "def interrupt(*_args, **_kwargs):\n"
         "    raise OSError('injected interruption')\n"
-        "curate._publish_archive = interrupt\n"
+        "curate.publish_archive = interrupt\n"
         f"raise SystemExit(cli.main({words!r}))\n"
     )
     return subprocess.run(
@@ -1929,7 +1929,7 @@ def _triage_with_commit_failure(kb: Kb, failure: str) -> CompletedProcess[str]:
         "        subprocess.run(['git', 'add', '-A', 'observations'], cwd=root, check=True)\n"
         "        subprocess.run(['git', 'commit', '-q', '-m', 'Triage'], cwd=root, check=True)\n"
         "    raise OSError('injected commit failure')\n"
-        "curate._commit_set = fail\n"
+        "curate.commit_set = fail\n"
         "raise SystemExit(cli.main(['curate', 'triage']))\n"
     )
     return subprocess.run(

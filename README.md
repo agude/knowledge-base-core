@@ -547,8 +547,10 @@ kb curate triage
   on each host to triage that host's curation runs.
 
 A transcript stays in the queue, with a warning, when a curated document links
-to it, or when an untriaged transcript names its session in `forked_from`,
+to it, or when a transcript that stays names its session in `forked_from`,
 because its observation holds that transcript's shared messages. A transcript
+stays when it matches no rule, is kept, or was archived by curation, and a kept
+transcript protects the session it names in turn. A transcript
 that already has a `triage` field also stays: to curate a triaged transcript,
 move it back to `observations/pending/`.
 

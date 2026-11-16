@@ -346,7 +346,7 @@ def test_an_interrupted_archive_refuses_finish_and_names_the_completion(
         "from kb.commands import curate\n"
         "def interrupt(*_args, **_kwargs):\n"
         "    raise OSError('injected interruption')\n"
-        "curate._publish_archive = interrupt\n"
+        "curate.publish_archive = interrupt\n"
         f"raise SystemExit(cli.main({['curate', 'complete', run.group(1), name, '--disposition', 'ephemeral', '--reason', 'Stopped']!r}))\n"
     )
     subprocess.run(

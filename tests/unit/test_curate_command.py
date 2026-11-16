@@ -415,7 +415,7 @@ def test_complete_failure_stages_recover_in_a_new_process(
         ["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True
     ).stdout
     replace_manifest = curate._replace_manifest
-    publish_archive = curate._publish_archive
+    publish_archive = curate.publish_archive
     remove_pending = curate._remove_pending
     replacement_count = 0
 
@@ -446,7 +446,7 @@ def test_complete_failure_stages_recover_in_a_new_process(
             raise OSError("injected after remove")
 
     monkeypatch.setattr(curate, "_replace_manifest", fail_manifest)
-    monkeypatch.setattr(curate, "_publish_archive", fail_publish)
+    monkeypatch.setattr(curate, "publish_archive", fail_publish)
     monkeypatch.setattr(curate, "_remove_pending", fail_remove)
 
     if failure == "interrupt_after_archive":
@@ -740,7 +740,7 @@ def test_archive_publication_never_replaces_a_file_created_after_precheck(
 
     monkeypatch.setattr(os, "link", create_competing_archive)
     with pytest.raises(KbError, match="archive already exists"):
-        curate._publish_archive(root, root / ".git", "item.md", b"expected archive", 0o600)
+        curate.publish_archive(root, root / ".git", "item.md", b"expected archive", 0o600)
 
     assert archive_path.read_bytes() == b"concurrent archive"
     assert not list((root / ".git" / "kb-tmp").glob("*"))
@@ -1180,7 +1180,7 @@ def test_head_commit_refuses_a_repository_without_commits(tmp_path: Path) -> Non
     subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
 
     with pytest.raises(KbError, match="curate: cannot read HEAD"):
-        curate._head_commit(tmp_path)
+        curate.head_commit(tmp_path)
 
 
 def test_synchronized_start_takes_the_writer_lock_once(

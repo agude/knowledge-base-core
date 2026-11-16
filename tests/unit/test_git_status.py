@@ -37,7 +37,7 @@ def test_status_consumers_keep_rename_names_and_count_one_record(
     assert set(remote.dirty_paths(root)) == {new, loose}
     assert doctor._dirty_count(root) == 2
     with pytest.raises(KbError) as refusal:
-        curate._require_clean_tree(root)
+        curate.require_clean_tree(root)
     assert old in str(refusal.value) and new in str(refusal.value) and loose in str(refusal.value)
     entries = curate._worktree_entries(root)
     assert len(entries) == 2
@@ -59,7 +59,7 @@ def test_rename_source_outside_content_stays_outside_in_every_path_consumer(tmp_
     assert remote.dirty_paths(content) == ("knowledge/renamed.md",)
     assert doctor._dirty_count(content) == 1
     with pytest.raises(KbError) as refusal:
-        curate._require_clean_tree(content)
+        curate.require_clean_tree(content)
     assert "../outside.md" in str(refusal.value)
     entries = curate._worktree_entries(content)
     assert len(entries) == 1
