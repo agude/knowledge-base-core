@@ -404,9 +404,12 @@ def _scan(text: str, filename: str) -> Scan:
             tool_calls.append(call)
             if isinstance(call_id, str):
                 pending[call_id] = call
-        elif item_type in ("custom_tool_call_output", "function_call_output"):
-            if isinstance(call_id, str) and call_id in pending:
-                _pair(pending.pop(call_id), item_type, payload.get("output"))
+        elif (
+            item_type in ("custom_tool_call_output", "function_call_output")
+            and isinstance(call_id, str)
+            and call_id in pending
+        ):
+            _pair(pending.pop(call_id), item_type, payload.get("output"))
     calls: list[KbCall] = []
     for call in tool_calls:
         for shell in call.commands:
