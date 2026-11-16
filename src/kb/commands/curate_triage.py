@@ -101,12 +101,7 @@ def _triage_plan(root: Path) -> TriagePlan:
     from this host's transcripts, so each host triages its own curation runs.
     """
     entries = curate.pending_entries(root)
-    fronts = {
-        entry.snapshot.filename: model.parse_front_matter(
-            entry.snapshot.filename, corpus.strip_bom(entry.snapshot.content.decode("utf-8"))
-        )
-        for entry in entries
-    }
+    fronts = {entry.snapshot.filename: entry.document for entry in entries}
     curation_runs, unreadable = _curation_sessions()
     rules: dict[str, triage.Rule] = {}
     for filename, front in fronts.items():

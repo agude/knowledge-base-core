@@ -126,11 +126,12 @@ SPEC = Spec(
 
 @dataclass(frozen=True)
 class QueueEntry:
-    """One eligible pending observation and its parsed metadata warnings."""
+    """One eligible pending observation, its parsed document, and its metadata warnings."""
 
     snapshot: curation.PendingInput
     title: str | None
     warnings: tuple[str, ...]
+    document: model.Document
 
 
 @dataclass(frozen=True)
@@ -410,7 +411,7 @@ def _start(
     if synchronize:
         _synchronize(root, git_directory)
     base_commit = head_commit(root)
-    entries = pending_entries(root)
+    entries = _with_shown_bytes(pending_entries(root))
     selection = curation.select(
         [entry.snapshot for entry in entries],
         max_bytes,
@@ -1776,7 +1777,10 @@ def _omitted_line(lines: list[str], count: int, label: str, limit: int = MAX_REP
 
 
 def pending_entries(root: Path) -> list[QueueEntry]:
-    """Read ordinary, non-hidden Markdown files directly under pending."""
+    """Read ordinary, non-hidden Markdown files directly under pending.
+
+    The budget size of each entry is its original size; start replaces it with the shown size.
+    """
     directory = _fixed_directory(root, PENDING, create=False, optional=True)
     if directory is None:
         return []
@@ -1804,17 +1808,24 @@ def pending_entries(root: Path) -> list[QueueEntry]:
             warnings.append("title is missing; related stale search is unavailable")
         entries.append(
             QueueEntry(
-                curation.PendingInput(
-                    path.name,
-                    content,
-                    created,
-                    len(curation_view.render(text, f"{PENDING}/{path.name}").encode("utf-8")),
-                ),
+                curation.PendingInput(path.name, content, created),
                 document.title,
                 tuple(warnings),
+                document,
             )
         )
     return entries
+
+
+def _with_shown_bytes(entries: Sequence[QueueEntry]) -> list[QueueEntry]:
+    """The entries with the byte size of what next shows as each budget size."""
+    shown: list[QueueEntry] = []
+    for entry in entries:
+        name = entry.snapshot.filename
+        view = curation_view.render(entry.snapshot.content.decode("utf-8"), f"{PENDING}/{name}")
+        snapshot = dataclasses.replace(entry.snapshot, shown_bytes=len(view.encode("utf-8")))
+        shown.append(dataclasses.replace(entry, snapshot=snapshot))
+    return shown
 
 
 def _related_stale(

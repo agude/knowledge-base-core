@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from kb import archive, config, curation, dates, lock, remote, secrets
+from kb import archive, config, curation, curation_view, dates, lock, model, remote, secrets
 from kb.commands import curate
 from kb.commands import sync as sync_command
 from kb.context import Context
@@ -277,7 +277,10 @@ def test_start_report_bounds_skipped_oversized_and_stale_lists() -> None:
         curation.PendingInput(f"item-{index}.md", b"x" * (index + 1), None) for index in range(10)
     )
     selected = curation.Selection(inputs[:1], inputs[1:], inputs[1:], inputs[0].size)
-    entries = tuple(curate.QueueEntry(item, None, ("created date is missing",)) for item in inputs)
+    document = model.parse("item.md", "Body.\n")
+    entries = tuple(
+        curate.QueueEntry(item, None, ("created date is missing",), document) for item in inputs
+    )
     stale = tuple(
         curate.StaleArticle(f"knowledge/{index}.md", "stale, verified 2020-01-01")
         for index in range(9)
@@ -1211,3 +1214,15 @@ def test_synchronized_start_takes_the_writer_lock_once(
 
     assert curate.run(["start", "--max-bytes", "100000"]) == 0
     assert len(taken) == 1
+
+
+def test_reading_the_queue_renders_no_view(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    pending = tmp_path / "observations" / "pending"
+    pending.mkdir(parents=True)
+    (pending / "note.md").write_text("---\ntitle: Note\n---\n\nBody.\n", encoding="utf-8")
+    monkeypatch.setattr(curation_view, "render", lambda *_: (_ for _ in ()).throw(AssertionError()))
+
+    (entry,) = curate.pending_entries(tmp_path)
+
+    assert entry.snapshot.shown_bytes is None
+    assert entry.document.title == "Note"
