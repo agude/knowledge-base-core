@@ -1886,13 +1886,16 @@ def test_triage_keeps_restored_linked_and_fork_owner_transcripts(git_kb: Kb) -> 
     result = git_kb("curate", "triage")
 
     assert result.returncode == 0, result.stderr
-    assert result.stderr == (
-        "curate: warning: observations/pending/linked.md is linked from curated documents; "
-        "kept in pending\n"
-        "curate: warning: observations/pending/owner.md holds shared messages that a staying "
-        "transcript names in forked_from; kept in pending\n"
+    assert result.stderr == ""
+    assert result.stdout == (
+        "Triaged: 0 session transcript(s)\n"
+        "Kept in pending: 2 session transcript(s) that match a rule\n"
+        "  observations/pending/linked.md (delegated)\n"
+        "    Linked from knowledge/inbound.md:8 (link); archiving it would break the link.\n"
+        "  observations/pending/owner.md (delegated)\n"
+        "    Holds the opening messages of observations/pending/parent.md, which leaves them "
+        "out and names this session in forked_from. Curation still needs to read them.\n"
     )
-    assert result.stdout == "Triaged: 0 session transcript(s)\n"
     assert git_kb.git("rev-parse", "HEAD") == head
     for filename, content in (
         ("restored.md", restored),
@@ -2077,12 +2080,18 @@ def test_triage_keeps_the_owners_of_a_kept_transcript_transitively(git_kb: Kb) -
     result = git_kb("curate", "triage")
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout == "Triaged: 1 session transcript(s)\n  delegated: 1\n"
+    assert result.stdout.startswith("Triaged: 1 session transcript(s)\n  delegated: 1\n")
     for name, content in (("linked.md", linked), ("middle.md", middle), ("root.md", root)):
         assert _pending(git_kb, name).read_bytes() == content
     assert _archived(git_kb, "unrelated.md").read_bytes() == _with_triage(unrelated, "delegated")
-    assert "middle.md holds shared messages" in result.stderr
-    assert "root.md holds shared messages" in result.stderr
+    assert (
+        "  observations/pending/middle.md (delegated)\n"
+        "    Holds the opening messages of observations/pending/linked.md, which leaves them out"
+    ) in result.stdout
+    assert (
+        "  observations/pending/root.md (delegated)\n"
+        "    Holds the opening messages of observations/pending/middle.md, which leaves them out"
+    ) in result.stdout
 
 
 def test_triage_keeps_the_owner_of_a_curated_archive(git_kb: Kb) -> None:
@@ -2099,7 +2108,8 @@ def test_triage_keeps_the_owner_of_a_curated_archive(git_kb: Kb) -> None:
     result = git_kb("curate", "triage")
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout == "Triaged: 0 session transcript(s)\n"
+    assert result.stdout.startswith("Triaged: 0 session transcript(s)\n")
+    assert "    Holds the opening messages of observations/archived/parent.md" in result.stdout
     assert _pending(git_kb, "owner.md").read_bytes() == owner
 
 
@@ -2114,8 +2124,8 @@ def test_triage_reports_a_transcript_it_cannot_inspect(git_kb: Kb) -> None:
     result = git_kb("curate", "triage")
 
     warning = (
-        "curate: cannot inspect transcript broken: transcript is not UTF-8; "
-        "a curation run it holds stays pending\n"
+        "curate: could not read transcript broken (transcript is not UTF-8); a curation run "
+        "in it cannot be detected, so its parts stay pending\n"
     )
     assert (dry.returncode, dry.stderr) == (1, warning)
     assert (result.returncode, result.stderr) == (1, warning)

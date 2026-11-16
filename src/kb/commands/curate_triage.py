@@ -42,9 +42,11 @@ class TriagePlan:
     """The pending transcripts that triage archives, with their rules, and those it keeps."""
 
     chosen: tuple[tuple[QueueEntry, triage.Rule], ...]
-    kept: tuple[tuple[str, str], ...]
-    # Source transcripts that could not be read, so their curation runs were not detected.
-    unreadable: tuple[str, ...] = ()
+    # Each kept filename, the rule it matches, and why it stays.
+    kept: tuple[tuple[str, triage.Rule, str], ...]
+    # Source transcripts that could not be read, as (session, reason), so their curation runs
+    # were not detected.
+    unreadable: tuple[tuple[str, str], ...] = ()
 
 
 def run(words: Sequence[str]) -> int:
@@ -65,10 +67,11 @@ def run(words: Sequence[str]) -> int:
         git_directory = lock.git_dir(root, WHO)
         if "--dry-run" in parsed.switches:
             plan = _triage_plan(root)
-            _report_kept(plan)
+            _report_unreadable(plan)
             for entry, rule in plan.chosen:
                 sys.stdout.write(f"{PENDING}/{entry.snapshot.filename}: {rule}\n")
             sys.stdout.write(f"Would triage: {len(plan.chosen)} session transcript(s)\n")
+            sys.stdout.write(_kept_report(plan))
             return 1 if plan.unreadable else 0
         backend = lock.default_backend(sys.platform)
         with lock.write_lock(git_directory, wait, backend):
@@ -77,7 +80,7 @@ def run(words: Sequence[str]) -> int:
             curate.require_clean_tree(root)
             curate.check_existing_batches(root)
             plan = _triage_plan(root)
-            _report_kept(plan)
+            _report_unreadable(plan)
             if plan.chosen:
                 _archive_triaged(root, git_directory, plan.chosen)
     except lock.LockBusy as busy:
@@ -90,7 +93,7 @@ def run(words: Sequence[str]) -> int:
         raise KbError(f"{WHO}: {error}") from error
     except (OSError, RuntimeError, UnicodeError) as error:
         raise KbError(f"{WHO}: {error}") from error
-    sys.stdout.write(_triage_summary(plan.chosen))
+    sys.stdout.write(_triage_summary(plan.chosen) + _kept_report(plan))
     return 1 if plan.unreadable else 0
 
 
@@ -112,25 +115,31 @@ def _triage_plan(root: Path) -> TriagePlan:
         if rule is not None:
             rules[filename] = rule
     references = curate.inbound_references(root)
-    kept = {
-        filename: "is linked from curated documents"
-        for filename in rules
-        if (root / PENDING / filename).resolve() in references
-    }
+    kept: dict[str, str] = {}
+    for filename in rules:
+        links = references.get((root / PENDING / filename).resolve())
+        if links:
+            kept[filename] = (
+                f"Linked from {_listed(sorted(set(links)), 'place')}; "
+                "archiving it would break the link."
+            )
     _keep_fork_owners(root, fronts, rules, kept)
     chosen = [
         (entry, rules[entry.snapshot.filename])
         for entry in entries
         if entry.snapshot.filename in rules and entry.snapshot.filename not in kept
     ]
-    return TriagePlan(tuple(chosen), tuple(sorted(kept.items())), unreadable)
+    reasons = tuple((name, rules[name], reason) for name, reason in sorted(kept.items()))
+    return TriagePlan(tuple(chosen), reasons, unreadable)
 
 
 def _is_untriaged_transcript(front: model.Document) -> bool:
     return front.scalar("source") == triage.TRANSCRIPT and triage.FIELD not in front.front
 
 
-def _curation_sessions() -> tuple[frozenset[tuple[str | None, str | None]], tuple[str, ...]]:
+def _curation_sessions() -> tuple[
+    frozenset[tuple[str | None, str | None]], tuple[tuple[str, str], ...]
+]:
     """The (app, session) keys of this host's curation runs, and the transcripts not read."""
     scanned = sync_command.scan_transcripts(os.environ)
     runs = frozenset(
@@ -138,7 +147,7 @@ def _curation_sessions() -> tuple[frozenset[tuple[str | None, str | None]], tupl
         for candidate in scanned.candidates
         if triage.for_session(candidate.session) == "curation"
     )
-    return runs, tuple(f"{failure.session}: {failure.reason}" for failure in scanned.failures)
+    return runs, tuple((failure.session, failure.reason) for failure in scanned.failures)
 
 
 def _keep_fork_owners(
@@ -149,27 +158,51 @@ def _keep_fork_owners(
 ) -> None:
     """Keep each matched transcript whose session a staying transcript names in forked_from.
 
-    A transcript that names a session in forked_from left its shared prefix in that session's
-    observation, so the owner must stay wherever the naming transcript stays: in pending, kept
-    in pending, or curated in the archive. A kept owner protects its own owner in turn.
+    A transcript that names a session in forked_from left its opening messages, which it
+    shares with that session, in that session's observation. The owner must stay wherever the
+    naming transcript stays: in pending, kept in pending, or curated in the archive. A kept
+    owner protects its own owner in turn. Each kept owner's reason names the observations that
+    depend on it.
     """
     by_session: dict[str, list[str]] = {}
     for filename in rules:
         session = fronts[filename].scalar("session")
         if session:
             by_session.setdefault(session, []).append(filename)
+    named_by: dict[str, list[str]] = {}
     staying = [
-        front for filename, front in fronts.items() if filename not in rules or filename in kept
+        (f"{PENDING}/{filename}", front)
+        for filename, front in fronts.items()
+        if filename not in rules or filename in kept
     ]
     staying.extend(_curated_archives(root))
-    owners = [owner for front in staying if (owner := _forked_from(front))]
+    for label, front in staying:
+        if owner := _forked_from(front):
+            named_by.setdefault(owner, []).append(label)
+    owners = list(named_by)
+    held: dict[str, str] = {}
     while owners:
-        for filename in by_session.get(owners.pop(), ()):
-            if filename in kept:
+        session = owners.pop()
+        for filename in by_session.get(session, ()):
+            if filename in kept or filename in held:
                 continue
-            kept[filename] = "holds shared messages that a staying transcript names in forked_from"
+            held[filename] = session
             if owner := _forked_from(fronts[filename]):
+                named_by.setdefault(owner, []).append(f"{PENDING}/{filename}")
                 owners.append(owner)
+    for filename, session in held.items():
+        dependents = sorted(named_by[session])
+        verb = "leaves them out and names" if len(dependents) == 1 else "leave them out and name"
+        kept[filename] = (
+            f"Holds the opening messages of {_listed(dependents, 'observation')}, which {verb} "
+            "this session in forked_from. Curation still needs to read them."
+        )
+
+
+def _listed(items: Sequence[str], noun: str) -> str:
+    """The first item, and how many others there are."""
+    others = len(items) - 1
+    return items[0] if not others else f"{items[0]} and {others} other {noun}(s)"
 
 
 def _forked_from(front: model.Document) -> str | None:
@@ -178,7 +211,7 @@ def _forked_from(front: model.Document) -> str | None:
     return front.scalar("forked_from") or None
 
 
-def _curated_archives(root: Path) -> list[model.Document]:
+def _curated_archives(root: Path) -> list[tuple[str, model.Document]]:
     """The front matter of the archived transcripts that curation read.
 
     Curation's archives carry curation_batch, and older ones have no triage field. A
@@ -189,7 +222,7 @@ def _curated_archives(root: Path) -> list[model.Document]:
     directory = fixed_directory(root, ARCHIVED, command=WHO, create=False, optional=True)
     if directory is None:
         return []
-    documents: list[model.Document] = []
+    documents: list[tuple[str, model.Document]] = []
     for path in sorted(directory.glob("*.md")):
         if path.is_symlink() or not path.is_file():
             continue
@@ -197,17 +230,26 @@ def _curated_archives(root: Path) -> list[model.Document]:
         if _is_untriaged_transcript(front) or (
             front.scalar("source") == triage.TRANSCRIPT and "curation_batch" in front.front
         ):
-            documents.append(front)
+            documents.append((f"{ARCHIVED}/{path.name}", front))
     return documents
 
 
-def _report_kept(plan: TriagePlan) -> None:
-    for failure in plan.unreadable:
+def _report_unreadable(plan: TriagePlan) -> None:
+    for session, reason in plan.unreadable:
         sys.stderr.write(
-            f"{WHO}: cannot inspect transcript {failure}; a curation run it holds stays pending\n"
+            f"{WHO}: could not read transcript {session} ({reason}); a curation run in it "
+            "cannot be detected, so its parts stay pending\n"
         )
-    for filename, reason in plan.kept:
-        sys.stderr.write(f"{WHO}: warning: {PENDING}/{filename} {reason}; kept in pending\n")
+
+
+def _kept_report(plan: TriagePlan) -> str:
+    """The transcripts that match a rule but stay pending, each with its reason."""
+    if not plan.kept:
+        return ""
+    lines = [f"Kept in pending: {len(plan.kept)} session transcript(s) that match a rule"]
+    for filename, rule, reason in plan.kept:
+        lines.extend((f"  {PENDING}/{filename} ({rule})", f"    {reason}"))
+    return "\n".join(lines) + "\n"
 
 
 def _triage_summary(chosen: Sequence[tuple[QueueEntry, triage.Rule]]) -> str:

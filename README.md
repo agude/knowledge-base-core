@@ -563,9 +563,19 @@ the count for each rule. The commit is pushed by the next `kb sync` or
 stops before the commit, the next `kb sync` or `kb curate triage` restores
 them. `--dry-run` lists each match and its rule and changes nothing.
 
-A source transcript that cannot be read is reported on stderr as `cannot
-inspect transcript`, and the command exits 1 after finishing the rest: a
-curation run in that transcript is not detected, so its parts stay pending.
+After the counts, the command lists each transcript that matches a rule but
+stays in pending, with the reason:
+
+```text
+Kept in pending: 1 session transcript(s) that match a rule
+  observations/pending/20261031T170000-ace0817a.md (delegated)
+    Holds the opening messages of observations/pending/20261031T224501-44e48236.md, which leaves them out and names this session in forked_from. Curation still needs to read them.
+```
+
+Kept transcripts are curated like any other pending file. A source transcript
+that cannot be read is reported on stderr as `could not read transcript`, and
+the command exits 1 after finishing the rest: a curation run in that transcript
+cannot be detected, so its parts stay pending.
 
 ### Content pre-commit hook
 
