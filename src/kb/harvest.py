@@ -3,6 +3,7 @@
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from kb import triage
 from kb.meta import TranscriptMeta
@@ -37,10 +38,15 @@ class HarvestState:
 
 @dataclass(frozen=True)
 class Candidate:
-    """A parsed transcript plus the file modification time from its scanner."""
+    """A parsed transcript plus the file modification time from its scanner.
+
+    A session with a source has no message text or commands. It came from the scan cache, and
+    harvest reads the text again from source when it writes an observation for it.
+    """
 
     session: Session
     modified: datetime
+    source: Path | None = None
 
 
 @dataclass(frozen=True)

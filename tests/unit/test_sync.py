@@ -308,7 +308,9 @@ def test_sync_harvests_reports_record_counts_and_completes_remote_step(
         "recover",
         lambda *args: (_ for _ in ()).throw(OSError("recovery")),
     )
-    monkeypatch.setattr(sync, "scan_transcripts", lambda *_: sync.ScanResult((candidate,), ()))
+    monkeypatch.setattr(
+        sync, "scan_transcripts", lambda *_, **__: sync.ScanResult((candidate,), ())
+    )
     monkeypatch.setattr(sync, "_head_records", lambda _: ())
     monkeypatch.setattr(harvest, "reconstruct_state", lambda *args: harvest.HarvestState({}, {}))
     monkeypatch.setattr(
@@ -340,7 +342,9 @@ def test_sync_pushes_after_a_session_is_skipped_then_exits_one(
     root = make_repo(tmp_path / "content")
     candidate = harvest.Candidate(make_session(), START)
     monkeypatch.setattr(sync, "recover", lambda *args: None)
-    monkeypatch.setattr(sync, "scan_transcripts", lambda *_: sync.ScanResult((candidate,), ()))
+    monkeypatch.setattr(
+        sync, "scan_transcripts", lambda *_, **__: sync.ScanResult((candidate,), ())
+    )
     monkeypatch.setattr(sync, "_head_records", lambda _: ())
     monkeypatch.setattr(harvest, "reconstruct_state", lambda *args: harvest.HarvestState({}, {}))
     monkeypatch.setattr(harvest, "select_candidates", lambda *args: harvest.Selection((), 0, 0, ()))
@@ -369,7 +373,7 @@ def test_sync_with_harvest_and_dirty_tree_stops_remote_sync(
 ) -> None:
     root = make_repo(tmp_path / "content")
     monkeypatch.setattr(sync, "recover", lambda *args: None)
-    monkeypatch.setattr(sync, "scan_transcripts", lambda *_: sync.ScanResult((), ()))
+    monkeypatch.setattr(sync, "scan_transcripts", lambda *_, **__: sync.ScanResult((), ()))
     monkeypatch.setattr(sync, "_head_records", lambda _: ())
     monkeypatch.setattr(harvest, "reconstruct_state", lambda *args: harvest.HarvestState({}, {}))
     monkeypatch.setattr(harvest, "select_candidates", lambda *args: harvest.Selection((), 0, 0, ()))
@@ -392,7 +396,9 @@ def test_status_reports_backlog_and_remote_errors(
     assert "sync: remote failed" in capsys.readouterr().err
 
     candidate = harvest.Candidate(make_session(), START)
-    monkeypatch.setattr(sync, "scan_transcripts", lambda *_: sync.ScanResult((candidate,), ()))
+    monkeypatch.setattr(
+        sync, "scan_transcripts", lambda *_, **__: sync.ScanResult((candidate,), ())
+    )
     monkeypatch.setattr(sync, "_head_records", lambda _: ())
     monkeypatch.setattr(remote, "fetch_status", lambda _: (sync.RemoteStatus("main", 2, 3), None))
     assert sync._status(root, {}, "test-host", NOW, START - timedelta(days=1)) == 0
@@ -402,7 +408,7 @@ def test_status_reports_backlog_and_remote_errors(
     monkeypatch.setattr(
         sync,
         "scan_transcripts",
-        lambda *_: sync.ScanResult((candidate,), (sync.Failure("broken", "cannot read"),)),
+        lambda *_, **__: sync.ScanResult((candidate,), (sync.Failure("broken", "cannot read"),)),
     )
     assert sync._status(root, {}, "test-host", NOW, START - timedelta(days=1)) == 1
     assert "sync: skipped session broken: cannot read" in capsys.readouterr().err
@@ -417,7 +423,9 @@ def test_dry_run_without_cutoff_and_with_preparation_failure(
     candidate = harvest.Candidate(make_session(), START)
     plan = make_plan()
     selection = harvest.Selection((plan,), 1, 0, ("rewritten",))
-    monkeypatch.setattr(sync, "scan_transcripts", lambda *_: sync.ScanResult((candidate,), ()))
+    monkeypatch.setattr(
+        sync, "scan_transcripts", lambda *_, **__: sync.ScanResult((candidate,), ())
+    )
     monkeypatch.setattr(sync, "_head_records", lambda _: ())
     monkeypatch.setattr(harvest, "reconstruct_state", lambda *args: harvest.HarvestState({}, {}))
     monkeypatch.setattr(harvest, "select_candidates", lambda *args: selection)
@@ -437,7 +445,9 @@ def test_dry_run_reports_prepared_observations_redactions_and_record_counts(
     candidate = harvest.Candidate(make_session(malformed=2, duplicates=1), START)
     plan = make_plan(candidate.session, part=2)
     selection = harvest.Selection((plan,), 1, 0, ())
-    monkeypatch.setattr(sync, "scan_transcripts", lambda *_: sync.ScanResult((candidate,), ()))
+    monkeypatch.setattr(
+        sync, "scan_transcripts", lambda *_, **__: sync.ScanResult((candidate,), ())
+    )
     monkeypatch.setattr(sync, "_head_records", lambda _: ())
     monkeypatch.setattr(harvest, "reconstruct_state", lambda *args: harvest.HarvestState({}, {}))
     monkeypatch.setattr(harvest, "select_candidates", lambda *args: selection)
@@ -456,7 +466,9 @@ def test_dry_run_reports_prepared_observations_redactions_and_record_counts(
 
 def test_dry_run_wraps_filesystem_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = make_repo(tmp_path / "content")
-    monkeypatch.setattr(sync, "scan_transcripts", lambda *_: (_ for _ in ()).throw(OSError("no")))
+    monkeypatch.setattr(
+        sync, "scan_transcripts", lambda *_, **__: (_ for _ in ()).throw(OSError("no"))
+    )
     with pytest.raises(KbError, match="sync: dry-run failed: no"):
         sync._dry_run(root, root / ".git", {}, "host", NOW, START)
 
@@ -1576,7 +1588,9 @@ def test_a_sync_commit_git_reports_as_failed_succeeds_and_records_the_warning(
     monkeypatch.setattr(secrets, "findings", lambda *args: [])
     candidate = harvest.Candidate(make_session(), START)
     monkeypatch.setattr(sync, "recover", lambda *args: None)
-    monkeypatch.setattr(sync, "scan_transcripts", lambda *_: sync.ScanResult((candidate,), ()))
+    monkeypatch.setattr(
+        sync, "scan_transcripts", lambda *_, **__: sync.ScanResult((candidate,), ())
+    )
     monkeypatch.setattr(sync, "_head_records", lambda _: ())
     monkeypatch.setattr(harvest, "reconstruct_state", lambda *args: harvest.HarvestState({}, {}))
     monkeypatch.setattr(

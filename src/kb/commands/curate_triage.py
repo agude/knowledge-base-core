@@ -66,7 +66,7 @@ def run(words: Sequence[str]) -> int:
         root = context.root
         git_directory = lock.git_dir(root, WHO)
         if "--dry-run" in parsed.switches:
-            plan = _triage_plan(root)
+            plan = _triage_plan(root, store=False)
             _report_unreadable(plan)
             for entry, rule in plan.chosen:
                 sys.stdout.write(f"{PENDING}/{entry.snapshot.filename}: {rule}\n")
@@ -79,7 +79,7 @@ def run(words: Sequence[str]) -> int:
             sync_command.recover(root, git_directory, host)
             curate.require_clean_tree(root)
             curate.check_existing_batches(root)
-            plan = _triage_plan(root)
+            plan = _triage_plan(root, store=True)
             _report_unreadable(plan)
             if plan.chosen:
                 _archive_triaged(root, git_directory, plan.chosen)
@@ -97,15 +97,16 @@ def run(words: Sequence[str]) -> int:
     return 1 if plan.unreadable else 0
 
 
-def _triage_plan(root: Path) -> TriagePlan:
+def _triage_plan(root: Path, *, store: bool) -> TriagePlan:
     """Match each pending transcript against the triage rules, without changing git state.
 
     delegated comes from front matter, so it covers every host's transcripts. curation comes
-    from this host's transcripts, so each host triages its own curation runs.
+    from this host's transcripts, so each host triages its own curation runs. store says whether
+    the transcript cache is written; a dry run leaves it alone.
     """
     entries = curate.pending_entries(root)
     fronts = {entry.snapshot.filename: entry.document for entry in entries}
-    curation_runs, unreadable = _curation_sessions(root)
+    curation_runs, unreadable = _curation_sessions(root, store)
     rules: dict[str, triage.Rule] = {}
     for filename, front in fronts.items():
         rule = triage.from_front_matter(front)
@@ -138,10 +139,10 @@ def _is_untriaged_transcript(front: model.Document) -> bool:
 
 
 def _curation_sessions(
-    root: Path,
+    root: Path, store: bool
 ) -> tuple[frozenset[tuple[str | None, str | None]], tuple[tuple[str, str], ...]]:
     """The (app, session) keys of this host's curation runs, and the transcripts not read."""
-    scanned = sync_command.scan_transcripts(os.environ, root)
+    scanned = sync_command.scan_transcripts(os.environ, root, store=store)
     runs = frozenset(
         (candidate.session.app, candidate.session.id)
         for candidate in scanned.candidates

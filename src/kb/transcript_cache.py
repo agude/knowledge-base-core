@@ -4,11 +4,16 @@ kb sync and kb curate triage parse every Claude and Codex transcript on each run
 them have not changed since the last run. This module keeps each parsed session with its file's
 size and modification time, and a scan reuses a stored session only while both still match.
 
+A stored session keeps everything that harvest selection reads, and no message text or commands.
+Harvest reads the text again from the transcript for each session that it writes, so the secrets
+check sees all of the text before anything is written, and the cache file holds none of it.
+
 The cache is one pickle at cache/transcripts.pickle in the content worktree. It follows the token
 cache's rules: git must ignore it, so it is never committed, and it can be deleted at any time.
-A cache that cannot be read, or that was written by other kb code, is ignored and replaced. A
-write replaces the file atomically, so a reader never sees a partial file. Two runs that write
-at once can each drop the other's entries, and the next run then parses those files again.
+A cache that cannot be read, that was written by other kb code, or that holds an entry of the
+wrong shape is ignored and replaced. A write replaces the file atomically, so a reader never sees
+a partial file. Two runs that write at once can each drop the other's entries, and the next run
+then parses those files again.
 
 Pickles must come from trusted local storage.
 """
@@ -17,14 +22,17 @@ import os
 import pickle
 import sys
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime
 from pathlib import Path
 
 from kb import token_cache
-from kb.transcripts import Session
+from kb.transcripts import Message, Session
 
 FORMAT = 1
 CACHE_FILE = "transcripts.pickle"
+CACHED_APPS = ("claude-code", "codex")
+ROLES = ("user", "assistant")
 
 
 @dataclass(frozen=True)
@@ -34,6 +42,14 @@ class Stored:
     size: int
     mtime_ns: int
     session: Session
+
+
+def without_text(session: Session) -> Session:
+    """The session with each message's text and commands removed, and everything else kept."""
+    return replace(
+        session,
+        messages=tuple(replace(message, text="", commands=()) for message in session.messages),
+    )
 
 
 class Cache:
@@ -68,8 +84,8 @@ class Cache:
         return stored.session
 
     def add(self, path: str, status: os.stat_result, session: Session) -> None:
-        """Keep a session that this scan parsed from path, whose identity is status."""
-        self._current[path] = Stored(status.st_size, status.st_mtime_ns, session)
+        """Keep a session that this scan parsed from path, whose identity is status, without text."""
+        self._current[path] = Stored(status.st_size, status.st_mtime_ns, without_text(session))
         self._parsed = True
 
     def save(self) -> None:
@@ -84,7 +100,11 @@ class Cache:
 
 
 def _read(target: Path, version: str) -> dict[str, Stored]:
-    """The stored sessions, or {} when the file is missing, unreadable, or from other code."""
+    """The stored sessions, or {} when the file is missing, unreadable, or from other code.
+
+    An entry of the wrong shape, including a session that holds message text, makes the whole
+    file unusable, so the caller parses every transcript and replaces it.
+    """
     try:
         with target.open("rb") as handle:
             data = pickle.load(handle)
@@ -98,12 +118,59 @@ def _read(target: Path, version: str) -> dict[str, Stored]:
     ):
         return {}
     entries = data["entries"]
-    if not all(
-        isinstance(key, str) and isinstance(value, Stored) for key, value in entries.items()
-    ):
+    if not all(isinstance(key, str) and _valid_stored(value) for key, value in entries.items()):
         return {}
     stored: dict[str, Stored] = entries
     return stored
+
+
+def _valid_stored(value: object) -> bool:
+    """Whether value is a Stored entry with integer file identity and a valid cached session."""
+    return (
+        isinstance(value, Stored)
+        and isinstance(value.size, int)
+        and isinstance(value.mtime_ns, int)
+        and _valid_session(value.session)
+    )
+
+
+def _valid_session(session: object) -> bool:
+    """Whether session has the shape that scanning and selection read, and no message text."""
+    if not isinstance(session, Session):
+        return False
+    return (
+        session.app in CACHED_APPS
+        and _optional(session.id, str)
+        and isinstance(session.project, str)
+        and _optional(session.parent_session, str)
+        and _optional(session.forked_from, str)
+        and _optional(session.latest_timestamp, datetime)
+        and isinstance(session.snapshot_complete, bool)
+        and isinstance(session.malformed_lines, int)
+        and isinstance(session.duplicate_ids, int)
+        and all(isinstance(name, str) for name in session.invoked)
+        and all(_valid_message(message) for message in session.messages)
+    )
+
+
+def _valid_message(message: object) -> bool:
+    """Whether message is a retained message in cached form: no text and no commands."""
+    return (
+        isinstance(message, Message)
+        and isinstance(message.id, str)
+        and isinstance(message.timestamp, datetime)
+        and message.role in ROLES
+        and message.text == ""
+        and message.commands == ()
+        and _optional(message.legacy_id, str)
+        and isinstance(message.synthetic_command, bool)
+        and isinstance(message.legacy_duplicate, bool)
+    )
+
+
+def _optional(value: object, kind: type) -> bool:
+    """Whether value is None or an instance of kind."""
+    return value is None or isinstance(value, kind)
 
 
 def _write(target: Path, version: str, entries: dict[str, Stored]) -> None:

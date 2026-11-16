@@ -7,7 +7,7 @@ import sys
 import tempfile
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -184,11 +184,13 @@ def recover_and_harvest(
 
     if harvest_since is not None:
         with _scanner_workspace(git_directory, standalone=False) as scan_directory:
-            candidates = scan_transcripts(environ, root)
+            candidates = scan_transcripts(environ, root, store=True)
             errors.extend(_failure_text(failure) for failure in candidates.failures)
             records = _head_records(root)
             state = harvest.reconstruct_state(records, _sessions(candidates.candidates), host)
             selection = harvest.select_candidates(candidates.candidates, state, now, harvest_since)
+            selection, unreadable = _hydrated(selection, candidates.candidates)
+            errors.extend(_failure_text(failure) for failure in unreadable)
             warnings.extend(selection.warnings)
             _write_record_counts(candidates.candidates)
             harvested, messages, byte_count, redacted, detectors = _write_selection(
@@ -346,8 +348,7 @@ def backlog(
 ) -> Backlog:
     """Scan transcripts and select what a harvest would take, reading HEAD only.
 
-    Never fetches, locks, or changes git state. The transcript cache lives outside git, and a
-    caller that needs origin's state fetches it separately.
+    Never fetches, locks, or writes. A caller that needs origin's state fetches it separately.
     """
     scanned = scan_transcripts(environ, root)
     state = harvest.reconstruct_state(_head_records(root), _sessions(scanned.candidates), host)
@@ -401,7 +402,8 @@ def _dry_run(
             records = _head_records(root)
             state = harvest.reconstruct_state(records, _sessions(scanned.candidates), host)
             selection = harvest.select_candidates(scanned.candidates, state, now, harvest_since)
-            failures = list(scanned.failures)
+            selection, unreadable = _hydrated(selection, scanned.candidates)
+            failures = [*scanned.failures, *unreadable]
             prepared: list[tuple[harvest.HarvestPlan, Prepared]] = []
             for plan in selection.plans:
                 result = _prepare(plan, scan_directory, host, now)
@@ -431,11 +433,14 @@ def _dry_run(
         raise KbError(f"sync: dry-run failed: {error}") from None
 
 
-def scan_transcripts(environ: Mapping[str, str], root: Path | None = None) -> ScanResult:
+def scan_transcripts(
+    environ: Mapping[str, str], root: Path | None = None, *, store: bool = False
+) -> ScanResult:
     """Read isolated Claude, Codex, and Goose transcripts once and parse their snapshots.
 
-    With root, a Claude or Codex transcript whose size and modification time match the last
-    scan reuses its stored session, and this scan stores what it parses. See kb.transcript_cache.
+    With root, a Claude or Codex transcript whose size and modification time match the cache
+    reuses its stored session, which has no message text (see kb.transcript_cache). The cache
+    is written only when store is true, so a read-only command leaves the content root alone.
     """
     cache = None if root is None else transcript_cache.Cache.load(root)
     candidates: list[harvest.Candidate] = []
@@ -468,7 +473,7 @@ def scan_transcripts(environ: Mapping[str, str], root: Path | None = None) -> Sc
         failures.append(Failure("goose", f"cannot read session database: {error}"))
     else:
         candidates.extend(harvest.Candidate(item.session, item.updated) for item in snapshots)
-    if cache is not None:
+    if cache is not None and store:
         cache.save()
     return ScanResult(tuple(candidates), tuple(failures))
 
@@ -484,22 +489,23 @@ def _read_candidate(
 ) -> None:
     """Read one transcript and add its parsed session or a redacted failure reason.
 
-    The file's status is read before its text, so a file that changes during the read has a
-    stale stored identity and is parsed again by the next scan.
+    A session from the cache has no message text, and its candidate names the file, which
+    harvest reads again if it writes that session. The file's status is read before its text,
+    so a file that changes during the read has a stale stored identity and is parsed again by
+    the next scan.
     """
     label = _session_label(path)
+    source: Path | None = None
     try:
         status = path.stat()
         modified = datetime.fromtimestamp(status.st_mtime, UTC)
         session = None if cache is None else cache.session(str(path), status)
         if session is None:
-            text = path.read_text(encoding="utf-8")
-            if app == "claude-code":
-                session = claude.parse(text, path.stem, parent_session)
-            else:
-                session = codex.parse(text, path.name)
+            session = _parse_transcript(path, app, parent_session)
             if cache is not None:
                 cache.add(str(path), status, session)
+        else:
+            source = path
     except UnicodeDecodeError:
         failures.append(Failure(label, "transcript is not UTF-8"))
         return
@@ -509,7 +515,59 @@ def _read_candidate(
     if session.id is None:
         failures.append(Failure(label, "no filename-matching session metadata"))
         return
-    candidates.append(harvest.Candidate(session, modified))
+    candidates.append(harvest.Candidate(session, modified, source))
+
+
+def _parse_transcript(path: Path, app: App, parent_session: str | None) -> Session:
+    """Parse one Claude or Codex transcript file, with its message text.
+
+    Raises UnicodeDecodeError or OSError when the file cannot be read.
+    """
+    text = path.read_text(encoding="utf-8")
+    if app == "claude-code":
+        return claude.parse(text, path.stem, parent_session)
+    return codex.parse(text, path.name)
+
+
+def _hydrated(
+    selection: harvest.Selection, candidates: Sequence[harvest.Candidate]
+) -> tuple[harvest.Selection, tuple[Failure, ...]]:
+    """Give each plan from a cached session the message text that its transcript holds.
+
+    A cached session has no text, so a plan built from one is rebuilt from the transcript. Only
+    the sessions that harvest writes are read again. A transcript that no longer holds a planned
+    message changed after the scan, so its plan is left out, and the next run harvests it again.
+    """
+    sources = {
+        (candidate.session.app, candidate.session.id): candidate.source
+        for candidate in candidates
+        if candidate.source is not None
+    }
+    if not sources:
+        return selection, ()
+    plans: list[harvest.HarvestPlan] = []
+    failures: list[Failure] = []
+    for plan in selection.plans:
+        source = sources.get((plan.session.app, plan.session.id))
+        if source is None:
+            plans.append(plan)
+            continue
+        label = plan.session.id or "unknown"
+        try:
+            full = _parse_transcript(source, plan.session.app, plan.session.parent_session)
+        except UnicodeDecodeError:
+            failures.append(Failure(label, "transcript is not UTF-8"))
+            continue
+        except OSError as error:
+            failures.append(Failure(label, f"cannot read transcript: {error.strerror}"))
+            continue
+        by_id = {message.id: message for message in full.messages}
+        if any(message.id not in by_id for message in plan.messages):
+            failures.append(Failure(label, "transcript changed after it was scanned"))
+            continue
+        messages = tuple(by_id[message.id] for message in plan.messages)
+        plans.append(harvest.HarvestPlan(full, plan.part, messages, plan.forked_from))
+    return replace(selection, plans=tuple(plans)), tuple(failures)
 
 
 def _store_root(environ: Mapping[str, str], name: str, default: str) -> Path:
