@@ -274,6 +274,61 @@ def test_selection_warns_and_continues_after_ended_when_saved_id_is_missing() ->
     assert "session-a" in selected.warnings[0]
 
 
+@pytest.mark.parametrize("reason", ("no-new-messages", "active", "incomplete", "cutoff", "owned"))
+def test_missing_pointer_does_not_warn_without_a_plan(reason: str) -> None:
+    messages: tuple[Message, ...] = (message("old"),)
+    if reason != "no-new-messages":
+        messages += (message("later", OLD + timedelta(minutes=2)),)
+    transcript = session("session-a", *messages, complete=reason != "incomplete")
+    state = reconstruct_state(
+        (record(first="old", last="excluded-summary", ended=OLD + timedelta(minutes=1)),),
+        (),
+        "host-a",
+    )
+    if reason == "owned":
+        state = replace(state, owners={("claude-code", "later"): ("claude-code", "parent")})
+    modified = NOW if reason == "active" else OLD
+    since = NOW if reason == "cutoff" else SINCE
+
+    selected = select_candidates((Candidate(transcript, modified),), state, NOW, since)
+
+    assert selected.plans == ()
+    assert selected.warnings == ()
+    assert selected.waiting_count == (1 if reason in ("active", "incomplete") else 0)
+
+
+def test_missing_pointer_warns_only_when_the_session_fits_the_harvest_limit() -> None:
+    earlier = session("earlier", message("earlier-message"))
+    resumed = session("session-a", message("later", OLD + timedelta(minutes=2)))
+    state = reconstruct_state(
+        (record(first="old", last="excluded-summary", ended=OLD + timedelta(minutes=1)),),
+        (),
+        "host-a",
+    )
+    candidates = (Candidate(earlier, OLD), Candidate(resumed, OLD))
+
+    limited = select_candidates(candidates, state, NOW, SINCE, limit=1)
+
+    assert [plan.session.id for plan in limited.plans] == ["earlier"]
+    assert limited.warnings == ()
+
+    selected = select_candidates(candidates, state, NOW, SINCE, limit=2)
+
+    assert [plan.session.id for plan in selected.plans] == ["earlier", "session-a"]
+    assert len(selected.warnings) == 1
+    assert "excluded-summary" in selected.warnings[0]
+
+    advanced = reconstruct_state(
+        (record(first="later", last="later", ended=OLD + timedelta(minutes=2), part=2),),
+        (resumed,),
+        "host-a",
+    )
+    repeated = select_candidates((Candidate(resumed, OLD),), advanced, NOW, SINCE)
+
+    assert repeated.plans == ()
+    assert repeated.warnings == ()
+
+
 def test_selection_orders_ready_sessions_by_first_message_time_then_session_id() -> None:
     later = Candidate(session("b", message("later", OLD + timedelta(minutes=2))), OLD)
     tied_b = Candidate(session("b-tie", message("tie-b", OLD)), OLD)

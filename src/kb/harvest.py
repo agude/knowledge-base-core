@@ -169,6 +169,7 @@ def select_candidates(
     now_utc = _utc(now)
     since_utc = None if harvest_since is None else _utc(harvest_since)
     warnings: list[str] = []
+    pointer_warnings: dict[SessionKey, str] = {}
     ready: list[tuple[Candidate, tuple[Message, ...], int]] = []
     waiting = 0
 
@@ -188,7 +189,7 @@ def select_candidates(
         )
         if missing_pointer:
             assert previous is not None
-            warnings.append(
+            pointer_warnings[key] = (
                 f"session {session.id}: saved last_message {previous.last_message} is missing; "
                 "continuing after ended"
             )
@@ -231,6 +232,8 @@ def select_candidates(
                 in_prefix = False
             remaining.append(message)
         if remaining:
+            if key in pointer_warnings:
+                warnings.append(pointer_warnings[key])
             plans.append(
                 HarvestPlan(
                     session=session,
