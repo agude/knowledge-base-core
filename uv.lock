@@ -440,7 +440,7 @@ wheels = [
 
 [[package]]
 name = "knowledge-base"
-version = "0.6.3"
+version = "0.6.4"
 source = { editable = "." }
 dependencies = [
     { name = "detect-secrets" },
