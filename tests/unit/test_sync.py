@@ -1169,6 +1169,18 @@ def test_prepare_handles_redaction_title_and_validation_paths(
     assert sync._prepare(make_plan(assistant), tmp_path, "host", NOW).reason is None
 
 
+def test_prepare_redacts_a_secret_that_follows_a_lone_carriage_return(tmp_path: Path) -> None:
+    secret_line = 'password = "hunter2hunter2"'
+    plan = make_plan(make_session(text=f"Progress 10%\rProgress 20%\n{secret_line}\nDone."))
+
+    result = sync._prepare(plan, tmp_path, "host", NOW)
+
+    assert result.reason is None
+    assert "hunter2hunter2" not in (result.text or "")
+    assert "[redacted: Secret Keyword]" in (result.text or "")
+    assert "Done." in (result.text or "")
+
+
 def test_prepare_skips_secrets_that_survive_redaction(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

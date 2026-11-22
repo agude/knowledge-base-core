@@ -25,6 +25,21 @@ def test_a_keyword_secret_is_found_on_its_line(tmp_path: Path) -> None:
     assert secrets.findings(tmp_path, f"Some prose.\n{SECRET_LINE}\n") == [("Secret Keyword", 2)]
 
 
+def test_a_lone_carriage_return_does_not_shift_later_line_numbers(tmp_path: Path) -> None:
+    text = f"Progress 10%\rProgress 20%\n{SECRET_LINE}\n"
+    assert secrets.findings(tmp_path, text) == [("Secret Keyword", 2)]
+
+
+def test_a_secret_after_a_carriage_return_names_the_line_that_holds_it(tmp_path: Path) -> None:
+    text = f"Prose.\nProgress\r{SECRET_LINE}\nMore prose.\n"
+    assert secrets.findings(tmp_path, text) == [("Secret Keyword", 2)]
+
+
+def test_crlf_line_endings_keep_their_line_numbers(tmp_path: Path) -> None:
+    text = f"Some prose.\r\n\r\n{SECRET_LINE}\r\n"
+    assert secrets.findings(tmp_path, text) == [("Secret Keyword", 3)]
+
+
 def test_plain_prose_has_no_findings(tmp_path: Path) -> None:
     assert secrets.findings(tmp_path, "Resolver caches answers for an hour.\n") == []
 
